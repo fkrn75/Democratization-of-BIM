@@ -3,8 +3,8 @@
   "commands_in_registry": 30,
   "commands_executed_with_examples": 30,
   "coverage_percent": 100.0,
-  "example_runs": 31,
-  "error_case_runs": 24,
+  "example_runs": 32,
+  "error_case_runs": 32,
   "mcp_tools": [
     "dobim_command_describe",
     "dobim_commands_search",
@@ -43,6 +43,16 @@
     },
     {
       "label": "ex-commands_search-1",
+      "command": "commands.search",
+      "same_envelope": true,
+      "exit_code": 0,
+      "exit_code_matches_envelope": true,
+      "ok": true,
+      "state_hash_equal": true,
+      "second_step": null
+    },
+    {
+      "label": "ex-commands_search-2",
       "command": "commands.search",
       "same_envelope": true,
       "exit_code": 0,
@@ -659,7 +669,7 @@
     },
     {
       "label": "err-20",
-      "command": "pset.set",
+      "command": "wall.set",
       "same_envelope": true,
       "exit_code": 2,
       "exit_code_matches_envelope": true,
@@ -669,7 +679,7 @@
     },
     {
       "label": "err-21",
-      "command": "pset.set",
+      "command": "door.set",
       "same_envelope": true,
       "exit_code": 2,
       "exit_code_matches_envelope": true,
@@ -679,6 +689,86 @@
     },
     {
       "label": "err-22",
+      "command": "wall.set",
+      "same_envelope": true,
+      "exit_code": 2,
+      "exit_code_matches_envelope": true,
+      "ok": false,
+      "state_hash_equal": true,
+      "second_step": null
+    },
+    {
+      "label": "err-23",
+      "command": "element.query",
+      "same_envelope": true,
+      "exit_code": 0,
+      "exit_code_matches_envelope": true,
+      "ok": true,
+      "state_hash_equal": true,
+      "second_step": null
+    },
+    {
+      "label": "err-24",
+      "command": "element.query",
+      "same_envelope": true,
+      "exit_code": 0,
+      "exit_code_matches_envelope": true,
+      "ok": true,
+      "state_hash_equal": true,
+      "second_step": null
+    },
+    {
+      "label": "err-25",
+      "command": "schedule.rows",
+      "same_envelope": true,
+      "exit_code": 2,
+      "exit_code_matches_envelope": true,
+      "ok": false,
+      "state_hash_equal": true,
+      "second_step": null
+    },
+    {
+      "label": "err-26",
+      "command": "commands.search",
+      "same_envelope": true,
+      "exit_code": 0,
+      "exit_code_matches_envelope": true,
+      "ok": true,
+      "state_hash_equal": true,
+      "second_step": null
+    },
+    {
+      "label": "err-27",
+      "command": "history.list",
+      "same_envelope": true,
+      "exit_code": 0,
+      "exit_code_matches_envelope": true,
+      "ok": true,
+      "state_hash_equal": true,
+      "second_step": null
+    },
+    {
+      "label": "err-28",
+      "command": "pset.set",
+      "same_envelope": true,
+      "exit_code": 2,
+      "exit_code_matches_envelope": true,
+      "ok": false,
+      "state_hash_equal": true,
+      "second_step": null
+    },
+    {
+      "label": "err-29",
+      "command": "pset.set",
+      "same_envelope": true,
+      "exit_code": 2,
+      "exit_code_matches_envelope": true,
+      "ok": false,
+      "state_hash_equal": true,
+      "second_step": null
+    },
+    {
+      "label": "err-30",
       "command": "wall.move",
       "same_envelope": true,
       "exit_code": 0,
@@ -688,7 +778,7 @@
       "second_step": null
     },
     {
-      "label": "err-23",
+      "label": "err-31",
       "command": "history.redo",
       "same_envelope": true,
       "exit_code": 1,

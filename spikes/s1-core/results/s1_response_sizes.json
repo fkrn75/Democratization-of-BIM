@@ -1,0 +1,160 @@
+{
+ "model": {
+  "walls": 600,
+  "doors": 300,
+  "log_entries": 941
+ },
+ "cap": {
+  "RESPONSE_CAP_BYTES": 12000,
+  "ENVELOPE_RESERVE_BYTES": 450
+ },
+ "token_estimate": "UTF-8 바이트 / 3 (추정)",
+ "target_tokens": 8000,
+ "rows": [
+  {
+   "command": "element.query",
+   "args": {
+    "limit": 1000
+   },
+   "pages_to_read_all": 6,
+   "truncated_pages": 5,
+   "items_total": 901,
+   "page_total_field": 901,
+   "no_gap_no_dup": true,
+   "worst_page": {
+    "text_bytes": 11797,
+    "est_tokens_text": 3932,
+    "est_tokens_text_plus_structured": 7865
+   },
+   "within_8000_tokens_text": true,
+   "within_8000_tokens_text_plus_structured": true
+  },
+  {
+   "command": "element.query",
+   "args": {},
+   "pages_to_read_all": 10,
+   "truncated_pages": 0,
+   "items_total": 901,
+   "page_total_field": 901,
+   "no_gap_no_dup": null,
+   "worst_page": {
+    "text_bytes": 7248,
+    "est_tokens_text": 2416,
+    "est_tokens_text_plus_structured": 4832
+   },
+   "within_8000_tokens_text": true,
+   "within_8000_tokens_text_plus_structured": true
+  },
+  {
+   "command": "schedule.rows",
+   "args": {
+    "kind": "wall",
+    "limit": 1000
+   },
+   "pages_to_read_all": 6,
+   "truncated_pages": 5,
+   "items_total": 600,
+   "page_total_field": 600,
+   "no_gap_no_dup": true,
+   "worst_page": {
+    "text_bytes": 11674,
+    "est_tokens_text": 3891,
+    "est_tokens_text_plus_structured": 7783
+   },
+   "within_8000_tokens_text": true,
+   "within_8000_tokens_text_plus_structured": true
+  },
+  {
+   "command": "schedule.rows",
+   "args": {
+    "kind": "door",
+    "limit": 1000
+   },
+   "pages_to_read_all": 4,
+   "truncated_pages": 3,
+   "items_total": 300,
+   "page_total_field": 300,
+   "no_gap_no_dup": true,
+   "worst_page": {
+    "text_bytes": 11723,
+    "est_tokens_text": 3908,
+    "est_tokens_text_plus_structured": 7815
+   },
+   "within_8000_tokens_text": true,
+   "within_8000_tokens_text_plus_structured": true
+  },
+  {
+   "command": "history.list",
+   "args": {
+    "limit": 500
+   },
+   "pages_to_read_all": 21,
+   "truncated_pages": 20,
+   "items_total": 941,
+   "page_total_field": 941,
+   "no_gap_no_dup": true,
+   "worst_page": {
+    "text_bytes": 11729,
+    "est_tokens_text": 3910,
+    "est_tokens_text_plus_structured": 7819
+   },
+   "within_8000_tokens_text": true,
+   "within_8000_tokens_text_plus_structured": true
+  },
+  {
+   "command": "history.list",
+   "args": {},
+   "pages_to_read_all": 48,
+   "truncated_pages": 0,
+   "items_total": 941,
+   "page_total_field": 941,
+   "no_gap_no_dup": null,
+   "worst_page": {
+    "text_bytes": 5355,
+    "est_tokens_text": 1785,
+    "est_tokens_text_plus_structured": 3570
+   },
+   "within_8000_tokens_text": true,
+   "within_8000_tokens_text_plus_structured": true
+  },
+  {
+   "command": "relation.list",
+   "args": {
+    "id": "3000000000000000000001",
+    "limit": 1000
+   },
+   "pages_to_read_all": 5,
+   "truncated_pages": 4,
+   "items_total": 600,
+   "page_total_field": 600,
+   "no_gap_no_dup": true,
+   "worst_page": {
+    "text_bytes": 11747,
+    "est_tokens_text": 3916,
+    "est_tokens_text_plus_structured": 7831
+   },
+   "within_8000_tokens_text": true,
+   "within_8000_tokens_text_plus_structured": true
+  },
+  {
+   "command": "commands.search",
+   "args": {
+    "limit": 1000
+   },
+   "pages_to_read_all": 1,
+   "truncated_pages": 0,
+   "items_total": 30,
+   "page_total_field": 30,
+   "no_gap_no_dup": true,
+   "worst_page": {
+    "text_bytes": 4556,
+    "est_tokens_text": 1519,
+    "est_tokens_text_plus_structured": 3037
+   },
+   "within_8000_tokens_text": true,
+   "within_8000_tokens_text_plus_structured": true
+  }
+ ],
+ "all_within_target": true,
+ "all_no_gap_no_dup": true
+}

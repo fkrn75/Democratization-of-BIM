@@ -8,6 +8,7 @@
 from __future__ import annotations
 
 import math
+import sys
 import tempfile
 from pathlib import Path
 
@@ -453,10 +454,246 @@ def check_restore_failure(work: Path) -> list[str]:
     return v
 
 
+def check_envelope_and_nulls(work: Path) -> list[str]:
+    """(1) 예상 밖 예외는 조회·배치·엔진 열기 어디서든 INTERNAL 봉투가 된다(메시지에 경로·내부 값 없음).
+    (2) N10: wall.set/door.set 의 명시적 null(= SDK 가 NaN/inf 를 바꿔 보낸 값)은 SCHEMA_INVALID 이고 아무것도 바꾸지 않는다.
+    (3) 로그 인자에는 생략한 선택 필드의 null 이 없다. 위반 목록을 돌려준다."""
+    import json as _json
+    from unittest import mock
+    from dobim_core import commands, dispatch
+    v = []
+    work = Path(tempfile.mkdtemp(dir=Path(work), prefix="nul-"))
+    s = kit.Session(work / "n1.dobim")
+    for n, a in F.SCRIPT:
+        s.run(n, a)
+    eng = s.eng
+    # ---- (1) 조회 경로의 비 DobimError
+    eng.ifc.ents.pop(F.W3)                                   # 조회 중 KeyError 를 일으키는 상태
+    r = s.run("element.get", {"id": F.W3})
+    if r["ok"] or r["error"]["code"] != "INTERNAL":
+        v.append(f"조회 중 KeyError 가 INTERNAL 봉투가 아님: {r}")
+    elif F.W3 in r["error"]["message"] or "Traceback" in r["error"]["message"] or "\\" in r["error"]["message"]:
+        v.append(f"INTERNAL 메시지에 내부 값이나 스택이 들어 있다: {r['error']['message']}")
+    s.close()
+    secret = "C:\\secret\\place"
+    env = dispatch.Env(work)
+    with mock.patch.object(dispatch, "get_command", side_effect=RuntimeError(secret)):
+        for label, call in (("run", lambda: dispatch.run(env, "project.info", {}, project="n1.dobim")),
+                            ("run_batch", lambda: dispatch.run_batch(env, [{"command": "wall.move", "args": {}}], project="n1.dobim"))):
+            try:
+                r = call()
+            except BaseException as ex:
+                v.append(f"{label}: 봉투 없는 예외 {type(ex).__name__}")
+                continue
+            if r["ok"] or r["error"]["code"] != "INTERNAL" or "secret" in r["error"]["message"]:
+                v.append(f"{label}: INTERNAL 봉투가 아니거나 예외 문장이 샜다: {r.get('error')}")
+    (work / "garbage.dobim").write_bytes(b"this is not a sqlite database" * 20)
+    try:
+        r = dispatch.run(env, "project.info", {}, project="garbage.dobim")
+        if r["ok"] or r["error"]["code"] != "INTERNAL":
+            v.append(f"깨진 프로젝트 파일 열기가 INTERNAL 이 아님: {r}")
+    except BaseException as ex:
+        v.append(f"깨진 프로젝트 파일 열기가 봉투 없는 예외: {type(ex).__name__}")
+    env.close()
+
+    # ---- (2) 명시적 null
+    s = kit.Session(work / "n2.dobim")
+    for n, a in F.SCRIPT:
+        s.run(n, a)
+    eng = s.eng
+    before = eng.hashes()
+    cases = [("wall.set", {"id": F.W1, "thickness": None, "height": 3100}, "/thickness"),
+             ("wall.set", {"id": F.W1, "thickness": 250, "height": None}, "/height"),
+             ("wall.set", {"id": F.W1, "axis": None, "thickness": 250}, "/axis"),
+             ("wall.set", {"id": F.W1, "name": None, "thickness": 250}, "/name"),
+             ("wall.set", {"id": F.W1, "thickness": None}, "/thickness"),
+             ("door.set", {"id": F.D1, "width": 1000, "offset": None}, "/offset"),
+             ("door.set", {"id": F.D1, "width": 1000, "sill": None}, "/sill"),
+             ("door.set", {"id": F.D1, "width": 1000, "name": None}, "/name")]
+    for name, args, path in cases:
+        r = s.run(name, args)
+        if r["ok"] or r["error"]["code"] != "SCHEMA_INVALID" or r["error"]["path"] != path:
+            v.append(f"{name} {args} 의 명시적 null 이 {path} SCHEMA_INVALID 로 거부되지 않음: {r.get('error', 'ok')}")
+        b = s.batch([{"command": name, "args": args}])
+        if b["ok"]:
+            v.append(f"배치 안의 {name} 명시적 null 이 받아들여졌다")
+    if eng.hashes() != before:
+        v.append("null 거부가 상태를 바꿨다")
+    r = s.run("wall.set", {"id": F.W1, "thickness": 250})   # 생략은 여전히 '바꾸지 않음'
+    if not r["ok"] or eng.st.el[F.W1]["params"]["thickness"] != 250 or eng.st.el[F.W1]["params"]["height"] != 3000:
+        v.append(f"생략한 필드를 바꾸지 않는 동작이 깨졌다: {r}")
+    # 레지스트리 전체: 숫자 선택 필드(`X | None`)는 어떤 커맨드든 명시적 null 을 거부한다
+    for cname, c in sorted(registry.load().items()):
+        for fname, fi in c.args_model.model_fields.items():
+            if commands._optional_numeric(fi.annotation) or (getattr(c.args_model, "forbid_null", False) and type(None) in __import__("typing").get_args(fi.annotation)):
+                ok = True
+                try:
+                    c.args_model.model_validate({**{k: x for k, x in (c.examples[0] or {}).items()}, fname: None})
+                except Exception:
+                    ok = False
+                if ok:
+                    v.append(f"{cname}.{fname}: 명시적 null 을 받아들임")
+    # ---- (3) 로그 인자
+    s.run("wall.set", {"id": F.W1, "height": 3200})
+    s.run("level.create", {"name": "ZZ", "elevation": 99})
+    last = [_json.loads(r[4]) for r in kit.log_rows(eng)][-2:]
+    if any(x is None for a in last for x in a.values()):
+        v.append(f"로그 인자에 null 이 남았다: {last}")
+    d = kit.full_check(s, work, tag="-nul")
+    if not d["ok"]:
+        v.append(f"차등 검사 실패(null 거부 뒤): {d['diffs'][:2]}")
+    s.close()
+    return v
+
+
+def check_remove_identity_order(work: Path) -> list[str]:
+    """D1: remove_identity 는 IFC 삭제가 실패하면 엔티티 목록에서 빼지 않는다(순서: 지운 뒤에 뺀다). 개구부도 마찬가지."""
+    import ifcopenshell.api.feature as api_feature
+    import ifcopenshell.api.root as api_root
+    v = []
+    work = Path(tempfile.mkdtemp(dir=Path(work), prefix="rid-"))
+    s = kit.Session(work / "r1.dobim")
+    for n, a in F.SCRIPT:
+        s.run(n, a)
+    s.eng.hashes()
+    ifc = s.eng.ifc
+    real = api_root.remove_product
+
+    def boom(*a, **k):
+        raise RuntimeError("주입")
+
+    api_root.remove_product = boom
+    try:
+        try:
+            ifc.remove_identity(F.W3)
+            v.append("remove_product 실패가 전파되지 않았다")
+        except RuntimeError:
+            pass
+    finally:
+        api_root.remove_product = real
+    if F.W3 not in ifc.ents:
+        v.append("remove_product 가 실패했는데 엔티티 목록에서 먼저 빠졌다")
+    real_f = api_feature.remove_feature
+    api_feature.remove_feature = boom
+    try:
+        try:
+            ifc.remove_identity(F.D1)
+        except RuntimeError:
+            pass
+    finally:
+        api_feature.remove_feature = real_f
+    if F.D1 not in ifc.ents or F.D1 not in ifc.openings:
+        v.append("remove_feature 가 실패했는데 문·개구부 기록이 먼저 빠졌다")
+    s.close()
+    return v
+
+
+def check_response_cap(work: Path, cap: int | None = None) -> list[str]:
+    """목록형 커맨드의 응답 크기 상한: 봉투 전체가 상한 이하이고, 잘리면 truncated 와 next_cursor 가 있으며,
+    이어받기로 전체를 읽으면 기준(상한 없이 읽은 결과)과 빠짐·중복 없이 같다."""
+    import json as _json
+    from unittest import mock
+    from dobim_core import commands
+    from dobim_core import queries as Q
+    v = []
+    work = Path(tempfile.mkdtemp(dir=Path(work), prefix="cap-"))
+    s = kit.Session(work / "c1.dobim")
+    s.run("level.create", {"id": F.LV1, "name": "1F", "elevation": 0})
+    cmds = [{"command": "wall.create", "args": {"id": kit.mkid("1", i), "level": F.LV1, "axis": [0, i * 300, 6000, i * 300],
+                                                "name": f"긴 벽 이름 {i:04d} " + "가" * 40}} for i in range(1, 281)]
+    assert s.batch(cmds)["ok"]
+    cap = cap or commands.RESPONSE_CAP_BYTES
+    expect_ids = sorted(s.eng.st.el)
+    log_seqs = [r[0] for r in s.eng.conn.execute("SELECT seq FROM op_log ORDER BY seq DESC").fetchall()]
+    sched = [list(r) for r in s.eng.g.q(Q.schedule_sorted, "wall")]
+    plans = [("element.query", {"limit": 1000}, lambda it: it["id"], expect_ids),
+             ("schedule.rows", {"kind": "wall", "limit": 1000}, lambda it: it[0], [r[0] for r in sched]),
+             ("history.list", {"limit": 500}, lambda it: it["seq"], log_seqs),
+             ("relation.list", {"id": F.LV1, "limit": 1000}, lambda it: it["src"], None)]
+    for name, base, key, expect in plans:
+        keys, pages, truncs, sizes, cursor = [], 0, [], [], None
+        while True:
+            args = dict(base, **({"cursor": cursor} if cursor else {}))
+            r = s.run(name, args)
+            if not r["ok"]:
+                v.append(f"{name}: 실패 {r['error']['code']}")
+                break
+            pages += 1
+            sizes.append(len(_json.dumps(r, ensure_ascii=False).encode("utf-8")))
+            truncs.append(r["page"]["truncated"])
+            keys += [key(it) for it in r["result"]["items"]]
+            cursor = r["page"]["next_cursor"]
+            if r["page"]["truncated"] and cursor is None:
+                v.append(f"{name}: truncated 인데 next_cursor 가 없다")
+            if cursor is None or pages > 400:
+                break
+        if expect is None:
+            expect = list(s.eng.st.inn.get(("on_level", F.LV1), ()))
+        if pages < 2:
+            v.append(f"{name}: 상한이 적용되지 않았다(쪽 수 {pages})")
+        if max(sizes) > cap:
+            v.append(f"{name}: 응답 {max(sizes)}바이트가 상한 {cap} 를 넘는다")
+        if not any(truncs[:-1]) or truncs[-1]:
+            v.append(f"{name}: truncated 표시가 이상하다 {truncs[:3]}…{truncs[-2:]}")
+        if keys != expect:
+            v.append(f"{name}: 이어받기 결과가 기준과 다르다(빠짐 {len(set(expect) - set(keys))}, 중복 {len(keys) - len(set(keys))}, "
+                     f"순서 {'같음' if sorted(keys) == sorted(expect) else '다름'})")
+        if len(keys) != len(set(keys)):
+            v.append(f"{name}: 중복 항목")
+    s.close()
+    return v
+
+
+def check_file_lock(work: Path) -> list[str]:
+    """ifc.export/ifc.restore 가 공유 없이 열린 대상을 만나면 FILE_LOCKED 봉투이고, 원본 불변·.tmp 잔재 없음·스냅숏 증가 없음.
+    잠금을 풀면 다시 성공한다. Windows 전용(그 밖에서는 시험하지 않고 빈 목록)."""
+    import ctypes
+    if sys.platform != "win32":
+        return []
+    v = []
+    work = Path(tempfile.mkdtemp(dir=Path(work), prefix="lock-"))
+    s = kit.Session(work / "k1.dobim")
+    for n, a in F.SCRIPT:
+        s.run(n, a)
+
+    def confirmed(name, args):
+        first = s.run(name, args)
+        if first["ok"] or first["error"]["code"] != "CONFIRM_REQUIRED":
+            return first
+        return s.run(name, args, confirm=first["error"]["details"]["confirm_token"])
+
+    target = work / "locked.ifc"
+    if not confirmed("ifc.export", {"path": "locked.ifc"})["ok"] or not confirmed("ifc.export", {"path": "locked.ifc"})["ok"]:
+        return ["준비 내보내기 실패"]
+    before = target.read_bytes()
+    snaps = sorted(p.name for p in (work / ".dobim-snapshots").iterdir())
+    k32 = ctypes.windll.kernel32
+    k32.CreateFileW.restype = ctypes.c_void_p
+    for share, label in ((0, "공유 없음"), (1, "읽기 공유")):
+        h = k32.CreateFileW(str(target), 0x80000000, share, None, 3, 0x80, None)   # 읽기로 열기
+        try:
+            for name, args in (("ifc.export", {"path": "locked.ifc"}), ("ifc.restore", {"path": "locked.ifc", "snapshot": 1})):
+                r = confirmed(name, args)
+                if r["ok"] or r["error"]["code"] != "FILE_LOCKED":
+                    v.append(f"{label}: 열린 파일에 {name} 가 FILE_LOCKED 가 아님: {r.get('error', 'ok')}")
+        finally:
+            k32.CloseHandle(ctypes.c_void_p(h))
+        if target.read_bytes() != before:
+            v.append(f"{label}: 잠금 중 실패했는데 원본이 바뀌었다")
+        if sorted(work.glob("*.tmp")):
+            v.append(f"{label}: .tmp 잔재 {[p.name for p in work.glob('*.tmp')]}")
+        if sorted(p.name for p in (work / ".dobim-snapshots").iterdir()) != snaps:
+            v.append(f"{label}: 실패했는데 스냅숏이 늘었다")
+    if not confirmed("ifc.export", {"path": "locked.ifc"})["ok"]:
+        v.append("잠금을 푼 뒤 내보내기가 성공하지 못함")
+    s.close()
+    return v
+
+
 if __name__ == "__main__":
     import sys
     import tempfile
     w = Path(tempfile.mkdtemp())
-    res = check_golden(w) + check_failure_atomicity(w) + check_delete_and_names(w) + check_restore_failure(w)
+    res = check_golden(w) + check_failure_atomicity(w) + check_delete_and_names(w) + check_restore_failure(w) + check_envelope_and_nulls(w) + check_remove_identity_order(w) + check_response_cap(w) + check_file_lock(w)
     print("\n".join(res) or "골든 값 통과")
     sys.exit(1 if res else 0)

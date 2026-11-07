@@ -25,7 +25,7 @@ from typing import Any
 import ifcopenshell.guid
 
 from dobim_core import queries as Q
-from dobim_core.errors import DobimError
+from dobim_core.errors import DobimError, internal_error
 from dobim_core.graph import Graph, RefGraph
 from dobim_core.ifc_model import IfcModel
 from dobim_core.registry import Command
@@ -60,6 +60,16 @@ def invert(effects: list) -> list:
 
 def canon(obj: Any) -> str:
     return json.dumps(obj, sort_keys=True, separators=(",", ":"), allow_nan=False)
+
+
+def log_args(model) -> str:
+    """로그에 남길 인자(JSON). 생략된 선택 필드(기본값 None 이고 값도 None)는 null 로 적지 않고 뺀다: 명시적 null 은
+    입력에서 거부되므로, 로그의 null 을 그대로 다시 실행하면 재생이 스키마 검사에 걸린다."""
+    d = model.model_dump(mode="json")
+    for name, f in type(model).model_fields.items():
+        if d.get(name) is None and not f.is_required() and f.default is None:
+            d.pop(name, None)
+    return canon(d)
 
 
 def digest(obj: Any) -> str:
@@ -368,14 +378,15 @@ class Engine:
             _, eid, old, new = e
             self.st.apply_el(eid, old, new)
             p.add(("el", eid))
-            try:   # IFC 쪽이 실패하면 메모리 상태도 되돌려 반쯤 적용된 효과를 남기지 않는다
+            try:   # IFC 쪽이 실패하면 메모리 상태도 되돌리고, IFC 는 어떤 상태인지 모르니 오염으로 표시한다
                 if old is None:
                     self.ifc.create_identity(eid, new["kind"])
                 elif new is None:
                     self.ifc.remove_identity(eid)
                     self._proj_stamp.pop(eid, None)
-            except BaseException:
+            except BaseException as ex:
                 self.st.apply_el(eid, new, old)
+                self._taint(f"요소 {eid}", ex)
                 raise
             if old is None or new is None:
                 kind = (new or old)["kind"]
@@ -401,28 +412,29 @@ class Engine:
                 else:
                     self.conn.execute("DELETE FROM relation WHERE kind=? AND src=? AND dst=?", (kind, src, dst))
         elif t == "pset":
-            try:   # 실패한 효과는 effects 에 들어가지 않아 롤백되지 않으므로 여기서 원래 값으로 되돌린다
+            try:   # 실패한 효과는 effects 에 들어가지 않아 롤백되지 않는다: 오염으로 표시해 로그에서 다시 만들게 한다
                 self.ifc.set_prop(e[1], e[2], e[3], e[5])
-            except BaseException:
-                self._restore_or_taint(lambda: self.ifc.set_prop(e[1], e[2], e[3], e[4]), f"속성 {e[2]}/{e[3]}")
+            except BaseException as ex:
+                self._taint(f"속성 {e[2]}/{e[3]}", ex)
                 raise
             p.add(("pset", e[1]))
         elif t == "mat":
             try:
                 self.ifc.set_material(e[1], e[3])
-            except BaseException:
-                self._restore_or_taint(lambda: self.ifc.set_material(e[1], e[2]), f"재료 {e[1]}")
+            except BaseException as ex:
+                self._taint(f"재료 {e[1]}", ex)
                 raise
             p.add(("mat", e[1]))
         else:
             raise DobimError("INTERNAL", f"알 수 없는 효과: {t}")
 
-    def _restore_or_taint(self, restore, what: str) -> None:
-        """실패한 효과를 원래 값으로 되돌린다. 되돌리기마저 실패하면 삼키지 않고 엔진을 오염 상태로 표시한다."""
-        try:
-            restore()
-        except BaseException as ex:
-            self._tainted = f"{what} 복원 실패: {type(ex).__name__}: {ex}"
+    def _taint(self, what: str, ex: BaseException) -> None:
+        """IFC 호출이 예외를 던졌다: 호출이 어디까지 적용됐는지 알 수 없다(고아 재료·중복 재료·반쯤 지워진 요소).
+        그래서 제자리 복원을 믿지 않고 오염으로 표시한다. 호출 쪽 실패 경로가 로그에서 상태와 투영을 다시 만든다.
+        DobimError 는 IFC 를 건드리기 전의 검증 실패이므로 오염이 아니다."""
+        if isinstance(ex, DobimError):
+            return
+        self._tainted = self._tainted or f"{what}: IFC 호출 실패({type(ex).__name__})"
 
     @property
     def tainted(self) -> str | None:
@@ -441,8 +453,9 @@ class Engine:
         except BaseException as ex:
             if isinstance(ex, KeyboardInterrupt):
                 raise
+            internal_error(ex)   # 트레이스백은 stderr 로만 남긴다
             raise DobimError("ENGINE_TAINTED", f"IFC 투영이 오염됐고 로그에서 다시 만들지 못했다: {reason} / 복구 실패: "
-                             f"{type(ex).__name__}: {ex}", hint="원인을 없앤 뒤 다시 시도하면 자동으로 복구를 시도한다. "
+                             f"{type(ex).__name__}", hint="원인을 없앤 뒤 다시 시도하면 자동으로 복구를 시도한다. "
                              "프로젝트 파일(.dobim)의 로그는 온전하다: 다시 열면 복구된다") from ex
         self._tainted = None
 
@@ -525,7 +538,7 @@ class Engine:
                 results.append(res)
                 warnings.extend(ctx.warnings)
                 if ctx.effects:
-                    entries.append((seq, cmd.name, canon(model.model_dump(mode="json")), invert(ctx.effects)))
+                    entries.append((seq, cmd.name, log_args(model), invert(ctx.effects)))
                 else:
                     warnings.append(f"{cmd.name}: 변경 없음")
             t_apply = time.perf_counter()
@@ -553,7 +566,7 @@ class Engine:
         except BaseException as ex:
             if not dry_run and c.in_transaction:
                 c.execute("ROLLBACK")
-            if applied:
+            if applied and not self.tainted:   # 오염이면 되돌리기를 건너뛴다: 어긋난 IFC 에 더 쓰지 않고 바로 다시 만든다
                 try:
                     self._rollback(applied)
                 except BaseException:
@@ -567,7 +580,7 @@ class Engine:
                 raise
             if isinstance(ex, sqlite3.OperationalError) and "locked" in str(ex):
                 raise DobimError("LOCKED", f"프로젝트가 잠겨 있다: {ex}") from ex
-            raise DobimError("INTERNAL", f"{type(ex).__name__}: {ex}") from ex
+            raise internal_error(ex) from ex
 
     def _rollback(self, applied: list) -> None:
         """적용한 효과를 거꾸로 되돌린다. 도중에 실패하면 오염으로 표시하고 예외를 올린다."""
@@ -576,7 +589,7 @@ class Engine:
                 self._apply_effect(e, persist=False)
             self._touch_pending()
         except BaseException as rb:
-            self._tainted = self._tainted or f"롤백 실패: {type(rb).__name__}: {rb}"
+            self._tainted = self._tainted or f"롤백 실패({type(rb).__name__})"
             raise
 
     # ------------------------------------------------------------ IFC 투영 (T1 이후, 요청 시)
@@ -590,7 +603,16 @@ class Engine:
                 spec = self.g.q(Q.ifc_spec, eid)
                 stamp = self.g.nodes[(Q.ifc_spec, eid)].changed
                 if self._proj_stamp.get(eid) != stamp:
-                    self.ifc.project(eid, spec)
+                    try:
+                        self.ifc.project(eid, spec)
+                    except BaseException as ex:
+                        # 투영이 중간에 멈추면 고아 개구부·반쯤 놓인 배치가 남을 수 있다: 오염으로 표시하고 다시 만든다
+                        self._taint(f"투영 {eid}", ex)
+                        try:
+                            self._heal()
+                        except DobimError as healing_failed:
+                            raise healing_failed from ex
+                        raise
                     self._proj_stamp[eid] = stamp
                     n += 1
         return n

@@ -25,24 +25,22 @@
       ],
       "without_golden": {
         "detected": true,
-        "by": "differential",
+        "by": "inject_grid",
         "evidence": [
-          "증분 그래프 != 기준 그래프(캐시 없음)",
-          "전체 재생: derived 해시가 다르다"
-        ],
-        "repro_items": 3,
-        "repro_from_items": 150
+          "undo_elem_delete/add_pset/once/k1: undo 뒤 라이브 != 디스크",
+          "undo_elem_delete/add_pset/persist/k1: undo 뒤 라이브 != 디스크"
+        ]
       },
       "mutant": "M01 관계 입력 무효화 누락",
       "family": "증분 무효화 누락",
-      "sec": 8.4
+      "sec": 28.2
     },
     {
       "detected": true,
       "by": "golden",
       "evidence": [
         "D1 방화등급: 기대 'EI30', 실제 None",
-        "차등 검사 실패: ['증분 그래프 != 기준 그래프(캐시 없음)', '전체 재생: derived 해시가 다르다']"
+        "삭제 뒤 실패한 쓰기가 해시를 바꿈"
       ],
       "without_golden": {
         "detected": true,
@@ -50,13 +48,11 @@
         "evidence": [
           "증분 그래프 != 기준 그래프(캐시 없음)",
           "전체 재생: derived 해시가 다르다"
-        ],
-        "repro_items": 4,
-        "repro_from_items": 150
+        ]
       },
       "mutant": "M02 속성셋 입력 무효화 누락",
       "family": "증분 무효화 누락",
-      "sec": 10.3
+      "sec": 29.8
     },
     {
       "detected": true,
@@ -66,14 +62,15 @@
       ],
       "without_golden": {
         "detected": true,
-        "by": "exception",
+        "by": "inject_grid",
         "evidence": [
-          "TypeError: 'NoneType' object is not subscriptable"
+          "undo_wall_create/create_entity/once/k1: undo 뒤 라이브 != 디스크",
+          "undo_elem_delete/edit_pset/once/k1: undo 뒤 라이브 != 디스크"
         ]
       },
       "mutant": "M03 조기 차단 과다(변경을 전파하지 않음)",
       "family": "증분 무효화 누락",
-      "sec": 0.1
+      "sec": 24.4
     },
     {
       "detected": true,
@@ -88,30 +85,28 @@
         "evidence": [
           "증분 그래프 != 기준 그래프(캐시 없음)",
           "전체 재생: derived 해시가 다르다"
-        ],
-        "repro_items": 3,
-        "repro_from_items": 150
+        ]
       },
       "mutant": "M04 의존성 기록 없이 읽기(untracked read)",
       "family": "증분 무효화 누락",
-      "sec": 9.3
+      "sec": 30.6
     },
     {
       "detected": true,
       "by": "exception",
       "evidence": [
-        "IndexError: list index out of range"
+        "IndexError: tuple index out of range"
       ],
       "without_golden": {
         "detected": true,
         "by": "exception",
         "evidence": [
-          "IndexError: list index out of range"
+          "IndexError: tuple index out of range"
         ]
       },
       "mutant": "M05 undo 역연산 오류: 관계 방향 미반전",
       "family": "undo 역연산 오류",
-      "sec": 5.3
+      "sec": 52.4
     },
     {
       "detected": true,
@@ -122,89 +117,73 @@
       ],
       "without_golden": {
         "detected": true,
-        "by": "differential",
+        "by": "inject_grid",
         "evidence": [
-          "새로 열기: state 해시가 다르다",
-          "새로 열기: derived 해시가 다르다"
-        ],
-        "repro_items": 4,
-        "repro_from_items": 150
+          "set_typechange/edit_pset/once/k1: 차등 검사 실패: ['전체 재생: state 해시가 다르다']",
+          "set_typechange/edit_pset/persist/k1: 차등 검사 실패: ['전체 재생: state 해시가 다르다']"
+        ]
       },
       "mutant": "M06 undo 역연산 오류: 속성셋 이전 값 유실",
       "family": "undo 역연산 오류",
-      "sec": 11.4
+      "sec": 27.2
     },
     {
       "detected": true,
       "by": "undo",
       "seed": 201,
       "evidence": [
-        "undo 뒤 해시(상태·파생값·IFC)가 깊이 97 의 기록과 다르다",
-        "분기 단계 undo 뒤 해시가 기대 이력과 다르다 (깊이 97)"
+        "undo 뒤 해시(상태·파생값·IFC)가 깊이 108 의 기록과 다르다",
+        "분기 단계 undo 뒤 해시가 기대 이력과 다르다 (깊이 108)"
       ],
       "without_golden": {
         "detected": true,
         "by": "undo",
         "evidence": [
-          "undo 뒤 해시(상태·파생값·IFC)가 깊이 97 의 기록과 다르다",
-          "분기 단계 undo 뒤 해시가 기대 이력과 다르다 (깊이 97)"
+          "undo 뒤 해시(상태·파생값·IFC)가 깊이 108 의 기록과 다르다",
+          "분기 단계 undo 뒤 해시가 기대 이력과 다르다 (깊이 108)"
         ]
       },
       "mutant": "M07 undo 가 배치 첫 항목을 건너뜀",
       "family": "undo 역연산 오류",
-      "sec": 27.4
+      "sec": 79.7
     },
     {
       "detected": true,
-      "by": "differential",
-      "seed": 102,
+      "by": "inject_grid",
       "evidence": [
-        "증분 그래프 != 기준 그래프(캐시 없음)",
-        "전체 재생: state 해시가 다르다"
+        "undo_elem_delete/assign_material/once/k1: undo 뒤 라이브 != 디스크",
+        "undo_elem_delete/assign_material/persist/k1: undo 뒤 라이브 != 디스크"
       ],
-      "repro_items": 5,
-      "repro_from_items": 150,
-      "shrink_evals": 61,
-      "repro": "level.create {\"id\": \"3000000000000010200001\", \"name\": \"L200001\", \"elevation\": 13200}\nwall.create {\"id\": \"1000000000000010200003\", \"level\": \"3000000000000010200001\", \"axis\": [8000, 3000, 8000, 7000], \"thickness\": 150, \"height\": 2700}\nbatch[wall.create {\"id\": \"1000000000000010200004\", \"level\": \"3000000000000010200001\", \"axis\": [8000.7, 4000.0, 7999.3, 4000.0]}; join.set {\"a\": \"1000000000000010200003\", \"b\": \"1000000000000010200004\"}]\npset.set {\"id\": \"1000000000000010200004\", \"pset\": \"Pset_WallCommon\", \"prop\": \"IsExternal\", \"value\": true}\nbatch[pset.set {\"id\": \"1000000000000010200004\", \"pset\": \"Ps",
       "without_golden": {
         "detected": true,
-        "by": "differential",
+        "by": "inject_grid",
         "evidence": [
-          "증분 그래프 != 기준 그래프(캐시 없음)",
-          "전체 재생: state 해시가 다르다"
-        ],
-        "repro_items": 5,
-        "repro_from_items": 150
+          "undo_elem_delete/assign_material/once/k1: undo 뒤 라이브 != 디스크",
+          "undo_elem_delete/assign_material/persist/k1: undo 뒤 라이브 != 디스크"
+        ]
       },
       "mutant": "M08 요소 삭제가 속성셋 복원 정보를 안 남김",
       "family": "undo 역연산 오류",
-      "sec": 22.7
+      "sec": 49.2
     },
     {
       "detected": true,
       "by": "differential",
-      "seed": 101,
       "evidence": [
         "전체 재생: state 해시가 다르다",
         "전체 재생: derived 해시가 다르다"
       ],
-      "repro_items": 19,
-      "repro_from_items": 150,
-      "shrink_evals": 52,
-      "repro": "door.set {\"id\": \"2000000000000010100002\", \"offset\": 900}\nelement.delete {\"id\": \"1000000000000010100032\"}\ndoor.place {\"id\": \"2000000000000010100006\", \"host\": \"1000000000000010100018\", \"offset\": 8521.604, \"width\": 900, \"height\": 2400, \"sill\": 100}\ndoor.place {\"id\": \"2000000000000010100007\", \"host\": \"1000000000000010100029\", \"offset\": 10147.63, \"width\": 1000, \"height\": 2400, \"sill\": 0}\npset.set {\"id\": \"2000000000000010100004\", \"pset\": \"Pset_Mix\", \"prop\": \"P\", \"value\": \"abc\"}\npset.set {\"id\": \"1000000000000010100031\", \"pset\": \"Pset_Mix\", \"prop\": \"P\", \"value\": \"abc\"}\nwall.create {\"id\": \"100000000000",
       "without_golden": {
         "detected": true,
         "by": "differential",
         "evidence": [
           "전체 재생: state 해시가 다르다",
           "전체 재생: derived 해시가 다르다"
-        ],
-        "repro_items": 2,
-        "repro_from_items": 150
+        ]
       },
       "mutant": "M09 실패 시 롤백 누락",
       "family": "원자성 오류",
-      "sec": 16.4
+      "sec": 48.7
     },
     {
       "detected": true,
@@ -221,52 +200,44 @@
       },
       "mutant": "M10 expected_rev 검사 생략",
       "family": "rev 검사 생략",
-      "sec": 123.6
+      "sec": 142.1
     },
     {
       "detected": true,
       "by": "golden",
       "evidence": [
-        "k1w5: 오염 상태인데 element.get 가 정상 응답함",
-        "k1w5: 조회한 값 None (기대 1): 속성이 조용히 사라지거나 바뀜"
+        "k1w3: 오염 상태인데 element.get 가 정상 응답함",
+        "k1w3: 조회한 값 None (기대 1): 속성이 조용히 사라지거나 바뀜"
       ],
       "without_golden": {
         "detected": true,
-        "by": "concurrency",
+        "by": "inject_grid",
         "evidence": [
-          "낡은 expected_rev 가 거부되지 않음: {'code': 'NOT_FOUND', 'message': 'wall 를 찾을 수 없다: 1000000000000000000001', 'path': '/id', 'retryable': False, 'hint': None, 'details': {}}",
-          "B 가 따라잡지 못함: {'code': 'NOT_FOUND', 'message': 'wall 를 찾을 수 없다: 1000000000000000000001', 'path': '/id', 'retryable': False, 'hint': None, 'details': {}}"
+          "set_typechange/edit_pset/persist/k1: 오염 상태인데 project.info 가 정상 응답",
+          "set_typechange/edit_pset/persist/k1: 주입을 걷어도 복구되지 않음: None / 속성 Pset_Z/P: IFC 호출 실패(RuntimeError)"
         ]
       },
       "mutant": "M11 쓰기 전 따라잡기 생략",
       "family": "동시성 오류",
-      "sec": 64.5
+      "sec": 24.2
     },
     {
       "detected": true,
-      "by": "differential",
-      "seed": 101,
+      "by": "golden",
       "evidence": [
-        "DoBIM_Intent 불일치 17건",
-        "전체 재생: ifc 해시가 다르다"
+        "차등 검사 실패(null 거부 뒤): ['DoBIM_Intent 불일치 1건', '전체 재생: ifc 해시가 다르다']"
       ],
-      "repro_items": 150,
-      "repro_from_items": 150,
-      "shrink_evals": 150,
-      "repro": "history.redo {}\nlevel.create {\"id\": \"3000000000000010100001\", \"name\": \"L100001\", \"elevation\": 6600}\nwall.set {\"id\": \"9000000000000000000001\", \"thickness\": -5}\nwall.set {\"id\": \"9000000000000000000001\", \"thickness\": -5}\nwall.move {\"id\": \"9000000000000000000055\", \"dx\": 1}\nwall.set {\"id\": \"9000000000000000000001\", \"thickness\": -5}\nwall.set {\"id\": \"9000000000000000000001\", \"thickness\": -5}\nhistory.undo {}\nhistory.redo {}\nhistory.redo {}\nhistory.redo {}\nhistory.undo {}\nlevel.create {\"id\": \"3000000000000010100002\", \"name\": \"L100002\", \"elevation\": 9900}\nwall.set {\"id\": \"9000000000000000000001\", \"thick",
       "without_golden": {
         "detected": true,
-        "by": "differential",
+        "by": "inject_grid",
         "evidence": [
-          "DoBIM_Intent 불일치 17건",
-          "전체 재생: ifc 해시가 다르다"
-        ],
-        "repro_items": 150,
-        "repro_from_items": 150
+          "undo_elem_delete/add_pset/once/k1: undo 뒤 라이브 != 디스크",
+          "undo_elem_delete/add_pset/persist/k1: undo 뒤 라이브 != 디스크"
+        ]
       },
       "mutant": "M12 IFC 투영이 변경을 무시(증분 투영 오류)",
       "family": "증분 무효화 누락",
-      "sec": 206.0
+      "sec": 29.5
     },
     {
       "detected": true,
@@ -276,18 +247,11 @@
         "속성 True 을 썼더니 1(int) 로 저장됨"
       ],
       "without_golden": {
-        "detected": true,
-        "by": "differential",
-        "evidence": [
-          "새로 열기: state 해시가 다르다",
-          "새로 열기: ifc 해시가 다르다"
-        ],
-        "repro_items": 4,
-        "repro_from_items": 150
+        "detected": false
       },
       "mutant": "M13 속성 값 타입 고착(D1 회귀)",
       "family": "값 손상",
-      "sec": 17.0
+      "sec": 88.3
     },
     {
       "detected": true,
@@ -301,7 +265,7 @@
       },
       "mutant": "M14 [검수자] 벽 순면적의 문 면적을 width*width 로",
       "family": "질의 의미 오류",
-      "sec": 53.0
+      "sec": 98.2
     },
     {
       "detected": true,
@@ -315,7 +279,7 @@
       },
       "mutant": "M15 [검수자] door_status 경계 <= 를 < 로",
       "family": "질의 의미 오류",
-      "sec": 53.0
+      "sec": 90.9
     },
     {
       "detected": true,
@@ -329,7 +293,7 @@
       },
       "mutant": "M16 [검수자] Ctx.set_prop 타입 검사 제거",
       "family": "값 손상",
-      "sec": 53.1
+      "sec": 71.9
     },
     {
       "detected": true,
@@ -347,31 +311,24 @@
       },
       "mutant": "M17 새 변경이 redo 가지를 버리지 않음",
       "family": "undo/redo 오류",
-      "sec": 31.8
+      "sec": 72.4
     },
     {
       "detected": true,
       "by": "differential",
-      "seed": 103,
       "evidence": [
-        "전체 재생: 로그가 다르다 (seq 80, 127 vs 127항목)"
+        "전체 재생: 로그가 다르다 (seq 14, 14 vs 14항목)"
       ],
-      "repro_items": 7,
-      "repro_from_items": 150,
-      "shrink_evals": 73,
-      "repro": "level.create {\"id\": \"3000000000000010300001\", \"name\": \"L300001\", \"elevation\": 3300}\nwall.create {\"id\": \"1000000000000010300002\", \"level\": \"3000000000000010300001\", \"axis\": [1500, 3500, 1500, 5000], \"thickness\": 100, \"height\": 3000}\ndoor.place {\"id\": \"2000000000000010300001\", \"host\": \"1000000000000010300002\", \"offset\": 600, \"width\": 1000, \"height\": 2400, \"sill\": 100}\npset.set {\"id\": \"2000000000000010300001\", \"pset\": \"Pset_DoorCommon\", \"prop\": \"SecurityRating\", \"value\": \"abc\"}\npset.set {\"id\": \"2000000000000010300001\", \"pset\": \"Pset_Custom\", \"prop\": \"Weight\", \"value\": \"heavy\"}\nbatch[pset.set {\"id",
       "without_golden": {
         "detected": true,
         "by": "differential",
         "evidence": [
-          "전체 재생: 로그가 다르다 (seq 80, 127 vs 127항목)"
-        ],
-        "repro_items": 7,
-        "repro_from_items": 150
+          "전체 재생: 로그가 다르다 (seq 14, 14 vs 14항목)"
+        ]
       },
       "mutant": "M18 삭제 효과가 속성셋 삽입 순서에 의존(10k 시드 424242가 찾은 실제 결함)",
       "family": "비결정",
-      "sec": 27.3
+      "sec": 43.8
     },
     {
       "detected": true,
@@ -384,7 +341,7 @@
       },
       "mutant": "M19 MIN_TRIMMED 정확 경계(1.0)가 퇴화로 판정됨",
       "family": "경계 오류",
-      "sec": 49.9
+      "sec": 69.0
     },
     {
       "detected": true,
@@ -397,7 +354,7 @@
       },
       "mutant": "M20 JOIN_MAX_EXT 정확 경계(1000)가 무시됨",
       "family": "경계 오류",
-      "sec": 49.2
+      "sec": 69.1
     },
     {
       "detected": true,
@@ -410,7 +367,7 @@
       },
       "mutant": "M21 조인 시작/끝 배정의 중간 동률을 끝 쪽으로",
       "family": "경계 오류",
-      "sec": 49.4
+      "sec": 68.9
     },
     {
       "detected": true,
@@ -420,11 +377,16 @@
         "삭제 뒤 실패한 쓰기가 해시를 바꿈"
       ],
       "without_golden": {
-        "detected": false
+        "detected": true,
+        "by": "inject_grid",
+        "evidence": [
+          "set_typechange/edit_pset/once/k1: undo 뒤 라이브 != 디스크",
+          "set_typechange/edit_pset/persist/k1: undo 뒤 라이브 != 디스크"
+        ]
       },
       "mutant": "M22 [N1] 속성 쓰기가 지운 뒤 실패해도 복원 안 함",
       "family": "값 손상",
-      "sec": 48.8
+      "sec": 22.7
     },
     {
       "detected": true,
@@ -438,7 +400,7 @@
       },
       "mutant": "M23 [N4] 속성 값 검증 없음(NaN/inf/int64 초과/NUL/서로게이트)",
       "family": "값 손상",
-      "sec": 49.2
+      "sec": 69.0
     },
     {
       "detected": true,
@@ -452,35 +414,45 @@
       },
       "mutant": "M24 [N7] pset.set 의 value=null 이 속성 삭제(SDK 가 NaN 을 null 로 보내면 조용히 삭제)",
       "family": "값 손상",
-      "sec": 49.1
+      "sec": 69.0
     },
     {
       "detected": true,
       "by": "golden",
       "evidence": [
-        "k2w3: 조회한 값 None (기대 1): 속성이 조용히 사라지거나 바뀜",
-        "k2w3: 복구 뒤 값 None (기대 1)"
+        "k2w2: 조회한 값 None (기대 1): 속성이 조용히 사라지거나 바뀜",
+        "k2w2: 복구 뒤 값 None (기대 1)"
       ],
       "without_golden": {
-        "detected": false
+        "detected": true,
+        "by": "inject_grid",
+        "evidence": [
+          "mat_replace/assign_material/once/k1: 라이브 ifc 해시 != 디스크",
+          "mat_replace/assign_material/once/k1: undo 뒤 라이브 != 디스크"
+        ]
       },
       "mutant": "M25 [N8] 복원 실패를 삼키고 오염 표시도 안 함",
       "family": "값 손상",
-      "sec": 49.1
+      "sec": 22.5
     },
     {
       "detected": true,
       "by": "golden",
       "evidence": [
-        "k1w2: 오염 상태인데 element.get 가 정상 응답함",
-        "k1w2: 오염 상태인데 wall.move 가 정상 응답함"
+        "k1w1: 오염 상태인데 element.get 가 정상 응답함",
+        "k1w1: 오염 상태인데 wall.move 가 정상 응답함"
       ],
       "without_golden": {
-        "detected": false
+        "detected": true,
+        "by": "inject_grid",
+        "evidence": [
+          "set_typechange/edit_pset/once/k1: 주입을 걷어도 복구되지 않음: None / 속성 Pset_Z/P: IFC 호출 실패(RuntimeError)",
+          "set_typechange/edit_pset/persist/k1: 오염 상태인데 wall.move 가 정상 응답"
+        ]
       },
       "mutant": "M26 [N8] 오염 표시만 하고 복구·거부는 안 함",
       "family": "값 손상",
-      "sec": 48.4
+      "sec": 7.3
     },
     {
       "detected": true,
@@ -494,7 +466,151 @@
       },
       "mutant": "M27 [N9] 속성 이름 id 허용(쓰기 ok, 조회에 안 보임)",
       "family": "값 손상",
-      "sec": 49.2
+      "sec": 68.6
+    },
+    {
+      "detected": true,
+      "by": "inject_grid",
+      "evidence": [
+        "elem_delete_wall/remove_product/once/k1: 라이브 ifc 해시 != 디스크",
+        "elem_delete_wall/remove_product/once/k1: undo 뒤 라이브 != 디스크"
+      ],
+      "without_golden": {
+        "detected": true,
+        "by": "inject_grid",
+        "evidence": [
+          "elem_delete_wall/remove_product/once/k1: 라이브 ifc 해시 != 디스크",
+          "elem_delete_wall/remove_product/once/k1: undo 뒤 라이브 != 디스크"
+        ]
+      },
+      "mutant": "M28 [D1] 요소(el) 분기가 IFC 호출 실패를 오염으로 표시하지 않음",
+      "family": "값 손상",
+      "sec": 43.0
+    },
+    {
+      "detected": true,
+      "by": "golden",
+      "evidence": [
+        "재료: 복구 뒤 차등 검사 실패: ['전체 재생: ifc 해시가 다르다', '새로 열기: ifc 해시가 다르다']"
+      ],
+      "without_golden": {
+        "detected": true,
+        "by": "inject_grid",
+        "evidence": [
+          "mat_replace/assign_material/once/k1: 라이브 ifc 해시 != 디스크",
+          "mat_replace/assign_material/once/k1: undo 뒤 라이브 != 디스크"
+        ]
+      },
+      "mutant": "M29 [D1] 재료(mat) 분기가 IFC 호출 실패를 오염으로 표시하지 않음",
+      "family": "값 손상",
+      "sec": 23.6
+    },
+    {
+      "detected": true,
+      "by": "inject_grid",
+      "evidence": [
+        "flush_new_door/add_feature/once/k1: 라이브 ifc 해시 != 디스크",
+        "flush_new_door/add_feature/once/k1: undo 뒤 라이브 != 디스크"
+      ],
+      "without_golden": {
+        "detected": true,
+        "by": "inject_grid",
+        "evidence": [
+          "flush_new_door/add_feature/once/k1: 라이브 ifc 해시 != 디스크",
+          "flush_new_door/add_feature/once/k1: undo 뒤 라이브 != 디스크"
+        ]
+      },
+      "mutant": "M30 [D1] 투영(flush) 실패를 오염으로 표시하지 않음",
+      "family": "값 손상",
+      "sec": 43.5
+    },
+    {
+      "detected": true,
+      "by": "golden",
+      "evidence": [
+        "remove_product 가 실패했는데 엔티티 목록에서 먼저 빠졌다",
+        "remove_feature 가 실패했는데 문·개구부 기록이 먼저 빠졌다"
+      ],
+      "without_golden": {
+        "detected": false
+      },
+      "mutant": "M31 [D1] remove_identity 가 목록에서 먼저 빼고 IFC 를 지움",
+      "family": "값 손상",
+      "sec": 69.2
+    },
+    {
+      "detected": true,
+      "by": "exception",
+      "evidence": [
+        "KeyError: '1000000000000000000003'"
+      ],
+      "without_golden": {
+        "detected": true,
+        "by": "inject_grid",
+        "evidence": [
+          "flush_new_door/edit_pset/once/k1: 봉투 없는 예외: RuntimeError",
+          "flush_new_door/add_pset/once/k1: 봉투 없는 예외: RuntimeError"
+        ]
+      },
+      "mutant": "M32 [4차] 예상 밖 예외가 INTERNAL 봉투로 바뀌지 않음",
+      "family": "프로토콜",
+      "sec": 23.8
+    },
+    {
+      "detected": true,
+      "by": "golden",
+      "evidence": [
+        "wall.set {'id': '1000000000000000000001', 'thickness': None, 'height': 3100} 의 명시적 null 이 /thickness SCHEMA_INVALID 로 거부되지 않음: ok",
+        "배치 안의 wall.set 명시적 null 이 받아들여졌다"
+      ],
+      "without_golden": {
+        "detected": false
+      },
+      "mutant": "M33 [N10] wall.set/door.set 의 명시적 null 허용(NaN 필드만 조용히 무시)",
+      "family": "값 손상",
+      "sec": 69.1
+    },
+    {
+      "detected": true,
+      "by": "golden",
+      "evidence": [
+        "공유 없음: 열린 파일에 ifc.export 가 FILE_LOCKED 가 아님: {'code': 'INTERNAL', 'message': '내부 오류(PermissionError). 서버의 stderr 에 트레이스백이 있다', 'path': None, 'retryable': False, 'hint': None, 'details': {}}",
+        "공유 없음: 열린 파일에 ifc.restore 가 FILE_LOCKED 가 아님: {'code': 'INTERNAL', 'message': '내부 오류(PermissionError). 서버의 stderr 에 트레이스백이 있다', 'path': None, 'retryable': False, 'hint': None, 'details': {}}"
+      ],
+      "without_golden": {
+        "detected": false
+      },
+      "mutant": "M34 [S11] 잠긴 파일의 스냅숏 복사 PermissionError 가 FILE_LOCKED 로 안 바뀜",
+      "family": "프로토콜",
+      "sec": 68.9
+    },
+    {
+      "detected": true,
+      "by": "golden",
+      "evidence": [
+        "element.query: 상한이 적용되지 않았다(쪽 수 1)",
+        "element.query: truncated 표시가 이상하다 [False]…[False]"
+      ],
+      "without_golden": {
+        "detected": false
+      },
+      "mutant": "M35 [S11] 목록 응답 크기 상한 없음",
+      "family": "프로토콜",
+      "sec": 69.6
+    },
+    {
+      "detected": true,
+      "by": "golden",
+      "evidence": [
+        "element.query: 상한이 적용되지 않았다(쪽 수 1)",
+        "element.query: truncated 표시가 이상하다 [False]…[False]"
+      ],
+      "without_golden": {
+        "detected": false
+      },
+      "mutant": "M36 [S11] 상한에서 조용히 자름(truncated·next_cursor 없음)",
+      "family": "프로토콜",
+      "sec": 69.1
     }
   ],
   "control_no_mutation": {
@@ -503,23 +619,26 @@
       "detected": false
     }
   },
-  "detected": 27,
-  "detected_without_golden": 15,
+  "detected": 36,
+  "detected_without_golden": 21,
   "missed_without_golden": [
+    "M13 속성 값 타입 고착(D1 회귀)",
     "M14 [검수자] 벽 순면적의 문 면적을 width*width 로",
     "M15 [검수자] door_status 경계 <= 를 < 로",
     "M16 [검수자] Ctx.set_prop 타입 검사 제거",
     "M19 MIN_TRIMMED 정확 경계(1.0)가 퇴화로 판정됨",
     "M20 JOIN_MAX_EXT 정확 경계(1000)가 무시됨",
     "M21 조인 시작/끝 배정의 중간 동률을 끝 쪽으로",
-    "M22 [N1] 속성 쓰기가 지운 뒤 실패해도 복원 안 함",
     "M23 [N4] 속성 값 검증 없음(NaN/inf/int64 초과/NUL/서로게이트)",
     "M24 [N7] pset.set 의 value=null 이 속성 삭제(SDK 가 NaN 을 null 로 보내면 조용히 삭제)",
-    "M25 [N8] 복원 실패를 삼키고 오염 표시도 안 함",
-    "M26 [N8] 오염 표시만 하고 복구·거부는 안 함",
-    "M27 [N9] 속성 이름 id 허용(쓰기 ok, 조회에 안 보임)"
+    "M27 [N9] 속성 이름 id 허용(쓰기 ok, 조회에 안 보임)",
+    "M31 [D1] remove_identity 가 목록에서 먼저 빼고 IFC 를 지움",
+    "M33 [N10] wall.set/door.set 의 명시적 null 허용(NaN 필드만 조용히 무시)",
+    "M34 [S11] 잠긴 파일의 스냅숏 복사 PermissionError 가 FILE_LOCKED 로 안 바뀜",
+    "M35 [S11] 목록 응답 크기 상한 없음",
+    "M36 [S11] 상한에서 조용히 자름(truncated·next_cursor 없음)"
   ],
-  "total": 27,
+  "total": 36,
   "all_detected": true,
-  "elapsed_sec": 1246.2
+  "elapsed_sec": 2062.1
 }

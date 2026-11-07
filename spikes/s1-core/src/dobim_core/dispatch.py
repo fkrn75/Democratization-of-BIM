@@ -17,7 +17,7 @@ from typing import Any
 from pydantic import ValidationError
 
 from dobim_core import registry
-from dobim_core.errors import DobimError
+from dobim_core.errors import DobimError, internal_error
 from dobim_core.paths import resolve_in_workspace
 
 CONFIRM_TTL_S = 300
@@ -44,7 +44,12 @@ class Env:
         key = str(p)
         eng = self._engines.get(key)
         if eng is None:
-            eng = Engine(p, self.actor)
+            try:
+                eng = Engine(p, self.actor)
+            except (DobimError, KeyboardInterrupt):
+                raise
+            except Exception as ex:   # 깨진 파일·잠금 등: 봉투 없는 예외로 새지 않게 한다
+                raise internal_error(ex) from ex
             self._engines[key] = eng
         eng.workspace = self.workspace
         eng.actor = self.actor
@@ -80,6 +85,14 @@ def err_env(ex: DobimError, rev=None) -> dict:
     if rev is not None:
         out["rev"] = rev
     return out
+
+
+def _rev_of(eng):
+    """오류 봉투에 넣을 리비전. 엔진이 망가져 읽지 못하면 생략한다."""
+    try:
+        return eng.rev if eng is not None else None
+    except Exception:
+        return None
 
 
 def _clean(x):
@@ -166,7 +179,9 @@ def run(env: Env, name: str, args: dict | None = None, *, project: str | None = 
         page = result.pop("page", None) if isinstance(result, dict) else None
         return ok_env(eng.rev, _clean(result), warnings=warns, page=_clean(page))
     except DobimError as ex:
-        return err_env(ex, eng.rev if eng is not None else None)
+        return err_env(ex, _rev_of(eng))
+    except Exception as ex:   # 조회·변경 어디서든 예상 밖 예외는 CLI 와 같은 INTERNAL 봉투로 낸다
+        return err_env(internal_error(ex), _rev_of(eng))
 
 
 def _run_destructive(eng, cmd, model, confirm, dry_run) -> dict:
@@ -208,4 +223,6 @@ def run_batch(env: Env, commands: list[dict], *, project: str | None, expected_r
         return ok_env(r["rev"], _clean(r["results"]), affected=r["affected"], warnings=r["warnings"],
                       dry_run=r["dry_run"])
     except DobimError as ex:
-        return err_env(ex, eng.rev if eng is not None else None)
+        return err_env(ex, _rev_of(eng))
+    except Exception as ex:
+        return err_env(internal_error(ex), _rev_of(eng))

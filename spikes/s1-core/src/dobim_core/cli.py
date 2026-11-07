@@ -12,7 +12,7 @@ import os
 import sys
 
 from dobim_core import dispatch
-from dobim_core.errors import DobimError, exit_code_of
+from dobim_core.errors import DobimError, exit_code_of, internal_error
 
 
 class _Out:
@@ -196,7 +196,7 @@ def main(argv: list[str] | None = None) -> int:
         out.emit(env_out)
         return exit_code_of(env_out)
     except Exception as ex:  # 내부 오류도 봉투로 낸다
-        env_out = dispatch.err_env(DobimError("INTERNAL", f"{type(ex).__name__}: {ex}"))
+        env_out = dispatch.err_env(internal_error(ex))
         out.emit(env_out)
         return exit_code_of(env_out)
     finally:
