@@ -1,0 +1,1500 @@
+{
+  "G1": {
+    "group": "G1",
+    "title": "프로젝트·모델링",
+    "exit": 0,
+    "wall_s": 48.9,
+    "tool_calls": 42,
+    "search_calls": 21,
+    "usage": {
+      "input_tokens": 409939,
+      "cached_input_tokens": 360704,
+      "output_tokens": 1205,
+      "reasoning_output_tokens": 0
+    },
+    "post_state": {
+      "g1_exists": true,
+      "counts": {
+        "level": 1,
+        "wall": 2,
+        "door": 1
+      },
+      "valid": true
+    },
+    "other_item_types": {
+      "error": 1,
+      "agent_message": 2,
+      "mcp_tool_call": 42
+    },
+    "errors": [],
+    "tool_result_bytes": [
+      596,
+      196,
+      4514,
+      898,
+      520,
+      876,
+      602,
+      890,
+      1358,
+      801,
+      1230,
+      822,
+      806,
+      1398,
+      1264,
+      1345,
+      1064,
+      870,
+      688,
+      801,
+      240,
+      323,
+      596,
+      1358,
+      210,
+      234,
+      234,
+      234,
+      245,
+      210,
+      268,
+      269,
+      234,
+      211,
+      196,
+      196,
+      196,
+      242,
+      326,
+      677,
+      596,
+      518
+    ],
+    "protocol": {
+      "initialize": {
+        "protocolVersion": "2025-06-18",
+        "clientInfo": {
+          "name": "codex-mcp-client",
+          "title": "Codex",
+          "version": "0.167.0-alpha.3.2"
+        },
+        "capabilities": [
+          "elicitation",
+          "experimental"
+        ]
+      },
+      "negotiated": "2025-06-18",
+      "non_json_stdout_lines": 0
+    },
+    "latencies": [
+      {
+        "method": "initialize",
+        "tool": null,
+        "command": null,
+        "ms": 1331.4,
+        "bytes": 594,
+        "is_error": false
+      },
+      {
+        "method": "tools/list",
+        "tool": null,
+        "command": null,
+        "ms": 2.1,
+        "bytes": 5038,
+        "is_error": false
+      },
+      {
+        "method": "tools/call",
+        "tool": "dobim_commands_search",
+        "command": null,
+        "ms": 22.9,
+        "bytes": 1339,
+        "is_error": false
+      },
+      {
+        "method": "tools/call",
+        "tool": "dobim_commands_search",
+        "command": null,
+        "ms": 1.6,
+        "bytes": 508,
+        "is_error": false
+      },
+      {
+        "method": "tools/call",
+        "tool": "dobim_commands_search",
+        "command": null,
+        "ms": 2.0,
+        "bytes": 9445,
+        "is_error": false
+      },
+      {
+        "method": "tools/call",
+        "tool": "dobim_command_describe",
+        "command": null,
+        "ms": 1.9,
+        "bytes": 1953,
+        "is_error": false
+      },
+      {
+        "method": "tools/call",
+        "tool": "dobim_command_describe",
+        "command": null,
+        "ms": 2.0,
+        "bytes": 1172,
+        "is_error": false
+      },
+      {
+        "method": "tools/call",
+        "tool": "dobim_command_describe",
+        "command": null,
+        "ms": 2.6,
+        "bytes": 1918,
+        "is_error": false
+      },
+      {
+        "method": "tools/call",
+        "tool": "dobim_command_describe",
+        "command": null,
+        "ms": 2.0,
+        "bytes": 1347,
+        "is_error": false
+      },
+      {
+        "method": "tools/call",
+        "tool": "dobim_command_describe",
+        "command": null,
+        "ms": 2.5,
+        "bytes": 1943,
+        "is_error": false
+      },
+      {
+        "method": "tools/call",
+        "tool": "dobim_command_describe",
+        "command": null,
+        "ms": 2.1,
+        "bytes": 2902,
+        "is_error": false
+      },
+      {
+        "method": "tools/call",
+        "tool": "dobim_command_describe",
+        "command": null,
+        "ms": 2.4,
+        "bytes": 1760,
+        "is_error": false
+      },
+      {
+        "method": "tools/call",
+        "tool": "dobim_command_describe",
+        "command": null,
+        "ms": 2.4,
+        "bytes": 2643,
+        "is_error": false
+      },
+      {
+        "method": "tools/call",
+        "tool": "dobim_command_describe",
+        "command": null,
+        "ms": 2.2,
+        "bytes": 1804,
+        "is_error": false
+      },
+      {
+        "method": "tools/call",
+        "tool": "dobim_command_describe",
+        "command": null,
+        "ms": 2.0,
+        "bytes": 1772,
+        "is_error": false
+      },
+      {
+        "method": "tools/call",
+        "tool": "dobim_command_describe",
+        "command": null,
+        "ms": 3.1,
+        "bytes": 2987,
+        "is_error": false
+      },
+      {
+        "method": "tools/call",
+        "tool": "dobim_command_describe",
+        "command": null,
+        "ms": 2.9,
+        "bytes": 2716,
+        "is_error": false
+      },
+      {
+        "method": "tools/call",
+        "tool": "dobim_command_describe",
+        "command": null,
+        "ms": 2.5,
+        "bytes": 2881,
+        "is_error": false
+      },
+      {
+        "method": "tools/call",
+        "tool": "dobim_command_describe",
+        "command": null,
+        "ms": 2.4,
+        "bytes": 2302,
+        "is_error": false
+      },
+      {
+        "method": "tools/call",
+        "tool": "dobim_command_describe",
+        "command": null,
+        "ms": 2.0,
+        "bytes": 1901,
+        "is_error": false
+      },
+      {
+        "method": "tools/call",
+        "tool": "dobim_command_describe",
+        "command": null,
+        "ms": 1.9,
+        "bytes": 1524,
+        "is_error": false
+      },
+      {
+        "method": "tools/call",
+        "tool": "dobim_command_describe",
+        "command": null,
+        "ms": 1.9,
+        "bytes": 1760,
+        "is_error": false
+      },
+      {
+        "method": "tools/call",
+        "tool": "dobim_execute",
+        "command": "project.new",
+        "ms": 727.8,
+        "bytes": 600,
+        "is_error": false
+      },
+      {
+        "method": "tools/call",
+        "tool": "dobim_query",
+        "command": "project.info",
+        "ms": 10.5,
+        "bytes": 767,
+        "is_error": false
+      },
+      {
+        "method": "tools/call",
+        "tool": "dobim_query",
+        "command": "commands.search",
+        "ms": 1.9,
+        "bytes": 1340,
+        "is_error": false
+      },
+      {
+        "method": "tools/call",
+        "tool": "dobim_query",
+        "command": "commands.describe",
+        "ms": 2.5,
+        "bytes": 2902,
+        "is_error": false
+      },
+      {
+        "method": "tools/call",
+        "tool": "dobim_execute",
+        "command": "level.create",
+        "ms": 6.3,
+        "bytes": 540,
+        "is_error": false
+      },
+      {
+        "method": "tools/call",
+        "tool": "dobim_execute",
+        "command": "wall.create",
+        "ms": 3.5,
+        "bytes": 590,
+        "is_error": false
+      },
+      {
+        "method": "tools/call",
+        "tool": "dobim_execute",
+        "command": "wall.create",
+        "ms": 3.6,
+        "bytes": 590,
+        "is_error": false
+      },
+      {
+        "method": "tools/call",
+        "tool": "dobim_execute",
+        "command": "wall.create",
+        "ms": 4.0,
+        "bytes": 590,
+        "is_error": false
+      },
+      {
+        "method": "tools/call",
+        "tool": "dobim_execute",
+        "command": "wall.move",
+        "ms": 2.8,
+        "bytes": 607,
+        "is_error": false
+      },
+      {
+        "method": "tools/call",
+        "tool": "dobim_execute",
+        "command": "wall.set",
+        "ms": 2.5,
+        "bytes": 540,
+        "is_error": false
+      },
+      {
+        "method": "tools/call",
+        "tool": "dobim_execute",
+        "command": "join.set",
+        "ms": 2.7,
+        "bytes": 658,
+        "is_error": false
+      },
+      {
+        "method": "tools/call",
+        "tool": "dobim_execute",
+        "command": "join.clear",
+        "ms": 3.5,
+        "bytes": 660,
+        "is_error": false
+      },
+      {
+        "method": "tools/call",
+        "tool": "dobim_execute",
+        "command": "door.place",
+        "ms": 3.0,
+        "bytes": 590,
+        "is_error": false
+      },
+      {
+        "method": "tools/call",
+        "tool": "dobim_execute",
+        "command": "door.set",
+        "ms": 3.5,
+        "bytes": 542,
+        "is_error": false
+      },
+      {
+        "method": "tools/call",
+        "tool": "dobim_execute",
+        "command": "pset.set",
+        "ms": 130.2,
+        "bytes": 510,
+        "is_error": false
+      },
+      {
+        "method": "tools/call",
+        "tool": "dobim_execute",
+        "command": "pset.delete",
+        "ms": 3.8,
+        "bytes": 510,
+        "is_error": false
+      },
+      {
+        "method": "tools/call",
+        "tool": "dobim_execute",
+        "command": "material.set",
+        "ms": 3.6,
+        "bytes": 510,
+        "is_error": false
+      },
+      {
+        "method": "tools/call",
+        "tool": "dobim_execute",
+        "command": "element.delete",
+        "ms": 3.5,
+        "bytes": 606,
+        "is_error": false
+      },
+      {
+        "method": "tools/call",
+        "tool": "dobim_query",
+        "command": "project.info",
+        "ms": 2.8,
+        "bytes": 773,
+        "is_error": false
+      },
+      {
+        "method": "tools/call",
+        "tool": "dobim_command_describe",
+        "command": null,
+        "ms": 1.8,
+        "bytes": 1502,
+        "is_error": false
+      },
+      {
+        "method": "tools/call",
+        "tool": "dobim_query",
+        "command": "element.get",
+        "ms": 3.8,
+        "bytes": 1328,
+        "is_error": false
+      },
+      {
+        "method": "tools/call",
+        "tool": "dobim_query",
+        "command": "element.get",
+        "ms": 2.8,
+        "bytes": 1169,
+        "is_error": false
+      }
+    ],
+    "commands": {
+      "project.new": {
+        "invoked": true,
+        "outcomes": [
+          "ok"
+        ],
+        "succeeded": true,
+        "all_defined": true,
+        "pass": true
+      },
+      "project.info": {
+        "invoked": true,
+        "outcomes": [
+          "ok"
+        ],
+        "succeeded": true,
+        "all_defined": true,
+        "pass": true
+      },
+      "commands.search": {
+        "invoked": true,
+        "outcomes": [
+          "ok"
+        ],
+        "succeeded": true,
+        "all_defined": true,
+        "pass": true
+      },
+      "commands.describe": {
+        "invoked": true,
+        "outcomes": [
+          "ok"
+        ],
+        "succeeded": true,
+        "all_defined": true,
+        "pass": true
+      },
+      "level.create": {
+        "invoked": true,
+        "outcomes": [
+          "ok"
+        ],
+        "succeeded": true,
+        "all_defined": true,
+        "pass": true
+      },
+      "wall.create": {
+        "invoked": true,
+        "outcomes": [
+          "ok"
+        ],
+        "succeeded": true,
+        "all_defined": true,
+        "pass": true
+      },
+      "wall.move": {
+        "invoked": true,
+        "outcomes": [
+          "ok"
+        ],
+        "succeeded": true,
+        "all_defined": true,
+        "pass": true
+      },
+      "wall.set": {
+        "invoked": true,
+        "outcomes": [
+          "ok"
+        ],
+        "succeeded": true,
+        "all_defined": true,
+        "pass": true
+      },
+      "join.set": {
+        "invoked": true,
+        "outcomes": [
+          "ok"
+        ],
+        "succeeded": true,
+        "all_defined": true,
+        "pass": true
+      },
+      "join.clear": {
+        "invoked": true,
+        "outcomes": [
+          "ok"
+        ],
+        "succeeded": true,
+        "all_defined": true,
+        "pass": true
+      },
+      "door.place": {
+        "invoked": true,
+        "outcomes": [
+          "ok"
+        ],
+        "succeeded": true,
+        "all_defined": true,
+        "pass": true
+      },
+      "door.set": {
+        "invoked": true,
+        "outcomes": [
+          "ok"
+        ],
+        "succeeded": true,
+        "all_defined": true,
+        "pass": true
+      },
+      "pset.set": {
+        "invoked": true,
+        "outcomes": [
+          "ok"
+        ],
+        "succeeded": true,
+        "all_defined": true,
+        "pass": true
+      },
+      "pset.delete": {
+        "invoked": true,
+        "outcomes": [
+          "ok"
+        ],
+        "succeeded": true,
+        "all_defined": true,
+        "pass": true
+      },
+      "material.set": {
+        "invoked": true,
+        "outcomes": [
+          "ok"
+        ],
+        "succeeded": true,
+        "all_defined": true,
+        "pass": true
+      },
+      "element.delete": {
+        "invoked": true,
+        "outcomes": [
+          "ok"
+        ],
+        "succeeded": true,
+        "all_defined": true,
+        "pass": true
+      }
+    },
+    "final_text_chars": 360
+  },
+  "G2": {
+    "group": "G2",
+    "title": "조회·검사",
+    "exit": 0,
+    "wall_s": 32.1,
+    "tool_calls": 21,
+    "search_calls": 11,
+    "usage": {
+      "input_tokens": 279493,
+      "cached_input_tokens": 239616,
+      "output_tokens": 670,
+      "reasoning_output_tokens": 0
+    },
+    "post_state": {
+      "rev": 10,
+      "counts": {
+        "level": 2,
+        "wall": 3,
+        "door": 2
+      }
+    },
+    "other_item_types": {
+      "error": 1,
+      "agent_message": 2,
+      "mcp_tool_call": 21
+    },
+    "errors": [],
+    "tool_result_bytes": [
+      1984,
+      1156,
+      677,
+      680,
+      501,
+      562,
+      609,
+      822,
+      604,
+      520,
+      598,
+      675,
+      323,
+      631,
+      397,
+      201,
+      674,
+      190,
+      326,
+      1176,
+      453
+    ],
+    "protocol": {
+      "initialize": {
+        "protocolVersion": "2025-06-18",
+        "clientInfo": {
+          "name": "codex-mcp-client",
+          "title": "Codex",
+          "version": "0.167.0-alpha.3.2"
+        },
+        "capabilities": [
+          "elicitation",
+          "experimental"
+        ]
+      },
+      "negotiated": "2025-06-18",
+      "non_json_stdout_lines": 0
+    },
+    "latencies": [
+      {
+        "method": "initialize",
+        "tool": null,
+        "command": null,
+        "ms": 1265.2,
+        "bytes": 594,
+        "is_error": false
+      },
+      {
+        "method": "tools/list",
+        "tool": null,
+        "command": null,
+        "ms": 1.7,
+        "bytes": 5038,
+        "is_error": false
+      },
+      {
+        "method": "tools/call",
+        "tool": "dobim_commands_search",
+        "command": null,
+        "ms": 20.8,
+        "bytes": 4215,
+        "is_error": false
+      },
+      {
+        "method": "tools/call",
+        "tool": "dobim_command_describe",
+        "command": null,
+        "ms": 3.5,
+        "bytes": 2493,
+        "is_error": false
+      },
+      {
+        "method": "tools/call",
+        "tool": "dobim_command_describe",
+        "command": null,
+        "ms": 6.5,
+        "bytes": 1501,
+        "is_error": false
+      },
+      {
+        "method": "tools/call",
+        "tool": "dobim_command_describe",
+        "command": null,
+        "ms": 9.5,
+        "bytes": 1507,
+        "is_error": false
+      },
+      {
+        "method": "tools/call",
+        "tool": "dobim_command_describe",
+        "command": null,
+        "ms": 12.5,
+        "bytes": 1134,
+        "is_error": false
+      },
+      {
+        "method": "tools/call",
+        "tool": "dobim_command_describe",
+        "command": null,
+        "ms": 13.9,
+        "bytes": 1256,
+        "is_error": false
+      },
+      {
+        "method": "tools/call",
+        "tool": "dobim_command_describe",
+        "command": null,
+        "ms": 14.2,
+        "bytes": 1357,
+        "is_error": false
+      },
+      {
+        "method": "tools/call",
+        "tool": "dobim_command_describe",
+        "command": null,
+        "ms": 12.3,
+        "bytes": 1803,
+        "is_error": false
+      },
+      {
+        "method": "tools/call",
+        "tool": "dobim_command_describe",
+        "command": null,
+        "ms": 12.5,
+        "bytes": 1355,
+        "is_error": false
+      },
+      {
+        "method": "tools/call",
+        "tool": "dobim_command_describe",
+        "command": null,
+        "ms": 13.0,
+        "bytes": 1173,
+        "is_error": false
+      },
+      {
+        "method": "tools/call",
+        "tool": "dobim_command_describe",
+        "command": null,
+        "ms": 13.4,
+        "bytes": 1336,
+        "is_error": false
+      },
+      {
+        "method": "tools/call",
+        "tool": "dobim_query",
+        "command": "element.query",
+        "ms": 882.8,
+        "bytes": 1510,
+        "is_error": false
+      },
+      {
+        "method": "tools/call",
+        "tool": "dobim_query",
+        "command": "model.stats",
+        "ms": 9.3,
+        "bytes": 765,
+        "is_error": false
+      },
+      {
+        "method": "tools/call",
+        "tool": "dobim_query",
+        "command": "element.get",
+        "ms": 3364.9,
+        "bytes": 1400,
+        "is_error": false
+      },
+      {
+        "method": "tools/call",
+        "tool": "dobim_query",
+        "command": "model.hash",
+        "ms": 3367.9,
+        "bytes": 916,
+        "is_error": false
+      },
+      {
+        "method": "tools/call",
+        "tool": "dobim_query",
+        "command": "model.validate",
+        "ms": 3370.8,
+        "bytes": 518,
+        "is_error": false
+      },
+      {
+        "method": "tools/call",
+        "tool": "dobim_query",
+        "command": "schedule.rows",
+        "ms": 3372.0,
+        "bytes": 1473,
+        "is_error": false
+      },
+      {
+        "method": "tools/call",
+        "tool": "dobim_query",
+        "command": "schedule.summary",
+        "ms": 3372.4,
+        "bytes": 496,
+        "is_error": false
+      },
+      {
+        "method": "tools/call",
+        "tool": "dobim_query",
+        "command": "project.info",
+        "ms": 3372.5,
+        "bytes": 773,
+        "is_error": false
+      },
+      {
+        "method": "tools/call",
+        "tool": "dobim_query",
+        "command": "history.list",
+        "ms": 3372.9,
+        "bytes": 2533,
+        "is_error": false
+      },
+      {
+        "method": "tools/call",
+        "tool": "dobim_query",
+        "command": "relation.list",
+        "ms": 3346.9,
+        "bytes": 1042,
+        "is_error": false
+      }
+    ],
+    "commands": {
+      "element.get": {
+        "invoked": true,
+        "outcomes": [
+          "ok"
+        ],
+        "succeeded": true,
+        "all_defined": true,
+        "pass": true
+      },
+      "element.query": {
+        "invoked": true,
+        "outcomes": [
+          "ok"
+        ],
+        "succeeded": true,
+        "all_defined": true,
+        "pass": true
+      },
+      "relation.list": {
+        "invoked": true,
+        "outcomes": [
+          "ok"
+        ],
+        "succeeded": true,
+        "all_defined": true,
+        "pass": true
+      },
+      "model.stats": {
+        "invoked": true,
+        "outcomes": [
+          "ok"
+        ],
+        "succeeded": true,
+        "all_defined": true,
+        "pass": true
+      },
+      "model.hash": {
+        "invoked": true,
+        "outcomes": [
+          "ok"
+        ],
+        "succeeded": true,
+        "all_defined": true,
+        "pass": true
+      },
+      "model.validate": {
+        "invoked": true,
+        "outcomes": [
+          "ok"
+        ],
+        "succeeded": true,
+        "all_defined": true,
+        "pass": true
+      },
+      "schedule.rows": {
+        "invoked": true,
+        "outcomes": [
+          "ok"
+        ],
+        "succeeded": true,
+        "all_defined": true,
+        "pass": true
+      },
+      "schedule.summary": {
+        "invoked": true,
+        "outcomes": [
+          "ok"
+        ],
+        "succeeded": true,
+        "all_defined": true,
+        "pass": true
+      },
+      "history.list": {
+        "invoked": true,
+        "outcomes": [
+          "ok"
+        ],
+        "succeeded": true,
+        "all_defined": true,
+        "pass": true
+      },
+      "project.info": {
+        "invoked": true,
+        "outcomes": [
+          "ok"
+        ],
+        "succeeded": true,
+        "all_defined": true,
+        "pass": true
+      }
+    },
+    "final_text_chars": 371
+  },
+  "G3": {
+    "group": "G3",
+    "title": "이력·내보내기(파괴적)",
+    "exit": 0,
+    "wall_s": 46.2,
+    "tool_calls": 22,
+    "search_calls": 9,
+    "usage": {
+      "input_tokens": 416871,
+      "cached_input_tokens": 380416,
+      "output_tokens": 932,
+      "reasoning_output_tokens": 0
+    },
+    "post_state": {
+      "rev": 14,
+      "counts": {
+        "level": 2,
+        "wall": 3,
+        "door": 2
+      },
+      "out_ifc_exists": true,
+      "snapshots": 2
+    },
+    "other_item_types": {
+      "error": 1,
+      "agent_message": 2,
+      "mcp_tool_call": 22
+    },
+    "errors": [],
+    "tool_result_bytes": [
+      196,
+      4514,
+      801,
+      741,
+      734,
+      798,
+      747,
+      862,
+      1156,
+      342,
+      405,
+      246,
+      229,
+      229,
+      463,
+      219,
+      251,
+      461,
+      243,
+      259,
+      482,
+      252
+    ],
+    "protocol": {
+      "initialize": {
+        "protocolVersion": "2025-06-18",
+        "clientInfo": {
+          "name": "codex-mcp-client",
+          "title": "Codex",
+          "version": "0.167.0-alpha.3.2"
+        },
+        "capabilities": [
+          "elicitation",
+          "experimental"
+        ]
+      },
+      "negotiated": "2025-06-18",
+      "non_json_stdout_lines": 0
+    },
+    "latencies": [
+      {
+        "method": "initialize",
+        "tool": null,
+        "command": null,
+        "ms": 1293.3,
+        "bytes": 594,
+        "is_error": false
+      },
+      {
+        "method": "tools/list",
+        "tool": null,
+        "command": null,
+        "ms": 1.9,
+        "bytes": 5038,
+        "is_error": false
+      },
+      {
+        "method": "tools/call",
+        "tool": "dobim_commands_search",
+        "command": null,
+        "ms": 18.6,
+        "bytes": 508,
+        "is_error": false
+      },
+      {
+        "method": "tools/call",
+        "tool": "dobim_commands_search",
+        "command": null,
+        "ms": 1.8,
+        "bytes": 9445,
+        "is_error": false
+      },
+      {
+        "method": "tools/call",
+        "tool": "dobim_command_describe",
+        "command": null,
+        "ms": 2.4,
+        "bytes": 1759,
+        "is_error": false
+      },
+      {
+        "method": "tools/call",
+        "tool": "dobim_command_describe",
+        "command": null,
+        "ms": 2.3,
+        "bytes": 1625,
+        "is_error": false
+      },
+      {
+        "method": "tools/call",
+        "tool": "dobim_command_describe",
+        "command": null,
+        "ms": 2.2,
+        "bytes": 1611,
+        "is_error": false
+      },
+      {
+        "method": "tools/call",
+        "tool": "dobim_command_describe",
+        "command": null,
+        "ms": 2.1,
+        "bytes": 1741,
+        "is_error": false
+      },
+      {
+        "method": "tools/call",
+        "tool": "dobim_command_describe",
+        "command": null,
+        "ms": 1.7,
+        "bytes": 1639,
+        "is_error": false
+      },
+      {
+        "method": "tools/call",
+        "tool": "dobim_command_describe",
+        "command": null,
+        "ms": 2.4,
+        "bytes": 1877,
+        "is_error": false
+      },
+      {
+        "method": "tools/call",
+        "tool": "dobim_command_describe",
+        "command": null,
+        "ms": 2.6,
+        "bytes": 2494,
+        "is_error": false
+      },
+      {
+        "method": "tools/call",
+        "tool": "dobim_project",
+        "command": null,
+        "ms": 772.8,
+        "bytes": 807,
+        "is_error": false
+      },
+      {
+        "method": "tools/call",
+        "tool": "dobim_query",
+        "command": "element.query",
+        "ms": 2.9,
+        "bytes": 946,
+        "is_error": false
+      },
+      {
+        "method": "tools/call",
+        "tool": "dobim_execute",
+        "command": "wall.move",
+        "ms": 9.0,
+        "bytes": 609,
+        "is_error": false
+      },
+      {
+        "method": "tools/call",
+        "tool": "dobim_execute",
+        "command": "history.undo",
+        "ms": 3.4,
+        "bytes": 580,
+        "is_error": false
+      },
+      {
+        "method": "tools/call",
+        "tool": "dobim_execute",
+        "command": "history.redo",
+        "ms": 2.9,
+        "bytes": 580,
+        "is_error": false
+      },
+      {
+        "method": "tools/call",
+        "tool": "dobim_execute_destructive",
+        "command": "ifc.export",
+        "ms": 4.3,
+        "bytes": 1054,
+        "is_error": true
+      },
+      {
+        "method": "tools/call",
+        "tool": "dobim_execute_destructive",
+        "command": "ifc.export",
+        "ms": 29.1,
+        "bytes": 556,
+        "is_error": false
+      },
+      {
+        "method": "tools/call",
+        "tool": "dobim_execute",
+        "command": "wall.move",
+        "ms": 2.9,
+        "bytes": 619,
+        "is_error": false
+      },
+      {
+        "method": "tools/call",
+        "tool": "dobim_execute_destructive",
+        "command": "ifc.export",
+        "ms": 4.5,
+        "bytes": 1050,
+        "is_error": true
+      },
+      {
+        "method": "tools/call",
+        "tool": "dobim_execute_destructive",
+        "command": "ifc.export",
+        "ms": 11.2,
+        "bytes": 606,
+        "is_error": false
+      },
+      {
+        "method": "tools/call",
+        "tool": "dobim_query",
+        "command": "ifc.snapshots",
+        "ms": 3.7,
+        "bytes": 638,
+        "is_error": false
+      },
+      {
+        "method": "tools/call",
+        "tool": "dobim_execute_destructive",
+        "command": "ifc.restore",
+        "ms": 4.1,
+        "bytes": 1092,
+        "is_error": true
+      },
+      {
+        "method": "tools/call",
+        "tool": "dobim_execute_destructive",
+        "command": "ifc.restore",
+        "ms": 16.1,
+        "bytes": 624,
+        "is_error": false
+      }
+    ],
+    "commands": {
+      "wall.move": {
+        "invoked": true,
+        "outcomes": [
+          "ok"
+        ],
+        "succeeded": true,
+        "all_defined": true,
+        "pass": true
+      },
+      "history.undo": {
+        "invoked": true,
+        "outcomes": [
+          "ok"
+        ],
+        "succeeded": true,
+        "all_defined": true,
+        "pass": true
+      },
+      "history.redo": {
+        "invoked": true,
+        "outcomes": [
+          "ok"
+        ],
+        "succeeded": true,
+        "all_defined": true,
+        "pass": true
+      },
+      "ifc.export": {
+        "invoked": true,
+        "outcomes": [
+          "CONFIRM_REQUIRED",
+          "ok"
+        ],
+        "succeeded": true,
+        "all_defined": true,
+        "pass": true
+      },
+      "ifc.snapshots": {
+        "invoked": true,
+        "outcomes": [
+          "ok"
+        ],
+        "succeeded": true,
+        "all_defined": true,
+        "pass": true
+      },
+      "ifc.restore": {
+        "invoked": true,
+        "outcomes": [
+          "CONFIRM_REQUIRED",
+          "ok"
+        ],
+        "succeeded": true,
+        "all_defined": true,
+        "pass": true
+      }
+    },
+    "final_text_chars": 263
+  },
+  "G4": {
+    "group": "G4",
+    "title": "오류 코드·안전 장치",
+    "exit": 0,
+    "wall_s": 33.6,
+    "tool_calls": 17,
+    "search_calls": 5,
+    "usage": {
+      "input_tokens": 252310,
+      "cached_input_tokens": 218752,
+      "output_tokens": 831,
+      "reasoning_output_tokens": 0
+    },
+    "post_state": {
+      "rev": 10,
+      "counts": {
+        "level": 2,
+        "wall": 3,
+        "door": 2
+      },
+      "escape_file_outside_workspace": false
+    },
+    "other_item_types": {
+      "error": 1,
+      "agent_message": 2,
+      "mcp_tool_call": 17
+    },
+    "errors": [],
+    "tool_result_bytes": [
+      4514,
+      801,
+      798,
+      562,
+      1156,
+      397,
+      265,
+      242,
+      211,
+      419,
+      204,
+      220,
+      263,
+      185,
+      190,
+      168,
+      397
+    ],
+    "protocol": {
+      "initialize": {
+        "protocolVersion": "2025-06-18",
+        "clientInfo": {
+          "name": "codex-mcp-client",
+          "title": "Codex",
+          "version": "0.167.0-alpha.3.2"
+        },
+        "capabilities": [
+          "elicitation",
+          "experimental"
+        ]
+      },
+      "negotiated": "2025-06-18",
+      "non_json_stdout_lines": 0
+    },
+    "latencies": [
+      {
+        "method": "initialize",
+        "tool": null,
+        "command": null,
+        "ms": 1247.3,
+        "bytes": 594,
+        "is_error": false
+      },
+      {
+        "method": "tools/list",
+        "tool": null,
+        "command": null,
+        "ms": 1.8,
+        "bytes": 5038,
+        "is_error": false
+      },
+      {
+        "method": "tools/call",
+        "tool": "dobim_commands_search",
+        "command": null,
+        "ms": 21.8,
+        "bytes": 9445,
+        "is_error": false
+      },
+      {
+        "method": "tools/call",
+        "tool": "dobim_command_describe",
+        "command": null,
+        "ms": 2.1,
+        "bytes": 1759,
+        "is_error": false
+      },
+      {
+        "method": "tools/call",
+        "tool": "dobim_command_describe",
+        "command": null,
+        "ms": 1.9,
+        "bytes": 1741,
+        "is_error": false
+      },
+      {
+        "method": "tools/call",
+        "tool": "dobim_command_describe",
+        "command": null,
+        "ms": 1.6,
+        "bytes": 1256,
+        "is_error": false
+      },
+      {
+        "method": "tools/call",
+        "tool": "dobim_command_describe",
+        "command": null,
+        "ms": 2.8,
+        "bytes": 2493,
+        "is_error": false
+      },
+      {
+        "method": "tools/call",
+        "tool": "dobim_query",
+        "command": "model.hash",
+        "ms": 791.9,
+        "bytes": 915,
+        "is_error": false
+      },
+      {
+        "method": "tools/call",
+        "tool": "dobim_query",
+        "command": "element.query",
+        "ms": 2.3,
+        "bytes": 653,
+        "is_error": false
+      },
+      {
+        "method": "tools/call",
+        "tool": "dobim_execute_destructive",
+        "command": "ifc.export",
+        "ms": 2.9,
+        "bytes": 605,
+        "is_error": true
+      },
+      {
+        "method": "tools/call",
+        "tool": "dobim_execute",
+        "command": "no.such.command",
+        "ms": 1.6,
+        "bytes": 545,
+        "is_error": true
+      },
+      {
+        "method": "tools/call",
+        "tool": "dobim_execute",
+        "command": "wall.move",
+        "ms": 2.1,
+        "bytes": 968,
+        "is_error": true
+      },
+      {
+        "method": "tools/call",
+        "tool": "dobim_query",
+        "command": "wall.move",
+        "ms": 1.6,
+        "bytes": 530,
+        "is_error": true
+      },
+      {
+        "method": "tools/call",
+        "tool": "dobim_execute",
+        "command": "wall.move",
+        "ms": 2.9,
+        "bytes": 561,
+        "is_error": true
+      },
+      {
+        "method": "tools/call",
+        "tool": "dobim_execute",
+        "command": "wall.move",
+        "ms": 3.1,
+        "bytes": 643,
+        "is_error": false
+      },
+      {
+        "method": "tools/call",
+        "tool": "dobim_execute",
+        "command": "wall.move",
+        "ms": 2.3,
+        "bytes": 490,
+        "is_error": true
+      },
+      {
+        "method": "tools/call",
+        "tool": "dobim_job",
+        "command": null,
+        "ms": 1.5,
+        "bytes": 502,
+        "is_error": true
+      },
+      {
+        "method": "tools/call",
+        "tool": "dobim_render",
+        "command": null,
+        "ms": 1.5,
+        "bytes": 456,
+        "is_error": true
+      },
+      {
+        "method": "tools/call",
+        "tool": "dobim_query",
+        "command": "model.hash",
+        "ms": 12.9,
+        "bytes": 916,
+        "is_error": false
+      }
+    ],
+    "g4": {
+      "a_path_denied": true,
+      "b_unknown_command": true,
+      "c_schema_invalid": true,
+      "d_risk_mismatch": true,
+      "e_rev_conflict": true,
+      "f_dry_run_ok": true,
+      "g_not_found": true,
+      "h_job": true,
+      "i_render": true
+    },
+    "commands": {},
+    "final_text_chars": 342
+  },
+  "_summary": {
+    "client": "codex-desktop",
+    "commands_total": 30,
+    "commands_passed": 30,
+    "commands_with_success": 30,
+    "not_passed": [],
+    "no_success": []
+  }
+}

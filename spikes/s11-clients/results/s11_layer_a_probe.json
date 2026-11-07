@@ -1,0 +1,77 @@
+{
+  "connect_and_initialize_sec": 1.246,
+  "negotiated_protocol_version": "2026-07-28",
+  "server_info": "dobim",
+  "tools_list_sec": 0.002,
+  "tool_count": 8,
+  "tool_schema_bytes": {
+    "dobim_commands_search": 327,
+    "dobim_command_describe": 145,
+    "dobim_query": 521,
+    "dobim_execute": 885,
+    "dobim_execute_destructive": 634,
+    "dobim_job": 126,
+    "dobim_render": 391,
+    "dobim_project": 425
+  },
+  "calls": [
+    {
+      "tool": "dobim_commands_search",
+      "command": "wall",
+      "first_ms": 17.5,
+      "median_ms": 1.3,
+      "response_bytes": 596
+    },
+    {
+      "tool": "dobim_command_describe",
+      "command": "wall.create",
+      "first_ms": 1.9,
+      "median_ms": 2.2,
+      "response_bytes": 1358
+    },
+    {
+      "tool": "dobim_query",
+      "command": "project.info",
+      "first_ms": 619.5,
+      "median_ms": 2.3,
+      "response_bytes": 326
+    },
+    {
+      "tool": "dobim_query",
+      "command": "schedule.rows",
+      "first_ms": 3.1,
+      "median_ms": 1.9,
+      "response_bytes": 674
+    },
+    {
+      "tool": "dobim_query",
+      "command": "model.hash",
+      "first_ms": 20.6,
+      "median_ms": 8.1,
+      "response_bytes": 397
+    },
+    {
+      "tool": "dobim_execute",
+      "command": "wall.move",
+      "first_ms": 5.1,
+      "median_ms": 2.3,
+      "response_bytes": 246
+    },
+    {
+      "tool": "dobim_execute",
+      "command": "history.undo",
+      "first_ms": 2.1,
+      "median_ms": 2.4,
+      "response_bytes": 229
+    },
+    {
+      "tool": "dobim_query",
+      "command": "model.validate",
+      "first_ms": 2835.4,
+      "median_ms": 3288.1,
+      "response_bytes": 201
+    }
+  ],
+  "max_response_bytes": 1358,
+  "note": "tools/list 와 project.info 는 첫 호출에서 ifcopenshell 을 불러오므로 first_ms 가 크다(지연 import)."
+}

@@ -1,0 +1,169 @@
+{
+  "model": {
+    "walls": 600,
+    "doors": 300
+  },
+  "token_estimate_method": "UTF-8 바이트 / 3 (추정)",
+  "rows": [
+    {
+      "label": "project.info",
+      "ok": true,
+      "ms": 649.4,
+      "text_bytes": 331,
+      "est_tokens_text": 111,
+      "est_tokens_text_plus_structured": 222,
+      "page_total": null,
+      "code": null
+    },
+    {
+      "label": "model.stats",
+      "ok": true,
+      "ms": 88.6,
+      "text_bytes": 339,
+      "est_tokens_text": 113,
+      "est_tokens_text_plus_structured": 226,
+      "page_total": null,
+      "code": null
+    },
+    {
+      "label": "element.query 기본(limit 100)",
+      "ok": true,
+      "ms": 2.2,
+      "text_bytes": 7228,
+      "est_tokens_text": 2410,
+      "est_tokens_text_plus_structured": 4820,
+      "page_total": 901,
+      "code": null
+    },
+    {
+      "label": "element.query limit=200",
+      "ok": true,
+      "ms": 2.2,
+      "text_bytes": 14228,
+      "est_tokens_text": 4743,
+      "est_tokens_text_plus_structured": 9486,
+      "page_total": 901,
+      "code": null
+    },
+    {
+      "label": "element.query limit=1000(최대)",
+      "ok": true,
+      "ms": 5.5,
+      "text_bytes": 63263,
+      "est_tokens_text": 21088,
+      "est_tokens_text_plus_structured": 42176,
+      "page_total": 901,
+      "code": null
+    },
+    {
+      "label": "schedule.rows 문 기본(limit 100)",
+      "ok": true,
+      "ms": 3.2,
+      "text_bytes": 15439,
+      "est_tokens_text": 5147,
+      "est_tokens_text_plus_structured": 10294,
+      "page_total": 300,
+      "code": null
+    },
+    {
+      "label": "schedule.rows 문 limit=1000(최대)",
+      "ok": true,
+      "ms": 4.3,
+      "text_bytes": 45637,
+      "est_tokens_text": 15213,
+      "est_tokens_text_plus_structured": 30426,
+      "page_total": 300,
+      "code": null
+    },
+    {
+      "label": "schedule.rows 벽 limit=1000(최대)",
+      "ok": true,
+      "ms": 5.8,
+      "text_bytes": 68153,
+      "est_tokens_text": 22718,
+      "est_tokens_text_plus_structured": 45436,
+      "page_total": 600,
+      "code": null
+    },
+    {
+      "label": "history.list 기본(20)",
+      "ok": true,
+      "ms": 1.9,
+      "text_bytes": 5012,
+      "est_tokens_text": 1671,
+      "est_tokens_text_plus_structured": 3342,
+      "page_total": 901,
+      "code": null
+    },
+    {
+      "label": "history.list limit=500(최대)",
+      "ok": true,
+      "ms": 11.2,
+      "text_bytes": 123332,
+      "est_tokens_text": 41111,
+      "est_tokens_text_plus_structured": 82222,
+      "page_total": 901,
+      "code": null
+    },
+    {
+      "label": "relation.list 벽 하나",
+      "ok": true,
+      "ms": 2.3,
+      "text_bytes": 369,
+      "est_tokens_text": 123,
+      "est_tokens_text_plus_structured": 246,
+      "page_total": 2,
+      "code": null
+    },
+    {
+      "label": "model.hash",
+      "ok": true,
+      "ms": 3413.3,
+      "text_bytes": 399,
+      "est_tokens_text": 133,
+      "est_tokens_text_plus_structured": 266,
+      "page_total": null,
+      "code": null
+    },
+    {
+      "label": "model.validate",
+      "ok": true,
+      "ms": 9617.5,
+      "text_bytes": 202,
+      "est_tokens_text": 68,
+      "est_tokens_text_plus_structured": 136,
+      "page_total": null,
+      "code": null
+    },
+    {
+      "label": "commands.search 전체",
+      "ok": true,
+      "ms": 1.6,
+      "text_bytes": 4514,
+      "est_tokens_text": 1505,
+      "est_tokens_text_plus_structured": 3010,
+      "page_total": 30,
+      "code": null
+    },
+    {
+      "label": "commands.describe door.place",
+      "ok": true,
+      "ms": 1.8,
+      "text_bytes": 1398,
+      "est_tokens_text": 466,
+      "est_tokens_text_plus_structured": 932,
+      "page_total": null,
+      "code": null
+    }
+  ],
+  "describe_max_est_tokens": 466,
+  "max_est_tokens_text": 41111,
+  "over_8000_tokens": [
+    "element.query limit=1000(최대)",
+    "schedule.rows 문 limit=1000(최대)",
+    "schedule.rows 벽 limit=1000(최대)",
+    "history.list limit=500(최대)"
+  ],
+  "slowest_ms": 9617.5,
+  "slowest_label": "model.validate"
+}
