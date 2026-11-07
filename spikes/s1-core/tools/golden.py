@@ -8,6 +8,7 @@
 from __future__ import annotations
 
 import math
+import sys
 import tempfile
 from pathlib import Path
 
@@ -453,10 +454,503 @@ def check_restore_failure(work: Path) -> list[str]:
     return v
 
 
+def check_envelope_and_nulls(work: Path) -> list[str]:
+    """(1) 예상 밖 예외는 조회·배치·엔진 열기 어디서든 INTERNAL 봉투가 된다(메시지에 경로·내부 값 없음).
+    (2) N10: wall.set/door.set 의 명시적 null(= SDK 가 NaN/inf 를 바꿔 보낸 값)은 SCHEMA_INVALID 이고 아무것도 바꾸지 않는다.
+    (3) 로그 인자에는 생략한 선택 필드의 null 이 없다. 위반 목록을 돌려준다."""
+    import json as _json
+    from unittest import mock
+    from dobim_core import commands, dispatch
+    v = []
+    work = Path(tempfile.mkdtemp(dir=Path(work), prefix="nul-"))
+    s = kit.Session(work / "n1.dobim")
+    for n, a in F.SCRIPT:
+        s.run(n, a)
+    eng = s.eng
+    # ---- (1) 조회 경로의 비 DobimError
+    eng.ifc.ents.pop(F.W3)                                   # 조회 중 KeyError 를 일으키는 상태
+    r = s.run("element.get", {"id": F.W3})
+    if r["ok"] or r["error"]["code"] != "INTERNAL":
+        v.append(f"조회 중 KeyError 가 INTERNAL 봉투가 아님: {r}")
+    elif F.W3 in r["error"]["message"] or "Traceback" in r["error"]["message"] or "\\" in r["error"]["message"]:
+        v.append(f"INTERNAL 메시지에 내부 값이나 스택이 들어 있다: {r['error']['message']}")
+    s.close()
+    secret = "C:\\secret\\place"
+    env = dispatch.Env(work)
+    with mock.patch.object(dispatch, "get_command", side_effect=RuntimeError(secret)):
+        for label, call in (("run", lambda: dispatch.run(env, "project.info", {}, project="n1.dobim")),
+                            ("run_batch", lambda: dispatch.run_batch(env, [{"command": "wall.move", "args": {}}], project="n1.dobim"))):
+            try:
+                r = call()
+            except BaseException as ex:
+                v.append(f"{label}: 봉투 없는 예외 {type(ex).__name__}")
+                continue
+            if r["ok"] or r["error"]["code"] != "INTERNAL" or "secret" in r["error"]["message"]:
+                v.append(f"{label}: INTERNAL 봉투가 아니거나 예외 문장이 샜다: {r.get('error')}")
+    (work / "garbage.dobim").write_bytes(b"this is not a sqlite database" * 20)
+    try:
+        r = dispatch.run(env, "project.info", {}, project="garbage.dobim")
+        if r["ok"] or r["error"]["code"] != "INTERNAL":
+            v.append(f"깨진 프로젝트 파일 열기가 INTERNAL 이 아님: {r}")
+    except BaseException as ex:
+        v.append(f"깨진 프로젝트 파일 열기가 봉투 없는 예외: {type(ex).__name__}")
+    env.close()
+
+    # ---- (2) 명시적 null
+    s = kit.Session(work / "n2.dobim")
+    for n, a in F.SCRIPT:
+        s.run(n, a)
+    eng = s.eng
+    before = eng.hashes()
+    cases = [("wall.set", {"id": F.W1, "thickness": None, "height": 3100}, "/thickness"),
+             ("wall.set", {"id": F.W1, "thickness": 250, "height": None}, "/height"),
+             ("wall.set", {"id": F.W1, "axis": None, "thickness": 250}, "/axis"),
+             ("wall.set", {"id": F.W1, "name": None, "thickness": 250}, "/name"),
+             ("wall.set", {"id": F.W1, "thickness": None}, "/thickness"),
+             ("door.set", {"id": F.D1, "width": 1000, "offset": None}, "/offset"),
+             ("door.set", {"id": F.D1, "width": 1000, "sill": None}, "/sill"),
+             ("door.set", {"id": F.D1, "width": 1000, "name": None}, "/name")]
+    for name, args, path in cases:
+        r = s.run(name, args)
+        if r["ok"] or r["error"]["code"] != "SCHEMA_INVALID" or r["error"]["path"] != path:
+            v.append(f"{name} {args} 의 명시적 null 이 {path} SCHEMA_INVALID 로 거부되지 않음: {r.get('error', 'ok')}")
+        b = s.batch([{"command": name, "args": args}])
+        if b["ok"]:
+            v.append(f"배치 안의 {name} 명시적 null 이 받아들여졌다")
+    if eng.hashes() != before:
+        v.append("null 거부가 상태를 바꿨다")
+    r = s.run("wall.set", {"id": F.W1, "thickness": 250})   # 생략은 여전히 '바꾸지 않음'
+    if not r["ok"] or eng.st.el[F.W1]["params"]["thickness"] != 250 or eng.st.el[F.W1]["params"]["height"] != 3000:
+        v.append(f"생략한 필드를 바꾸지 않는 동작이 깨졌다: {r}")
+    # 레지스트리 전체: 숫자 선택 필드(`X | None`)는 어떤 커맨드든 명시적 null 을 거부한다
+    for cname, c in sorted(registry.load().items()):
+        for fname, fi in c.args_model.model_fields.items():
+            if commands._optional_numeric(fi.annotation) or (getattr(c.args_model, "forbid_null", False) and type(None) in __import__("typing").get_args(fi.annotation)):
+                ok = True
+                try:
+                    c.args_model.model_validate({**{k: x for k, x in (c.examples[0] or {}).items()}, fname: None})
+                except Exception:
+                    ok = False
+                if ok:
+                    v.append(f"{cname}.{fname}: 명시적 null 을 받아들임")
+    # ---- (3) 로그 인자
+    s.run("wall.set", {"id": F.W1, "height": 3200})
+    s.run("level.create", {"name": "ZZ", "elevation": 99})
+    last = [_json.loads(r[4]) for r in kit.log_rows(eng)][-2:]
+    if any(x is None for a in last for x in a.values()):
+        v.append(f"로그 인자에 null 이 남았다: {last}")
+    d = kit.full_check(s, work, tag="-nul")
+    if not d["ok"]:
+        v.append(f"차등 검사 실패(null 거부 뒤): {d['diffs'][:2]}")
+    s.close()
+    return v
+
+
+def check_remove_identity_order(work: Path) -> list[str]:
+    """D1: remove_identity 는 IFC 삭제가 실패하면 엔티티 목록에서 빼지 않는다(순서: 지운 뒤에 뺀다). 개구부도 마찬가지."""
+    import ifcopenshell.api.feature as api_feature
+    import ifcopenshell.api.root as api_root
+    v = []
+    work = Path(tempfile.mkdtemp(dir=Path(work), prefix="rid-"))
+    s = kit.Session(work / "r1.dobim")
+    for n, a in F.SCRIPT:
+        s.run(n, a)
+    s.eng.hashes()
+    ifc = s.eng.ifc
+    real = api_root.remove_product
+
+    def boom(*a, **k):
+        raise RuntimeError("주입")
+
+    api_root.remove_product = boom
+    try:
+        try:
+            ifc.remove_identity(F.W3)
+            v.append("remove_product 실패가 전파되지 않았다")
+        except RuntimeError:
+            pass
+    finally:
+        api_root.remove_product = real
+    if F.W3 not in ifc.ents:
+        v.append("remove_product 가 실패했는데 엔티티 목록에서 먼저 빠졌다")
+    real_f = api_feature.remove_feature
+    api_feature.remove_feature = boom
+    try:
+        try:
+            ifc.remove_identity(F.D1)
+        except RuntimeError:
+            pass
+    finally:
+        api_feature.remove_feature = real_f
+    if F.D1 not in ifc.ents or F.D1 not in ifc.openings:
+        v.append("remove_feature 가 실패했는데 문·개구부 기록이 먼저 빠졌다")
+    s.close()
+    return v
+
+
+def check_response_cap(work: Path, cap: int | None = None) -> list[str]:
+    """목록형 커맨드의 응답 크기 상한: 봉투 전체가 상한 이하이고, 잘리면 truncated 와 next_cursor 가 있으며,
+    이어받기로 전체를 읽으면 기준(상한 없이 읽은 결과)과 빠짐·중복 없이 같다."""
+    import json as _json
+    from unittest import mock
+    from dobim_core import commands, limits
+    from dobim_core import queries as Q
+    v = []
+    work = Path(tempfile.mkdtemp(dir=Path(work), prefix="cap-"))
+    s = kit.Session(work / "c1.dobim")
+    s.run("level.create", {"id": F.LV1, "name": "1F", "elevation": 0})
+    cmds = [{"command": "wall.create", "args": {"id": kit.mkid("1", i), "level": F.LV1, "axis": [0, i * 300, 6000, i * 300],
+                                                "name": f"긴 벽 이름 {i:04d} " + "가" * 40}} for i in range(1, 281)]
+    assert s.batch(cmds)["ok"]
+    cap = cap or limits.RESPONSE_CAP_BYTES
+    expect_ids = sorted(s.eng.st.el)
+    log_seqs = [r[0] for r in s.eng.conn.execute("SELECT seq FROM op_log ORDER BY seq DESC").fetchall()]
+    sched = [list(r) for r in s.eng.g.q(Q.schedule_sorted, "wall")]
+    plans = [("element.query", {"limit": 1000}, lambda it: it["id"], expect_ids),
+             ("schedule.rows", {"kind": "wall", "limit": 1000}, lambda it: it[0], [r[0] for r in sched]),
+             ("history.list", {"limit": 500}, lambda it: it["seq"], log_seqs),
+             ("relation.list", {"id": F.LV1, "limit": 1000}, lambda it: it["src"], None)]
+    for name, base, key, expect in plans:
+        keys, pages, truncs, sizes, cursor = [], 0, [], [], None
+        while True:
+            args = dict(base, **({"cursor": cursor} if cursor else {}))
+            r = s.run(name, args)
+            if not r["ok"]:
+                v.append(f"{name}: 실패 {r['error']['code']}")
+                break
+            pages += 1
+            sizes.append(len(_json.dumps(r, ensure_ascii=False).encode("utf-8")))
+            truncs.append(r["page"]["truncated"])
+            keys += [key(it) for it in r["result"]["items"]]
+            cursor = r["page"]["next_cursor"]
+            if r["page"]["truncated"] and cursor is None:
+                v.append(f"{name}: truncated 인데 next_cursor 가 없다")
+            if cursor is None or pages > 400:
+                break
+        if expect is None:
+            expect = list(s.eng.st.inn.get(("on_level", F.LV1), ()))
+        if pages < 2:
+            v.append(f"{name}: 상한이 적용되지 않았다(쪽 수 {pages})")
+        if max(sizes) > cap:
+            v.append(f"{name}: 응답 {max(sizes)}바이트가 상한 {cap} 를 넘는다")
+        if not any(truncs[:-1]) or truncs[-1]:
+            v.append(f"{name}: truncated 표시가 이상하다 {truncs[:3]}…{truncs[-2:]}")
+        if keys != expect:
+            v.append(f"{name}: 이어받기 결과가 기준과 다르다(빠짐 {len(set(expect) - set(keys))}, 중복 {len(keys) - len(set(keys))}, "
+                     f"순서 {'같음' if sorted(keys) == sorted(expect) else '다름'})")
+        if len(keys) != len(set(keys)):
+            v.append(f"{name}: 중복 항목")
+    s.close()
+    return v
+
+
+def check_file_lock(work: Path) -> list[str]:
+    """ifc.export/ifc.restore 가 공유 없이 열린 대상을 만나면 FILE_LOCKED 봉투이고, 원본 불변·.tmp 잔재 없음·스냅숏 증가 없음.
+    잠금을 풀면 다시 성공한다. Windows 전용(그 밖에서는 시험하지 않고 빈 목록)."""
+    import ctypes
+    if sys.platform != "win32":
+        return []
+    v = []
+    work = Path(tempfile.mkdtemp(dir=Path(work), prefix="lock-"))
+    s = kit.Session(work / "k1.dobim")
+    for n, a in F.SCRIPT:
+        s.run(n, a)
+
+    def confirmed(name, args):
+        first = s.run(name, args)
+        if first["ok"] or first["error"]["code"] != "CONFIRM_REQUIRED":
+            return first
+        return s.run(name, args, confirm=first["error"]["details"]["confirm_token"])
+
+    target = work / "locked.ifc"
+    if not confirmed("ifc.export", {"path": "locked.ifc"})["ok"] or not confirmed("ifc.export", {"path": "locked.ifc"})["ok"]:
+        return ["준비 내보내기 실패"]
+    before = target.read_bytes()
+    snaps = sorted(p.name for p in (work / ".dobim-snapshots").iterdir())
+    k32 = ctypes.windll.kernel32
+    k32.CreateFileW.restype = ctypes.c_void_p
+    for share, label in ((0, "공유 없음"), (1, "읽기 공유")):
+        h = k32.CreateFileW(str(target), 0x80000000, share, None, 3, 0x80, None)   # 읽기로 열기
+        try:
+            for name, args in (("ifc.export", {"path": "locked.ifc"}), ("ifc.restore", {"path": "locked.ifc", "snapshot": 1})):
+                r = confirmed(name, args)
+                if r["ok"] or r["error"]["code"] != "FILE_LOCKED":
+                    v.append(f"{label}: 열린 파일에 {name} 가 FILE_LOCKED 가 아님: {r.get('error', 'ok')}")
+        finally:
+            k32.CloseHandle(ctypes.c_void_p(h))
+        if target.read_bytes() != before:
+            v.append(f"{label}: 잠금 중 실패했는데 원본이 바뀌었다")
+        if sorted(work.glob("*.tmp")):
+            v.append(f"{label}: .tmp 잔재 {[p.name for p in work.glob('*.tmp')]}")
+        if sorted(p.name for p in (work / ".dobim-snapshots").iterdir()) != snaps:
+            v.append(f"{label}: 실패했는데 스냅숏이 늘었다")
+    if not confirmed("ifc.export", {"path": "locked.ifc"})["ok"]:
+        v.append("잠금을 푼 뒤 내보내기가 성공하지 못함")
+    s.close()
+    return v
+
+
+def _mk(i, p="1"):
+    return p + f"{i:021d}"
+
+
+def _paged(s, name, base, key, after_first=None):
+    """이어받기로 끝까지 읽는다. 첫 쪽을 읽은 직후 after_first(첫 쪽 항목) 를 실행한다. (읽은 키 목록, 쪽 수)"""
+    keys, pages, cursor = [], 0, None
+    while True:
+        r = s.run(name, dict(base, **({"cursor": cursor} if cursor else {})))
+        if not r["ok"]:
+            raise AssertionError(f"{name}: {r['error']['code']} {r['error'].get('message')}")
+        its = r["result"]["items"]
+        keys += [key(i) for i in its]
+        pages += 1
+        if pages == 1 and after_first:
+            after_first(its)
+        cursor = r["page"]["next_cursor"]
+        if cursor is None:
+            return keys, pages
+        if not its or pages > 3000:
+            raise AssertionError(f"{name}: 빈 쪽에서 next_cursor 를 돌려주거나 끝나지 않는다")
+
+
+def check_keyset_paging(work: Path) -> list[str]:
+    """A: 이어받는 동안 모델이 바뀌어도 키셋 커서는 빠짐·중복이 없다.
+    의미(정의): 시작과 끝에 모두 있고 정렬 키(이름·레벨)가 바뀌지 않은 항목은 정확히 한 번 나온다. 삭제된 항목은 0~1번,
+    새로 삽입된 항목은 읽은 위치 뒤에 놓일 때만 1번(앞이면 0번), 이름이 바뀌어 정렬 키가 달라진 항목은 새 키 위치로 옮겨 가므로 0~2번
+    (읽은 뒤 뒤쪽으로 옮겨 가면 다시 나오고, 읽기 전 앞쪽으로 옮겨 가면 빠질 수 있다). 커서로 쓴 행이 삭제돼도 동작한다."""
+    v = []
+    work = Path(tempfile.mkdtemp(dir=Path(work), prefix="ks-"))
+    N = 40
+
+    def build(tag):
+        s = kit.Session(work / f"{tag}.dobim")
+        s.run("level.create", {"id": F.LV1, "name": "1F", "elevation": 0})
+        cmds = [{"command": "wall.create", "args": {"id": _mk(i), "level": F.LV1, "axis": [0, i * 300, 6000, i * 300],
+                                                    "name": f"W{i:03d}"}} for i in range(1, N + 1)]
+        cmds += [{"command": "door.place", "args": {"id": _mk(i, "2"), "host": _mk(i), "offset": 1500, "width": 900, "name": f"D{i:03d}"}}
+                 for i in range(1, N // 2 + 1)]
+        assert s.batch(cmds)["ok"]
+        return s
+
+    def new_wall(s, nm, i=900):
+        s.run("wall.create", {"id": _mk(i), "level": F.LV1, "axis": [0, 99999 + i, 6000, 99999 + i], "name": nm})
+
+    for kind in ("wall", "door"):
+        if kind == "wall":
+            ins = lambda s, nm: s.run("wall.create", {"id": _mk(900), "level": F.LV1, "axis": [0, 99999, 6000, 99999], "name": nm})   # noqa: E731
+            ren = lambda s, i, nm: s.run("wall.set", {"id": i, "name": nm})                                                             # noqa: E731
+        else:
+            ins = lambda s, nm: s.run("door.place", {"id": _mk(900, "2"), "host": _mk(N), "offset": 3000, "width": 900, "name": nm})   # noqa: E731
+            ren = lambda s, i, nm: s.run("door.set", {"id": i, "name": nm})                                                             # noqa: E731
+        last = _mk(N // 2, "2") if kind == "door" else _mk(N)
+        # (이름, 첫 쪽 뒤에 하는 변경(s, 첫 쪽 항목), 이름이 바뀌는 id 를 고르는 함수 또는 None)
+        scen = [
+            ("읽은 행 삭제", lambda s, its: s.run("element.delete", {"id": its[1][0]}), None),
+            ("커서로 쓴 행(마지막 읽은 행) 삭제", lambda s, its: s.run("element.delete", {"id": its[-1][0]}), None),
+            ("읽지 않은 행 삭제", lambda s, its: s.run("element.delete", {"id": last}), None),
+            ("앞쪽에 새 행 삽입", lambda s, its: ins(s, "A-front"), None),
+            ("뒤쪽에 새 행 삽입", lambda s, its: ins(s, "Z-back"), None),
+            ("읽은 행의 이름을 뒤로 보냄", lambda s, its: ren(s, its[0][0], "zzz-moved"), lambda its: its[0][0]),
+            ("읽지 않은 행의 이름을 앞으로 보냄", lambda s, its: ren(s, last, "A-moved"), lambda its: last),
+        ]
+        for label, mut, moved_of in scen:
+            tag = f"{kind}-{abs(hash(label)) % 10 ** 6}"
+            s = build(tag)
+            first_page = []
+            base = {"kind": kind, "limit": 7}
+            start_keys, _ = _paged(s, "schedule.rows", dict(base, limit=1000), lambda r: r[0])
+
+            def after(its, s=s, mut=mut, first_page=first_page):
+                first_page.extend(its)
+                mut(s, its)
+            keys, pages = _paged(s, "schedule.rows", base, lambda r: r[0], after_first=after)
+            end_keys, _ = _paged(s, "schedule.rows", dict(base, limit=1000), lambda r: r[0])
+            moved = moved_of(first_page) if moved_of else None
+            cnt = {k: keys.count(k) for k in set(keys)}
+            if pages < 3:
+                v.append(f"{label}/{kind}: 쪽이 너무 적다({pages})")
+            for k in start_keys:
+                if k not in end_keys:
+                    if cnt.get(k, 0) > 1:
+                        v.append(f"{label}/{kind}: 삭제된 {k[-4:]} 가 {cnt[k]}번")
+                elif k == moved:
+                    if cnt.get(k, 0) > 2:
+                        v.append(f"{label}/{kind}: 이름이 바뀐 {k[-4:]} 가 {cnt[k]}번")
+                elif cnt.get(k, 0) != 1:
+                    v.append(f"{label}/{kind}: 시작·끝에 모두 있는 {k[-4:]} 가 {cnt.get(k, 0)}번 나왔다")
+            for k, c in cnt.items():
+                if k not in start_keys and c > 1:
+                    v.append(f"{label}/{kind}: 삽입된 {k[-4:]} 가 {c}번")
+            s.close()
+
+    # relation.list (레벨에 걸린 벽 40개): 같은 규칙. 관계는 이름이 없으니 삭제·삽입만
+    for label, mut in (("읽은 관계 삭제", lambda s, its: s.run("element.delete", {"id": its[1]["src"]})),
+                       ("커서 관계 삭제", lambda s, its: s.run("element.delete", {"id": its[-1]["src"]})),
+                       ("앞쪽 id 새 벽", lambda s, its: s.run("wall.create", {"id": "1" + "0" * 20 + "1", "level": F.LV1, "axis": [0, 1, 6000, 1]})),
+                       ("뒤쪽 id 새 벽", lambda s, its: s.run("wall.create", {"id": "1" + "z" * 21, "level": F.LV1, "axis": [0, 2, 6000, 2]}))):
+        s = build(f"rel-{label[:3]}")
+        base = {"id": F.LV1, "limit": 7}
+        start, _ = _paged(s, "relation.list", dict(base, limit=1000), lambda i: i["src"])
+        keys, pages = _paged(s, "relation.list", base, lambda i: i["src"], after_first=lambda its, s=s, mut=mut: mut(s, its))
+        end, _ = _paged(s, "relation.list", dict(base, limit=1000), lambda i: i["src"])
+        for k in set(start) & set(end):
+            if keys.count(k) != 1:
+                v.append(f"relation.list/{label}: 시작·끝에 모두 있는 {k[-4:]} 가 {keys.count(k)}번")
+        if len(keys) != len(set(keys)):
+            v.append(f"relation.list/{label}: 중복")
+        s.close()
+    return v
+
+
+def check_cursor_and_batch_input(work: Path) -> list[str]:
+    """C: 위조·타입 불일치 커서는 모든 목록형 커맨드에서 SCHEMA_INVALID(/cursor)이고, 끝을 지난 올바른 모양의 커서는 빈 쪽이며
+    next_cursor 가 없다. 배치 항목이 객체가 아니거나 command 가 문자열이 아니어도 INTERNAL 이 아니라 SCHEMA_INVALID 다."""
+    import base64
+    import json as _json
+    v = []
+    work = Path(tempfile.mkdtemp(dir=Path(work), prefix="cur-"))
+    s = kit.Session(work / "c1.dobim")
+    for n, a in F.SCRIPT:
+        s.run(n, a)
+    enc = lambda x: base64.urlsafe_b64encode(_json.dumps(x).encode()).decode()   # noqa: E731
+    lists = [("schedule.rows", {"kind": "door", "limit": 1}), ("relation.list", {"id": F.LV1, "limit": 1}),
+             ("element.query", {"limit": 1}), ("history.list", {"limit": 1}), ("history.affected", {"limit": 1}),
+             ("commands.search", {"limit": 1}), ("ifc.snapshots", {"path": "x.ifc", "limit": 1})]
+    forged = [("음수", enc(-3)), ("실수", enc(1.5)), ("문자열", enc("abc")), ("정수", enc(5)), ("리스트", enc([1])), ("null", enc(None)),
+              ("거대 정수", enc(10 ** 30)), ("불리언", enc(True)), ("객체", enc({"a": 1})), ("깨진 base64", "###"), ("빈 문자열", ""),
+              ("세 문자열 리스트", enc(["a", "b", "c"])), ("관계 모양 아님", enc([9, 9, "x"]))]
+    for name, base in lists:
+        for lab, cur in forged:
+            # 그 커맨드의 올바른 모양인 커서는 제외(예: 세 문자열 리스트는 일람표에서는 올바른 모양)
+            ok_shape = {("schedule.rows", "세 문자열 리스트"), ("element.query", "문자열"), ("commands.search", "문자열"),
+                        ("history.list", "정수"), ("ifc.snapshots", "정수"), ("history.affected", "리스트")}
+            if (name, lab) in ok_shape:
+                continue
+            r = s.run(name, dict(base, cursor=cur))
+            if r["ok"] or r["error"]["code"] != "SCHEMA_INVALID" or r["error"]["path"] != "/cursor":
+                v.append(f"{name} 위조 커서({lab}) 가 SCHEMA_INVALID(/cursor) 가 아님: {r.get('error', {}).get('code', 'ok')}")
+    # 올바른 모양이지만 끝을 지난 커서: 빈 쪽, next_cursor 없음
+    past = [("schedule.rows", {"kind": "door", "limit": 1}, enc(["zzzz", "zzzz", "9" * 22])),
+            ("relation.list", {"id": F.LV1, "limit": 1}, enc([2, 1, "z" * 22])),
+            ("element.query", {"limit": 1}, enc("z" * 22)), ("history.list", {"limit": 1}, enc(0)),
+            ("history.affected", {"limit": 1}, enc([2, "z" * 22])), ("commands.search", {"limit": 1}, enc("zzzz")),
+            ("ifc.snapshots", {"path": "x.ifc", "limit": 1}, enc(10 ** 6))]
+    for name, base, cur in past:
+        r = s.run(name, dict(base, cursor=cur))
+        if not r["ok"] or r["result"]["items"] or r["page"]["next_cursor"] is not None:
+            v.append(f"{name}: 끝을 지난 커서가 빈 쪽·next_cursor 없음이 아님: {r.get('error', r.get('page'))}")
+    # 배치 항목 입력
+    for lab, cmds in (("None 항목", [None]), ("문자열 항목", ["x"]), ("command 숫자", [{"command": 5}]), ("name 숫자", [{"name": 7}]),
+                      ("commands 가 dict", {"a": 1}), ("commands 가 문자열", "abc"), ("args 리스트", [{"command": "wall.move", "args": [1]}])):
+        r = s.batch(cmds)
+        if r["ok"] or r["error"]["code"] != "SCHEMA_INVALID":
+            v.append(f"배치 입력({lab}) 이 SCHEMA_INVALID 가 아님: {r.get('error', {}).get('code', 'ok')}")
+    s.close()
+    return v
+
+
+def check_mutation_cap(work: Path) -> list[str]:
+    """E: 큰 변경(배치) 응답도 상한 안에 든다. 변경은 그대로 끝나고, affected 는 앞부분과 정확한 건수와 truncated 를 돌려주며,
+    history.affected 로 이어받으면 전체가 빠짐·중복 없이 나온다. undo/redo 는 같은 해시로 돌아온다."""
+    import json as _json
+    from dobim_core import limits
+    v = []
+    work = Path(tempfile.mkdtemp(dir=Path(work), prefix="mcap-"))
+    s = kit.Session(work / "m1.dobim")
+    s.run("level.create", {"id": F.LV1, "name": "1F", "elevation": 0})
+    n = 600
+    ids = [_mk(i + 1) for i in range(n)]
+    eng = s.eng
+    r = s.batch([{"command": "wall.create", "args": {"id": i, "level": F.LV1, "axis": [0, k * 10, 6000, k * 10]}} for k, i in enumerate(ids)])
+    size = len(_json.dumps(r, ensure_ascii=False).encode("utf-8"))
+    if not r["ok"]:
+        return [f"큰 배치가 실패함: {r['error']}"]
+    if size > limits.RESPONSE_CAP_BYTES:
+        v.append(f"큰 배치 응답이 상한을 넘는다: {size} > {limits.RESPONSE_CAP_BYTES}")
+    if len(eng.st.by_kind.get("wall", ())) != n:
+        v.append("변경 자체가 끝나지 않았다")
+    aff = r["affected"]
+    if aff["counts"] != {"created": n, "modified": 1, "deleted": 0} or aff["truncated"] is not True or not 0 < len(aff["created"]) < n:
+        v.append(f"affected 의 앞부분·정확한 건수·truncated 가 틀렸다: {aff['counts']} truncated={aff['truncated']} 앞부분 {len(aff['created'])}")
+    if not r["page"] or r["page"]["total"] != n or r["page"]["truncated"] is not True or len(r["result"]) >= n:
+        v.append(f"배치 results 잘림 표시가 틀렸다: {r['page']}")
+    if not any("history.affected" in w for w in r["warnings"]):
+        v.append("잘렸는데 이어받는 방법을 알리는 경고가 없다")
+    if aff["created"] != ids[:len(aff["created"])] and aff["created"] != sorted(ids)[:len(aff["created"])]:
+        v.append("affected 앞부분이 정렬된 id 의 앞부분이 아니다")
+    # 이어받기
+    rev, cursor, got = r["rev"], None, []
+    while True:
+        q = s.run("history.affected", dict({"rev": rev, "limit": 1000}, **({"cursor": cursor} if cursor else {})))
+        if not q["ok"]:
+            v.append(f"history.affected 실패: {q['error']}")
+            break
+        if len(_json.dumps(q, ensure_ascii=False).encode("utf-8")) > limits.RESPONSE_CAP_BYTES:
+            v.append("history.affected 응답이 상한을 넘는다")
+        got += [(i["change"], i["id"]) for i in q["result"]["items"]]
+        cursor = q["page"]["next_cursor"]
+        if cursor is None:
+            break
+    if sorted(got) != sorted([("created", i) for i in ids] + [("modified", F.LV1)]):
+        v.append(f"history.affected 이어받기가 생성 id 전체와 다르다(받은 {len(got)}, 중복 {len(got) - len(set(got))})")
+    # dry_run 도 상한 안
+    r2 = s.batch([{"command": "wall.move", "args": {"id": i, "dx": 1}} for i in ids], dry_run=True)
+    if not r2["ok"] or len(_json.dumps(r2, ensure_ascii=False).encode("utf-8")) > limits.RESPONSE_CAP_BYTES or r2["affected"]["counts"]["modified"] != n:
+        v.append("dry_run 큰 배치 응답이 상한 안에 들지 않거나 건수가 틀렸다")
+    # undo / redo 동작은 같다: 해시 복원, ops 는 잘려도 ops_total 이 정확하다
+    h_after = {k: x for k, x in eng.hashes().items() if k != "rev"}
+    u = s.run("history.undo")
+    if not u["ok"] or u["result"]["ops_total"] != n or u["result"]["truncated"] is not True or len(_json.dumps(u, ensure_ascii=False).encode("utf-8")) > limits.RESPONSE_CAP_BYTES:
+        v.append(f"큰 배치의 undo 응답이 틀렸다: {u.get('error') or {k: x for k, x in u['result'].items() if k != 'ops'}}")
+    if eng.st.by_kind.get("wall"):
+        v.append("undo 가 600개 벽을 되돌리지 못했다")
+    rr = s.run("history.redo")
+    if not rr["ok"] or {k: x for k, x in eng.hashes().items() if k != "rev"} != h_after:
+        v.append("redo 뒤 해시가 큰 배치 직후와 다르다")
+    # 수정 600건: counts 정확
+    r3 = s.batch([{"command": "wall.move", "args": {"id": i, "dx": 1}} for i in ids])
+    if not r3["ok"] or r3["affected"]["counts"]["modified"] != n or r3["affected"]["truncated"] is not True:
+        v.append(f"수정 600건 응답의 counts/truncated 가 틀렸다: {r3['affected']['counts']}")
+    # 작은 변경은 모양이 같고 truncated 가 false
+    r4 = s.run("wall.move", {"id": ids[0], "dx": 1})
+    if r4["affected"]["truncated"] is not False or r4["affected"]["modified"] != [ids[0]] or r4["affected"]["counts"]["modified"] != 1:
+        v.append(f"작은 변경의 affected 모양이 틀렸다: {r4['affected']}")
+    d = kit.full_check(s, work, tag="-mcap")
+    if not d["ok"]:
+        v.append(f"큰 배치 뒤 차등 검사 실패: {d['diffs'][:2]}")
+    s.close()
+    return v
+
+
+def check_token_budget(work: Path) -> list[str]:
+    """D: 실측 토크나이저(tiktoken cl100k·o200k, 대용 측정)로 text + structuredContent 합계가 8,000 이하. tiktoken 이 없으면 시험하지 않는다."""
+    try:
+        import tiktoken  # noqa: F401
+    except ImportError:
+        return []
+    import asyncio
+    import size_check
+    work = Path(tempfile.mkdtemp(dir=Path(work), prefix="tok-"))
+    encs = {n: __import__("tiktoken").get_encoding(n) for n in size_check.ENCODINGS}
+    v = []
+    for korean in (False, True):
+        m = size_check.build(work, korean)
+        c = size_check.InProc(work)
+        rows = asyncio.run(size_check.measure(c, encs, m, korean))
+        asyncio.run(c.close())
+        for r in rows:
+            t = max(r["worst"]["tokens"].values())
+            if t > size_check.TARGET_TOKENS:
+                v.append(f"{r['lang']} {r['what']}: 최악 {t}토큰 > {size_check.TARGET_TOKENS} {r['worst']['tokens']}")
+            if r.get("history_affected_matches_counts") is False:
+                v.append(f"{r['what']}: history.affected 이어받기가 counts 와 다르다")
+    return v
+
+
 if __name__ == "__main__":
     import sys
     import tempfile
     w = Path(tempfile.mkdtemp())
-    res = check_golden(w) + check_failure_atomicity(w) + check_delete_and_names(w) + check_restore_failure(w)
+    res = check_golden(w) + check_failure_atomicity(w) + check_delete_and_names(w) + check_restore_failure(w) + check_envelope_and_nulls(w) + check_remove_identity_order(w) + check_response_cap(w) + check_file_lock(w) + check_keyset_paging(w) + check_cursor_and_batch_input(w) + check_mutation_cap(w) + check_token_budget(w)
     print("\n".join(res) or "골든 값 통과")
     sys.exit(1 if res else 0)

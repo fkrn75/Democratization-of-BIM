@@ -17,7 +17,8 @@ dependencies = [
 [project.optional-dependencies]
 # ifcopenshell.validate(express_rules=True) 가 pytest 를 요구한다 (S0 발견).
 validate = ["pytest>=8"]
-dev = ["pytest>=8", "import-linter>=2"]
+tokens = ["tiktoken>=0.7"]  # 응답 크기 토큰 실측(개발 전용 대용 측정). 코어 런타임 의존이 아니다
+dev = ["pytest>=8", "import-linter>=2", "tiktoken>=0.7"]
 
 [project.scripts]
 dobim = "dobim_core.cli:main"

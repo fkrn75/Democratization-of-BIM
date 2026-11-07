@@ -141,10 +141,11 @@ class IfcModel:
 
     def remove_identity(self, eid: str) -> None:
         f = self.f
+        e = self.ents[eid]
         self._unproject_door(eid)
-        e = self.ents.pop(eid)
+        api_root.remove_product(f, product=e)   # 실패하면 ents 가 그대로라 상태가 설명 가능하다(순서: 지운 뒤에 목록에서 뺀다)
+        self.ents.pop(eid)
         self.container_of.pop(eid, None)
-        api_root.remove_product(f, product=e)
 
     # ------------------------------------------------------------ 속성셋·재료 (정본)
     def get_psets(self, eid: str) -> dict:
@@ -261,9 +262,10 @@ class IfcModel:
         self._set_body(e, self._solid(spec["footprint"], spec["height"]))
 
     def _unproject_door(self, eid):
-        op = self.openings.pop(eid, None)
+        op = self.openings.get(eid)
         if op is not None:
             api_feature.remove_feature(self.f, feature=op)   # 개구부 엔티티와 관계를 함께 지운다
+            del self.openings[eid]
 
     def _project_door(self, eid, spec):
         f = self.f

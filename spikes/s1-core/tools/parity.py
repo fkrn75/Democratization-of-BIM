@@ -51,6 +51,20 @@ ERROR_CASES = [
     ("속성 삭제(있는 속성)", "pset.delete", {"id": F.D1, "pset": "Pset_DoorCommon", "prop": "FireRating"}, {}),
     ("속성 삭제(없는 속성)", "pset.delete", {"id": F.W1, "pset": "Pset_Z", "prop": "P"}, {}),
     ("속성 삭제(예약 속성셋)", "pset.delete", {"id": F.W1, "pset": "DoBIM_Intent", "prop": "Intent"}, {}),
+    ("wall.set 숫자 필드 명시적 null", "wall.set", {"id": F.W1, "thickness": None, "height": 3100}, {}),
+    ("door.set 숫자 필드 명시적 null", "door.set", {"id": F.D1, "width": 1000, "offset": None}, {}),
+    ("wall.set 이름 명시적 null", "wall.set", {"id": F.W1, "name": None, "thickness": 250}, {}),
+    ("목록 limit 최대", "element.query", {"limit": 1000}, {}),
+    ("목록 이어받기 커서", "element.query", {"limit": 2, "cursor": "IjIwMDAwMDAwMDAwMDAwMDAwMDAwMDEi"}, {}),
+    ("잘못된 커서", "schedule.rows", {"kind": "door", "cursor": "###"}, {}),
+    ("commands.search 쪽 나누기", "commands.search", {"limit": 3}, {}),
+    ("history.list 쪽 나누기", "history.list", {"limit": 3}, {}),
+    ("위조 커서(음수)", "schedule.rows", {"kind": "door", "cursor": "LTE="}, {}),
+    ("위조 커서(타입 불일치)", "relation.list", {"id": F.LV1, "cursor": "ImFiYyI="}, {}),
+    ("위조 커서(history.list 에 문자열)", "history.list", {"cursor": "ImFiYyI="}, {}),
+    ("끝을 지난 키셋 커서", "schedule.rows", {"kind": "door", "cursor": "WyJ6enp6IiwgInp6enoiLCAiOTk5OTk5OTk5OTk5OTk5OTk5OTk5OSJd"}, {}),
+    ("history.affected 현재 리비전", "history.affected", {}, {}),
+    ("history.affected 없는 리비전", "history.affected", {"rev": 9999}, {}),
     ("속성값 int64 초과", "pset.set", {"id": F.W1, "pset": "Pset_Z", "prop": "P", "value": 2**63}, {}),
     ("속성값 NUL", "pset.set", {"id": F.W1, "pset": "Pset_Z", "prop": "P", "value": "a\x00b"}, {}),
     ("dry-run", "wall.move", {"id": F.W1, "dx": 700}, {"dry_run": True}),
@@ -111,6 +125,11 @@ class McpSide:
 
     async def __aexit__(self, *a):
         await self.cm.__aexit__(*a)
+
+    async def call_batch(self, commands, project) -> tuple[dict, bool]:
+        r = await self.client.call_tool("dobim_execute", {"commands": commands, "project": project})
+        assert r.structured_content == json.loads(r.content[0].text), "text 와 structuredContent 가 다르다"
+        return r.structured_content, bool(r.is_error)
 
     async def call(self, name, args, project=None, expected_rev=None, dry_run=False, confirm=None) -> tuple[dict, bool]:
         cmd = registry.load().get(name)
@@ -236,6 +255,25 @@ async def run_parity(work: Path | None = None) -> dict:
         # 3) 오류 사례
         for i, (label, name, args, kw) in enumerate(ERROR_CASES):
             await both(name, args, f"err-{i}", **kw)
+        # 3b) 큰 배치(응답 상한으로 affected·results 가 잘림): CLI script --atomic 과 MCP commands 가 같은 봉투여야 한다
+        big = [{"command": "wall.create", "args": {"id": "1" + f"{i + 100:021d}", "level": F.LV1, "axis": [0, 10000 + i * 10, 6000, 10000 + i * 10]}}
+               for i in range(300)]
+        for w in (wa, wb):
+            shutil.copy(base, w / "bigbatch.dobim")
+        (wa / "_big.jsonl").write_text(chr(10).join(json.dumps(c) for c in big), encoding="utf-8")
+        pr = subprocess.run([sys.executable, "-m", "dobim_core", "--workspace", str(wa), "--actor", "cli", "script", str(wa / "_big.jsonl"),
+                             "-p", "bigbatch.dobim", "--atomic"], capture_output=True, env=cli.env, stdin=subprocess.DEVNULL, cwd=wa, timeout=300)
+        e1 = json.loads(pr.stdout.decode("utf-8"))
+        e2, _ = await mcp.call_batch(big, "bigbatch.dobim")
+        h1, _ = cli.call("model.hash", {}, project="bigbatch.dobim")
+        h2, _ = await mcp.call("model.hash", {}, project="bigbatch.dobim")
+        big_ok = (norm(e1) == norm(e2) and e1["ok"] and e1["affected"]["truncated"] is True and e1["affected"]["counts"]["created"] == 300
+                  and h1["result"] == h2["result"])
+        if not big_ok:
+            mismatches.append(f"큰 배치 불일치: 봉투 {norm(e1) == norm(e2)}, truncated {e1.get('affected', {}).get('truncated')}, 해시 {h1['result'] == h2['result']}")
+        results.append({"label": "big-batch", "command": "batch(wall.create x300)", "same_envelope": norm(e1) == norm(e2), "exit_code": pr.returncode,
+                        "exit_code_matches_envelope": pr.returncode == exit_code_of(e1), "ok": e1["ok"], "state_hash_equal": h1["result"] == h2["result"],
+                        "second_step": None})
         # 4) 위험 등급 도구 불일치는 양쪽에서 거부되어야 한다
         r = await mcp.client.call_tool("dobim_query", {"command": "wall.move", "args": {"id": F.W1}, "project": "x"})
         risk_ok = r.is_error and r.structured_content["error"]["code"] == "RISK_MISMATCH"

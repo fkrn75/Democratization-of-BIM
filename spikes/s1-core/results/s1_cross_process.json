@@ -1,10 +1,10 @@
 {
   "seed": 20261107,
   "steps": 80,
-  "cli_writes": 25,
-  "mcp_writes": 26,
-  "undo_redo_steps": 15,
-  "cross_actor_undos": 11,
+  "cli_writes": 24,
+  "mcp_writes": 21,
+  "undo_redo_steps": 17,
+  "cross_actor_undos": 9,
   "hash_checks": 90,
   "hash_mismatches": [],
   "step_failures": [],
@@ -14,7 +14,7 @@
     "cli_redo_restores": true
   },
   "final": {
-    "rev": 75,
+    "rev": 61,
     "reopen_equals_replay": true,
     "equals_oracle": true,
     "actors_in_log": [

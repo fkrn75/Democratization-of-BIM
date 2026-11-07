@@ -61,3 +61,12 @@ def exit_code_of(envelope: dict) -> int:
         result = envelope.get("result")
         return 3 if isinstance(result, dict) and result.get("violations") else 0
     return EXIT_CODES.get(envelope["error"]["code"], 70)
+
+
+def internal_error(ex: BaseException) -> "DobimError":
+    """예상하지 못한 예외를 INTERNAL 오류로 바꾼다. 트레이스백은 stderr 에만 남기고(표준 출력은 결과 JSON 전용),
+    봉투 메시지에는 예외 종류만 넣는다: 예외 문장에 파일 경로·내부 값이 섞일 수 있다."""
+    import sys
+    import traceback
+    traceback.print_exception(type(ex), ex, ex.__traceback__, file=sys.stderr)
+    return DobimError("INTERNAL", f"내부 오류({type(ex).__name__}). 서버의 stderr 에 트레이스백이 있다")

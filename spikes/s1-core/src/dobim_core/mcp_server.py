@@ -39,9 +39,10 @@ def build(env: dispatch.Env) -> MCPServer:
 
     # 도구 함수는 async 로 둔다: SQLite 연결과 엔진을 이벤트 루프 스레드 하나에서만 쓰기 위해서다.
     @srv.tool(name="dobim_commands_search", annotations=ro, description="커맨드를 키워드·그룹·위험 등급으로 찾는다")
-    async def dobim_commands_search(query: str = "", group: str | None = None,
-                                    risk: str | None = None) -> CallToolResult:
-        return _result(dispatch.run(env, "commands.search", {"query": query, "group": group, "risk": risk}))
+    async def dobim_commands_search(query: str = "", group: str | None = None, risk: str | None = None,
+                                    limit: int = 100, cursor: str | None = None) -> CallToolResult:
+        return _result(dispatch.run(env, "commands.search", {"query": query, "group": group, "risk": risk,
+                                                             "limit": limit, "cursor": cursor}))
 
     @srv.tool(name="dobim_command_describe", annotations=ro, description="커맨드 하나의 입력 스키마와 예시")
     async def dobim_command_describe(name: str) -> CallToolResult:

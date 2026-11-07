@@ -208,10 +208,15 @@ def race(ws: Path, rounds_free: int, rounds_rev: int) -> dict:
 
 
 def main():
-    out_path = sys.argv[1] if len(sys.argv) > 1 and not sys.argv[1].startswith("--") else None
-    steps = 80
+    import argparse
+    ap = argparse.ArgumentParser(description="교차 프로세스 시험 (CLI 와 MCP 가 번갈아 쓰고 교차 실행 취소)")
+    ap.add_argument("out", nargs="?", default=None, help="결과 JSON 경로")
+    ap.add_argument("--seed", type=int, default=20261107, help="생성기 시드(기본 20261107)")
+    ap.add_argument("--steps", type=int, default=80)
+    ns = ap.parse_args()
+    out_path = ns.out
     work = Path(tempfile.mkdtemp(prefix="dobim-cross-"))
-    res = asyncio.run(run(steps, 20261107, work, cli_hash_every=8))
+    res = asyncio.run(run(ns.steps, ns.seed, work, cli_hash_every=8))
     res["race"] = race(work / "ws", rounds_free=3, rounds_rev=4)
     res["pass"] = (not res["hash_mismatches"] and not res["step_failures"] and res["final"]["reopen_equals_replay"]
                    and res["final"]["equals_oracle"] and res["cross_actor_undos"] > 0

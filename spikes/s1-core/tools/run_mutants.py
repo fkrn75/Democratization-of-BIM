@@ -7,6 +7,7 @@
   differential : 증분 그래프 vs 기준 그래프(캐시 없음) vs 로그 전체 재생 vs 파일 새로 열기 (kit.full_check)
   undo         : 실행 취소·다시 실행 뒤 해시 복원, 실패 커맨드의 원자적 롤백 (kit.undo_property)
   concurrency  : 낡은 expected_rev 거부, 따라잡기 (kit.concurrency_property)
+  inject_grid  : IFC 호출 실패 주입 후 라이브 엔진 = 디스크 재오픈 (tools/inject_grid.py, 빠른 부분)
 """
 from __future__ import annotations
 
@@ -22,7 +23,8 @@ from unittest import mock
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import kit  # noqa: E402
 import golden  # noqa: E402
-from dobim_core import commands, engine, graph, ifc_model, queries  # noqa: E402
+import inject_grid  # noqa: E402
+from dobim_core import commands, dispatch, engine, graph, ifc_model, limits, queries  # noqa: E402
 
 
 # ---------------------------------------------------------------- 변이 정의
@@ -345,7 +347,8 @@ def m_set_prop_no_restore():
             if remain is not None and not [k for k in remain if k != "id"]:
                 ifc_model.api_pset.remove_pset(f, product=e, pset=ps)
 
-    with mock.patch.object(ifc_model.IfcModel, "set_prop", set_prop):
+    # 엔진은 이제 IFC 호출 실패를 오염 처리하고 로그에서 다시 만든다. 그 방어(_taint)도 함께 끄지 않으면 이 변이는 관측상 같다
+    with mock.patch.object(ifc_model.IfcModel, "set_prop", set_prop), mock.patch.object(engine.Engine, "_taint", lambda self, w, ex: None):
         yield
 
 
@@ -377,7 +380,8 @@ def m_null_value_deletes():
     import dataclasses
     from dobim_core import registry
 
-    class NullOk(commands.A):
+    class NullOk(commands.BaseModel):   # A 를 상속하면 명시적 null 거부 검사까지 따라온다: 그 검사가 없는 모델
+        model_config = commands.ConfigDict(extra="forbid")
         id: commands.Id
         pset: commands.PsetName
         prop: commands.PropName
@@ -394,11 +398,8 @@ def m_null_value_deletes():
 @contextmanager
 def m_restore_failure_swallowed():
     """N8 회귀: 복원 중에도 실패하면 예외를 삼키고 오염 표시도 하지 않는다(이전 동작: except BaseException: pass)."""
-    def restore(self, fn, what):
-        try:
-            fn()
-        except BaseException:
-            pass
+    def taint(self, what, ex):
+        return None   # 오염 표시를 하지 않는다
 
     def set_prop(self, eid, pset, prop, value):
         ifc_model.check_value(value)
@@ -429,7 +430,7 @@ def m_restore_failure_swallowed():
             if remain is not None and not [k for k in remain if k != "id"]:
                 ifc_model.api_pset.remove_pset(f, product=e, pset=ps)
 
-    with mock.patch.object(engine.Engine, "_restore_or_taint", restore),             mock.patch.object(ifc_model.IfcModel, "set_prop", set_prop):
+    with mock.patch.object(engine.Engine, "_taint", taint), mock.patch.object(ifc_model.IfcModel, "set_prop", set_prop):
         yield
 
 
@@ -444,6 +445,187 @@ def m_taint_without_heal():
 def m_prop_id_allowed():
     """N9 회귀: 속성 이름 "id" 를 거부하지 않는다(쓰기는 ok 인데 조회에 안 보이고 지울 수도 없다)."""
     with mock.patch.object(commands, "_prop_name_ok", lambda s: s):
+        yield
+
+
+def _taint_except(prefix):
+    orig = engine.Engine._taint
+
+    def taint(self, what, ex):
+        if what.startswith(prefix):
+            return None
+        return orig(self, what, ex)
+    return mock.patch.object(engine.Engine, "_taint", taint)
+
+
+@contextmanager
+def m_el_not_tainted():
+    """D1 회귀: 요소(el) 분기가 IFC 호출 실패를 오염으로 표시하지 않는다(상태만 되돌림)."""
+    with _taint_except("요소"):
+        yield
+
+
+@contextmanager
+def m_mat_not_tainted():
+    """D1 회귀: 재료 분기가 IFC 호출 실패를 오염으로 표시하지 않는다(고아·중복 재료)."""
+    with _taint_except("재료"):
+        yield
+
+
+@contextmanager
+def m_projection_not_tainted():
+    """D1 회귀: 투영(flush) 중 실패를 오염으로 표시하지 않는다(고아 개구부)."""
+    with _taint_except("투영"):
+        yield
+
+
+@contextmanager
+def m_remove_identity_pops_first():
+    """D1 회귀: remove_identity 가 엔티티 목록에서 먼저 빼고 IFC 삭제를 한다(실패하면 목록과 파일이 어긋남)."""
+    def remove_identity(self, eid):
+        f = self.f
+        op = self.openings.pop(eid, None)
+        if op is not None:
+            ifc_model.api_feature.remove_feature(f, feature=op)
+        e = self.ents.pop(eid)
+        self.container_of.pop(eid, None)
+        ifc_model.api_root.remove_product(f, product=e)
+
+    with mock.patch.object(ifc_model.IfcModel, "remove_identity", remove_identity):
+        yield
+
+
+@contextmanager
+def m_no_internal_envelope():
+    """4차 회귀: 예상 밖 예외를 INTERNAL 봉투로 바꾸지 않고 그대로 올린다(조회 경로가 봉투 없이 샌다)."""
+    def reraise(ex):
+        raise ex
+    with mock.patch.object(dispatch, "internal_error", reraise):
+        yield
+
+
+@contextmanager
+def m_numeric_null_allowed():
+    """N10 회귀: wall.set/door.set 의 명시적 null 을 바꾸지 않음으로 읽는다."""
+    with mock.patch.object(commands, "_optional_numeric", lambda ann: False), \
+            mock.patch.object(commands.WallSet, "forbid_null", False), mock.patch.object(commands.DoorSet, "forbid_null", False):
+        yield
+
+
+@contextmanager
+def m_export_lock_unconverted():
+    """S11 회귀: 스냅숏 복사의 PermissionError 가 FILE_LOCKED 로 바뀌지 않고 샌다."""
+    def snap(p, ws):
+        import shutil
+        d = commands._snap_dir(p, ws)
+        if not p.exists():
+            return None
+        d.mkdir(exist_ok=True)
+        n = max([k for k, _ in commands._snapshots(p, ws)], default=0) + 1
+        dst = d / f"{p.name}.{n}"
+        shutil.copy2(p, dst)
+        return f"{commands.SNAP_DIR}/{dst.name}"
+    with mock.patch.object(commands, "_snapshot_existing", snap):
+        yield
+
+
+@contextmanager
+def m_no_response_cap():
+    """S11 회귀: 목록형 응답 크기 상한이 없다(limit 최댓값이 그대로 나간다)."""
+    with mock.patch.object(limits, "RESPONSE_CAP_BYTES", 10**9):
+        yield
+
+
+@contextmanager
+def m_cap_cut_silently():
+    """S11 회귀: 상한에서 조용히 자른다(truncated 도 next_cursor 도 없다)."""
+    with mock.patch.object(commands, "_page", lambda nc, total, trunc: {"next_cursor": None, "total": total, "truncated": False}):
+        yield
+
+
+@contextmanager
+def m_offset_cursors():
+    """A 회귀: 일람표·관계 목록의 커서가 위치 번호(오프셋)다 - 읽는 동안 앞쪽 행이 지워지거나 끼면 빠짐·중복이 난다."""
+    import dataclasses
+    from dobim_core import registry
+
+    def schedule_rows(ctx, a):
+        rows = ctx.g.q(queries.schedule_sorted, a.kind)
+        start = limits.dec_cursor(a.cursor, "int") or 0
+        cols = list(queries.ROW_COLUMNS[a.kind])
+        items, cut = limits.fit([list(r) for r in rows[start:start + a.limit]], base=cols)
+        nxt = limits.enc_cursor(start + len(items)) if start + len(items) < len(rows) else None
+        return {"columns": cols, "items": items, "page": limits.page(nxt, len(rows), cut)}
+
+    def relation_list(ctx, a):
+        ctx.row(a.id)
+        out = []
+        for k in ("on_level", "joins", "hosts"):
+            out += [{"kind": k, "src": a.id, "dst": d} for d in ctx.rels_out(k, a.id)]
+            out += [{"kind": k, "src": s, "dst": a.id} for s in ctx.rels_in(k, a.id)]
+        start = limits.dec_cursor(a.cursor, "int") or 0
+        items, cut = limits.fit(out[start:start + a.limit])
+        more = start + len(items) < len(out)
+        return {"items": items, "page": limits.page(limits.enc_cursor(start + len(items)) if more else None, len(out), cut)}
+
+    origs = {n: registry.REGISTRY[n] for n in ("schedule.rows", "relation.list")}
+    registry.REGISTRY["schedule.rows"] = dataclasses.replace(origs["schedule.rows"], func=schedule_rows)
+    registry.REGISTRY["relation.list"] = dataclasses.replace(origs["relation.list"], func=relation_list)
+    try:
+        yield
+    finally:
+        registry.REGISTRY.update(origs)
+
+
+@contextmanager
+def m_cursor_shape_unchecked():
+    """C 회귀: 커서의 모양을 검사하지 않는다(타입이 틀리면 INTERNAL, 음수 커서는 빈 쪽이 끝없이 이어진다)."""
+    import base64
+    import json as _json
+
+    def dec(c, shape):
+        if c is None:
+            return None
+        try:
+            return _json.loads(base64.urlsafe_b64decode(c.encode()))
+        except Exception:
+            raise limits._bad("해석할 수 없다") from None
+
+    with mock.patch.object(limits, "dec_cursor", dec):
+        yield
+
+
+@contextmanager
+def m_old_byte_cap():
+    """D 회귀: 상한을 옛 값(바이트/3 추정으로 정한 12,000바이트)으로 둔다 - 실측 토크나이저로는 8,000토큰을 넘는다."""
+    with mock.patch.object(limits, "RESPONSE_CAP_BYTES", 12_000):
+        yield
+
+
+@contextmanager
+def m_mutation_uncapped():
+    """E 회귀: 변경 응답(results·affected)에 상한이 없다."""
+    def fit_mutation(results, affected, rev, dry_run):
+        out = dict(affected)
+        out["counts"] = {k: len(affected[k]) for k in ("created", "modified", "deleted")}
+        out["truncated"] = False
+        return results, out, None, []
+
+    with mock.patch.object(limits, "fit_mutation", fit_mutation):
+        yield
+
+
+@contextmanager
+def m_mutation_counts_shown():
+    """E 회귀: affected.counts 가 정확한 건수가 아니라 잘리고 남은 길이다."""
+    orig = limits.fit_mutation
+
+    def fit_mutation(results, affected, rev, dry_run):
+        shown, out, page, warns = orig(results, affected, rev, dry_run)
+        out["counts"] = {k: len(out[k]) for k in ("created", "modified", "deleted")}
+        return shown, out, page, warns
+
+    with mock.patch.object(limits, "fit_mutation", fit_mutation):
         yield
 
 
@@ -475,6 +657,20 @@ MUTANTS = [
     ("M25 [N8] 복원 실패를 삼키고 오염 표시도 안 함", "값 손상", m_restore_failure_swallowed),
     ("M26 [N8] 오염 표시만 하고 복구·거부는 안 함", "값 손상", m_taint_without_heal),
     ("M27 [N9] 속성 이름 id 허용(쓰기 ok, 조회에 안 보임)", "값 손상", m_prop_id_allowed),
+    ("M28 [D1] 요소(el) 분기가 IFC 호출 실패를 오염으로 표시하지 않음", "값 손상", m_el_not_tainted),
+    ("M29 [D1] 재료(mat) 분기가 IFC 호출 실패를 오염으로 표시하지 않음", "값 손상", m_mat_not_tainted),
+    ("M30 [D1] 투영(flush) 실패를 오염으로 표시하지 않음", "값 손상", m_projection_not_tainted),
+    ("M31 [D1] remove_identity 가 목록에서 먼저 빼고 IFC 를 지움", "값 손상", m_remove_identity_pops_first),
+    ("M32 [4차] 예상 밖 예외가 INTERNAL 봉투로 바뀌지 않음", "프로토콜", m_no_internal_envelope),
+    ("M33 [N10] wall.set/door.set 의 명시적 null 허용(NaN 필드만 조용히 무시)", "값 손상", m_numeric_null_allowed),
+    ("M34 [S11] 잠긴 파일의 스냅숏 복사 PermissionError 가 FILE_LOCKED 로 안 바뀜", "프로토콜", m_export_lock_unconverted),
+    ("M35 [S11] 목록 응답 크기 상한 없음", "프로토콜", m_no_response_cap),
+    ("M36 [S11] 상한에서 조용히 자름(truncated·next_cursor 없음)", "프로토콜", m_cap_cut_silently),
+    ("M37 [A] 일람표·관계 목록 커서가 오프셋(읽는 동안 행이 바뀌면 빠짐·중복)", "프로토콜", m_offset_cursors),
+    ("M38 [C] 커서 모양 검사 없음(위조 커서가 INTERNAL·무한 빈 쪽)", "프로토콜", m_cursor_shape_unchecked),
+    ("M39 [D] 상한이 옛 12,000바이트(바이트/3 추정 근거, 실측 토큰 초과)", "프로토콜", m_old_byte_cap),
+    ("M40 [E] 변경 응답 상한 없음(배치 600건이 36KB)", "프로토콜", m_mutation_uncapped),
+    ("M41 [E] affected.counts 가 잘린 길이(정확한 건수 아님)", "프로토콜", m_mutation_counts_shown),
 ]
 
 
@@ -484,9 +680,19 @@ def run_checks(work: Path, seeds_diff, n_diff, seeds_undo, n_undo, shrink_budget
     try:
         if use_golden:
             gv = (golden.check_golden(work) + golden.check_failure_atomicity(work)
-                  + golden.check_delete_and_names(work) + golden.check_restore_failure(work))
+                  + golden.check_delete_and_names(work) + golden.check_restore_failure(work)
+                  + golden.check_envelope_and_nulls(work) + golden.check_remove_identity_order(work)
+                  + golden.check_response_cap(work) + golden.check_file_lock(work)
+                  + golden.check_keyset_paging(work) + golden.check_cursor_and_batch_input(work)
+                  + golden.check_mutation_cap(work) + golden.check_token_budget(work))
             if gv:
                 return {"detected": True, "by": "golden", "evidence": gv[:2]}
+        gviol, _ = inject_grid.check_inject_grid(work, quick=True, ks=(1,))   # 실패 주입: 라이브 = 디스크 (골든과 별개의 기준)
+        if gviol:
+            return {"detected": True, "by": "inject_grid", "evidence": gviol[:2]}
+        dv = kit.directed_delete_order(work)
+        if dv:
+            return {"detected": True, "by": "differential", "evidence": dv[:2]}
         for s in seeds_diff:
             r = kit.property_run(s, n_diff, work, checkpoint_every=20)
             if not r["ok"]:

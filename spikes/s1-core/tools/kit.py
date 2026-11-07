@@ -68,7 +68,7 @@ class Gen:
         self.prev_undo = False
         self.n = {"1": 0, "2": 0, "3": 0}
         self.w = [("level", 2), ("wall", 20), ("move", 15), ("wset", 8), ("join", 10), ("unjoin", 3),
-                  ("door", 12), ("dset", 8), ("delete", 5), ("pset", 8), ("mat", 4),
+                  ("door", 12), ("dset", 8), ("delete", 5), ("pset", 8), ("pdel", 4), ("mat", 4),
                   ("undo", undo_weight), ("redo", undo_weight / 2), ("invalid", invalid_weight),
                   ("batch", batch_weight)]
 
@@ -151,6 +151,15 @@ class Gen:
                 if val is None:   # 속성 삭제는 pset.set 의 null 이 아니라 별도 커맨드다(난수 소비는 이전과 같다)
                     return ("pset.delete", {"id": target, "pset": pset, "prop": prop})
                 return ("pset.set", {"id": target, "pset": pset, "prop": prop, "value": val})
+        if k == "pdel":   # 실제로 있는 속성을 지운다(pset 항목의 None 은 대부분 없는 속성이라 효과가 거의 없었다)
+            target = r.choice([x for x in (wall, door) if x] or [None])
+            if target:
+                have = [(ps, pr) for ps, props in sorted(eng.ifc.get_psets(target).items()) for pr in sorted(props)]
+                if have:
+                    ps, pr = r.choice(have)
+                    return ("pset.delete", {"id": target, "pset": ps, "prop": pr})
+                ps, pr, _ = r.choice(PSETS)
+                return ("pset.delete", {"id": target, "pset": ps, "prop": pr})
         if k == "mat":
             target = r.choice([x for x in (wall, door) if x] or [None])
             if target:
@@ -251,6 +260,13 @@ def legacy_op(op: str, args: dict) -> tuple[str, dict]:
     지금의 pset.set 은 null 을 받지 않으므로 옛 로그를 그대로 재생하려면 이 변환이 필요하다. 효과(역연산)는 같다."""
     if op == "pset.set" and "value" in args and args["value"] is None:
         return "pset.delete", {k: v for k, v in args.items() if k != "value"}
+    # N10 이전 로그는 생략한 선택 필드를 null 로 적었다(wall.set 의 name: null 등). 지금은 명시적 null 을 거부하므로
+    # 기본값이 None 인 선택 필드의 null 은 생략으로 되돌린다. 필수 필드의 null(material.set 의 name)은 뜻이 있어 둔다.
+    from dobim_core import registry
+    cmd = registry.load().get(op)
+    if cmd is not None:
+        fields = cmd.args_model.model_fields
+        args = {k: v for k, v in args.items() if not (v is None and k in fields and not fields[k].is_required() and fields[k].default is None)}
     return op, args
 
 
@@ -320,6 +336,25 @@ def full_check(sess: Session, workdir: Path, *, validate=False, tag="") -> dict:
     return {"ok": not diffs, "diffs": diffs, "hashes": live, "rev": eng.rev, "sec": round(time.perf_counter() - t0, 2)}
 
 
+def directed_delete_order(workdir: Path) -> list[str]:
+    """삭제 효과의 결정성(10k 시드 424242 가 찾은 결함)을 우연에 맡기지 않고 직접 만든다: 속성셋을 이름 순서의 반대로 쓰고,
+    삭제가 롤백되는 배치(IFC 속성셋 삽입 순서가 바뀐다)를 거친 뒤 실제로 지운다. 로그·해시가 전체 재생과 같아야 한다."""
+    workdir = Path(workdir)
+    workdir.mkdir(parents=True, exist_ok=True)
+    (workdir / "dir-order.dobim").unlink(missing_ok=True)
+    s = Session(workdir / "dir-order.dobim")
+    try:
+        for n, a in F.SCRIPT:
+            s.run(n, a)
+        for ps in ("Pset_Zeta", "Pset_Mid", "Pset_Alpha"):
+            s.run("pset.set", {"id": F.W3, "pset": ps, "prop": "p", "value": 1})
+        s.batch([{"command": "element.delete", "args": {"id": F.W3}}, {"command": "wall.move", "args": {"id": mkid("9", 9), "dx": 1}}])
+        s.run("element.delete", {"id": F.W3})
+        return full_check(s, workdir, tag="-dir")["diffs"]
+    finally:
+        s.close()
+
+
 def coverage(eng: Engine) -> dict:
     """생성된 열이 수치 경계 경로를 실제로 밟았는지의 분포(최종 상태 + 로그 전체)."""
     from dobim_core import queries as Q
@@ -341,7 +376,7 @@ def coverage(eng: Engine) -> dict:
             parallel_joins += sum(g.q(Q.join_point, src, d) is None for d in dsts)
     doors = sorted(st.by_kind.get("door", ()))
     outside = sum(g.q(Q.door_status, d) != "ok" for d in doors)
-    tchg, kinds = 0, {}
+    tchg, kinds, dels = 0, {}, 0
     for *_, inv in log_rows(eng):
         for e in invert(json.loads(inv)):
             if e[0] == "pset":
@@ -349,10 +384,12 @@ def coverage(eng: Engine) -> dict:
                     tchg += 1
                 if e[5] is not None:
                     kinds[type(e[5]).__name__] = kinds.get(type(e[5]).__name__, 0) + 1
+                elif e[4] is not None:
+                    dels += 1
     return {"walls": len(walls), "walls_non_orthogonal": nonorth, "walls_shorter_than_10mm": short,
             "walls_trimmed_by_join": trimmed, "walls_degenerate_join": degenerate, "joins_parallel_no_intersection": parallel_joins,
             "doors": len(doors), "doors_outside_trimmed_host": outside,
-            "pset_writes_with_type_change": tchg, "pset_written_value_types": kinds}
+            "pset_writes_with_type_change": tchg, "pset_effective_deletes_in_log": dels, "pset_written_value_types": kinds}
 
 
 def property_run(seed: int, n: int, workdir: Path, *, checkpoint_every=0, validate=False, **gen_kw) -> dict:

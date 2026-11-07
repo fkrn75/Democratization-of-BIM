@@ -7,14 +7,18 @@
 from __future__ import annotations
 
 import base64
+import bisect
 import json
 from pathlib import Path
 from math import sqrt
-from typing import Annotated, Literal, Union
+import types
+from typing import Annotated, ClassVar, Literal, Union, get_args, get_origin
 
-from pydantic import AfterValidator, BaseModel, BeforeValidator, ConfigDict, Field, StrictBool, StrictFloat, StrictInt, StrictStr, model_validator
+from pydantic import (AfterValidator, BaseModel, BeforeValidator, ConfigDict, Field, StrictBool, StrictFloat, StrictInt, StrictStr,
+                      ValidationInfo, field_validator, model_validator)
 
 from dobim_core import fixture as F
+from dobim_core import limits
 from dobim_core import queries as Q
 from dobim_core import registry
 from dobim_core.errors import DobimError
@@ -61,8 +65,34 @@ PropName = Annotated[str, Field(pattern=r"^[A-Za-z][A-Za-z0-9_]{0,63}$", descrip
                      AfterValidator(lambda s: _prop_name_ok(s))]
 
 
+def _optional_numeric(ann) -> bool:
+    """`X | None` 이면서 X 가 숫자(float/int, 리스트 안 포함)인 주석인가."""
+    def parts(a):
+        if get_origin(a) is Annotated:
+            return parts(get_args(a)[0])
+        if get_origin(a) in (Union, types.UnionType):
+            return [x for arg in get_args(a) for x in parts(arg)]
+        if get_origin(a) is list:
+            return [x for arg in get_args(a) for x in parts(arg)]
+        return [a]
+    leaves = parts(ann)
+    return type(None) in leaves and any(x in (float, int) for x in leaves)
+
+
 class A(BaseModel):
     model_config = ConfigDict(extra="forbid")
+    # True 이면 이 커맨드의 선택 필드는 어느 것도 명시적 null 을 받지 않는다(바꾸지 않으려면 필드를 생략한다)
+    forbid_null: ClassVar[bool] = False
+
+    @field_validator("*", mode="before")
+    @classmethod
+    def _no_explicit_null(cls, v, info: ValidationInfo):
+        """N10: 표준 JSON 에는 NaN/inf 가 없어 공식 SDK 클라이언트가 null 로 바꿔 보낸다. `X | None = None` 필드가 null 을
+        "바꾸지 않음"으로 읽으면 NaN 을 보낸 그 필드만 조용히 무시되고 ok 가 된다. 숫자 선택 필드(와 forbid_null 커맨드의
+        모든 선택 필드)의 명시적 null 은 SCHEMA_INVALID 로 거부한다. 생략은 그대로 '바꾸지 않음'이다."""
+        if v is None and (cls.forbid_null or _optional_numeric(cls.model_fields[info.field_name].annotation)):
+            raise ValueError("null 은 허용하지 않는다(필드를 생략하면 바꾸지 않는다). NaN/inf 는 JSON 에 없어 SDK 가 null 로 보낸다")
+        return v
 
 
 def row(kind, ifc_class, family, params):
@@ -116,13 +146,19 @@ class Search(A):
     query: str = ""
     group: str | None = None
     risk: Literal["read", "write", "destructive", "code_exec"] | None = None
+    limit: int = Field(100, ge=1, le=1000, description="최대 개수. 응답 크기 상한에 걸리면 이보다 적게 돌려주고 page.truncated 로 알린다")
+    cursor: str | None = Field(None, description="이전 응답의 page.next_cursor")
 
 
 @command("commands.search", kind="query", risk="read", group="system", summary="커맨드를 키워드·그룹·위험 등급으로 찾는다",
-         args=Search, needs_project=False, idempotent=True, examples=[{"query": "wall"}, {"group": "history"}])
+         args=Search, needs_project=False, idempotent=True, examples=[{"query": "wall"}, {"group": "history"}, {"limit": 5}])
 def commands_search(env, a: Search):
-    items = registry.search(a.query, a.group, a.risk)
-    return {"items": items, "page": {"next_cursor": None, "total": len(items)}}
+    rows = registry.search(a.query, a.group, a.risk)
+    after = _dec_cursor(a.cursor, "name")
+    start = 0 if after is None else next((i for i, c in enumerate(rows) if c["name"] > after), len(rows))
+    items, cut = _fit(rows[start:start + a.limit])
+    more = start + len(items) < len(rows)
+    return {"items": items, "page": _page(_enc_cursor(items[-1]["name"]) if more else None, len(rows), cut)}
 
 
 class Describe(A):
@@ -198,6 +234,7 @@ def wall_move(ctx, a: WallMove):
 
 
 class WallSet(A):
+    forbid_null = True
     id: Id
     name: Name | None = None
     thickness: Pos | None = None
@@ -295,6 +332,7 @@ def door_place(ctx, a: DoorPlace):
 
 
 class DoorSet(A):
+    forbid_null = True
     id: Id
     name: Name | None = None
     width: Pos | None = None
@@ -404,16 +442,15 @@ def material_set(ctx, a: MatSet):
 
 # ================================================================ 조회
 def _enc_cursor(v) -> str:
-    return base64.urlsafe_b64encode(json.dumps(v).encode()).decode()
+    return limits.enc_cursor(v)
 
 
-def _dec_cursor(c):
-    if c is None:
-        return None
-    try:
-        return json.loads(base64.urlsafe_b64decode(c.encode()))
-    except Exception:
-        raise DobimError("SCHEMA_INVALID", "잘못된 커서다", path="/cursor") from None
+def _dec_cursor(c, shape: str):
+    return limits.dec_cursor(c, shape)
+
+
+_fit = limits.fit
+_page = limits.page
 
 
 class ElementGet(A):
@@ -441,15 +478,15 @@ class ElementQuery(A):
     kind: Literal["level", "wall", "door"] | None = None
     level: Id | None = None
     name_contains: str | None = None
-    limit: int = Field(100, ge=1, le=1000)
-    cursor: str | None = None
+    limit: int = Field(100, ge=1, le=1000, description="최대 개수. 응답 크기 상한에 걸리면 이보다 적게 돌려주고 page.truncated 로 알린다")
+    cursor: str | None = Field(None, description="이전 응답의 page.next_cursor")
 
 
 @command("element.query", kind="query", risk="read", group="query", summary="요소 목록(종류·레벨·이름 필터, 페이지)",
          args=ElementQuery, idempotent=True, examples=[{"kind": "wall", "limit": 10}])
 def element_query(ctx, a: ElementQuery):
     st = ctx.st
-    after = _dec_cursor(a.cursor)
+    after = _dec_cursor(a.cursor, "id")
     ids = sorted(st.by_kind.get(a.kind, ())) if a.kind else sorted(st.el)
     hits = []
     for eid in ids:
@@ -460,21 +497,35 @@ def element_query(ctx, a: ElementQuery):
             continue
         hits.append(eid)
     start = 0 if after is None else next((i for i, e in enumerate(hits) if e > after), len(hits))
-    page = hits[start:start + a.limit]
-    nxt = _enc_cursor(page[-1]) if start + a.limit < len(hits) else None
-    items = [{"id": e, "kind": st.el[e]["kind"], "name": st.el[e]["params"]["name"]} for e in page]
-    return {"items": items, "page": {"next_cursor": nxt, "total": len(hits)}}
+    window = [{"id": e, "kind": st.el[e]["kind"], "name": st.el[e]["params"]["name"]} for e in hits[start:start + a.limit]]
+    items, cut = _fit(window)
+    nxt = _enc_cursor(items[-1]["id"]) if start + len(items) < len(hits) else None
+    return {"items": items, "page": _page(nxt, len(hits), cut)}
 
 
-@command("relation.list", kind="query", risk="read", group="query", summary="요소의 관계(레벨·조인·호스팅)",
-         args=ElementGet, idempotent=True, examples=[{"id": F.W1}])
-def relation_list(ctx, a: ElementGet):
+class RelationList(A):
+    id: Id
+    limit: int = Field(100, ge=1, le=1000, description="최대 개수. 응답 크기 상한에 걸리면 이보다 적게 돌려주고 page.truncated 로 알린다")
+    cursor: str | None = Field(None, description="이전 응답의 page.next_cursor")
+
+
+@command("relation.list", kind="query", risk="read", group="query", summary="요소의 관계(레벨·조인·호스팅), 페이지",
+         args=RelationList, idempotent=True, examples=[{"id": F.W1}])
+def relation_list(ctx, a: RelationList):
     ctx.row(a.id)
-    out = []
-    for k in ("on_level", "joins", "hosts"):
-        out += [{"kind": k, "src": a.id, "dst": d} for d in ctx.rels_out(k, a.id)]
-        out += [{"kind": k, "src": s, "dst": a.id} for s in ctx.rels_in(k, a.id)]
-    return {"items": out, "page": {"next_cursor": None, "total": len(out)}}
+    # 전순서 키 (관계 종류 번호, 방향 0=나가는 1=들어오는, 상대 id). 키셋 커서는 마지막으로 읽은 항목의 키를 담는다:
+    # 읽는 동안 앞쪽 관계가 생기거나 사라져도 빠짐·중복이 없고, 커서가 가리키던 관계가 사라져도 그 키 뒤에서 이어간다.
+    keyed = []
+    for ki, k in enumerate(("on_level", "joins", "hosts")):
+        keyed += [((ki, 0, d), {"kind": k, "src": a.id, "dst": d}) for d in ctx.rels_out(k, a.id)]
+        keyed += [((ki, 1, s), {"kind": k, "src": s, "dst": a.id}) for s in ctx.rels_in(k, a.id)]
+    keyed.sort(key=lambda t: t[0])
+    after = _dec_cursor(a.cursor, "relation")
+    rest = keyed if after is None else [t for t in keyed if t[0] > tuple(after)]
+    items, cut = _fit([it for _, it in rest[:a.limit]])
+    more = len(items) < len(rest)
+    nxt = _enc_cursor(list(rest[len(items) - 1][0])) if more else None
+    return {"items": items, "page": _page(nxt, len(keyed), cut)}
 
 
 @command("model.stats", kind="query", risk="read", group="query", summary="요소 개수와 일람표 요약",
@@ -506,20 +557,22 @@ def model_validate(ctx, a: Validate):
 
 class ScheduleRows(A):
     kind: Literal["door", "wall"]
-    limit: int = Field(100, ge=1, le=1000)
-    cursor: str | None = None
+    limit: int = Field(100, ge=1, le=1000, description="최대 개수. 응답 크기 상한에 걸리면 이보다 적게 돌려주고 page.truncated 로 알린다")
+    cursor: str | None = Field(None, description="이전 응답의 page.next_cursor")
 
 
 @command("schedule.rows", kind="query", risk="read", group="schedule", summary="문·벽 일람표 행(페이지)",
          args=ScheduleRows, idempotent=True, examples=[{"kind": "door", "limit": 5}])
 def schedule_rows(ctx, a: ScheduleRows):
     rows = ctx.g.q(Q.schedule_sorted, a.kind)
-    start = _dec_cursor(a.cursor) or 0
-    page = rows[start:start + a.limit]
-    nxt = _enc_cursor(start + a.limit) if start + a.limit < len(rows) else None
-    cols = Q.ROW_COLUMNS[a.kind]
-    return {"columns": list(cols), "items": [list(r) for r in page],
-            "page": {"next_cursor": nxt, "total": len(rows)}}
+    # 키셋 커서: 마지막으로 읽은 행의 (레벨 이름, 이름, id). 행은 이 키로 전순서이므로 이진 탐색으로 그 뒤에서 이어간다.
+    # 읽는 동안 행이 삭제·삽입돼도 빠짐·중복이 없다. 이름·레벨이 바뀐 행은 새 키 위치로 옮겨 가므로 읽은 위치 뒤로 가면 다시 나올 수 있다.
+    after = _dec_cursor(a.cursor, "schedule")
+    start = 0 if after is None else bisect.bisect_right(rows, tuple(after), key=lambda r: Q.schedule_key(a.kind, r))
+    cols = list(Q.ROW_COLUMNS[a.kind])
+    items, cut = _fit([list(r) for r in rows[start:start + a.limit]], base=cols)
+    nxt = _enc_cursor(list(Q.schedule_key(a.kind, items[-1]))) if start + len(items) < len(rows) else None
+    return {"columns": cols, "items": items, "page": _page(nxt, len(rows), cut)}
 
 
 class ScheduleKind(A):
@@ -552,7 +605,8 @@ def _history(ctx, a, undo: bool):
         effects = [e for _, _, _, _, inv in entries for e in _inv(json.loads(inv))]
     for e in effects:
         ctx.emit(e)
-    return {"txn": txn, "ops": [e[2] for e in entries], "effects": len(effects)}
+    ops, cut = _fit([e[2] for e in entries], base={"txn": txn, "effects": len(effects), "ops_total": len(entries), "truncated": False})
+    return {"txn": txn, "ops": ops, "ops_total": len(entries), "effects": len(effects), "truncated": cut}
 
 
 def _inv(effs):
@@ -573,18 +627,51 @@ def history_redo(ctx, a: HistoryArgs):
 
 
 class HistoryList(A):
-    limit: int = Field(20, ge=1, le=500)
+    limit: int = Field(20, ge=1, le=500, description="최대 개수. 응답 크기 상한에 걸리면 이보다 적게 돌려주고 page.truncated 로 알린다")
+    cursor: str | None = Field(None, description="이전 응답의 page.next_cursor (그보다 오래된 항목을 돌려준다)")
 
 
 @command("history.list", kind="query", risk="read", group="history", summary="최근 로그 항목",
          args=HistoryList, idempotent=True, examples=[{"limit": 5}])
 def history_list(ctx, a: HistoryList):
+    before = _dec_cursor(a.cursor, "int")
     rows = ctx.eng.conn.execute(
-        "SELECT seq, txn_id, actor, base_rev, op, args FROM op_log ORDER BY seq DESC LIMIT ?", (a.limit,)).fetchall()
-    items = [{"seq": s, "txn": t, "actor": ac, "base_rev": b, "op": o, "args": json.loads(g)}
-             for s, t, ac, b, o, g in rows]
+        "SELECT seq, txn_id, actor, base_rev, op, args FROM op_log WHERE seq < ? ORDER BY seq DESC LIMIT ?",
+        (before if before is not None else 2**62, a.limit + 1)).fetchall()   # 한 건 더 읽어 다음 쪽이 있는지 안다
+    more_in_limit = len(rows) > a.limit
+    window = [{"seq": s, "txn": t, "actor": ac, "base_rev": b, "op": o, "args": json.loads(g)}
+              for s, t, ac, b, o, g in rows[:a.limit]]
+    items, cut = _fit(window, base={"undo_depth": 0, "redo_depth": 0})
+    more = more_in_limit or cut
     return {"items": items, "undo_depth": len(ctx.eng.undo_stack), "redo_depth": len(ctx.eng.redo_stack),
-            "page": {"next_cursor": None, "total": ctx.eng.rev}}
+            "page": _page(_enc_cursor(items[-1]["seq"]) if more and items else None, ctx.eng.rev, cut)}
+
+
+class HistoryAffected(A):
+    rev: int | None = Field(None, ge=1, description="변경 응답의 rev. 그 변경(트랜잭션)이 만들거나 바꾸거나 지운 요소를 돌려준다. 생략하면 현재 리비전")
+    limit: int = Field(100, ge=1, le=1000, description="최대 개수. 응답 크기 상한에 걸리면 이보다 적게 돌려주고 page.truncated 로 알린다")
+    cursor: str | None = Field(None, description="이전 응답의 page.next_cursor")
+
+
+@command("history.affected", kind="query", risk="read", group="history",
+         summary="변경 하나(rev)가 만들거나 바꾸거나 지운 요소 id 목록, 페이지. 변경 응답의 affected 가 잘렸을 때 나머지를 얻는다",
+         args=HistoryAffected, idempotent=True, examples=[{}, {"rev": 3, "limit": 2}])
+def history_affected(ctx, a: HistoryAffected):
+    rev = a.rev if a.rev is not None else ctx.eng.rev
+    row = ctx.eng.conn.execute("SELECT txn_id FROM op_log WHERE seq=?", (rev,)).fetchone()
+    if row is None:
+        raise DobimError("NOT_FOUND", f"로그에 없는 리비전이다: {rev}", path="/rev")
+    from dobim_core.engine import affected_of, invert   # 지연 import: 레지스트리 로드가 엔진에 의존하지 않게
+    forward = [e for *_, inv in ctx.eng.txn_entries(row[0]) for e in invert(json.loads(inv))]   # 실행 때의 효과 순서 그대로
+    aff = affected_of(forward)
+    keyed = [((ci, eid), {"id": eid, "change": c}) for ci, c in enumerate(("created", "modified", "deleted")) for eid in aff[c]]
+    after = _dec_cursor(a.cursor, "affected")
+    rest = keyed if after is None else [t for t in keyed if t[0] > tuple(after)]
+    items, cut = _fit([it for _, it in rest[:a.limit]])
+    more = len(items) < len(rest)
+    nxt = _enc_cursor(list(rest[len(items) - 1][0])) if more else None
+    return {"rev": rev, "txn": row[0], "counts": {c: len(aff[c]) for c in ("created", "modified", "deleted")},
+            "items": items, "page": _page(nxt, len(keyed), cut)}
 
 
 # ================================================================ 입출력 (파괴적)
@@ -638,7 +725,9 @@ def _snapshots(p, ws):
 
 
 def _snapshot_existing(p, ws):
-    """덮어쓰기 전에 기존 파일을 .dobim-snapshots/<이름>.<번호> 로 복사한다. 번호는 결정적으로 증가한다."""
+    """덮어쓰기 전에 기존 파일을 .dobim-snapshots/<이름>.<번호> 로 복사한다. 번호는 결정적으로 증가한다.
+    대상을 다른 프로그램이 공유 없이 열고 있으면 복사가 PermissionError(WinError 32)로 실패한다:
+    FILE_LOCKED 로 바꾸고 반쯤 복사된 파일을 지운다."""
     import shutil
     d = _snap_dir(p, ws)
     if not p.exists():
@@ -646,19 +735,36 @@ def _snapshot_existing(p, ws):
     d.mkdir(exist_ok=True)
     n = max([k for k, _ in _snapshots(p, ws)], default=0) + 1
     dst = d / f"{p.name}.{n}"
-    shutil.copy2(p, dst)
+    try:
+        shutil.copy2(p, dst)
+    except OSError as ex:
+        dst.unlink(missing_ok=True)
+        raise _locked(p) from ex
     return f"{SNAP_DIR}/{dst.name}"
 
 
+def _drop_snapshot(p, snap, ws) -> None:
+    if snap:
+        (_snap_dir(p, ws) / snap.rsplit("/", 1)[-1]).unlink(missing_ok=True)
+
+
+def _locked(p) -> DobimError:
+    return DobimError("FILE_LOCKED", f"파일을 바꿀 수 없다: {p.name} (다른 프로그램이 열고 있을 수 있다)", path="/path",
+                      hint="파일을 연 프로그램을 닫고 미리보기부터 다시 호출하세요")
+
+
 def _replace(p, write):
-    """임시 파일에 쓴 뒤 교체한다. 대상이 열려 있으면 FILE_LOCKED."""
+    """임시 파일에 쓴 뒤 교체한다. 대상이 열려 있으면 FILE_LOCKED. 어느 단계에서 실패해도 .tmp 를 남기지 않는다."""
     tmp = p.with_name(p.name + ".tmp")
-    write(tmp)
     try:
+        write(tmp)
         tmp.replace(p)
     except OSError as ex:
         tmp.unlink(missing_ok=True)
-        raise DobimError("FILE_LOCKED", f"파일을 바꿀 수 없다: {p.name}") from ex
+        raise _locked(p) from ex
+    except BaseException:
+        tmp.unlink(missing_ok=True)
+        raise
 
 
 def _export_preview(ctx, a: IfcExport):
@@ -674,17 +780,30 @@ def ifc_export(ctx, a: IfcExport):
     p = _target(ctx, a.path)
     ctx.eng.flush_ifc()   # 투영한 요소 수는 프로세스 상태(캐시 유무)에 따라 달라 결과에 넣지 않는다(패리티 C)
     snap = _snapshot_existing(p, ctx.eng.workspace)
-    _replace(p, lambda tmp: ctx.eng.ifc.write(str(tmp)))
+    try:
+        _replace(p, lambda tmp: ctx.eng.ifc.write(str(tmp)))
+    except DobimError:
+        _drop_snapshot(p, snap, ctx.eng.workspace)   # 쓰지 못했으면 방금 만든 스냅숏은 필요 없다(재시도마다 쌓이지 않게)
+        raise
     return {"path": p.name, "bytes": p.stat().st_size, "rev": ctx.eng.rev, "snapshot": snap}
 
 
-@command("ifc.snapshots", kind="query", risk="read", group="io", summary="IFC 내보내기 덮어쓰기 전 스냅숏 목록",
-         args=IfcExport, idempotent=True, needs_project=True, examples=[{"path": "export-example.ifc"}])
-def ifc_snapshots(ctx, a: IfcExport):
-    import os
+class SnapshotList(A):
+    path: str = Field(description="작업 폴더 안의 .ifc 경로")
+    limit: int = Field(100, ge=1, le=1000, description="최대 개수. 응답 크기 상한에 걸리면 이보다 적게 돌려주고 page.truncated 로 알린다")
+    cursor: str | None = Field(None, description="이전 응답의 page.next_cursor")
+
+
+@command("ifc.snapshots", kind="query", risk="read", group="io", summary="IFC 내보내기 덮어쓰기 전 스냅숏 목록, 페이지",
+         args=SnapshotList, idempotent=True, needs_project=True, examples=[{"path": "export-example.ifc"}])
+def ifc_snapshots(ctx, a: SnapshotList):
     p = resolve_in_workspace(ctx.eng.workspace, a.path)
-    items = [{"n": n, "name": f"{SNAP_DIR}/{f.name}", "bytes": f.stat().st_size} for n, f in _snapshots(p, ctx.eng.workspace)]
-    return {"items": items, "page": {"next_cursor": None, "total": len(items)}}
+    allrows = [{"n": n, "name": f"{SNAP_DIR}/{f.name}", "bytes": f.stat().st_size} for n, f in _snapshots(p, ctx.eng.workspace)]
+    after = _dec_cursor(a.cursor, "int")
+    start = 0 if after is None else next((i for i, r in enumerate(allrows) if r["n"] > after), len(allrows))
+    items, cut = _fit(allrows[start:start + a.limit])
+    more = start + len(items) < len(allrows)
+    return {"items": items, "page": _page(_enc_cursor(items[-1]["n"]) if more else None, len(allrows), cut)}
 
 
 class IfcRestore(A):
@@ -710,5 +829,9 @@ def ifc_restore(ctx, a: IfcRestore):
     if src is None:
         raise DobimError("NOT_FOUND", f"스냅숏이 없다: {a.snapshot}", path="/snapshot")
     snap = _snapshot_existing(p, ctx.eng.workspace)
-    _replace(p, lambda tmp: shutil.copyfile(src, tmp))
+    try:
+        _replace(p, lambda tmp: shutil.copyfile(src, tmp))
+    except DobimError:
+        _drop_snapshot(p, snap, ctx.eng.workspace)
+        raise
     return {"path": p.name, "restored_from": a.snapshot, "bytes": p.stat().st_size, "snapshot": snap}
