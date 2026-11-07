@@ -1,0 +1,52 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "dobim-core"
+version = "0.0.1"
+description = "Democratization of BIM 헤드리스 코어 스파이크 S1 (버릴 코드)"
+requires-python = ">=3.12,<3.13"
+license = { text = "MPL-2.0" }
+dependencies = [
+  "ifcopenshell==0.9.0.post1",  # LGPL-3.0
+  "pydantic>=2,<3",             # MIT
+  "mcp==2.3.0",                 # MIT
+]
+
+[project.optional-dependencies]
+# ifcopenshell.validate(express_rules=True) 가 pytest 를 요구한다 (S0 발견).
+validate = ["pytest>=8"]
+dev = ["pytest>=8", "import-linter>=2"]
+
+[project.scripts]
+dobim = "dobim_core.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+
+[tool.importlinter]
+root_package = "dobim_core"
+include_external_packages = true
+
+[[tool.importlinter.contracts]]
+name = "코어는 GUI·디스플레이 라이브러리에 의존하지 않는다"
+type = "forbidden"
+source_modules = ["dobim_core"]
+forbidden_modules = ["tkinter", "PyQt5", "PyQt6", "PySide2", "PySide6", "wx", "bpy", "matplotlib", "pyglet", "OpenGL"]
+
+[[tool.importlinter.contracts]]
+name = "순수 질의는 엔진·프로토콜 계층을 모른다"
+type = "forbidden"
+source_modules = ["dobim_core.queries", "dobim_core.graph"]
+forbidden_modules = ["dobim_core.engine", "dobim_core.cli", "dobim_core.mcp_server", "dobim_core.dispatch", "dobim_core.ifc_model"]
+allow_indirect_imports = true
+
+[[tool.importlinter.contracts]]
+name = "프로토콜 계층끼리 의존하지 않는다"
+type = "independence"
+modules = ["dobim_core.cli", "dobim_core.mcp_server"]
