@@ -1,0 +1,71 @@
+{
+  "seed": 424242,
+  "n_items": 10000,
+  "elapsed_sec": 68.4,
+  "ok": true,
+  "diffs": [],
+  "hashes": {
+    "state": "a5a7283c1aad43c699344c798d2c71cdf04d6ff4fcedb61845d6a287d034704b",
+    "derived": "82daa0f94f2870b593e93b0cea1f50114896b67eb446e4bc4fc2ba738ddf42c3",
+    "ifc": "e0545e536a94d0bb8551e24eac4a3e43adf8eae41502be23eab31cbbb1b37a5c"
+  },
+  "log_entries": 9473,
+  "items_succeeded": 8550,
+  "items_failed": 1450,
+  "final_counts": {
+    "level": 127,
+    "wall": 1761,
+    "door": 504
+  },
+  "item_kinds": {
+    "level.create": 137,
+    "wall.set": 760,
+    "history.redo": 695,
+    "history.undo": 637,
+    "wall.move": 1277,
+    "wall.create": 1442,
+    "join.clear": 214,
+    "door.place": 841,
+    "batch": 1321,
+    "join.set": 924,
+    "door.set": 538,
+    "pset.set": 574,
+    "element.delete": 343,
+    "material.set": 297
+  },
+  "logged_ops": {
+    "level.create": 137,
+    "history.undo": 637,
+    "history.redo": 291,
+    "wall.create": 2120,
+    "wall.set": 629,
+    "door.place": 738,
+    "wall.move": 1218,
+    "join.set": 1276,
+    "pset.set": 1305,
+    "door.set": 432,
+    "element.delete": 438,
+    "material.set": 243,
+    "join.clear": 9
+  },
+  "check_seconds": 34.95,
+  "coverage": {
+    "walls": 1761,
+    "walls_non_orthogonal": 689,
+    "walls_shorter_than_10mm": 253,
+    "walls_trimmed_by_join": 519,
+    "walls_degenerate_join": 45,
+    "joins_parallel_no_intersection": 100,
+    "doors": 504,
+    "doors_outside_trimmed_host": 54,
+    "pset_writes_with_type_change": 57,
+    "pset_written_value_types": {
+      "bool": 95,
+      "int": 389,
+      "str": 530,
+      "float": 406
+    }
+  },
+  "platform": "Windows-11-10.0.26200-SP0",
+  "python": "3.12.2"
+}

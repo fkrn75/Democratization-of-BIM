@@ -18,130 +18,110 @@
   "mutants": [
     {
       "detected": true,
-      "by": "differential",
-      "seed": 101,
+      "by": "golden",
       "evidence": [
-        "증분 그래프 != 기준 그래프(캐시 없음)",
-        "전체 재생: derived 해시가 다르다"
+        "W1 순면적: 기대 16110000.0, 실제 18000000.0",
+        "W1 문 수: 기대 1, 실제 0"
       ],
-      "repro_items": 4,
-      "repro_from_items": 150,
-      "shrink_evals": 70,
-      "repro": "level.create {\"id\": \"3000000000000010100001\", \"name\": \"L100001\", \"elevation\": 13200}\nwall.create {\"id\": \"1000000000000010100004\", \"level\": \"3000000000000010100001\", \"axis\": [8500, 3500, 8500, 5500], \"thickness\": 100, \"height\": 2700}\nwall.create {\"id\": \"1000000000000010100016\", \"level\": \"3000000000000010100001\", \"axis\": [2500, 3500, 3500, 3500], \"thickness\": 150, \"height\": 3000}\njoin.set {\"a\": \"1000000000000010100004\", \"b\": \"1000000000000010100016\"}",
       "mutant": "M01 관계 입력 무효화 누락",
       "family": "증분 무효화 누락",
-      "sec": 8.0
+      "sec": 0.4
     },
     {
       "detected": true,
-      "by": "differential",
-      "seed": 101,
+      "by": "golden",
       "evidence": [
-        "증분 그래프 != 기준 그래프(캐시 없음)",
-        "전체 재생: derived 해시가 다르다"
+        "D1 방화등급: 기대 'EI30', 실제 None"
       ],
-      "repro_items": 4,
-      "repro_from_items": 150,
-      "shrink_evals": 68,
-      "repro": "level.create {\"id\": \"3000000000000010100001\", \"name\": \"L100001\", \"elevation\": 13200}\nwall.create {\"id\": \"1000000000000010100004\", \"level\": \"3000000000000010100001\", \"axis\": [8500, 3500, 8500, 5500], \"thickness\": 100, \"height\": 2700}\nwall.create {\"id\": \"1000000000000010100006\", \"level\": \"3000000000000010100001\", \"axis\": [7000, 5000, 13000, 5000], \"thickness\": 200, \"height\": 3300}\nbatch[pset.set {\"id\": \"1000000000000010100006\", \"pset\": \"Pset_WallCommon\", \"prop\": \"IsExternal\", \"value\": true}; pset.set {\"id\": \"1000000000000010100004\", \"pset\": \"Pset_DoorCommon\", \"prop\": \"SecurityRating\", \"value\": n",
       "mutant": "M02 속성셋 입력 무효화 누락",
       "family": "증분 무효화 누락",
-      "sec": 8.6
-    },
-    {
-      "detected": true,
-      "by": "differential",
-      "seed": 101,
-      "evidence": [
-        "증분 그래프 != 기준 그래프(캐시 없음)",
-        "DoBIM_Intent 불일치 14건"
-      ],
-      "repro_items": 2,
-      "repro_from_items": 150,
-      "shrink_evals": 31,
-      "repro": "level.create {\"id\": \"3000000000000010100004\", \"name\": \"L100004\", \"elevation\": 16500}\nhistory.undo {}",
-      "mutant": "M03 조기 차단 과다(변경을 전파하지 않음)",
-      "family": "증분 무효화 누락",
-      "sec": 2.4
-    },
-    {
-      "detected": true,
-      "by": "differential",
-      "seed": 101,
-      "evidence": [
-        "증분 그래프 != 기준 그래프(캐시 없음)",
-        "전체 재생: derived 해시가 다르다"
-      ],
-      "repro_items": 3,
-      "repro_from_items": 150,
-      "shrink_evals": 53,
-      "repro": "level.create {\"id\": \"3000000000000010100001\", \"name\": \"L100001\", \"elevation\": 13200}\nwall.create {\"id\": \"1000000000000010100010\", \"level\": \"3000000000000010100001\", \"axis\": [7000, 4500, 7000, 10000], \"thickness\": 100, \"height\": 3000}\ndoor.place {\"id\": \"2000000000000010100006\", \"host\": \"1000000000000010100010\", \"offset\": 1500, \"width\": 1000, \"height\": 2400, \"sill\": 0}",
-      "mutant": "M04 의존성 기록 없이 읽기(untracked read)",
-      "family": "증분 무효화 누락",
-      "sec": 6.6
+      "sec": 0.4
     },
     {
       "detected": true,
       "by": "exception",
       "evidence": [
-        "IndexError: tuple index out of range"
+        "RuntimeError: generator raised StopIteration"
       ],
-      "mutant": "M05 undo 역연산 오류: 관계 방향 미반전",
-      "family": "undo 역연산 오류",
-      "sec": 0.9
+      "mutant": "M03 조기 차단 과다(변경을 전파하지 않음)",
+      "family": "증분 무효화 누락",
+      "sec": 0.1
     },
     {
       "detected": true,
-      "by": "differential",
-      "seed": 101,
+      "by": "golden",
       "evidence": [
-        "새로 열기: state 해시가 다르다",
-        "새로 열기: derived 해시가 다르다"
+        "W1 순면적: 기대 16110000.0, 실제 18000000.0",
+        "W1 문 수: 기대 1, 실제 0"
       ],
-      "repro_items": 4,
-      "repro_from_items": 150,
-      "shrink_evals": 73,
-      "repro": "level.create {\"id\": \"3000000000000010100001\", \"name\": \"L100001\", \"elevation\": 13200}\nwall.create {\"id\": \"1000000000000010100004\", \"level\": \"3000000000000010100001\", \"axis\": [8500, 3500, 8500, 5500], \"thickness\": 100, \"height\": 2700}\nwall.create {\"id\": \"1000000000000010100006\", \"level\": \"3000000000000010100001\", \"axis\": [7000, 5000, 13000, 5000], \"thickness\": 200, \"height\": 3300}\nbatch[pset.set {\"id\": \"1000000000000010100006\", \"pset\": \"Pset_WallCommon\", \"prop\": \"IsExternal\", \"value\": true}; pset.set {\"id\": \"1000000000000010100004\", \"pset\": \"Pset_DoorCommon\", \"prop\": \"SecurityRating\", \"value\": n",
+      "mutant": "M04 의존성 기록 없이 읽기(untracked read)",
+      "family": "증분 무효화 누락",
+      "sec": 0.4
+    },
+    {
+      "detected": true,
+      "by": "exception",
+      "evidence": [
+        "IndexError: list index out of range"
+      ],
+      "mutant": "M05 undo 역연산 오류: 관계 방향 미반전",
+      "family": "undo 역연산 오류",
+      "sec": 0.7
+    },
+    {
+      "detected": true,
+      "by": "golden",
+      "evidence": [
+        "undo 뒤 None != 0",
+        "undo 뒤 None != False"
+      ],
       "mutant": "M06 undo 역연산 오류: 속성셋 이전 값 유실",
       "family": "undo 역연산 오류",
-      "sec": 9.2
+      "sec": 0.4
     },
     {
       "detected": true,
       "by": "undo",
       "seed": 201,
       "evidence": [
-        "undo 뒤 해시(상태·파생값·IFC)가 깊이 91 의 기록과 다르다"
+        "undo 뒤 해시(상태·파생값·IFC)가 깊이 97 의 기록과 다르다",
+        "분기 단계 undo 뒤 해시가 기대 이력과 다르다 (깊이 97)"
       ],
       "mutant": "M07 undo 가 배치 첫 항목을 건너뜀",
       "family": "undo 역연산 오류",
-      "sec": 8.8
+      "sec": 9.1
     },
     {
       "detected": true,
       "by": "differential",
-      "seed": 106,
+      "seed": 102,
       "evidence": [
-        "새로 열기: state 해시가 다르다",
-        "새로 열기: ifc 해시가 다르다"
+        "증분 그래프 != 기준 그래프(캐시 없음)",
+        "전체 재생: state 해시가 다르다"
       ],
-      "repro_items": 6,
+      "repro_items": 5,
       "repro_from_items": 150,
-      "shrink_evals": 94,
-      "repro": "level.create {\"id\": \"3000000000000010600002\", \"name\": \"L600002\", \"elevation\": 6600}\nwall.create {\"id\": \"1000000000000010600001\", \"level\": \"3000000000000010600002\", \"axis\": [1500, 5500, 8000, 5500], \"thickness\": 200, \"height\": 3000}\ndoor.place {\"id\": \"2000000000000010600002\", \"host\": \"1000000000000010600001\", \"offset\": 3850, \"width\": 900, \"height\": 2100, \"sill\": 100}\npset.set {\"id\": \"2000000000000010600002\", \"pset\": \"Pset_WallCommon\", \"prop\": \"FireRating\", \"value\": \"EI90\"}\nelement.delete {\"id\": \"2000000000000010600002\"}\nhistory.undo {}",
+      "shrink_evals": 61,
+      "repro": "level.create {\"id\": \"3000000000000010200001\", \"name\": \"L200001\", \"elevation\": 13200}\nwall.create {\"id\": \"1000000000000010200003\", \"level\": \"3000000000000010200001\", \"axis\": [8000, 3000, 8000, 7000], \"thickness\": 150, \"height\": 2700}\nbatch[wall.create {\"id\": \"1000000000000010200004\", \"level\": \"3000000000000010200001\", \"axis\": [8000.7, 4000.0, 7999.3, 4000.0]}; join.set {\"a\": \"1000000000000010200003\", \"b\": \"1000000000000010200004\"}]\npset.set {\"id\": \"1000000000000010200004\", \"pset\": \"Pset_WallCommon\", \"prop\": \"IsExternal\", \"value\": true}\nbatch[pset.set {\"id\": \"1000000000000010200004\", \"pset\": \"Ps",
       "mutant": "M08 요소 삭제가 속성셋 복원 정보를 안 남김",
       "family": "undo 역연산 오류",
-      "sec": 17.9
+      "sec": 6.7
     },
     {
       "detected": true,
-      "by": "exception",
+      "by": "differential",
+      "seed": 101,
       "evidence": [
-        "DobimError: 요소 를 찾을 수 없다: 2000000000000010100007"
+        "전체 재생: state 해시가 다르다",
+        "전체 재생: derived 해시가 다르다"
       ],
+      "repro_items": 2,
+      "repro_from_items": 150,
+      "shrink_evals": 40,
+      "repro": "level.create {\"id\": \"3000000000000010100005\", \"name\": \"L100005\", \"elevation\": 9900}\nbatch[wall.create {\"id\": \"1000000000000010100036\", \"level\": \"3000000000000010100005\", \"axis\": [1000, 5500, 2500, 5500], \"thickness\": 150, \"height\": 3000}; wall.set {\"id\": \"1000000000000010100004\", \"axis\": [14577.5, 8257.75, 15097.0, 8319.0]}; door.place {\"id\": \"2000000000000010100008\", \"host\": \"1000000000000010100004\", \"offset\": 2300, \"width\": 1000, \"height\": 2400, \"sill\": 100}; wall.move {\"id\": \"9000000000000000000007\", \"dx\": 1}]",
       "mutant": "M09 실패 시 롤백 누락",
       "family": "원자성 오류",
-      "sec": 0.4
+      "sec": 4.6
     },
     {
       "detected": true,
@@ -151,7 +131,7 @@
       ],
       "mutant": "M10 expected_rev 검사 생략",
       "family": "rev 검사 생략",
-      "sec": 34.7
+      "sec": 39.0
     },
     {
       "detected": true,
@@ -162,7 +142,7 @@
       ],
       "mutant": "M11 쓰기 전 따라잡기 생략",
       "family": "동시성 오류",
-      "sec": 34.2
+      "sec": 39.4
     },
     {
       "detected": true,
@@ -175,10 +155,80 @@
       "repro_items": 150,
       "repro_from_items": 150,
       "shrink_evals": 150,
-      "repro": "level.create {\"id\": \"3000000000000010100001\", \"name\": \"L100001\", \"elevation\": 13200}\nwall.set {\"id\": \"9000000000000000000001\", \"thickness\": -5}\nhistory.redo {}\nwall.set {\"id\": \"9000000000000000000001\", \"thickness\": -5}\nwall.create {\"id\": \"1000000000000010100001\", \"level\": \"3000000000000010100001\", \"axis\": [7000, 4000, 11500, 4000], \"thickness\": 200, \"height\": 2700}\nwall.set {\"id\": \"1000000000000010100001\", \"thickness\": 200}\nwall.set {\"id\": \"1000000000000010100001\", \"thickness\": -5}\nwall.move {\"id\": \"1000000000000010100001\", \"dx\": 0, \"dy\": 500}\nlevel.create {\"id\": \"3000000000000010100002\", \"nam",
+      "repro": "history.redo {}\nlevel.create {\"id\": \"3000000000000010100001\", \"name\": \"L100001\", \"elevation\": 6600}\nwall.set {\"id\": \"9000000000000000000001\", \"thickness\": -5}\nwall.set {\"id\": \"9000000000000000000001\", \"thickness\": -5}\nwall.move {\"id\": \"9000000000000000000055\", \"dx\": 1}\nwall.set {\"id\": \"9000000000000000000001\", \"thickness\": -5}\nwall.set {\"id\": \"9000000000000000000001\", \"thickness\": -5}\nhistory.undo {}\nhistory.redo {}\nhistory.redo {}\nhistory.redo {}\nhistory.undo {}\nlevel.create {\"id\": \"3000000000000010100002\", \"name\": \"L100002\", \"elevation\": 9900}\nwall.set {\"id\": \"9000000000000000000001\", \"thick",
       "mutant": "M12 IFC 투영이 변경을 무시(증분 투영 오류)",
       "family": "증분 무효화 누락",
-      "sec": 85.1
+      "sec": 66.9
+    },
+    {
+      "detected": true,
+      "by": "golden",
+      "evidence": [
+        "속성 1.0 을 썼더니 1(int) 로 저장됨",
+        "속성 True 을 썼더니 1(int) 로 저장됨"
+      ],
+      "mutant": "M13 속성 값 타입 고착(D1 회귀)",
+      "family": "값 손상",
+      "sec": 0.2
+    },
+    {
+      "detected": true,
+      "by": "golden",
+      "evidence": [
+        "W1 순면적: 기대 16110000.0, 실제 17190000.0",
+        "W3 순면적: 기대 15900000.0, 실제 17000000.0"
+      ],
+      "mutant": "M14 [검수자] 벽 순면적의 문 면적을 width*width 로",
+      "family": "질의 의미 오류",
+      "sec": 0.2
+    },
+    {
+      "detected": true,
+      "by": "golden",
+      "evidence": [
+        "경계 문 상태(정확히 닿음): 기대 'ok', 실제 'outside_trimmed_host'",
+        "끝선 문 상태: 기대 'ok', 실제 'outside_trimmed_host'"
+      ],
+      "mutant": "M15 [검수자] door_status 경계 <= 를 < 로",
+      "family": "질의 의미 오류",
+      "sec": 0.2
+    },
+    {
+      "detected": true,
+      "by": "golden",
+      "evidence": [
+        "속성 1.0 을 썼더니 1(int) 로 저장됨",
+        "속성 True 을 썼더니 1(int) 로 저장됨"
+      ],
+      "mutant": "M16 [검수자] Ctx.set_prop 타입 검사 제거",
+      "family": "값 손상",
+      "sec": 0.2
+    },
+    {
+      "detected": true,
+      "by": "undo",
+      "seed": 201,
+      "evidence": [
+        "분기 단계 redo: 가능 여부 False 인데 결과 ok"
+      ],
+      "mutant": "M17 새 변경이 redo 가지를 버리지 않음",
+      "family": "undo/redo 오류",
+      "sec": 11.1
+    },
+    {
+      "detected": true,
+      "by": "differential",
+      "seed": 103,
+      "evidence": [
+        "전체 재생: 로그가 다르다 (seq 80, 127 vs 127항목)"
+      ],
+      "repro_items": 7,
+      "repro_from_items": 150,
+      "shrink_evals": 73,
+      "repro": "level.create {\"id\": \"3000000000000010300001\", \"name\": \"L300001\", \"elevation\": 3300}\nwall.create {\"id\": \"1000000000000010300002\", \"level\": \"3000000000000010300001\", \"axis\": [1500, 3500, 1500, 5000], \"thickness\": 100, \"height\": 3000}\ndoor.place {\"id\": \"2000000000000010300001\", \"host\": \"1000000000000010300002\", \"offset\": 600, \"width\": 1000, \"height\": 2400, \"sill\": 100}\npset.set {\"id\": \"2000000000000010300001\", \"pset\": \"Pset_DoorCommon\", \"prop\": \"SecurityRating\", \"value\": \"abc\"}\npset.set {\"id\": \"2000000000000010300001\", \"pset\": \"Pset_Custom\", \"prop\": \"Weight\", \"value\": \"heavy\"}\nbatch[pset.set {\"id",
+      "mutant": "M18 삭제 효과가 속성셋 삽입 순서에 의존(10k 시드 424242가 찾은 실제 결함)",
+      "family": "비결정",
+      "sec": 9.3
     }
   ],
   "control_no_mutation": {
@@ -187,8 +237,8 @@
       "detected": false
     }
   },
-  "detected": 12,
-  "total": 12,
+  "detected": 18,
+  "total": 18,
   "all_detected": true,
-  "elapsed_sec": 251.7
+  "elapsed_sec": 229.8
 }

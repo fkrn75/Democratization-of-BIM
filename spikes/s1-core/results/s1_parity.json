@@ -1,10 +1,10 @@
 {
   "negative_control_detects_divergence": true,
-  "commands_in_registry": 27,
-  "commands_executed_with_examples": 27,
+  "commands_in_registry": 29,
+  "commands_executed_with_examples": 29,
   "coverage_percent": 100.0,
-  "example_runs": 28,
-  "error_case_runs": 12,
+  "example_runs": 30,
+  "error_case_runs": 15,
   "mcp_tools": [
     "dobim_command_describe",
     "dobim_commands_search",
@@ -146,8 +146,8 @@
           "result": {
             "path": "export-example.ifc",
             "bytes": 10848,
-            "projected": 7,
-            "rev": 10
+            "rev": 10,
+            "snapshot": null
           },
           "affected": {
             "created": [],
@@ -165,8 +165,8 @@
           "result": {
             "path": "export-example.ifc",
             "bytes": 10848,
-            "projected": 7,
-            "rev": 10
+            "rev": 10,
+            "snapshot": null
           },
           "affected": {
             "created": [],
@@ -182,6 +182,68 @@
         "mcp_is_error": false,
         "both_ok": true
       }
+    },
+    {
+      "label": "ex-ifc_restore-0",
+      "command": "ifc.restore",
+      "same_envelope": true,
+      "exit_code": 6,
+      "exit_code_matches_envelope": true,
+      "ok": false,
+      "state_hash_equal": true,
+      "second_step": {
+        "cli": {
+          "ok": true,
+          "rev": 10,
+          "result": {
+            "path": "export-example.ifc",
+            "restored_from": 1,
+            "bytes": 10848,
+            "snapshot": ".dobim-snapshots/export-example.ifc.3"
+          },
+          "affected": {
+            "created": [],
+            "modified": [],
+            "deleted": []
+          },
+          "warnings": [],
+          "page": null,
+          "artifacts": [],
+          "job": null
+        },
+        "mcp": {
+          "ok": true,
+          "rev": 10,
+          "result": {
+            "path": "export-example.ifc",
+            "restored_from": 1,
+            "bytes": 10848,
+            "snapshot": ".dobim-snapshots/export-example.ifc.3"
+          },
+          "affected": {
+            "created": [],
+            "modified": [],
+            "deleted": []
+          },
+          "warnings": [],
+          "page": null,
+          "artifacts": [],
+          "job": null
+        },
+        "cli_exit": 0,
+        "mcp_is_error": false,
+        "both_ok": true
+      }
+    },
+    {
+      "label": "ex-ifc_snapshots-0",
+      "command": "ifc.snapshots",
+      "same_envelope": true,
+      "exit_code": 0,
+      "exit_code_matches_envelope": true,
+      "ok": true,
+      "state_hash_equal": true,
+      "second_step": null
     },
     {
       "label": "ex-join_clear-0",
@@ -438,8 +500,8 @@
           "result": {
             "path": "x.ifc",
             "bytes": 10848,
-            "projected": 7,
-            "rev": 10
+            "rev": 10,
+            "snapshot": null
           },
           "affected": {
             "created": [],
@@ -457,8 +519,8 @@
           "result": {
             "path": "x.ifc",
             "bytes": 10848,
-            "projected": 7,
-            "rev": 10
+            "rev": 10,
+            "snapshot": null
           },
           "affected": {
             "created": [],
@@ -487,6 +549,36 @@
     },
     {
       "label": "err-10",
+      "command": "ifc.export",
+      "same_envelope": true,
+      "exit_code": 6,
+      "exit_code_matches_envelope": true,
+      "ok": false,
+      "state_hash_equal": true,
+      "second_step": null
+    },
+    {
+      "label": "err-11",
+      "command": "ifc.export",
+      "same_envelope": true,
+      "exit_code": 6,
+      "exit_code_matches_envelope": true,
+      "ok": false,
+      "state_hash_equal": true,
+      "second_step": null
+    },
+    {
+      "label": "err-12",
+      "command": "ifc.export",
+      "same_envelope": true,
+      "exit_code": 6,
+      "exit_code_matches_envelope": true,
+      "ok": false,
+      "state_hash_equal": true,
+      "second_step": null
+    },
+    {
+      "label": "err-13",
       "command": "wall.move",
       "same_envelope": true,
       "exit_code": 0,
@@ -496,7 +588,7 @@
       "second_step": null
     },
     {
-      "label": "err-11",
+      "label": "err-14",
       "command": "history.redo",
       "same_envelope": true,
       "exit_code": 1,

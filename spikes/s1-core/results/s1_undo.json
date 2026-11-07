@@ -1,0 +1,173 @@
+{
+  "seeds": [
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7,
+    8,
+    9,
+    10,
+    11,
+    12,
+    13,
+    14,
+    15,
+    16,
+    17,
+    18,
+    19,
+    20
+  ],
+  "items_per_seed": 200,
+  "total_hash_verified_steps": 8007,
+  "total_branch_checks": 1600,
+  "total_txns": 3166,
+  "violations": [],
+  "per_seed": [
+    {
+      "seed": 1,
+      "violations": [],
+      "verified_steps": 407,
+      "branch_checks": 80,
+      "txns": 167
+    },
+    {
+      "seed": 2,
+      "violations": [],
+      "verified_steps": 396,
+      "branch_checks": 80,
+      "txns": 152
+    },
+    {
+      "seed": 3,
+      "violations": [],
+      "verified_steps": 397,
+      "branch_checks": 80,
+      "txns": 147
+    },
+    {
+      "seed": 4,
+      "violations": [],
+      "verified_steps": 399,
+      "branch_checks": 80,
+      "txns": 176
+    },
+    {
+      "seed": 5,
+      "violations": [],
+      "verified_steps": 388,
+      "branch_checks": 80,
+      "txns": 150
+    },
+    {
+      "seed": 6,
+      "violations": [],
+      "verified_steps": 398,
+      "branch_checks": 80,
+      "txns": 156
+    },
+    {
+      "seed": 7,
+      "violations": [],
+      "verified_steps": 410,
+      "branch_checks": 80,
+      "txns": 159
+    },
+    {
+      "seed": 8,
+      "violations": [],
+      "verified_steps": 399,
+      "branch_checks": 80,
+      "txns": 157
+    },
+    {
+      "seed": 9,
+      "violations": [],
+      "verified_steps": 408,
+      "branch_checks": 80,
+      "txns": 169
+    },
+    {
+      "seed": 10,
+      "violations": [],
+      "verified_steps": 399,
+      "branch_checks": 80,
+      "txns": 148
+    },
+    {
+      "seed": 11,
+      "violations": [],
+      "verified_steps": 410,
+      "branch_checks": 80,
+      "txns": 173
+    },
+    {
+      "seed": 12,
+      "violations": [],
+      "verified_steps": 410,
+      "branch_checks": 80,
+      "txns": 164
+    },
+    {
+      "seed": 13,
+      "violations": [],
+      "verified_steps": 396,
+      "branch_checks": 80,
+      "txns": 161
+    },
+    {
+      "seed": 14,
+      "violations": [],
+      "verified_steps": 395,
+      "branch_checks": 80,
+      "txns": 143
+    },
+    {
+      "seed": 15,
+      "violations": [],
+      "verified_steps": 402,
+      "branch_checks": 80,
+      "txns": 146
+    },
+    {
+      "seed": 16,
+      "violations": [],
+      "verified_steps": 388,
+      "branch_checks": 80,
+      "txns": 147
+    },
+    {
+      "seed": 17,
+      "violations": [],
+      "verified_steps": 398,
+      "branch_checks": 80,
+      "txns": 148
+    },
+    {
+      "seed": 18,
+      "violations": [],
+      "verified_steps": 392,
+      "branch_checks": 80,
+      "txns": 164
+    },
+    {
+      "seed": 19,
+      "violations": [],
+      "verified_steps": 418,
+      "branch_checks": 80,
+      "txns": 176
+    },
+    {
+      "seed": 20,
+      "violations": [],
+      "verified_steps": 397,
+      "branch_checks": 80,
+      "txns": 163
+    }
+  ],
+  "what_is_checked": "각 단계 뒤 (상태 해시, 파생값 해시, IFC 의미 해시) 세 개가 기록된 이력과 같다. 끝까지 undo -> 끝까지 redo -> 무작위 -> undo 뒤 새 명령으로 redo 가지를 버리는 분기. 실패한 커맨드의 원자적 롤백 포함.",
+  "pass": true
+}

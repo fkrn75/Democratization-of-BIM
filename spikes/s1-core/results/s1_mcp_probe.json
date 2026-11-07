@@ -1,8 +1,8 @@
 {
-  "connect_and_initialize_sec": 1.159,
+  "connect_and_initialize_sec": 1.114,
   "negotiated_protocol_version": "2026-07-28",
   "server_info": "dobim",
-  "tools_list_sec": 0.002,
+  "tools_list_sec": 0.003,
   "tool_count": 8,
   "tool_schema_bytes": {
     "dobim_commands_search": 327,
@@ -18,57 +18,57 @@
     {
       "tool": "dobim_commands_search",
       "command": "wall",
-      "first_ms": 15.5,
-      "median_ms": 1.6,
+      "first_ms": 21.9,
+      "median_ms": 1.4,
       "response_bytes": 596
     },
     {
       "tool": "dobim_command_describe",
       "command": "wall.create",
-      "first_ms": 1.9,
+      "first_ms": 1.7,
       "median_ms": 1.7,
       "response_bytes": 1358
     },
     {
       "tool": "dobim_query",
       "command": "project.info",
-      "first_ms": 599.1,
-      "median_ms": 2.0,
+      "first_ms": 565.2,
+      "median_ms": 1.7,
       "response_bytes": 326
     },
     {
       "tool": "dobim_query",
       "command": "schedule.rows",
-      "first_ms": 3.0,
-      "median_ms": 1.8,
+      "first_ms": 2.4,
+      "median_ms": 1.7,
       "response_bytes": 674
     },
     {
       "tool": "dobim_query",
       "command": "model.hash",
-      "first_ms": 19.1,
-      "median_ms": 8.0,
+      "first_ms": 18.9,
+      "median_ms": 7.3,
       "response_bytes": 397
     },
     {
       "tool": "dobim_execute",
       "command": "wall.move",
-      "first_ms": 4.5,
-      "median_ms": 2.8,
+      "first_ms": 4.4,
+      "median_ms": 2.2,
       "response_bytes": 246
     },
     {
       "tool": "dobim_execute",
       "command": "history.undo",
-      "first_ms": 2.1,
-      "median_ms": 2.1,
+      "first_ms": 2.5,
+      "median_ms": 2.0,
       "response_bytes": 229
     },
     {
       "tool": "dobim_query",
       "command": "model.validate",
-      "first_ms": 2304.9,
-      "median_ms": 2375.5,
+      "first_ms": 2155.5,
+      "median_ms": 2155.5,
       "response_bytes": 201
     }
   ],
