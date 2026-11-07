@@ -1,0 +1,11 @@
+# ConstructCAD v0.9.1 Linux CLI(ccad) 격리 시험용 이미지. 소스는 읽지 않고 릴리스 바이너리만 쓴다 (ADR-0003).
+# 빌드 컨텍스트: cc.tar.gz 가 있는 폴더 (build_ccad.sh 참고)
+FROM debian:12-slim@sha256:734a72b3d6142a71993b4bc580ca01d8ca687f77a2c422d96a961d3376b179bc
+ARG SHA256=755dbebfdf6c3ca977574c22cfda0d8dd77a4b9a1c749ba2ea4048ff426f2b6f
+COPY cc.tar.gz /tmp/cc.tar.gz
+RUN echo "$SHA256  /tmp/cc.tar.gz" | sha256sum -c - \
+ && mkdir /opt/cc && tar -xzf /tmp/cc.tar.gz -C /opt/cc --strip-components=1 && rm /tmp/cc.tar.gz \
+ && useradd -m -u 10001 tester && mkdir /in /out && chown tester /out
+USER 10001
+ENV HOME=/home/tester PATH=/opt/cc:$PATH
+WORKDIR /out

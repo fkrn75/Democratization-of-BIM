@@ -1,0 +1,7 @@
+이동한 요소 0개 / 형상 있는 요소 57개
+  체적변화 D-01 0.0945 -> 0.105
+  체적변화 D-05 0.0945 -> 0.105
+  체적변화 W-E-01 11.1456 -> 11.0784
+  체적변화 W-E-05 11.1456 -> 11.0784
+관계 보존: voids True fills True
+유효성 오류 전/후: 0 1 ['With attribute:\n    <attribute NominalValue?: <select IfcValue: (<select IfcDerivedMeasureValue: (<type IfcAbsorbedDoseMeasure: <real>> | <type IfcAccelerationMeasure: <real>> | <type IfcAngularVeloci']

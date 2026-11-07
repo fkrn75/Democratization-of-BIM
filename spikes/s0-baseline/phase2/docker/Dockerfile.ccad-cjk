@@ -1,0 +1,5 @@
+# 한글 PDF 시험용: s0-ccad 에 공식 Debian 저장소의 Noto CJK 글꼴만 추가 (환경 vs 도구 구분용)
+FROM s0-ccad
+USER root
+RUN apt-get update && apt-get install -y --no-install-recommends fonts-noto-cjk && rm -rf /var/lib/apt/lists/*
+USER 10001

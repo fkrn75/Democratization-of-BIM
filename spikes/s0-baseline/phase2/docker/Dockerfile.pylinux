@@ -1,0 +1,5 @@
+# Linux 에서 RA-01 재생성(해시 비교)용. 설치 단계에서만 네트워크 사용.
+FROM python@sha256:4840d514c583a4d3d8cad3940e68dee6f0f6f3635c12fcd0a3d74c21a5b93a54
+RUN pip install --no-cache-dir ifcopenshell==0.9.0.post1 pytest && useradd -m -u 10001 tester && mkdir /out && chown tester /out
+USER 10001
+WORKDIR /out
