@@ -212,6 +212,11 @@ def schedule_summary(g, kind):
     return {"count": n, "total_width": a}
 
 
+def schedule_key(kind, row):
+    """일람표 행의 전순서 키 (레벨 이름, 이름, id). 키셋 커서가 마지막으로 읽은 행의 키를 담는다."""
+    return (row[_SORT_IDX[kind]], row[1], row[0])
+
+
 def schedule_sorted(g, kind):
     """정렬된 전체 행. T0 가 아니라 schedule.rows 조회 때만 당긴다."""
     i = _SORT_IDX[kind]

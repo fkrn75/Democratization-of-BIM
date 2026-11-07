@@ -33,7 +33,7 @@
       },
       "mutant": "M01 관계 입력 무효화 누락",
       "family": "증분 무효화 누락",
-      "sec": 28.2
+      "sec": 45.7
     },
     {
       "detected": true,
@@ -52,7 +52,7 @@
       },
       "mutant": "M02 속성셋 입력 무효화 누락",
       "family": "증분 무효화 누락",
-      "sec": 29.8
+      "sec": 45.2
     },
     {
       "detected": true,
@@ -70,7 +70,7 @@
       },
       "mutant": "M03 조기 차단 과다(변경을 전파하지 않음)",
       "family": "증분 무효화 누락",
-      "sec": 24.4
+      "sec": 22.3
     },
     {
       "detected": true,
@@ -89,7 +89,7 @@
       },
       "mutant": "M04 의존성 기록 없이 읽기(untracked read)",
       "family": "증분 무효화 누락",
-      "sec": 30.6
+      "sec": 45.1
     },
     {
       "detected": true,
@@ -106,7 +106,7 @@
       },
       "mutant": "M05 undo 역연산 오류: 관계 방향 미반전",
       "family": "undo 역연산 오류",
-      "sec": 52.4
+      "sec": 66.8
     },
     {
       "detected": true,
@@ -125,15 +125,14 @@
       },
       "mutant": "M06 undo 역연산 오류: 속성셋 이전 값 유실",
       "family": "undo 역연산 오류",
-      "sec": 27.2
+      "sec": 41.4
     },
     {
       "detected": true,
-      "by": "undo",
-      "seed": 201,
+      "by": "golden",
       "evidence": [
-        "undo 뒤 해시(상태·파생값·IFC)가 깊이 108 의 기록과 다르다",
-        "분기 단계 undo 뒤 해시가 기대 이력과 다르다 (깊이 108)"
+        "history.affected 이어받기가 생성 id 전체와 다르다(받은 600, 중복 0)",
+        "큰 배치의 undo 응답이 틀렸다: {'txn': 't2', 'ops_total': 599, 'effects': 1198, 'truncated': True}"
       ],
       "without_golden": {
         "detected": true,
@@ -145,7 +144,7 @@
       },
       "mutant": "M07 undo 가 배치 첫 항목을 건너뜀",
       "family": "undo 역연산 오류",
-      "sec": 79.7
+      "sec": 56.4
     },
     {
       "detected": true,
@@ -164,14 +163,13 @@
       },
       "mutant": "M08 요소 삭제가 속성셋 복원 정보를 안 남김",
       "family": "undo 역연산 오류",
-      "sec": 49.2
+      "sec": 70.3
     },
     {
       "detected": true,
-      "by": "differential",
+      "by": "golden",
       "evidence": [
-        "전체 재생: state 해시가 다르다",
-        "전체 재생: derived 해시가 다르다"
+        "redo 뒤 해시가 큰 배치 직후와 다르다"
       ],
       "without_golden": {
         "detected": true,
@@ -183,7 +181,7 @@
       },
       "mutant": "M09 실패 시 롤백 누락",
       "family": "원자성 오류",
-      "sec": 48.7
+      "sec": 48.5
     },
     {
       "detected": true,
@@ -200,7 +198,7 @@
       },
       "mutant": "M10 expected_rev 검사 생략",
       "family": "rev 검사 생략",
-      "sec": 142.1
+      "sec": 176.7
     },
     {
       "detected": true,
@@ -219,13 +217,14 @@
       },
       "mutant": "M11 쓰기 전 따라잡기 생략",
       "family": "동시성 오류",
-      "sec": 24.2
+      "sec": 45.9
     },
     {
       "detected": true,
       "by": "golden",
       "evidence": [
-        "차등 검사 실패(null 거부 뒤): ['DoBIM_Intent 불일치 1건', '전체 재생: ifc 해시가 다르다']"
+        "차등 검사 실패(null 거부 뒤): ['DoBIM_Intent 불일치 1건', '전체 재생: ifc 해시가 다르다']",
+        "큰 배치 뒤 차등 검사 실패: ['DoBIM_Intent 불일치 600건', '전체 재생: ifc 해시가 다르다']"
       ],
       "without_golden": {
         "detected": true,
@@ -237,7 +236,7 @@
       },
       "mutant": "M12 IFC 투영이 변경을 무시(증분 투영 오류)",
       "family": "증분 무효화 누락",
-      "sec": 29.5
+      "sec": 46.3
     },
     {
       "detected": true,
@@ -251,7 +250,7 @@
       },
       "mutant": "M13 속성 값 타입 고착(D1 회귀)",
       "family": "값 손상",
-      "sec": 88.3
+      "sec": 102.8
     },
     {
       "detected": true,
@@ -265,7 +264,7 @@
       },
       "mutant": "M14 [검수자] 벽 순면적의 문 면적을 width*width 로",
       "family": "질의 의미 오류",
-      "sec": 98.2
+      "sec": 105.2
     },
     {
       "detected": true,
@@ -279,7 +278,7 @@
       },
       "mutant": "M15 [검수자] door_status 경계 <= 를 < 로",
       "family": "질의 의미 오류",
-      "sec": 90.9
+      "sec": 95.8
     },
     {
       "detected": true,
@@ -311,7 +310,7 @@
       },
       "mutant": "M17 새 변경이 redo 가지를 버리지 않음",
       "family": "undo/redo 오류",
-      "sec": 72.4
+      "sec": 74.6
     },
     {
       "detected": true,
@@ -328,7 +327,7 @@
       },
       "mutant": "M18 삭제 효과가 속성셋 삽입 순서에 의존(10k 시드 424242가 찾은 실제 결함)",
       "family": "비결정",
-      "sec": 43.8
+      "sec": 52.4
     },
     {
       "detected": true,
@@ -341,7 +340,7 @@
       },
       "mutant": "M19 MIN_TRIMMED 정확 경계(1.0)가 퇴화로 판정됨",
       "family": "경계 오류",
-      "sec": 69.0
+      "sec": 72.7
     },
     {
       "detected": true,
@@ -354,7 +353,7 @@
       },
       "mutant": "M20 JOIN_MAX_EXT 정확 경계(1000)가 무시됨",
       "family": "경계 오류",
-      "sec": 69.1
+      "sec": 73.0
     },
     {
       "detected": true,
@@ -367,7 +366,7 @@
       },
       "mutant": "M21 조인 시작/끝 배정의 중간 동률을 끝 쪽으로",
       "family": "경계 오류",
-      "sec": 68.9
+      "sec": 72.7
     },
     {
       "detected": true,
@@ -386,7 +385,7 @@
       },
       "mutant": "M22 [N1] 속성 쓰기가 지운 뒤 실패해도 복원 안 함",
       "family": "값 손상",
-      "sec": 22.7
+      "sec": 32.4
     },
     {
       "detected": true,
@@ -400,13 +399,13 @@
       },
       "mutant": "M23 [N4] 속성 값 검증 없음(NaN/inf/int64 초과/NUL/서로게이트)",
       "family": "값 손상",
-      "sec": 69.0
+      "sec": 73.8
     },
     {
       "detected": true,
       "by": "golden",
       "evidence": [
-        "value=null 이 SCHEMA_INVALID 로 거부되지 않음: {'ok': True, 'rev': 12, 'result': {'changed': True}, 'affected': {'created': [], 'modified': ['1000000000000000000001'], 'deleted': []}, 'warnings': [], 'page': None, 'artifacts': [], 'job': None}",
+        "value=null 이 SCHEMA_INVALID 로 거부되지 않음: {'ok': True, 'rev': 12, 'result': {'changed': True}, 'affected': {'created': [], 'modified': ['1000000000000000000001'], 'deleted': [], 'counts': {'created': 0, 'modified': 1, 'deleted': 0}, 'truncated': False}, 'warnings': [], 'page': None, 'artifacts': [], 'job': None}",
         "value=null 이 속성을 지우거나 상태를 바꿨다"
       ],
       "without_golden": {
@@ -414,7 +413,7 @@
       },
       "mutant": "M24 [N7] pset.set 의 value=null 이 속성 삭제(SDK 가 NaN 을 null 로 보내면 조용히 삭제)",
       "family": "값 손상",
-      "sec": 69.0
+      "sec": 73.2
     },
     {
       "detected": true,
@@ -433,7 +432,7 @@
       },
       "mutant": "M25 [N8] 복원 실패를 삼키고 오염 표시도 안 함",
       "family": "값 손상",
-      "sec": 22.5
+      "sec": 32.9
     },
     {
       "detected": true,
@@ -452,21 +451,21 @@
       },
       "mutant": "M26 [N8] 오염 표시만 하고 복구·거부는 안 함",
       "family": "값 손상",
-      "sec": 7.3
+      "sec": 18.7
     },
     {
       "detected": true,
       "by": "golden",
       "evidence": [
-        "pset.set 가 속성 이름 \"id\" 를 SCHEMA_INVALID(/prop)로 거부하지 않음: {'ok': True, 'rev': 11, 'result': {'changed': True}, 'affected': {'created': [], 'modified': ['1000000000000000000001'], 'deleted': []}, 'warnings': [], 'page': None, 'artifacts': [], 'job': None}",
-        "pset.delete 가 속성 이름 \"id\" 를 SCHEMA_INVALID(/prop)로 거부하지 않음: {'ok': True, 'rev': 11, 'result': {'changed': False}, 'affected': {'created': [], 'modified': [], 'deleted': []}, 'warnings': ['pset.delete: 변경 없음'], 'page': None, 'artifacts': [], 'job': None}"
+        "pset.set 가 속성 이름 \"id\" 를 SCHEMA_INVALID(/prop)로 거부하지 않음: {'ok': True, 'rev': 11, 'result': {'changed': True}, 'affected': {'created': [], 'modified': ['1000000000000000000001'], 'deleted': [], 'counts': {'created': 0, 'modified': 1, 'deleted': 0}, 'truncated': False}, 'warnings': [], 'page': None, 'artifacts': [], 'job': None}",
+        "pset.delete 가 속성 이름 \"id\" 를 SCHEMA_INVALID(/prop)로 거부하지 않음: {'ok': True, 'rev': 11, 'result': {'changed': False}, 'affected': {'created': [], 'modified': [], 'deleted': [], 'counts': {'created': 0, 'modified': 0, 'deleted': 0}, 'truncated': False}, 'warnings': ['pset.delete: 변경 없음'], 'page': None, 'artifacts': [], 'job': None}"
       ],
       "without_golden": {
         "detected": false
       },
       "mutant": "M27 [N9] 속성 이름 id 허용(쓰기 ok, 조회에 안 보임)",
       "family": "값 손상",
-      "sec": 68.6
+      "sec": 73.2
     },
     {
       "detected": true,
@@ -485,7 +484,7 @@
       },
       "mutant": "M28 [D1] 요소(el) 분기가 IFC 호출 실패를 오염으로 표시하지 않음",
       "family": "값 손상",
-      "sec": 43.0
+      "sec": 51.2
     },
     {
       "detected": true,
@@ -503,7 +502,7 @@
       },
       "mutant": "M29 [D1] 재료(mat) 분기가 IFC 호출 실패를 오염으로 표시하지 않음",
       "family": "값 손상",
-      "sec": 23.6
+      "sec": 34.2
     },
     {
       "detected": true,
@@ -522,7 +521,7 @@
       },
       "mutant": "M30 [D1] 투영(flush) 실패를 오염으로 표시하지 않음",
       "family": "값 손상",
-      "sec": 43.5
+      "sec": 52.2
     },
     {
       "detected": true,
@@ -536,7 +535,7 @@
       },
       "mutant": "M31 [D1] remove_identity 가 목록에서 먼저 빼고 IFC 를 지움",
       "family": "값 손상",
-      "sec": 69.2
+      "sec": 77.5
     },
     {
       "detected": true,
@@ -554,7 +553,7 @@
       },
       "mutant": "M32 [4차] 예상 밖 예외가 INTERNAL 봉투로 바뀌지 않음",
       "family": "프로토콜",
-      "sec": 23.8
+      "sec": 23.3
     },
     {
       "detected": true,
@@ -568,7 +567,7 @@
       },
       "mutant": "M33 [N10] wall.set/door.set 의 명시적 null 허용(NaN 필드만 조용히 무시)",
       "family": "값 손상",
-      "sec": 69.1
+      "sec": 73.9
     },
     {
       "detected": true,
@@ -582,7 +581,7 @@
       },
       "mutant": "M34 [S11] 잠긴 파일의 스냅숏 복사 PermissionError 가 FILE_LOCKED 로 안 바뀜",
       "family": "프로토콜",
-      "sec": 68.9
+      "sec": 74.9
     },
     {
       "detected": true,
@@ -596,7 +595,7 @@
       },
       "mutant": "M35 [S11] 목록 응답 크기 상한 없음",
       "family": "프로토콜",
-      "sec": 69.6
+      "sec": 74.2
     },
     {
       "detected": true,
@@ -610,7 +609,77 @@
       },
       "mutant": "M36 [S11] 상한에서 조용히 자름(truncated·next_cursor 없음)",
       "family": "프로토콜",
-      "sec": 69.1
+      "sec": 73.0
+    },
+    {
+      "detected": true,
+      "by": "golden",
+      "evidence": [
+        "읽은 행 삭제/wall: 시작·끝에 모두 있는 0008 가 0번 나왔다",
+        "커서로 쓴 행(마지막 읽은 행) 삭제/wall: 시작·끝에 모두 있는 0008 가 0번 나왔다"
+      ],
+      "without_golden": {
+        "detected": false
+      },
+      "mutant": "M37 [A] 일람표·관계 목록 커서가 오프셋(읽는 동안 행이 바뀌면 빠짐·중복)",
+      "family": "프로토콜",
+      "sec": 74.3
+    },
+    {
+      "detected": true,
+      "by": "golden",
+      "evidence": [
+        "schedule.rows 위조 커서(음수) 가 SCHEMA_INVALID(/cursor) 가 아님: INTERNAL",
+        "schedule.rows 위조 커서(실수) 가 SCHEMA_INVALID(/cursor) 가 아님: INTERNAL"
+      ],
+      "without_golden": {
+        "detected": false
+      },
+      "mutant": "M38 [C] 커서 모양 검사 없음(위조 커서가 INTERNAL·무한 빈 쪽)",
+      "family": "프로토콜",
+      "sec": 75.0
+    },
+    {
+      "detected": true,
+      "by": "golden",
+      "evidence": [
+        "큰 배치의 undo 응답이 틀렸다: {'txn': 't2', 'ops_total': 600, 'effects': 1200, 'truncated': False}",
+        "영문 element.query: 최악 12222토큰 > 8000 {'cl100k_base': 12222, 'o200k_base': 11924}"
+      ],
+      "without_golden": {
+        "detected": false
+      },
+      "mutant": "M39 [D] 상한이 옛 12,000바이트(바이트/3 추정 근거, 실측 토큰 초과)",
+      "family": "프로토콜",
+      "sec": 76.6
+    },
+    {
+      "detected": true,
+      "by": "golden",
+      "evidence": [
+        "큰 배치 응답이 상한을 넘는다: 36255 > 6000",
+        "affected 의 앞부분·정확한 건수·truncated 가 틀렸다: {'created': 600, 'modified': 1, 'deleted': 0} truncated=False 앞부분 600"
+      ],
+      "without_golden": {
+        "detected": false
+      },
+      "mutant": "M40 [E] 변경 응답 상한 없음(배치 600건이 36KB)",
+      "family": "프로토콜",
+      "sec": 82.4
+    },
+    {
+      "detected": true,
+      "by": "golden",
+      "evidence": [
+        "affected 의 앞부분·정확한 건수·truncated 가 틀렸다: {'created': 98, 'modified': 0, 'deleted': 0} truncated=True 앞부분 98",
+        "dry_run 큰 배치 응답이 상한 안에 들지 않거나 건수가 틀렸다"
+      ],
+      "without_golden": {
+        "detected": false
+      },
+      "mutant": "M41 [E] affected.counts 가 잘린 길이(정확한 건수 아님)",
+      "family": "프로토콜",
+      "sec": 75.0
     }
   ],
   "control_no_mutation": {
@@ -619,7 +688,7 @@
       "detected": false
     }
   },
-  "detected": 36,
+  "detected": 41,
   "detected_without_golden": 21,
   "missed_without_golden": [
     "M13 속성 값 타입 고착(D1 회귀)",
@@ -636,9 +705,14 @@
     "M33 [N10] wall.set/door.set 의 명시적 null 허용(NaN 필드만 조용히 무시)",
     "M34 [S11] 잠긴 파일의 스냅숏 복사 PermissionError 가 FILE_LOCKED 로 안 바뀜",
     "M35 [S11] 목록 응답 크기 상한 없음",
-    "M36 [S11] 상한에서 조용히 자름(truncated·next_cursor 없음)"
+    "M36 [S11] 상한에서 조용히 자름(truncated·next_cursor 없음)",
+    "M37 [A] 일람표·관계 목록 커서가 오프셋(읽는 동안 행이 바뀌면 빠짐·중복)",
+    "M38 [C] 커서 모양 검사 없음(위조 커서가 INTERNAL·무한 빈 쪽)",
+    "M39 [D] 상한이 옛 12,000바이트(바이트/3 추정 근거, 실측 토큰 초과)",
+    "M40 [E] 변경 응답 상한 없음(배치 600건이 36KB)",
+    "M41 [E] affected.counts 가 잘린 길이(정확한 건수 아님)"
   ],
-  "total": 36,
+  "total": 41,
   "all_detected": true,
-  "elapsed_sec": 2062.1
+  "elapsed_sec": 2762.3
 }

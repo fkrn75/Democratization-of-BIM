@@ -1,160 +1,352 @@
 {
+ "method": "tiktoken 대용 측정(Claude 토크나이저로는 재지 못했다). 한 응답 = text + structuredContent(두 벌), 두 토크나이저 모두 8,000 이하여야 통과",
+ "transport": "stdio MCP 서버 + 공식 SDK 클라이언트",
+ "tiktoken": "0.14.0",
+ "encodings": [
+  "cl100k_base",
+  "o200k_base"
+ ],
+ "python": "3.12.2",
  "model": {
-  "walls": 600,
-  "doors": 300,
-  "log_entries": 941
+  "walls": 500,
+  "doors": 250,
+  "random_guid": true,
+  "names": [
+   "영문",
+   "한글 64자"
+  ]
  },
  "cap": {
-  "RESPONSE_CAP_BYTES": 12000,
-  "ENVELOPE_RESERVE_BYTES": 450
+  "RESPONSE_CAP_BYTES": 6000,
+  "ENVELOPE_RESERVE_BYTES": 900
  },
- "token_estimate": "UTF-8 바이트 / 3 (추정)",
  "target_tokens": 8000,
+ "worst_tokens_any": 7026,
  "rows": [
   {
-   "command": "element.query",
-   "args": {
-    "limit": 1000
-   },
-   "pages_to_read_all": 6,
-   "truncated_pages": 5,
-   "items_total": 901,
-   "page_total_field": 901,
-   "no_gap_no_dup": true,
-   "worst_page": {
-    "text_bytes": 11797,
-    "est_tokens_text": 3932,
-    "est_tokens_text_plus_structured": 7865
-   },
-   "within_8000_tokens_text": true,
-   "within_8000_tokens_text_plus_structured": true
+   "what": "element.query",
+   "lang": "영문",
+   "pages_to_read_all": 11,
+   "truncated_pages": 10,
+   "items_total": 751,
+   "worst": {
+    "bytes_text_plus_structured": 10258,
+    "text_bytes": 5362,
+    "tokens": {
+     "cl100k_base": 5726,
+     "o200k_base": 5614
+    }
+   }
   },
   {
-   "command": "element.query",
-   "args": {},
-   "pages_to_read_all": 10,
-   "truncated_pages": 0,
-   "items_total": 901,
-   "page_total_field": 901,
-   "no_gap_no_dup": null,
-   "worst_page": {
-    "text_bytes": 7248,
-    "est_tokens_text": 2416,
-    "est_tokens_text_plus_structured": 4832
-   },
-   "within_8000_tokens_text": true,
-   "within_8000_tokens_text_plus_structured": true
+   "what": "schedule.rows 벽",
+   "lang": "영문",
+   "pages_to_read_all": 12,
+   "truncated_pages": 11,
+   "items_total": 500,
+   "worst": {
+    "bytes_text_plus_structured": 10344,
+    "text_bytes": 5469,
+    "tokens": {
+     "cl100k_base": 6498,
+     "o200k_base": 6408
+    }
+   }
   },
   {
-   "command": "schedule.rows",
-   "args": {
-    "kind": "wall",
-    "limit": 1000
-   },
-   "pages_to_read_all": 6,
-   "truncated_pages": 5,
-   "items_total": 600,
-   "page_total_field": 600,
-   "no_gap_no_dup": true,
-   "worst_page": {
-    "text_bytes": 11674,
-    "est_tokens_text": 3891,
-    "est_tokens_text_plus_structured": 7783
-   },
-   "within_8000_tokens_text": true,
-   "within_8000_tokens_text_plus_structured": true
+   "what": "schedule.rows 문",
+   "lang": "영문",
+   "pages_to_read_all": 9,
+   "truncated_pages": 8,
+   "items_total": 250,
+   "worst": {
+    "bytes_text_plus_structured": 10191,
+    "text_bytes": 5369,
+    "tokens": {
+     "cl100k_base": 6782,
+     "o200k_base": 6670
+    }
+   }
   },
   {
-   "command": "schedule.rows",
-   "args": {
-    "kind": "door",
-    "limit": 1000
-   },
-   "pages_to_read_all": 4,
-   "truncated_pages": 3,
-   "items_total": 300,
-   "page_total_field": 300,
-   "no_gap_no_dup": true,
-   "worst_page": {
-    "text_bytes": 11723,
-    "est_tokens_text": 3908,
-    "est_tokens_text_plus_structured": 7815
-   },
-   "within_8000_tokens_text": true,
-   "within_8000_tokens_text_plus_structured": true
+   "what": "history.list",
+   "lang": "영문",
+   "pages_to_read_all": 40,
+   "truncated_pages": 39,
+   "items_total": 811,
+   "worst": {
+    "bytes_text_plus_structured": 10220,
+    "text_bytes": 5389,
+    "tokens": {
+     "cl100k_base": 5568,
+     "o200k_base": 5528
+    }
+   }
   },
   {
-   "command": "history.list",
-   "args": {
-    "limit": 500
-   },
-   "pages_to_read_all": 21,
-   "truncated_pages": 20,
-   "items_total": 941,
-   "page_total_field": 941,
-   "no_gap_no_dup": true,
-   "worst_page": {
-    "text_bytes": 11729,
-    "est_tokens_text": 3910,
-    "est_tokens_text_plus_structured": 7819
-   },
-   "within_8000_tokens_text": true,
-   "within_8000_tokens_text_plus_structured": true
+   "what": "relation.list",
+   "lang": "영문",
+   "pages_to_read_all": 9,
+   "truncated_pages": 8,
+   "items_total": 500,
+   "worst": {
+    "bytes_text_plus_structured": 10324,
+    "text_bytes": 5350,
+    "tokens": {
+     "cl100k_base": 6002,
+     "o200k_base": 5790
+    }
+   }
   },
   {
-   "command": "history.list",
-   "args": {},
-   "pages_to_read_all": 48,
-   "truncated_pages": 0,
-   "items_total": 941,
-   "page_total_field": 941,
-   "no_gap_no_dup": null,
-   "worst_page": {
-    "text_bytes": 5355,
-    "est_tokens_text": 1785,
-    "est_tokens_text_plus_structured": 3570
-   },
-   "within_8000_tokens_text": true,
-   "within_8000_tokens_text_plus_structured": true
-  },
-  {
-   "command": "relation.list",
-   "args": {
-    "id": "3000000000000000000001",
-    "limit": 1000
-   },
-   "pages_to_read_all": 5,
-   "truncated_pages": 4,
-   "items_total": 600,
-   "page_total_field": 600,
-   "no_gap_no_dup": true,
-   "worst_page": {
-    "text_bytes": 11747,
-    "est_tokens_text": 3916,
-    "est_tokens_text_plus_structured": 7831
-   },
-   "within_8000_tokens_text": true,
-   "within_8000_tokens_text_plus_structured": true
-  },
-  {
-   "command": "commands.search",
-   "args": {
-    "limit": 1000
-   },
+   "what": "commands.search",
+   "lang": "영문",
    "pages_to_read_all": 1,
    "truncated_pages": 0,
-   "items_total": 30,
-   "page_total_field": 30,
-   "no_gap_no_dup": true,
-   "worst_page": {
-    "text_bytes": 4556,
-    "est_tokens_text": 1519,
-    "est_tokens_text_plus_structured": 3037
+   "items_total": 31,
+   "worst": {
+    "bytes_text_plus_structured": 9414,
+    "text_bytes": 4879,
+    "tokens": {
+     "cl100k_base": 3436,
+     "o200k_base": 3020
+    }
+   }
+  },
+  {
+   "what": "배치 wall.create x600",
+   "lang": "영문",
+   "kind": "mutation",
+   "worst": {
+    "bytes_text_plus_structured": 10816,
+    "text_bytes": 5548,
+    "tokens": {
+     "cl100k_base": 6932,
+     "o200k_base": 6650
+    }
    },
-   "within_8000_tokens_text": true,
-   "within_8000_tokens_text_plus_structured": true
+   "affected_counts": {
+    "created": 600,
+    "modified": 1,
+    "deleted": 0
+   },
+   "affected_shown": {
+    "created": 98,
+    "modified": 0,
+    "deleted": 0
+   },
+   "affected_truncated": true,
+   "results_truncated": true,
+   "history_affected_items": 601,
+   "history_affected_unique": 601,
+   "history_affected_matches_counts": true
+  },
+  {
+   "what": "배치 wall.move x400(수정 400)",
+   "lang": "영문",
+   "kind": "mutation",
+   "worst": {
+    "bytes_text_plus_structured": 10711,
+    "text_bytes": 5543,
+    "tokens": {
+     "cl100k_base": 7026,
+     "o200k_base": 6832
+    }
+   },
+   "affected_counts": {
+    "created": 0,
+    "modified": 400,
+    "deleted": 0
+   },
+   "affected_shown": {
+    "created": 0,
+    "modified": 98,
+    "deleted": 0
+   },
+   "affected_truncated": true,
+   "results_truncated": true,
+   "history_affected_items": 400,
+   "history_affected_unique": 400,
+   "history_affected_matches_counts": true
+  },
+  {
+   "what": "history.undo(배치 400)",
+   "lang": "영문",
+   "kind": "mutation",
+   "worst": {
+    "text_bytes": 5518,
+    "tokens": {
+     "cl100k_base": 3468,
+     "o200k_base": 3442
+    }
+   },
+   "ok": true,
+   "ops_total": 400,
+   "ops_shown": 386,
+   "truncated": true
+  },
+  {
+   "what": "element.query",
+   "lang": "한글",
+   "pages_to_read_all": 38,
+   "truncated_pages": 37,
+   "items_total": 751,
+   "worst": {
+    "bytes_text_plus_structured": 10570,
+    "text_bytes": 5362,
+    "tokens": {
+     "cl100k_base": 6624,
+     "o200k_base": 4058
+    }
+   }
+  },
+  {
+   "what": "schedule.rows 벽",
+   "lang": "한글",
+   "pages_to_read_all": 50,
+   "truncated_pages": 49,
+   "items_total": 500,
+   "worst": {
+    "bytes_text_plus_structured": 11252,
+    "text_bytes": 5715,
+    "tokens": {
+     "cl100k_base": 5860,
+     "o200k_base": 4584
+    }
+   }
+  },
+  {
+   "what": "schedule.rows 문",
+   "lang": "한글",
+   "pages_to_read_all": 28,
+   "truncated_pages": 27,
+   "items_total": 250,
+   "worst": {
+    "bytes_text_plus_structured": 11021,
+    "text_bytes": 5608,
+    "tokens": {
+     "cl100k_base": 4800,
+     "o200k_base": 4778
+    }
+   }
+  },
+  {
+   "what": "history.list",
+   "lang": "한글",
+   "pages_to_read_all": 69,
+   "truncated_pages": 68,
+   "items_total": 811,
+   "worst": {
+    "bytes_text_plus_structured": 9904,
+    "text_bytes": 5114,
+    "tokens": {
+     "cl100k_base": 5832,
+     "o200k_base": 4426
+    }
+   }
+  },
+  {
+   "what": "relation.list",
+   "lang": "한글",
+   "pages_to_read_all": 9,
+   "truncated_pages": 8,
+   "items_total": 500,
+   "worst": {
+    "bytes_text_plus_structured": 10324,
+    "text_bytes": 5350,
+    "tokens": {
+     "cl100k_base": 6002,
+     "o200k_base": 5790
+    }
+   }
+  },
+  {
+   "what": "commands.search",
+   "lang": "한글",
+   "pages_to_read_all": 1,
+   "truncated_pages": 0,
+   "items_total": 31,
+   "worst": {
+    "bytes_text_plus_structured": 9414,
+    "text_bytes": 4879,
+    "tokens": {
+     "cl100k_base": 3436,
+     "o200k_base": 3020
+    }
+   }
+  },
+  {
+   "what": "배치 wall.create x600",
+   "lang": "한글",
+   "kind": "mutation",
+   "worst": {
+    "bytes_text_plus_structured": 10816,
+    "text_bytes": 5548,
+    "tokens": {
+     "cl100k_base": 6932,
+     "o200k_base": 6650
+    }
+   },
+   "affected_counts": {
+    "created": 600,
+    "modified": 1,
+    "deleted": 0
+   },
+   "affected_shown": {
+    "created": 98,
+    "modified": 0,
+    "deleted": 0
+   },
+   "affected_truncated": true,
+   "results_truncated": true,
+   "history_affected_items": 601,
+   "history_affected_unique": 601,
+   "history_affected_matches_counts": true
+  },
+  {
+   "what": "배치 wall.move x400(수정 400)",
+   "lang": "한글",
+   "kind": "mutation",
+   "worst": {
+    "bytes_text_plus_structured": 10711,
+    "text_bytes": 5543,
+    "tokens": {
+     "cl100k_base": 7026,
+     "o200k_base": 6832
+    }
+   },
+   "affected_counts": {
+    "created": 0,
+    "modified": 400,
+    "deleted": 0
+   },
+   "affected_shown": {
+    "created": 0,
+    "modified": 98,
+    "deleted": 0
+   },
+   "affected_truncated": true,
+   "results_truncated": true,
+   "history_affected_items": 400,
+   "history_affected_unique": 400,
+   "history_affected_matches_counts": true
+  },
+  {
+   "what": "history.undo(배치 400)",
+   "lang": "한글",
+   "kind": "mutation",
+   "worst": {
+    "text_bytes": 5518,
+    "tokens": {
+     "cl100k_base": 3468,
+     "o200k_base": 3442
+    }
+   },
+   "ok": true,
+   "ops_total": 400,
+   "ops_shown": 386,
+   "truncated": true
   }
  ],
- "all_within_target": true,
- "all_no_gap_no_dup": true
+ "pass": true
 }

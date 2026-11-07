@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import base64
+import bisect
 import json
 from pathlib import Path
 from math import sqrt
@@ -17,6 +18,7 @@ from pydantic import (AfterValidator, BaseModel, BeforeValidator, ConfigDict, Fi
                       ValidationInfo, field_validator, model_validator)
 
 from dobim_core import fixture as F
+from dobim_core import limits
 from dobim_core import queries as Q
 from dobim_core import registry
 from dobim_core.errors import DobimError
@@ -152,7 +154,7 @@ class Search(A):
          args=Search, needs_project=False, idempotent=True, examples=[{"query": "wall"}, {"group": "history"}, {"limit": 5}])
 def commands_search(env, a: Search):
     rows = registry.search(a.query, a.group, a.risk)
-    after = _dec_cursor(a.cursor)
+    after = _dec_cursor(a.cursor, "name")
     start = 0 if after is None else next((i for i, c in enumerate(rows) if c["name"] > after), len(rows))
     items, cut = _fit(rows[start:start + a.limit])
     more = start + len(items) < len(rows)
@@ -440,44 +442,15 @@ def material_set(ctx, a: MatSet):
 
 # ================================================================ 조회
 def _enc_cursor(v) -> str:
-    return base64.urlsafe_b64encode(json.dumps(v).encode()).decode()
+    return limits.enc_cursor(v)
 
 
-def _dec_cursor(c):
-    if c is None:
-        return None
-    try:
-        return json.loads(base64.urlsafe_b64decode(c.encode()))
-    except Exception:
-        raise DobimError("SCHEMA_INVALID", "잘못된 커서다", path="/cursor") from None
+def _dec_cursor(c, shape: str):
+    return limits.dec_cursor(c, shape)
 
 
-# 목록형 응답의 크기 상한. S11 기준은 도구 응답 8,000토큰(추정 = UTF-8 바이트/3 이므로 24,000바이트)이다. 같은 봉투가 MCP 의
-# text 와 structuredContent 에 한 벌씩 실려 선 위에서는 두 배가 되므로, 한 벌을 12,000바이트 이하로 잡아 두 벌을 합해도
-# 8,000토큰(24,000바이트) 안에 든다. 항목은 한 건씩 넣다가 상한을 넘기 직전에 멈추고 page.truncated=true 와 next_cursor 를 낸다.
-RESPONSE_CAP_BYTES = 12_000
-ENVELOPE_RESERVE_BYTES = 450   # 봉투의 나머지(ok, rev, affected, warnings, page, artifacts, job)와 result 의 다른 키
-
-
-def _jsize(x) -> int:
-    return len(json.dumps(x, ensure_ascii=False).encode("utf-8")) + 2
-
-
-def _fit(rows: list, base=None) -> tuple[list, bool]:
-    """rows 를 앞에서부터 상한 안에서 담는다. (담은 항목, 상한 때문에 잘렸는지). 최소 한 건은 담아 이어받기가 진전된다."""
-    used = ENVELOPE_RESERVE_BYTES + (_jsize(base) if base else 0)
-    out = []
-    for r in rows:
-        sz = _jsize(r)
-        if out and used + sz > RESPONSE_CAP_BYTES:
-            return out, True
-        used += sz
-        out.append(r)
-    return out, False
-
-
-def _page(next_cursor, total, truncated) -> dict:
-    return {"next_cursor": next_cursor, "total": total, "truncated": truncated}
+_fit = limits.fit
+_page = limits.page
 
 
 class ElementGet(A):
@@ -513,7 +486,7 @@ class ElementQuery(A):
          args=ElementQuery, idempotent=True, examples=[{"kind": "wall", "limit": 10}])
 def element_query(ctx, a: ElementQuery):
     st = ctx.st
-    after = _dec_cursor(a.cursor)
+    after = _dec_cursor(a.cursor, "id")
     ids = sorted(st.by_kind.get(a.kind, ())) if a.kind else sorted(st.el)
     hits = []
     for eid in ids:
@@ -540,14 +513,19 @@ class RelationList(A):
          args=RelationList, idempotent=True, examples=[{"id": F.W1}])
 def relation_list(ctx, a: RelationList):
     ctx.row(a.id)
-    out = []
-    for k in ("on_level", "joins", "hosts"):
-        out += [{"kind": k, "src": a.id, "dst": d} for d in ctx.rels_out(k, a.id)]
-        out += [{"kind": k, "src": s, "dst": a.id} for s in ctx.rels_in(k, a.id)]
-    start = _dec_cursor(a.cursor) or 0
-    items, cut = _fit(out[start:start + a.limit])
-    more = start + len(items) < len(out)
-    return {"items": items, "page": _page(_enc_cursor(start + len(items)) if more else None, len(out), cut)}
+    # 전순서 키 (관계 종류 번호, 방향 0=나가는 1=들어오는, 상대 id). 키셋 커서는 마지막으로 읽은 항목의 키를 담는다:
+    # 읽는 동안 앞쪽 관계가 생기거나 사라져도 빠짐·중복이 없고, 커서가 가리키던 관계가 사라져도 그 키 뒤에서 이어간다.
+    keyed = []
+    for ki, k in enumerate(("on_level", "joins", "hosts")):
+        keyed += [((ki, 0, d), {"kind": k, "src": a.id, "dst": d}) for d in ctx.rels_out(k, a.id)]
+        keyed += [((ki, 1, s), {"kind": k, "src": s, "dst": a.id}) for s in ctx.rels_in(k, a.id)]
+    keyed.sort(key=lambda t: t[0])
+    after = _dec_cursor(a.cursor, "relation")
+    rest = keyed if after is None else [t for t in keyed if t[0] > tuple(after)]
+    items, cut = _fit([it for _, it in rest[:a.limit]])
+    more = len(items) < len(rest)
+    nxt = _enc_cursor(list(rest[len(items) - 1][0])) if more else None
+    return {"items": items, "page": _page(nxt, len(keyed), cut)}
 
 
 @command("model.stats", kind="query", risk="read", group="query", summary="요소 개수와 일람표 요약",
@@ -587,10 +565,13 @@ class ScheduleRows(A):
          args=ScheduleRows, idempotent=True, examples=[{"kind": "door", "limit": 5}])
 def schedule_rows(ctx, a: ScheduleRows):
     rows = ctx.g.q(Q.schedule_sorted, a.kind)
-    start = _dec_cursor(a.cursor) or 0
+    # 키셋 커서: 마지막으로 읽은 행의 (레벨 이름, 이름, id). 행은 이 키로 전순서이므로 이진 탐색으로 그 뒤에서 이어간다.
+    # 읽는 동안 행이 삭제·삽입돼도 빠짐·중복이 없다. 이름·레벨이 바뀐 행은 새 키 위치로 옮겨 가므로 읽은 위치 뒤로 가면 다시 나올 수 있다.
+    after = _dec_cursor(a.cursor, "schedule")
+    start = 0 if after is None else bisect.bisect_right(rows, tuple(after), key=lambda r: Q.schedule_key(a.kind, r))
     cols = list(Q.ROW_COLUMNS[a.kind])
     items, cut = _fit([list(r) for r in rows[start:start + a.limit]], base=cols)
-    nxt = _enc_cursor(start + len(items)) if start + len(items) < len(rows) else None
+    nxt = _enc_cursor(list(Q.schedule_key(a.kind, items[-1]))) if start + len(items) < len(rows) else None
     return {"columns": cols, "items": items, "page": _page(nxt, len(rows), cut)}
 
 
@@ -624,7 +605,8 @@ def _history(ctx, a, undo: bool):
         effects = [e for _, _, _, _, inv in entries for e in _inv(json.loads(inv))]
     for e in effects:
         ctx.emit(e)
-    return {"txn": txn, "ops": [e[2] for e in entries], "effects": len(effects)}
+    ops, cut = _fit([e[2] for e in entries], base={"txn": txn, "effects": len(effects), "ops_total": len(entries), "truncated": False})
+    return {"txn": txn, "ops": ops, "ops_total": len(entries), "effects": len(effects), "truncated": cut}
 
 
 def _inv(effs):
@@ -652,7 +634,7 @@ class HistoryList(A):
 @command("history.list", kind="query", risk="read", group="history", summary="최근 로그 항목",
          args=HistoryList, idempotent=True, examples=[{"limit": 5}])
 def history_list(ctx, a: HistoryList):
-    before = _dec_cursor(a.cursor)
+    before = _dec_cursor(a.cursor, "int")
     rows = ctx.eng.conn.execute(
         "SELECT seq, txn_id, actor, base_rev, op, args FROM op_log WHERE seq < ? ORDER BY seq DESC LIMIT ?",
         (before if before is not None else 2**62, a.limit + 1)).fetchall()   # 한 건 더 읽어 다음 쪽이 있는지 안다
@@ -663,6 +645,33 @@ def history_list(ctx, a: HistoryList):
     more = more_in_limit or cut
     return {"items": items, "undo_depth": len(ctx.eng.undo_stack), "redo_depth": len(ctx.eng.redo_stack),
             "page": _page(_enc_cursor(items[-1]["seq"]) if more and items else None, ctx.eng.rev, cut)}
+
+
+class HistoryAffected(A):
+    rev: int | None = Field(None, ge=1, description="변경 응답의 rev. 그 변경(트랜잭션)이 만들거나 바꾸거나 지운 요소를 돌려준다. 생략하면 현재 리비전")
+    limit: int = Field(100, ge=1, le=1000, description="최대 개수. 응답 크기 상한에 걸리면 이보다 적게 돌려주고 page.truncated 로 알린다")
+    cursor: str | None = Field(None, description="이전 응답의 page.next_cursor")
+
+
+@command("history.affected", kind="query", risk="read", group="history",
+         summary="변경 하나(rev)가 만들거나 바꾸거나 지운 요소 id 목록, 페이지. 변경 응답의 affected 가 잘렸을 때 나머지를 얻는다",
+         args=HistoryAffected, idempotent=True, examples=[{}, {"rev": 3, "limit": 2}])
+def history_affected(ctx, a: HistoryAffected):
+    rev = a.rev if a.rev is not None else ctx.eng.rev
+    row = ctx.eng.conn.execute("SELECT txn_id FROM op_log WHERE seq=?", (rev,)).fetchone()
+    if row is None:
+        raise DobimError("NOT_FOUND", f"로그에 없는 리비전이다: {rev}", path="/rev")
+    from dobim_core.engine import affected_of, invert   # 지연 import: 레지스트리 로드가 엔진에 의존하지 않게
+    forward = [e for *_, inv in ctx.eng.txn_entries(row[0]) for e in invert(json.loads(inv))]   # 실행 때의 효과 순서 그대로
+    aff = affected_of(forward)
+    keyed = [((ci, eid), {"id": eid, "change": c}) for ci, c in enumerate(("created", "modified", "deleted")) for eid in aff[c]]
+    after = _dec_cursor(a.cursor, "affected")
+    rest = keyed if after is None else [t for t in keyed if t[0] > tuple(after)]
+    items, cut = _fit([it for _, it in rest[:a.limit]])
+    more = len(items) < len(rest)
+    nxt = _enc_cursor(list(rest[len(items) - 1][0])) if more else None
+    return {"rev": rev, "txn": row[0], "counts": {c: len(aff[c]) for c in ("created", "modified", "deleted")},
+            "items": items, "page": _page(nxt, len(keyed), cut)}
 
 
 # ================================================================ 입출력 (파괴적)
@@ -790,7 +799,7 @@ class SnapshotList(A):
 def ifc_snapshots(ctx, a: SnapshotList):
     p = resolve_in_workspace(ctx.eng.workspace, a.path)
     allrows = [{"n": n, "name": f"{SNAP_DIR}/{f.name}", "bytes": f.stat().st_size} for n, f in _snapshots(p, ctx.eng.workspace)]
-    after = _dec_cursor(a.cursor)
+    after = _dec_cursor(a.cursor, "int")
     start = 0 if after is None else next((i for i, r in enumerate(allrows) if r["n"] > after), len(allrows))
     items, cut = _fit(allrows[start:start + a.limit])
     more = start + len(items) < len(allrows)

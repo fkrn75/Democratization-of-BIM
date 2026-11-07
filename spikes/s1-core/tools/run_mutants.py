@@ -24,7 +24,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import kit  # noqa: E402
 import golden  # noqa: E402
 import inject_grid  # noqa: E402
-from dobim_core import commands, dispatch, engine, graph, ifc_model, queries  # noqa: E402
+from dobim_core import commands, dispatch, engine, graph, ifc_model, limits, queries  # noqa: E402
 
 
 # ---------------------------------------------------------------- 변이 정의
@@ -532,7 +532,7 @@ def m_export_lock_unconverted():
 @contextmanager
 def m_no_response_cap():
     """S11 회귀: 목록형 응답 크기 상한이 없다(limit 최댓값이 그대로 나간다)."""
-    with mock.patch.object(commands, "RESPONSE_CAP_BYTES", 10**9):
+    with mock.patch.object(limits, "RESPONSE_CAP_BYTES", 10**9):
         yield
 
 
@@ -540,6 +540,92 @@ def m_no_response_cap():
 def m_cap_cut_silently():
     """S11 회귀: 상한에서 조용히 자른다(truncated 도 next_cursor 도 없다)."""
     with mock.patch.object(commands, "_page", lambda nc, total, trunc: {"next_cursor": None, "total": total, "truncated": False}):
+        yield
+
+
+@contextmanager
+def m_offset_cursors():
+    """A 회귀: 일람표·관계 목록의 커서가 위치 번호(오프셋)다 - 읽는 동안 앞쪽 행이 지워지거나 끼면 빠짐·중복이 난다."""
+    import dataclasses
+    from dobim_core import registry
+
+    def schedule_rows(ctx, a):
+        rows = ctx.g.q(queries.schedule_sorted, a.kind)
+        start = limits.dec_cursor(a.cursor, "int") or 0
+        cols = list(queries.ROW_COLUMNS[a.kind])
+        items, cut = limits.fit([list(r) for r in rows[start:start + a.limit]], base=cols)
+        nxt = limits.enc_cursor(start + len(items)) if start + len(items) < len(rows) else None
+        return {"columns": cols, "items": items, "page": limits.page(nxt, len(rows), cut)}
+
+    def relation_list(ctx, a):
+        ctx.row(a.id)
+        out = []
+        for k in ("on_level", "joins", "hosts"):
+            out += [{"kind": k, "src": a.id, "dst": d} for d in ctx.rels_out(k, a.id)]
+            out += [{"kind": k, "src": s, "dst": a.id} for s in ctx.rels_in(k, a.id)]
+        start = limits.dec_cursor(a.cursor, "int") or 0
+        items, cut = limits.fit(out[start:start + a.limit])
+        more = start + len(items) < len(out)
+        return {"items": items, "page": limits.page(limits.enc_cursor(start + len(items)) if more else None, len(out), cut)}
+
+    origs = {n: registry.REGISTRY[n] for n in ("schedule.rows", "relation.list")}
+    registry.REGISTRY["schedule.rows"] = dataclasses.replace(origs["schedule.rows"], func=schedule_rows)
+    registry.REGISTRY["relation.list"] = dataclasses.replace(origs["relation.list"], func=relation_list)
+    try:
+        yield
+    finally:
+        registry.REGISTRY.update(origs)
+
+
+@contextmanager
+def m_cursor_shape_unchecked():
+    """C 회귀: 커서의 모양을 검사하지 않는다(타입이 틀리면 INTERNAL, 음수 커서는 빈 쪽이 끝없이 이어진다)."""
+    import base64
+    import json as _json
+
+    def dec(c, shape):
+        if c is None:
+            return None
+        try:
+            return _json.loads(base64.urlsafe_b64decode(c.encode()))
+        except Exception:
+            raise limits._bad("해석할 수 없다") from None
+
+    with mock.patch.object(limits, "dec_cursor", dec):
+        yield
+
+
+@contextmanager
+def m_old_byte_cap():
+    """D 회귀: 상한을 옛 값(바이트/3 추정으로 정한 12,000바이트)으로 둔다 - 실측 토크나이저로는 8,000토큰을 넘는다."""
+    with mock.patch.object(limits, "RESPONSE_CAP_BYTES", 12_000):
+        yield
+
+
+@contextmanager
+def m_mutation_uncapped():
+    """E 회귀: 변경 응답(results·affected)에 상한이 없다."""
+    def fit_mutation(results, affected, rev, dry_run):
+        out = dict(affected)
+        out["counts"] = {k: len(affected[k]) for k in ("created", "modified", "deleted")}
+        out["truncated"] = False
+        return results, out, None, []
+
+    with mock.patch.object(limits, "fit_mutation", fit_mutation):
+        yield
+
+
+@contextmanager
+def m_mutation_counts_shown():
+    """E 회귀: affected.counts 가 정확한 건수가 아니라 잘리고 남은 길이다."""
+    orig = limits.fit_mutation
+
+    def fit_mutation(results, affected, rev, dry_run):
+        shown, out, page, warns = orig(results, affected, rev, dry_run)
+        out["counts"] = {k: len(out[k]) for k in ("created", "modified", "deleted")}
+        return shown, out, page, warns
+
+    with mock.patch.object(limits, "fit_mutation", fit_mutation):
         yield
 
 
@@ -580,6 +666,11 @@ MUTANTS = [
     ("M34 [S11] 잠긴 파일의 스냅숏 복사 PermissionError 가 FILE_LOCKED 로 안 바뀜", "프로토콜", m_export_lock_unconverted),
     ("M35 [S11] 목록 응답 크기 상한 없음", "프로토콜", m_no_response_cap),
     ("M36 [S11] 상한에서 조용히 자름(truncated·next_cursor 없음)", "프로토콜", m_cap_cut_silently),
+    ("M37 [A] 일람표·관계 목록 커서가 오프셋(읽는 동안 행이 바뀌면 빠짐·중복)", "프로토콜", m_offset_cursors),
+    ("M38 [C] 커서 모양 검사 없음(위조 커서가 INTERNAL·무한 빈 쪽)", "프로토콜", m_cursor_shape_unchecked),
+    ("M39 [D] 상한이 옛 12,000바이트(바이트/3 추정 근거, 실측 토큰 초과)", "프로토콜", m_old_byte_cap),
+    ("M40 [E] 변경 응답 상한 없음(배치 600건이 36KB)", "프로토콜", m_mutation_uncapped),
+    ("M41 [E] affected.counts 가 잘린 길이(정확한 건수 아님)", "프로토콜", m_mutation_counts_shown),
 ]
 
 
@@ -591,7 +682,9 @@ def run_checks(work: Path, seeds_diff, n_diff, seeds_undo, n_undo, shrink_budget
             gv = (golden.check_golden(work) + golden.check_failure_atomicity(work)
                   + golden.check_delete_and_names(work) + golden.check_restore_failure(work)
                   + golden.check_envelope_and_nulls(work) + golden.check_remove_identity_order(work)
-                  + golden.check_response_cap(work) + golden.check_file_lock(work))
+                  + golden.check_response_cap(work) + golden.check_file_lock(work)
+                  + golden.check_keyset_paging(work) + golden.check_cursor_and_batch_input(work)
+                  + golden.check_mutation_cap(work) + golden.check_token_budget(work))
             if gv:
                 return {"detected": True, "by": "golden", "evidence": gv[:2]}
         gviol, _ = inject_grid.check_inject_grid(work, quick=True, ks=(1,))   # 실패 주입: 라이브 = 디스크 (골든과 별개의 기준)

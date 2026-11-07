@@ -1,10 +1,10 @@
 {
   "negative_control_detects_divergence": true,
-  "commands_in_registry": 30,
-  "commands_executed_with_examples": 30,
+  "commands_in_registry": 31,
+  "commands_executed_with_examples": 31,
   "coverage_percent": 100.0,
-  "example_runs": 32,
-  "error_case_runs": 32,
+  "example_runs": 34,
+  "error_case_runs": 38,
   "mcp_tools": [
     "dobim_command_describe",
     "dobim_commands_search",
@@ -112,6 +112,26 @@
       "second_step": null
     },
     {
+      "label": "ex-history_affected-0",
+      "command": "history.affected",
+      "same_envelope": true,
+      "exit_code": 0,
+      "exit_code_matches_envelope": true,
+      "ok": true,
+      "state_hash_equal": true,
+      "second_step": null
+    },
+    {
+      "label": "ex-history_affected-1",
+      "command": "history.affected",
+      "same_envelope": true,
+      "exit_code": 0,
+      "exit_code_matches_envelope": true,
+      "ok": true,
+      "state_hash_equal": true,
+      "second_step": null
+    },
+    {
       "label": "ex-history_list-0",
       "command": "history.list",
       "same_envelope": true,
@@ -162,7 +182,13 @@
           "affected": {
             "created": [],
             "modified": [],
-            "deleted": []
+            "deleted": [],
+            "counts": {
+              "created": 0,
+              "modified": 0,
+              "deleted": 0
+            },
+            "truncated": false
           },
           "warnings": [],
           "page": null,
@@ -181,7 +207,13 @@
           "affected": {
             "created": [],
             "modified": [],
-            "deleted": []
+            "deleted": [],
+            "counts": {
+              "created": 0,
+              "modified": 0,
+              "deleted": 0
+            },
+            "truncated": false
           },
           "warnings": [],
           "page": null,
@@ -214,7 +246,13 @@
           "affected": {
             "created": [],
             "modified": [],
-            "deleted": []
+            "deleted": [],
+            "counts": {
+              "created": 0,
+              "modified": 0,
+              "deleted": 0
+            },
+            "truncated": false
           },
           "warnings": [],
           "page": null,
@@ -233,7 +271,13 @@
           "affected": {
             "created": [],
             "modified": [],
-            "deleted": []
+            "deleted": [],
+            "counts": {
+              "created": 0,
+              "modified": 0,
+              "deleted": 0
+            },
+            "truncated": false
           },
           "warnings": [],
           "page": null,
@@ -526,7 +570,13 @@
           "affected": {
             "created": [],
             "modified": [],
-            "deleted": []
+            "deleted": [],
+            "counts": {
+              "created": 0,
+              "modified": 0,
+              "deleted": 0
+            },
+            "truncated": false
           },
           "warnings": [],
           "page": null,
@@ -545,7 +595,13 @@
           "affected": {
             "created": [],
             "modified": [],
-            "deleted": []
+            "deleted": [],
+            "counts": {
+              "created": 0,
+              "modified": 0,
+              "deleted": 0
+            },
+            "truncated": false
           },
           "warnings": [],
           "page": null,
@@ -749,7 +805,7 @@
     },
     {
       "label": "err-28",
-      "command": "pset.set",
+      "command": "schedule.rows",
       "same_envelope": true,
       "exit_code": 2,
       "exit_code_matches_envelope": true,
@@ -759,7 +815,7 @@
     },
     {
       "label": "err-29",
-      "command": "pset.set",
+      "command": "relation.list",
       "same_envelope": true,
       "exit_code": 2,
       "exit_code_matches_envelope": true,
@@ -769,6 +825,66 @@
     },
     {
       "label": "err-30",
+      "command": "history.list",
+      "same_envelope": true,
+      "exit_code": 2,
+      "exit_code_matches_envelope": true,
+      "ok": false,
+      "state_hash_equal": true,
+      "second_step": null
+    },
+    {
+      "label": "err-31",
+      "command": "schedule.rows",
+      "same_envelope": true,
+      "exit_code": 0,
+      "exit_code_matches_envelope": true,
+      "ok": true,
+      "state_hash_equal": true,
+      "second_step": null
+    },
+    {
+      "label": "err-32",
+      "command": "history.affected",
+      "same_envelope": true,
+      "exit_code": 0,
+      "exit_code_matches_envelope": true,
+      "ok": true,
+      "state_hash_equal": true,
+      "second_step": null
+    },
+    {
+      "label": "err-33",
+      "command": "history.affected",
+      "same_envelope": true,
+      "exit_code": 5,
+      "exit_code_matches_envelope": true,
+      "ok": false,
+      "state_hash_equal": true,
+      "second_step": null
+    },
+    {
+      "label": "err-34",
+      "command": "pset.set",
+      "same_envelope": true,
+      "exit_code": 2,
+      "exit_code_matches_envelope": true,
+      "ok": false,
+      "state_hash_equal": true,
+      "second_step": null
+    },
+    {
+      "label": "err-35",
+      "command": "pset.set",
+      "same_envelope": true,
+      "exit_code": 2,
+      "exit_code_matches_envelope": true,
+      "ok": false,
+      "state_hash_equal": true,
+      "second_step": null
+    },
+    {
+      "label": "err-36",
       "command": "wall.move",
       "same_envelope": true,
       "exit_code": 0,
@@ -778,12 +894,22 @@
       "second_step": null
     },
     {
-      "label": "err-31",
+      "label": "err-37",
       "command": "history.redo",
       "same_envelope": true,
       "exit_code": 1,
       "exit_code_matches_envelope": true,
       "ok": false,
+      "state_hash_equal": true,
+      "second_step": null
+    },
+    {
+      "label": "big-batch",
+      "command": "batch(wall.create x300)",
+      "same_envelope": true,
+      "exit_code": 0,
+      "exit_code_matches_envelope": true,
+      "ok": true,
       "state_hash_equal": true,
       "second_step": null
     }

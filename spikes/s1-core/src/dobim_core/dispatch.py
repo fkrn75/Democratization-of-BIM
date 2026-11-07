@@ -16,7 +16,7 @@ from typing import Any
 
 from pydantic import ValidationError
 
-from dobim_core import registry
+from dobim_core import limits, registry
 from dobim_core.errors import DobimError, internal_error
 from dobim_core.paths import resolve_in_workspace
 
@@ -73,7 +73,7 @@ class Env:
 # ---------------------------------------------------------------- 봉투
 def ok_env(rev, result, *, affected=None, warnings=None, page=None, dry_run=False) -> dict:
     out = {"ok": True, "rev": rev, "result": result,
-           "affected": affected or {"created": [], "modified": [], "deleted": []},
+           "affected": affected or limits.EMPTY_AFFECTED,
            "warnings": warnings or [], "page": page, "artifacts": [], "job": None}
     if dry_run:
         out["dry_run"] = True
@@ -85,6 +85,12 @@ def err_env(ex: DobimError, rev=None) -> dict:
     if rev is not None:
         out["rev"] = rev
     return out
+
+
+def _mutation_env(eng_rev: int, results, affected: dict, warnings: list, dry_run: bool) -> dict:
+    """변경 응답: results·affected 가 길면 상한 안으로 줄인다(변경은 이미 끝났다). 잘린 나머지는 history.affected 로 얻는다."""
+    shown, aff, page, extra = limits.fit_mutation(results, affected, eng_rev, dry_run)
+    return ok_env(eng_rev, _clean(shown), affected=aff, warnings=list(warnings) + extra, page=page, dry_run=dry_run)
 
 
 def _rev_of(eng):
@@ -173,8 +179,7 @@ def run(env: Env, name: str, args: dict | None = None, *, project: str | None = 
             return _run_destructive(eng, cmd, model, confirm, dry_run)
         if cmd.kind == "mutation":
             r = eng.mutate([(cmd, model)], expected_rev=expected_rev, dry_run=dry_run)
-            return ok_env(r["rev"], _clean(r["results"][0]), affected=r["affected"], warnings=r["warnings"],
-                          dry_run=r["dry_run"])
+            return _mutation_env(r["rev"], r["results"][0], r["affected"], r["warnings"], r["dry_run"])
         result, warns = eng.read(cmd, model)
         page = result.pop("page", None) if isinstance(result, dict) else None
         return ok_env(eng.rev, _clean(result), warnings=warns, page=_clean(page))
@@ -205,12 +210,17 @@ def run_batch(env: Env, commands: list[dict], *, project: str | None, expected_r
     """변경 커맨드 여러 개를 하나의 원자적 트랜잭션으로 실행한다 (한 번에 되돌려진다)."""
     eng = None
     try:
-        if not commands:
-            raise DobimError("SCHEMA_INVALID", "commands 가 비어 있다", path="/commands")
+        if not isinstance(commands, list) or not commands:
+            raise DobimError("SCHEMA_INVALID", "commands 는 비어 있지 않은 리스트여야 한다", path="/commands")
         parsed = []
         for i, item in enumerate(commands):
             try:
-                cmd = get_command(item.get("command") or item.get("name") or "")
+                if not isinstance(item, dict):
+                    raise DobimError("SCHEMA_INVALID", "배치 항목은 {command, args} 객체여야 한다", path="")
+                cname = item.get("command") or item.get("name") or ""
+                if not isinstance(cname, str):
+                    raise DobimError("SCHEMA_INVALID", "command 는 문자열이어야 한다", path="/command")
+                cmd = get_command(cname)
                 check_risk(cmd, allowed_risks, env)
                 if cmd.kind != "mutation":
                     raise DobimError("USAGE", f"배치에는 mutation 만 넣을 수 있다: {cmd.name}", path="/command")
@@ -220,8 +230,7 @@ def run_batch(env: Env, commands: list[dict], *, project: str | None, expected_r
                 raise
         eng = env.engine(project)
         r = eng.mutate(parsed, expected_rev=expected_rev, dry_run=dry_run)
-        return ok_env(r["rev"], _clean(r["results"]), affected=r["affected"], warnings=r["warnings"],
-                      dry_run=r["dry_run"])
+        return _mutation_env(r["rev"], r["results"], r["affected"], r["warnings"], r["dry_run"])
     except DobimError as ex:
         return err_env(ex, _rev_of(eng))
     except Exception as ex:

@@ -11,7 +11,7 @@ import golden
 import inject_grid
 import kit
 from conftest import ROOT
-from dobim_core import commands, dispatch, fixture as F, mcp_server, registry
+from dobim_core import commands, dispatch, fixture as F, limits, mcp_server, registry
 from dobim_core.engine import canon
 
 ENV = {**os.environ, "PYTHONPATH": str(ROOT / "src"), "PYTHONUTF8": "1"}
@@ -149,7 +149,7 @@ def test_목록형_커맨드는_응답_크기_상한을_지키고_이어받기�
 
 
 def test_상한을_작게_잡아도_commands_search와_snapshots가_같은_규칙을_따른다(base, monkeypatch):
-    monkeypatch.setattr(commands, "RESPONSE_CAP_BYTES", 1400)
+    monkeypatch.setattr(limits, "RESPONSE_CAP_BYTES", 1400)
     names, cursor, pages = [], None, 0
     while True:
         r = base.run("commands.search", {"cursor": cursor} if cursor else {})
@@ -163,7 +163,7 @@ def test_상한을_작게_잡아도_commands_search와_snapshots가_같은_규�
     for _ in range(3):
         first = base.run("ifc.export", {"path": "s.ifc"})
         assert base.run("ifc.export", {"path": "s.ifc"}, confirm=first["error"]["details"]["confirm_token"])["ok"]
-    monkeypatch.setattr(commands, "RESPONSE_CAP_BYTES", 400)
+    monkeypatch.setattr(limits, "RESPONSE_CAP_BYTES", 400)
     got, cursor = [], None
     while True:
         r = base.run("ifc.snapshots", {"path": "s.ifc", **({"cursor": cursor} if cursor else {})})
