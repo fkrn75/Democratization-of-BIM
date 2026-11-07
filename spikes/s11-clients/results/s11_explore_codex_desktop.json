@@ -1,0 +1,551 @@
+{
+  "summary": {
+    "client": "codex-desktop",
+    "tasks": 20,
+    "success": 20,
+    "success_rate": 1.0,
+    "mean_search_calls_all": 4.95,
+    "mean_search_calls_successful": 4.95,
+    "mean_tool_calls": 7.75,
+    "failed": []
+  },
+  "rows": [
+    {
+      "task": "T01",
+      "success": true,
+      "exit": 0,
+      "wall_s": 29.0,
+      "tool_calls": 8,
+      "search_calls": 5,
+      "describe_calls": 3,
+      "error_responses": [],
+      "commands_used": [
+        "commands.describe",
+        "commands.search",
+        "element.get",
+        "element.query",
+        "wall.move"
+      ],
+      "usage": {
+        "input_tokens": 348755,
+        "cached_input_tokens": 317184,
+        "output_tokens": 419,
+        "reasoning_output_tokens": 0
+      },
+      "non_mcp_items": {
+        "error": 1
+      },
+      "result_max_bytes": 1409
+    },
+    {
+      "task": "T02",
+      "success": true,
+      "exit": 0,
+      "wall_s": 29.1,
+      "tool_calls": 9,
+      "search_calls": 6,
+      "describe_calls": 3,
+      "error_responses": [],
+      "commands_used": [
+        "commands.describe",
+        "commands.search",
+        "element.get",
+        "element.query",
+        "wall.set"
+      ],
+      "usage": {
+        "input_tokens": 303392,
+        "cached_input_tokens": 289408,
+        "output_tokens": 442,
+        "reasoning_output_tokens": 0
+      },
+      "non_mcp_items": {
+        "error": 1
+      },
+      "result_max_bytes": 1409
+    },
+    {
+      "task": "T03",
+      "success": true,
+      "exit": 0,
+      "wall_s": 22.9,
+      "tool_calls": 9,
+      "search_calls": 5,
+      "describe_calls": 2,
+      "error_responses": [],
+      "commands_used": [
+        "commands.describe",
+        "commands.search",
+        "element.delete",
+        "element.query",
+        "project.info"
+      ],
+      "usage": {
+        "input_tokens": 272888,
+        "cached_input_tokens": 242304,
+        "output_tokens": 381,
+        "reasoning_output_tokens": 0
+      },
+      "non_mcp_items": {
+        "error": 1
+      },
+      "result_max_bytes": 1409
+    },
+    {
+      "task": "T04",
+      "success": true,
+      "exit": 0,
+      "wall_s": 28.8,
+      "tool_calls": 9,
+      "search_calls": 7,
+      "describe_calls": 3,
+      "error_responses": [],
+      "commands_used": [
+        "commands.describe",
+        "commands.search",
+        "element.query",
+        "join.clear"
+      ],
+      "usage": {
+        "input_tokens": 300365,
+        "cached_input_tokens": 286720,
+        "output_tokens": 432,
+        "reasoning_output_tokens": 0
+      },
+      "non_mcp_items": {
+        "error": 1
+      },
+      "result_max_bytes": 1409
+    },
+    {
+      "task": "T05",
+      "success": true,
+      "exit": 0,
+      "wall_s": 25.3,
+      "tool_calls": 9,
+      "search_calls": 6,
+      "describe_calls": 3,
+      "error_responses": [],
+      "commands_used": [
+        "commands.describe",
+        "commands.search",
+        "element.query",
+        "join.set",
+        "project.info"
+      ],
+      "usage": {
+        "input_tokens": 273330,
+        "cached_input_tokens": 235648,
+        "output_tokens": 374,
+        "reasoning_output_tokens": 0
+      },
+      "non_mcp_items": {
+        "error": 1
+      },
+      "result_max_bytes": 1409
+    },
+    {
+      "task": "T06",
+      "success": true,
+      "exit": 0,
+      "wall_s": 26.6,
+      "tool_calls": 8,
+      "search_calls": 5,
+      "describe_calls": 3,
+      "error_responses": [],
+      "commands_used": [
+        "commands.describe",
+        "commands.search",
+        "door.set",
+        "element.get",
+        "element.query"
+      ],
+      "usage": {
+        "input_tokens": 275265,
+        "cached_input_tokens": 244864,
+        "output_tokens": 378,
+        "reasoning_output_tokens": 0
+      },
+      "non_mcp_items": {
+        "error": 1
+      },
+      "result_max_bytes": 1409
+    },
+    {
+      "task": "T07",
+      "success": true,
+      "exit": 0,
+      "wall_s": 24.3,
+      "tool_calls": 8,
+      "search_calls": 5,
+      "describe_calls": 3,
+      "error_responses": [],
+      "commands_used": [
+        "commands.describe",
+        "commands.search",
+        "door.place",
+        "element.get",
+        "element.query"
+      ],
+      "usage": {
+        "input_tokens": 215334,
+        "cached_input_tokens": 198272,
+        "output_tokens": 390,
+        "reasoning_output_tokens": 0
+      },
+      "non_mcp_items": {
+        "error": 1
+      },
+      "result_max_bytes": 1473
+    },
+    {
+      "task": "T08",
+      "success": true,
+      "exit": 0,
+      "wall_s": 19.2,
+      "tool_calls": 4,
+      "search_calls": 3,
+      "describe_calls": 1,
+      "error_responses": [],
+      "commands_used": [
+        "commands.describe",
+        "commands.search",
+        "level.create"
+      ],
+      "usage": {
+        "input_tokens": 173921,
+        "cached_input_tokens": 143104,
+        "output_tokens": 268,
+        "reasoning_output_tokens": 0
+      },
+      "non_mcp_items": {
+        "error": 1
+      },
+      "result_max_bytes": 965
+    },
+    {
+      "task": "T09",
+      "success": true,
+      "exit": 0,
+      "wall_s": 23.3,
+      "tool_calls": 8,
+      "search_calls": 5,
+      "describe_calls": 3,
+      "error_responses": [],
+      "commands_used": [
+        "commands.describe",
+        "commands.search",
+        "element.get",
+        "element.query",
+        "material.set"
+      ],
+      "usage": {
+        "input_tokens": 242874,
+        "cached_input_tokens": 216832,
+        "output_tokens": 389,
+        "reasoning_output_tokens": 0
+      },
+      "non_mcp_items": {
+        "error": 1
+      },
+      "result_max_bytes": 1409
+    },
+    {
+      "task": "T10",
+      "success": true,
+      "exit": 0,
+      "wall_s": 26.8,
+      "tool_calls": 8,
+      "search_calls": 5,
+      "describe_calls": 3,
+      "error_responses": [],
+      "commands_used": [
+        "commands.describe",
+        "commands.search",
+        "element.get",
+        "element.query",
+        "pset.set"
+      ],
+      "usage": {
+        "input_tokens": 254603,
+        "cached_input_tokens": 226048,
+        "output_tokens": 397,
+        "reasoning_output_tokens": 0
+      },
+      "non_mcp_items": {
+        "error": 1
+      },
+      "result_max_bytes": 4879
+    },
+    {
+      "task": "T11",
+      "success": true,
+      "exit": 0,
+      "wall_s": 25.7,
+      "tool_calls": 8,
+      "search_calls": 5,
+      "describe_calls": 3,
+      "error_responses": [],
+      "commands_used": [
+        "commands.describe",
+        "commands.search",
+        "element.get",
+        "element.query",
+        "pset.delete"
+      ],
+      "usage": {
+        "input_tokens": 284800,
+        "cached_input_tokens": 252416,
+        "output_tokens": 379,
+        "reasoning_output_tokens": 0
+      },
+      "non_mcp_items": {
+        "error": 1
+      },
+      "result_max_bytes": 4879
+    },
+    {
+      "task": "T12",
+      "success": true,
+      "exit": 0,
+      "wall_s": 17.9,
+      "tool_calls": 3,
+      "search_calls": 2,
+      "describe_calls": 1,
+      "error_responses": [],
+      "commands_used": [
+        "commands.describe",
+        "commands.search",
+        "history.undo"
+      ],
+      "usage": {
+        "input_tokens": 159766,
+        "cached_input_tokens": 126208,
+        "output_tokens": 216,
+        "reasoning_output_tokens": 0
+      },
+      "non_mcp_items": {
+        "error": 1
+      },
+      "result_max_bytes": 816
+    },
+    {
+      "task": "T13",
+      "success": true,
+      "exit": 0,
+      "wall_s": 16.1,
+      "tool_calls": 3,
+      "search_calls": 2,
+      "describe_calls": 1,
+      "error_responses": [],
+      "commands_used": [
+        "commands.describe",
+        "commands.search",
+        "history.redo"
+      ],
+      "usage": {
+        "input_tokens": 159727,
+        "cached_input_tokens": 133504,
+        "output_tokens": 214,
+        "reasoning_output_tokens": 0
+      },
+      "non_mcp_items": {
+        "error": 1
+      },
+      "result_max_bytes": 809
+    },
+    {
+      "task": "T14",
+      "success": true,
+      "exit": 0,
+      "wall_s": 25.2,
+      "tool_calls": 4,
+      "search_calls": 2,
+      "describe_calls": 1,
+      "error_responses": [
+        "CONFIRM_REQUIRED"
+      ],
+      "commands_used": [
+        "commands.describe",
+        "commands.search",
+        "ifc.export"
+      ],
+      "usage": {
+        "input_tokens": 175339,
+        "cached_input_tokens": 151552,
+        "output_tokens": 324,
+        "reasoning_output_tokens": 0
+      },
+      "non_mcp_items": {
+        "error": 1
+      },
+      "result_max_bytes": 873
+    },
+    {
+      "task": "T15",
+      "success": true,
+      "exit": 0,
+      "wall_s": 20.5,
+      "tool_calls": 4,
+      "search_calls": 2,
+      "describe_calls": 1,
+      "error_responses": [
+        "CONFIRM_REQUIRED"
+      ],
+      "commands_used": [
+        "commands.describe",
+        "commands.search",
+        "ifc.export"
+      ],
+      "usage": {
+        "input_tokens": 194446,
+        "cached_input_tokens": 183680,
+        "output_tokens": 322,
+        "reasoning_output_tokens": 0
+      },
+      "non_mcp_items": {
+        "error": 1
+      },
+      "result_max_bytes": 873
+    },
+    {
+      "task": "T16",
+      "success": true,
+      "exit": 0,
+      "wall_s": 32.8,
+      "tool_calls": 11,
+      "search_calls": 7,
+      "describe_calls": 2,
+      "error_responses": [
+        "CONFIRM_REQUIRED"
+      ],
+      "commands_used": [
+        "commands.describe",
+        "commands.search",
+        "ifc.restore",
+        "ifc.snapshots",
+        "project.info"
+      ],
+      "usage": {
+        "input_tokens": 347218,
+        "cached_input_tokens": 315648,
+        "output_tokens": 506,
+        "reasoning_output_tokens": 0
+      },
+      "non_mcp_items": {
+        "error": 1
+      },
+      "result_max_bytes": 1124
+    },
+    {
+      "task": "T17",
+      "success": true,
+      "exit": 0,
+      "wall_s": 30.8,
+      "tool_calls": 10,
+      "search_calls": 6,
+      "describe_calls": 3,
+      "error_responses": [],
+      "commands_used": [
+        "commands.describe",
+        "commands.search",
+        "element.get",
+        "element.query",
+        "pset.set"
+      ],
+      "usage": {
+        "input_tokens": 243650,
+        "cached_input_tokens": 220672,
+        "output_tokens": 440,
+        "reasoning_output_tokens": 0
+      },
+      "non_mcp_items": {
+        "error": 1
+      },
+      "result_max_bytes": 4879
+    },
+    {
+      "task": "T18",
+      "success": true,
+      "exit": 0,
+      "wall_s": 25.9,
+      "tool_calls": 10,
+      "search_calls": 6,
+      "describe_calls": 4,
+      "error_responses": [],
+      "commands_used": [
+        "commands.describe",
+        "commands.search",
+        "element.get",
+        "element.query",
+        "pset.set",
+        "schedule.summary"
+      ],
+      "usage": {
+        "input_tokens": 226933,
+        "cached_input_tokens": 189568,
+        "output_tokens": 394,
+        "reasoning_output_tokens": 0
+      },
+      "non_mcp_items": {
+        "error": 1
+      },
+      "result_max_bytes": 4879
+    },
+    {
+      "task": "T19",
+      "success": true,
+      "exit": 0,
+      "wall_s": 28.6,
+      "tool_calls": 10,
+      "search_calls": 7,
+      "describe_calls": 3,
+      "error_responses": [],
+      "commands_used": [
+        "commands.describe",
+        "commands.search",
+        "element.query",
+        "history.list",
+        "wall.move"
+      ],
+      "usage": {
+        "input_tokens": 316960,
+        "cached_input_tokens": 300672,
+        "output_tokens": 502,
+        "reasoning_output_tokens": 0
+      },
+      "non_mcp_items": {
+        "error": 1
+      },
+      "result_max_bytes": 4879
+    },
+    {
+      "task": "T20",
+      "success": true,
+      "exit": 0,
+      "wall_s": 29.1,
+      "tool_calls": 12,
+      "search_calls": 8,
+      "describe_calls": 4,
+      "error_responses": [],
+      "commands_used": [
+        "commands.describe",
+        "commands.search",
+        "level.create",
+        "project.info",
+        "project.new",
+        "wall.create"
+      ],
+      "usage": {
+        "input_tokens": 273888,
+        "cached_input_tokens": 259584,
+        "output_tokens": 473,
+        "reasoning_output_tokens": 0
+      },
+      "non_mcp_items": {
+        "error": 1
+      },
+      "result_max_bytes": 1433
+    }
+  ]
+}

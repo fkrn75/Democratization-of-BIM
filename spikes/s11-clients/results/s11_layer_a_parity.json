@@ -1,10 +1,10 @@
 {
   "negative_control_detects_divergence": true,
-  "commands_in_registry": 30,
-  "commands_executed_with_examples": 30,
+  "commands_in_registry": 31,
+  "commands_executed_with_examples": 31,
   "coverage_percent": 100.0,
-  "example_runs": 31,
-  "error_case_runs": 24,
+  "example_runs": 34,
+  "error_case_runs": 38,
   "mcp_tools": [
     "dobim_command_describe",
     "dobim_commands_search",
@@ -29,6 +29,7 @@
     "element.delete",
     "element.get",
     "element.query",
+    "history.affected",
     "history.list",
     "history.redo",
     "history.undo",

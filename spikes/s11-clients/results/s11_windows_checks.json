@@ -2,19 +2,19 @@
   "startup": {
     "runs": 10,
     "spawn_to_initialize_sec": {
-      "min": 1.183,
-      "median": 1.195,
-      "max": 1.246
+      "min": 0.993,
+      "median": 1.028,
+      "max": 1.051
     },
     "tools_list_sec": {
       "min": 0.001,
-      "median": 0.002,
+      "median": 0.001,
       "max": 0.002
     },
     "first_project_call_sec": {
-      "min": 0.613,
-      "median": 0.625,
-      "max": 0.653
+      "min": 0.543,
+      "median": 0.552,
+      "max": 0.586
     },
     "second_project_call_sec": {
       "min": 0.002,
@@ -95,7 +95,7 @@
   },
   "orphans": {
     "server_processes_while_running": 2,
-    "stdin_eof_exit_sec": 0.247,
+    "stdin_eof_exit_sec": 0.194,
     "exit_code_after_eof": 0,
     "server_processes_after_eof": 0,
     "server_processes_before_parent_kill": 4,
@@ -120,8 +120,8 @@
       "opened": true,
       "export_while_locked": {
         "ok": false,
-        "error_code": "SDK_LEVEL",
-        "sdk_level_error": true
+        "error_code": "FILE_LOCKED",
+        "sdk_level_error": false
       },
       "original_unchanged": true,
       "leftover_tmp_files": [],

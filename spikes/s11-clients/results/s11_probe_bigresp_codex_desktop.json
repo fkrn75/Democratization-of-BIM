@@ -1,0 +1,122 @@
+{
+  "kind": "bigresp",
+  "client": "codex-desktop",
+  "exit": 0,
+  "wall_s": 26.2,
+  "usage": {
+    "input_tokens": 232372,
+    "cached_input_tokens": 220288,
+    "output_tokens": 377,
+    "reasoning_output_tokens": 0
+  },
+  "calls": [
+    {
+      "tool": "dobim_commands_search",
+      "command": null,
+      "is_error": false,
+      "result_bytes": 291,
+      "envelope_parsed": true,
+      "ok": true,
+      "items": 0,
+      "page_total": 0,
+      "result_head": null,
+      "error": null
+    },
+    {
+      "tool": "dobim_commands_search",
+      "command": null,
+      "is_error": false,
+      "result_bytes": 550,
+      "envelope_parsed": true,
+      "ok": true,
+      "items": 2,
+      "page_total": 2,
+      "result_head": null,
+      "error": null
+    },
+    {
+      "tool": "dobim_commands_search",
+      "command": null,
+      "is_error": false,
+      "result_bytes": 1026,
+      "envelope_parsed": true,
+      "ok": true,
+      "items": 5,
+      "page_total": 5,
+      "result_head": null,
+      "error": null
+    },
+    {
+      "tool": "dobim_command_describe",
+      "command": null,
+      "is_error": false,
+      "result_bytes": 1409,
+      "envelope_parsed": true,
+      "ok": true,
+      "items": 0,
+      "page_total": null,
+      "result_head": null,
+      "error": null
+    },
+    {
+      "tool": "dobim_query",
+      "command": "element.query",
+      "is_error": false,
+      "result_bytes": 5363,
+      "envelope_parsed": true,
+      "ok": true,
+      "items": 72,
+      "page_total": 800,
+      "result_head": null,
+      "error": null
+    }
+  ],
+  "final_text": "페이지 크기 1000으로 조회한 결과 벽 72개가 응답에 포함되었고, 잘림 표시(`page.truncated=true`)가 있었으며 파일 저장 안내는 없었습니다.",
+  "errors": [],
+  "other_item_types": {
+    "error": 1,
+    "agent_message": 2,
+    "mcp_tool_call": 5
+  },
+  "server_start_sec": 1.0617,
+  "initialize": {
+    "protocolVersion": "2025-06-18",
+    "clientInfo": {
+      "name": "codex-mcp-client",
+      "title": "Codex",
+      "version": "0.167.0-alpha.3.2"
+    },
+    "capabilities": [
+      "elicitation",
+      "experimental"
+    ]
+  },
+  "negotiated": "2025-06-18",
+  "tap_tool_calls": [
+    {
+      "tool": "dobim_commands_search",
+      "ms": 21.6,
+      "wire_bytes": 699
+    },
+    {
+      "tool": "dobim_commands_search",
+      "ms": 1.7,
+      "wire_bytes": 1238
+    },
+    {
+      "tool": "dobim_commands_search",
+      "ms": 1.5,
+      "wire_bytes": 2220
+    },
+    {
+      "tool": "dobim_command_describe",
+      "ms": 2.2,
+      "wire_bytes": 3004
+    },
+    {
+      "tool": "dobim_query",
+      "ms": 657.7,
+      "wire_bytes": 11278
+    }
+  ]
+}

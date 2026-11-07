@@ -82,7 +82,19 @@ GROUPS = {
             "h. 작업(job) 조회 도구로 id 'nope' 조회\n"
             "i. 렌더 도구 호출"),
     },
+    "G5": {
+        "title": "대량 변경 이어받기(history.affected)",
+        "setup": "bigbatch",
+        "commands": ["history.affected"],
+        "prompt": COMMON + (
+            "작업 폴더의 p.dobim 은 가장 최근 변경 한 번(리비전 번호는 11)으로 벽을 대량 생성한 모델이다. 그 변경이 만든 요소 id 를 "
+            "빠짐없이 모두 가져와 개수를 보고하라. 응답이 한 번에 다 오지 않고 잘렸다는 표시가 있으면 이전 응답이 알려 준 "
+            "이어받기 값으로 끝까지 반복해서 받아라(변경 이력의 영향 요소를 쪽 단위로 읽는 커맨드가 있다: history.affected). "
+            "마지막에 받은 id 의 총 개수를 보고하라."),
+    },
 }
+
+N_BATCH = 250
 
 
 def invocations(calls: list[dict]) -> list[dict]:
@@ -147,12 +159,41 @@ def judge_g4(calls: list[dict]) -> dict:
     return {k: any(f(i) for i in inv) for k, f in want.items()}
 
 
+def judge_g5(calls: list[dict]) -> dict:
+    """history.affected 를 쪽 단위로 끝까지 이어받았는가: 받은 id 합집합, 마지막 쪽의 next_cursor, 쪽 수, 잘림 표시."""
+    ids, others, pages, truncated_seen, last_cursor, used_cursor = set(), set(), 0, False, "unset", 0
+    for c in calls:
+        a = c.get("input") or {}
+        e = c.get("envelope")
+        if a.get("command") == "history.affected" and e and e.get("ok"):
+            pages += 1
+            ids |= {i["id"] for i in e["result"].get("items", []) if i.get("change") == "created"}
+            others |= {i["id"] for i in e["result"].get("items", []) if i.get("change") != "created"}
+            pg = e.get("page") or {}
+            truncated_seen = truncated_seen or bool(pg.get("truncated"))
+            last_cursor = pg.get("next_cursor")
+            used_cursor += 1 if (a.get("args") or {}).get("cursor") else 0
+    return {"pages": pages, "unique_created_ids": len(ids), "other_changed_ids": len(others), "expected_created": N_BATCH, "complete": len(ids) == N_BATCH and last_cursor is None,
+            "truncated_seen": truncated_seen, "pages_using_cursor": used_cursor}
+
+
 def prepare(group: str, ws: Path) -> None:
     import shutil
     shutil.rmtree(ws, ignore_errors=True)
     ws.mkdir(parents=True)
-    if GROUPS[group]["setup"] == "fixture":
+    if GROUPS[group]["setup"] in ("fixture", "bigbatch"):
         C.build_fixture(ws)
+    if GROUPS[group]["setup"] == "bigbatch":
+        from dobim_core import fixture as F
+        f = ws / "_bulk.jsonl"
+        f.write_text(chr(10).join(json.dumps({"command": "wall.create", "args": {
+            "id": "1" + f"{100 + i:021d}", "level": F.LV1, "axis": [0, 10000 + i * 300, 6000, 10000 + i * 300],
+            "thickness": 200, "height": 3000}}) for i in range(N_BATCH)), encoding="utf-8")
+        import subprocess, os
+        pr = subprocess.run([str(C.PY), "-m", "dobim_core", "--workspace", str(ws), "script", str(f), "-p", "p.dobim", "--atomic"],
+                            capture_output=True, env={**os.environ, **C.server_env()}, stdin=subprocess.DEVNULL)
+        assert json.loads(pr.stdout.decode("utf-8"))["ok"], pr.stdout[:300]
+        f.unlink()
 
 
 def post_state(group: str, ws: Path) -> dict:
@@ -165,7 +206,7 @@ def post_state(group: str, ws: Path) -> dict:
             out["counts"] = e["result"]["counts"]
         v, _ = C.cli(ws, "model.validate", {}, project="g1.dobim") if (ws / "g1.dobim").exists() else ({"ok": False}, 1)
         out["valid"] = v.get("ok")
-    elif group in ("G2", "G3", "G4"):
+    elif group in ("G2", "G3", "G4", "G5"):
         e, _ = C.cli(ws, "project.info", {}, project="p.dobim")
         out["rev"] = e["result"]["rev"] if e.get("ok") else None
         out["counts"] = e["result"]["counts"] if e.get("ok") else None
@@ -200,6 +241,9 @@ def run_group(client: str, group: str, *, model: str = "sonnet") -> dict:
     if group == "G4":
         rec["g4"] = judge_g4(p["calls"])
         rec["commands"] = {}
+    elif group == "G5":
+        rec["g5"] = judge_g5(p["calls"])
+        rec["commands"] = judge_group(group, p["calls"])
     else:
         rec["commands"] = judge_group(group, p["calls"])
     rec["final_text_chars"] = len(p["final_text"])
