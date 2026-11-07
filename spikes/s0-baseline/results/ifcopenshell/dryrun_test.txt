@@ -1,0 +1,17 @@
+$ ifcedit run RA-01.ifc geometry.edit_object_placement --product "#99999" --dry-run
+{
+  "ok": true,
+  "dry_run": true,
+  "module": "geometry",
+  "function": "edit_object_placement",
+  "args": {
+    "product": "#99999"
+  }
+}
+$ (같은 인자, --dry-run 없이)
+{
+  "ok": false,
+  "error": "Cannot convert parameter 'product': Entity #99999 not found in model"
+}
+rc=1
+usage: ifcedit [-h] [--format {json,text}]

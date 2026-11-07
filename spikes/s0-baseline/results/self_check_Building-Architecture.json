@@ -1,0 +1,88 @@
+{
+ "M1": {
+  "value": 100.0,
+  "threshold": ">=99",
+  "unit": "%",
+  "pass": true,
+  "detail": []
+ },
+ "M2": {
+  "value": 100.0,
+  "threshold": "=100",
+  "unit": "% (클래스)",
+  "pass": true,
+  "detail": []
+ },
+ "M3": {
+  "value": 100.0,
+  "threshold": ">=95",
+  "unit": "%",
+  "total": 5,
+  "pass": true,
+  "detail": []
+ },
+ "M4": {
+  "value": 100.0,
+  "threshold": "=100",
+  "unit": "%",
+  "total": 0,
+  "pass": true,
+  "detail": []
+ },
+ "M5": {
+  "value": 100.0,
+  "threshold": "=100",
+  "unit": "%",
+  "total": 0,
+  "pass": true,
+  "detail": []
+ },
+ "M6": {
+  "value": 100.0,
+  "threshold": "=100 (오차<=0.5%)",
+  "unit": "% (요소)",
+  "total": 13,
+  "max_rel_err": 0.0,
+  "pass": true,
+  "detail": []
+ },
+ "M7": {
+  "value": null,
+  "threshold": "기록만",
+  "unit": "%",
+  "total": 0,
+  "pass": null,
+  "detail": []
+ },
+ "M8": {
+  "value": 0,
+  "threshold": "=0",
+  "unit": "건",
+  "pass": true,
+  "warnings": 0,
+  "detail": []
+ },
+ "X1": {
+  "value": 100.0,
+  "threshold": "=100 (1mm)",
+  "unit": "% (요소)",
+  "total": 13,
+  "pass": true,
+  "detail": []
+ },
+ "X2": {
+  "value": 0,
+  "threshold": "참고",
+  "unit": "건",
+  "pass": null,
+  "detail": []
+ },
+ "_meta": {
+  "ref": "out/samples/Building-Architecture.ifc",
+  "test": "out/samples/Building-Architecture.ifc",
+  "schema_ref": "IFC4",
+  "schema_test": "IFC4",
+  "n_products_ref": 20,
+  "n_products_test": 20
+ }
+}

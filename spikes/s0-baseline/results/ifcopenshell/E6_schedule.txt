@@ -1,0 +1,14 @@
+== RA-01.ifc
+Name | type.Name | OverallWidth | Pset_DoorCommon.FireRating | type.DoBIM_TypeParams.OverallWidth
+D-01 | DT-01 | 0.9 | 60min | 0.9
+D-02 | DT-02 | 0.8 | 30min | 0.8
+D-03 | DT-02 | 0.8 | 30min | 0.8
+D-04 | DT-02 | 0.8 | 30min | 0.8
+D-05 | DT-01 | 0.9 | 60min | 0.9
+== results/ifcopenshell/E2.ifc
+Name | type.Name | OverallWidth | Pset_DoorCommon.FireRating | type.DoBIM_TypeParams.OverallWidth
+D-01 | DT-01 | 1.0 | 60min | 1.0
+D-02 | DT-02 | 0.8 | 30min | 0.8
+D-03 | DT-02 | 0.8 | 30min | 0.8
+D-04 | DT-02 | 0.8 | 30min | 0.8
+D-05 | DT-01 | 1.0 | 60min | 1.0
