@@ -1,0 +1,22 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+*.egg-info/
+
+# 빌드 산출물
+build/
+dist/
+target/
+node_modules/
+
+# 시험용 대용량 산출물
+spikes/**/out/
+*.ifc.bak
+*.dobim-wal
+*.dobim-shm
+.DS_Store
