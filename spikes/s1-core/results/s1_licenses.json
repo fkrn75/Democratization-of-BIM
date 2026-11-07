@@ -280,5 +280,5 @@
     }
   ],
   "forbidden_found": [],
-  "notes": "ifcopenshell 은 LGPL-3.0 (ADR-0003: 라이브러리 파일을 교체 가능하게 동봉하고 고지). 라이선스 칸은 패키지 메타데이터 그대로이며 '미확인' 은 메타데이터에 없다는 뜻이다."
+  "notes": "ifcopenshell \uc740 LGPL-3.0 (ADR-0003: \ub77c\uc774\ube0c\ub7ec\ub9ac \ud30c\uc77c\uc744 \uad50\uccb4 \uac00\ub2a5\ud558\uac8c \ub3d9\ubd09\ud558\uace0 \uace0\uc9c0). \ub77c\uc774\uc120\uc2a4 \uce78\uc740 \ud328\ud0a4\uc9c0 \uba54\ud0c0\ub370\uc774\ud130 \uadf8\ub300\ub85c\uc774\uba70 '\ubbf8\ud655\uc778' \uc740 \uba54\ud0c0\ub370\uc774\ud130\uc5d0 \uc5c6\ub2e4\ub294 \ub73b\uc774\ub2e4."
 }

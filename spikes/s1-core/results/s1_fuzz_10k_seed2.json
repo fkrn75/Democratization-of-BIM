@@ -1,7 +1,7 @@
 {
   "seed": 424242,
   "n_items": 10000,
-  "elapsed_sec": 68.4,
+  "elapsed_sec": 89.0,
   "ok": true,
   "diffs": [],
   "hashes": {
@@ -48,7 +48,7 @@
     "material.set": 243,
     "join.clear": 9
   },
-  "check_seconds": 34.95,
+  "check_seconds": 46.23,
   "coverage": {
     "walls": 1761,
     "walls_non_orthogonal": 689,

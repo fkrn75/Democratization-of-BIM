@@ -4,7 +4,7 @@
   "commands_executed_with_examples": 29,
   "coverage_percent": 100.0,
   "example_runs": 30,
-  "error_case_runs": 15,
+  "error_case_runs": 17,
   "mcp_tools": [
     "dobim_command_describe",
     "dobim_commands_search",
@@ -579,6 +579,26 @@
     },
     {
       "label": "err-13",
+      "command": "pset.set",
+      "same_envelope": true,
+      "exit_code": 2,
+      "exit_code_matches_envelope": true,
+      "ok": false,
+      "state_hash_equal": true,
+      "second_step": null
+    },
+    {
+      "label": "err-14",
+      "command": "pset.set",
+      "same_envelope": true,
+      "exit_code": 2,
+      "exit_code_matches_envelope": true,
+      "ok": false,
+      "state_hash_equal": true,
+      "second_step": null
+    },
+    {
+      "label": "err-15",
       "command": "wall.move",
       "same_envelope": true,
       "exit_code": 0,
@@ -588,7 +608,7 @@
       "second_step": null
     },
     {
-      "label": "err-14",
+      "label": "err-16",
       "command": "history.redo",
       "same_envelope": true,
       "exit_code": 1,

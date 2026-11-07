@@ -319,6 +319,9 @@ def m_trim_tie_to_end():
 def m_set_prop_no_restore():
     """N1 회귀: 타입이 바뀌는 쓰기가 속성을 지운 뒤 실패해도 복원하지 않는다."""
     def set_prop(self, eid, pset, prop, value):
+        if getattr(self, "_failed", False):   # 엔진의 되돌리기 호출도 복원하지 않는 상태(두 겹 방어를 모두 끈 변이)
+            self._failed = False
+            return
         ifc_model.check_value(value)
         f, e = self.f, self.ents[eid]
         cur = ifc_model.ue.get_pset(e, pset)
@@ -334,6 +337,9 @@ def m_set_prop_no_restore():
             if old is not None and value is not None and type(old) is not type(value):
                 ifc_model.api_pset.edit_pset(f, pset=ps, properties={prop: None})
             ifc_model.api_pset.edit_pset(f, pset=ps, properties={prop: value})
+        except BaseException:
+            self._failed = True
+            raise
         finally:
             remain = ifc_model.ue.get_pset(e, pset)
             if remain is not None and not [k for k in remain if k != "id"]:
