@@ -1,0 +1,9 @@
+{
+ "wall_volume_with_window": 5.508,
+ "wall_volume_expected_no_window": 5.94,
+ "export_sec": 0.32,
+ "E1_wall_moved_mm": 600.0,
+ "E1_window_moved_mm": 600.0,
+ "E1_wall_volume_after": 5.508,
+ "E3_wall_height_after_level_change_mm": 3300.0
+}

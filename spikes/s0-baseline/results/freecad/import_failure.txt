@@ -1,0 +1,10 @@
+### RA-01.ifc
+Exception while processing file: freecad_roundtrip.py ['Settings' object has no attribute 'USE_BREP_DATA']
+FreeCAD 1.1.4, Libs: 1.1.4R20260928 (Git shallow)
+(C) 2001-2026 FreeCAD contributors
+### out/samples/Building-Architecture.ifc
+Exception while processing file: freecad_roundtrip.py ['Settings' object has no attribute 'USE_BREP_DATA']
+FreeCAD 1.1.4, Libs: 1.1.4R20260928 (Git shallow)
+(C) 2001-2026 FreeCAD contributors
+### FreeCAD 1.1.4 SHA256(7z) 4828741fc91ee37fafcdb97a1abacb18b04ba451ac4372d9ff7a7349b36f4d6d (공식 릴리스 해시 파일과 일치)
+번들 ifcopenshell 0.8.4, importers/importIFC.py 는 settings.USE_BREP_DATA 사용 -> 0.8.x 에 해당 속성 없음
