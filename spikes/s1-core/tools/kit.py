@@ -192,6 +192,16 @@ class Gen:
         self.prev_undo = False
         if self.rng.random() < 0.06 and eng.st.by_kind.get("wall"):
             return self._cross(eng)
+        if self.rng.random() < 0.05 and eng.st.by_kind.get("wall"):
+            # 한 요소에 이름 순서와 반대로 속성셋을 여러 개 쓰고 곧바로 지운다(삭제 효과 순서의 결정성 시험)
+            t = self._pick(eng, "wall")
+            cmds = [["pset.set", {"id": t, "pset": n, "prop": "p", "value": self.rng.choice([1, "a", 2.5])}]
+                    for n in ("Pset_Zeta", "Pset_Mid", "Pset_Alpha")]
+            if self.rng.random() < 0.7:
+                cmds.append(["element.delete", {"id": t}])
+                if self.rng.random() < 0.6:   # 삭제 뒤 실패해 롤백되면 IFC 속성셋 삽입 순서가 재생과 달라진다
+                    cmds.append(["wall.move", {"id": mkid("9", 9), "dx": 1}])
+            return {"op": "batch", "commands": cmds}
         if self.rng.random() < self.w[-1][1] / 100 and eng.st.by_kind.get("wall"):
             n = self.rng.randrange(2, 4)
             cmds = [self._one(eng, force=self.rng.choice(["move", "wset", "door", "pset", "wall"])) for _ in range(n)]

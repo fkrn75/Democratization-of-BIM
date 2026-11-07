@@ -295,7 +295,7 @@ class IdArg(A):
 
 
 def _delete_one(ctx, eid):
-    for pset, props in ctx.psets(eid).items():
+    for pset, props in sorted(ctx.psets(eid).items()):   # IFC 안의 삽입 순서에 기대지 않는다(로그 결정성)
         for prop in sorted(props):
             ctx.set_prop(eid, pset, prop, None)
     ctx.set_material(eid, None)

@@ -257,6 +257,25 @@ def m_redo_branch_not_cleared():
     with mock.patch.object(engine.Engine, "_note_entry", note):
         yield
 
+
+@contextmanager
+def m_delete_pset_order_unsorted():
+    """실제로 시드 424242 의 10k 시험이 처음 잡은 결함: 삭제 효과가 IFC 속성셋 삽입 순서에 의존(로그 비결정)."""
+    def delete_one(ctx, eid):
+        for pset, props in ctx.psets(eid).items():
+            for prop in sorted(props):
+                ctx.set_prop(eid, pset, prop, None)
+        ctx.set_material(eid, None)
+        for kind in ("joins", "on_level", "hosts"):
+            for dst in ctx.rels_out(kind, eid):
+                ctx.rel(kind, eid, dst, False)
+            for src in ctx.rels_in(kind, eid):
+                ctx.rel(kind, src, eid, False)
+        ctx.put_el(eid, None)
+
+    with mock.patch.object(commands, "_delete_one", delete_one):
+        yield
+
 MUTANTS = [
     ("M01 관계 입력 무효화 누락", "증분 무효화 누락", m_touch_skip_rel),
     ("M02 속성셋 입력 무효화 누락", "증분 무효화 누락", m_touch_skip_pset),
@@ -275,6 +294,7 @@ MUTANTS = [
     ("M15 [검수자] door_status 경계 <= 를 < 로", "질의 의미 오류", m_door_status_strict_boundary),
     ("M16 [검수자] Ctx.set_prop 타입 검사 제거", "값 손상", m_ctx_set_prop_no_type_check),
     ("M17 새 변경이 redo 가지를 버리지 않음", "undo/redo 오류", m_redo_branch_not_cleared),
+    ("M18 삭제 효과가 속성셋 삽입 순서에 의존(10k 시드 424242가 찾은 실제 결함)", "비결정", m_delete_pset_order_unsorted),
 ]
 
 
