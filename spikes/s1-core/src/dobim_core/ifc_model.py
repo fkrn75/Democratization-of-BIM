@@ -150,10 +150,16 @@ class IfcModel:
             ps = api_pset.add_pset(f, product=e, name=pset)
         else:
             ps = f.by_id(cur["id"])
-        api_pset.edit_pset(f, pset=ps, properties={prop: value})
-        remain = ue.get_pset(e, pset)
-        if remain is not None and not [k for k in remain if k != "id"]:
-            api_pset.remove_pset(f, product=e, pset=ps)
+        # edit_pset 은 기존 속성의 타입을 따라 값을 강제 변환한다(1 다음 2.5 가 2 로 저장). 타입이 바뀌면
+        # 속성을 먼저 지우고 새로 만들어 저장값이 입력과 정확히 같게 한다.
+        try:
+            if cur is not None and prop in cur and value is not None and type(cur[prop]) is not type(value):
+                api_pset.edit_pset(f, pset=ps, properties={prop: None})
+            api_pset.edit_pset(f, pset=ps, properties={prop: value})
+        finally:   # 실패해도 빈 속성셋을 남기지 않는다 (상태는 속성 맵의 함수여야 한다)
+            remain = ue.get_pset(e, pset)
+            if remain is not None and not [k for k in remain if k != "id"]:
+                api_pset.remove_pset(f, product=e, pset=ps)
 
     def set_material(self, eid: str, name: str | None) -> None:
         f = self.f

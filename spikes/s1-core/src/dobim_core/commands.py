@@ -538,25 +538,113 @@ def history_list(ctx, a: HistoryList):
 
 
 # ================================================================ 입출력 (파괴적)
+SNAP_DIR = ".dobim-snapshots"
+_FORBIDDEN_SUFFIX = (".dobim", ".dobim-wal", ".dobim-shm", ".dobim-journal", ".tmp", "-wal", "-shm", "-journal")
+
+
 class IfcExport(A):
-    path: str = Field(description="작업 폴더 안의 .ifc 경로. 기존 파일은 덮어쓴다")
+    path: str = Field(description="작업 폴더 안의 .ifc 경로. 기존 파일은 덮어쓰며, 덮어쓰기 전에 자동 스냅숏을 남긴다")
 
 
-def _export_preview(ctx, a: IfcExport):
-    p = resolve_in_workspace(ctx.eng.workspace, a.path)
-    return {"will_write": p.name, "overwrites": p.exists()}
+def _target(ctx, raw: str):
+    """내보내기 대상 검사: 작업 폴더 안, .ifc 확장자, 프로젝트 파일·WAL 사이드카·스냅숏 폴더가 아니어야 한다."""
+    import os
+    p = resolve_in_workspace(ctx.eng.workspace, raw)
+    name = p.name.lower()
+    if p.suffix.lower() != ".ifc" or any(name.endswith(x) for x in _FORBIDDEN_SUFFIX):
+        raise DobimError("PATH_DENIED", f"내보내기 대상은 .ifc 파일이어야 한다: {p.name}", path="/path")
+    proj = os.path.realpath(ctx.eng.path)
+    if os.path.normcase(str(p)) in {os.path.normcase(proj + x) for x in ("", "-wal", "-shm", "-journal")}:
+        raise DobimError("PATH_DENIED", "프로젝트 파일 자체는 덮어쓸 수 없다", path="/path")
+    if SNAP_DIR in p.parts:
+        raise DobimError("PATH_DENIED", "스냅숏 폴더에는 쓸 수 없다", path="/path")
+    if p.is_dir():
+        raise DobimError("PATH_DENIED", f"폴더다: {p.name}", path="/path")
+    return p
 
 
-@command("ifc.export", kind="session", risk="destructive", group="io", summary="IFC4 파일로 내보낸다(덮어쓸 수 있음)",
-         args=IfcExport, preview=_export_preview, examples=[{"path": "export-example.ifc"}])
-def ifc_export(ctx, a: IfcExport):
-    p = resolve_in_workspace(ctx.eng.workspace, a.path)
-    n = ctx.eng.flush_ifc()
+def _snapshots(p):
+    d = p.parent / SNAP_DIR
+    out = []
+    if d.is_dir():
+        for f in d.iterdir():
+            pre = p.name + "."
+            if f.name.startswith(pre) and f.name[len(pre):].isdigit():
+                out.append((int(f.name[len(pre):]), f))
+    return sorted(out)
+
+
+def _snapshot_existing(p):
+    """덮어쓰기 전에 기존 파일을 .dobim-snapshots/<이름>.<번호> 로 복사한다. 번호는 결정적으로 증가한다."""
+    import shutil
+    if not p.exists():
+        return None
+    d = p.parent / SNAP_DIR
+    d.mkdir(exist_ok=True)
+    n = max([k for k, _ in _snapshots(p)], default=0) + 1
+    dst = d / f"{p.name}.{n}"
+    shutil.copy2(p, dst)
+    return f"{SNAP_DIR}/{dst.name}"
+
+
+def _replace(p, write):
+    """임시 파일에 쓴 뒤 교체한다. 대상이 열려 있으면 FILE_LOCKED."""
     tmp = p.with_name(p.name + ".tmp")
-    ctx.eng.ifc.write(str(tmp))
+    write(tmp)
     try:
         tmp.replace(p)
     except OSError as ex:
         tmp.unlink(missing_ok=True)
         raise DobimError("FILE_LOCKED", f"파일을 바꿀 수 없다: {p.name}") from ex
-    return {"path": p.name, "bytes": p.stat().st_size, "projected": n, "rev": ctx.eng.rev}
+
+
+def _export_preview(ctx, a: IfcExport):
+    p = _target(ctx, a.path)
+    return {"will_write": p.name, "overwrites": p.exists(), "snapshot_before_overwrite": p.exists()}
+
+
+@command("ifc.export", kind="session", risk="destructive", group="io",
+         summary="IFC4 파일로 내보낸다. 기존 파일은 덮어쓰기 전에 자동 스냅숏을 남긴다",
+         args=IfcExport, preview=_export_preview, examples=[{"path": "export-example.ifc"}])
+def ifc_export(ctx, a: IfcExport):
+    p = _target(ctx, a.path)
+    ctx.eng.flush_ifc()   # 투영한 요소 수는 프로세스 상태(캐시 유무)에 따라 달라 결과에 넣지 않는다(패리티 C)
+    snap = _snapshot_existing(p)
+    _replace(p, lambda tmp: ctx.eng.ifc.write(str(tmp)))
+    return {"path": p.name, "bytes": p.stat().st_size, "rev": ctx.eng.rev, "snapshot": snap}
+
+
+@command("ifc.snapshots", kind="query", risk="read", group="io", summary="IFC 내보내기 덮어쓰기 전 스냅숏 목록",
+         args=IfcExport, idempotent=True, needs_project=True, examples=[{"path": "export-example.ifc"}])
+def ifc_snapshots(ctx, a: IfcExport):
+    import os
+    p = resolve_in_workspace(ctx.eng.workspace, a.path)
+    items = [{"n": n, "name": f"{SNAP_DIR}/{f.name}", "bytes": f.stat().st_size} for n, f in _snapshots(p)]
+    return {"items": items, "page": {"next_cursor": None, "total": len(items)}}
+
+
+class IfcRestore(A):
+    path: str = Field(description="되돌릴 .ifc 파일 경로")
+    snapshot: int = Field(description="ifc.snapshots 가 알려 준 번호", ge=1)
+
+
+def _restore_preview(ctx, a: IfcRestore):
+    p = _target(ctx, a.path)
+    found = dict(_snapshots(p)).get(a.snapshot)
+    if found is None:
+        raise DobimError("NOT_FOUND", f"스냅숏이 없다: {a.snapshot}", path="/snapshot")
+    return {"will_write": p.name, "from_snapshot": a.snapshot, "overwrites": p.exists(), "snapshot_before_overwrite": p.exists()}
+
+
+@command("ifc.restore", kind="session", risk="destructive", group="io",
+         summary="스냅숏으로 .ifc 파일을 되돌린다(현재 파일도 먼저 스냅숏으로 남긴다)",
+         args=IfcRestore, preview=_restore_preview, examples=[{"path": "export-example.ifc", "snapshot": 1}])
+def ifc_restore(ctx, a: IfcRestore):
+    import shutil
+    p = _target(ctx, a.path)
+    src = dict(_snapshots(p)).get(a.snapshot)
+    if src is None:
+        raise DobimError("NOT_FOUND", f"스냅숏이 없다: {a.snapshot}", path="/snapshot")
+    snap = _snapshot_existing(p)
+    _replace(p, lambda tmp: shutil.copyfile(src, tmp))
+    return {"path": p.name, "restored_from": a.snapshot, "bytes": p.stat().st_size, "snapshot": snap}

@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import json
+import math
 import random
 import sys
 import tempfile
@@ -19,11 +20,13 @@ sys.path.insert(0, str(HERE.parent / "src"))
 from dobim_core import dispatch, fixture as F  # noqa: E402
 from dobim_core.engine import Engine, canon  # noqa: E402
 
+# 같은 속성에 서로 다른 타입의 값을 번갈아 쓴다(타입 고착 버그를 잡기 위해). None 은 속성 삭제.
 PSETS = [("Pset_WallCommon", "FireRating", ["EI30", "EI60", "EI90", None]),
-         ("Pset_WallCommon", "IsExternal", [True, False, None]),
-         ("Pset_DoorCommon", "FireRating", ["EI30", "EI60", None]),
-         ("Pset_DoorCommon", "SecurityRating", [1, 2, 3, None]),
-         ("Pset_Custom", "Weight", [10.5, 20.25, None])]
+         ("Pset_WallCommon", "IsExternal", [True, False, None, 1, "yes"]),
+         ("Pset_DoorCommon", "FireRating", ["EI30", "EI60", None, 30, 0.5]),
+         ("Pset_DoorCommon", "SecurityRating", [1, 2, 3, None, 2.5, True, "abc"]),
+         ("Pset_Mix", "P", [1, 2.5, 0.5, True, False, "abc", 5, 1.0, 0, None, "5"]),
+         ("Pset_Custom", "Weight", [10.5, 20.25, None, 10, "heavy"])]
 MATERIALS = ["Concrete", "Steel", "Gypsum", "Timber", None]
 
 
@@ -79,6 +82,14 @@ class Gen:
 
     def _axis(self):
         r = self.rng
+        if r.random() < 0.4:   # 비직교·소수 좌표(1/4 mm 단위라 이진 부동소수에서 정확)·아주 짧은 벽
+            x, y = r.randrange(0, 80000) / 4, r.randrange(0, 48000) / 4
+            dx, dy = r.randrange(-32000, 32000) / 4, r.randrange(-32000, 32000) / 4
+            if r.random() < 0.1:
+                dx, dy = r.choice([1.0, 1.25, -2.0]), r.choice([0.0, 0.5, -1.0])
+            if dx * dx + dy * dy < 1.0:
+                dx = 5.0
+            return [x, y, x + dx, y + dy]
         x, y = r.randrange(0, 20) * 500, r.randrange(0, 12) * 500
         if r.random() < 0.5:
             return [x, y, x + r.randrange(2, 14) * 500, y]
@@ -98,7 +109,9 @@ class Gen:
                                     "thickness": r.choice([100, 150, 200, 250]), "height": r.choice([2700, 3000, 3300])})
         wall, door = self._pick(eng, "wall"), self._pick(eng, "door")
         if k == "move" and wall:
-            return ("wall.move", {"id": wall, "dx": r.randrange(-6, 7) * 100, "dy": r.randrange(-6, 7) * 100})
+            if r.random() < 0.5:
+                return ("wall.move", {"id": wall, "dx": r.randrange(-6, 7) * 100, "dy": r.randrange(-6, 7) * 100})
+            return ("wall.move", {"id": wall, "dx": round(r.uniform(-777, 777), 3), "dy": round(r.uniform(-777, 777), 3)})
         if k == "wset" and wall:
             f = r.choice(["thickness", "height", "name", "axis"])
             v = {"thickness": r.choice([100, 200, 300]), "height": r.choice([2800, 3200]), "name": f"N{r.randrange(99)}",
@@ -111,16 +124,17 @@ class Gen:
                 return ("join.set" if k == "join" else "join.clear", {"a": wall, "b": r.choice(sorted(same))})
         if k == "door" and wall:
             ax = eng.st.el[wall]["params"]["axis"]
-            length = max(abs(ax[2] - ax[0]), abs(ax[3] - ax[1]))  # 축 정렬 벽만 만든다
+            length = math.sqrt((ax[2] - ax[0]) ** 2 + (ax[3] - ax[1]) ** 2)
             w = r.choice([800, 900, 1000])
             lo, hi = w // 2 + 100, int(length - w // 2)
             if hi > lo:
-                return ("door.place", {"id": self._nid("2"), "host": wall, "offset": r.randrange(lo, hi, 100), "width": w,
+                off = r.randrange(lo, hi, 100) if r.random() < 0.5 else round(r.uniform(lo, hi), 3)
+                return ("door.place", {"id": self._nid("2"), "host": wall, "offset": off, "width": w,
                                        "height": r.choice([2100, 2400]), "sill": r.choice([0, 0, 100])})
         if k == "dset" and door:
             f = r.choice(["width", "height", "sill", "offset", "name"])
             v = {"width": r.choice([800, 900, 1000]), "height": r.choice([2100, 2200]), "sill": r.choice([0, 50]),
-                 "offset": r.randrange(5, 15) * 100, "name": f"DN{r.randrange(99)}"}[f]
+                 "offset": r.choice([r.randrange(5, 15) * 100, round(r.uniform(500, 1500), 3)]), "name": f"DN{r.randrange(99)}"}[f]
             return ("door.set", {"id": door, f: v})
         if k == "delete":
             pool = [x for x in (wall, door) if x]
@@ -152,12 +166,32 @@ class Gen:
             return ("join.set", {"a": wall, "b": wall})
         return ("wall.set", {"id": wall or mkid("9", 1), "thickness": -5})
 
+    def _cross(self, eng):
+        """기존 벽을 가로지르는 새 벽을 만들고 조인한다(배치). 교점이 벽 중앙 근처라 조인 정리 경계(degenerate_join,
+        JOIN_MAX_EXT, 문이 정리된 벽 밖으로 나감)가 실제로 실행되도록 교점 위치를 0.3mm 단위로 흔든다."""
+        r = self.rng
+        w = self._pick(eng, "wall")
+        x1, y1, x2, y2 = eng.st.el[w]["params"]["axis"]
+        L = math.sqrt((x2 - x1) ** 2 + (y2 - y1) ** 2)
+        c, s = (x2 - x1) / L, (y2 - y1) / L
+        t = L / 2 + r.choice([-0.6, -0.3, 0.0, 0.3, 0.6, 1.0]) + r.choice([0, 0, -L / 4, L / 4 - 0.3])
+        px, py = x1 + t * c, y1 + t * s
+        h = r.choice([500.0, 1000.0, 3.0, 0.7])
+        nid = self._nid("1")
+        lv = eng.st.out.get(("on_level", w), [None])[0]
+        a, b = sorted([w, nid])
+        return {"op": "batch", "commands": [
+            ["wall.create", {"id": nid, "level": lv, "axis": [px + h * s, py - h * c, px - h * s, py + h * c]}],
+            ["join.set", {"a": a, "b": b}]]}
+
     def next(self, eng):
         if self.prev_undo and self.rng.random() < 0.6:   # 취소 직후에는 다시 실행·연속 취소가 자주 나와야 한다
             name = self.rng.choice(["history.redo", "history.redo", "history.undo"])
             self.prev_undo = name == "history.undo" or self.prev_undo
             return {"op": "cmd", "name": name, "args": {}}
         self.prev_undo = False
+        if self.rng.random() < 0.06 and eng.st.by_kind.get("wall"):
+            return self._cross(eng)
         if self.rng.random() < self.w[-1][1] / 100 and eng.st.by_kind.get("wall"):
             n = self.rng.randrange(2, 4)
             cmds = [self._one(eng, force=self.rng.choice(["move", "wset", "door", "pset", "wall"])) for _ in range(n)]
@@ -261,6 +295,41 @@ def full_check(sess: Session, workdir: Path, *, validate=False, tag="") -> dict:
     return {"ok": not diffs, "diffs": diffs, "hashes": live, "rev": eng.rev, "sec": round(time.perf_counter() - t0, 2)}
 
 
+def coverage(eng: Engine) -> dict:
+    """생성된 열이 수치 경계 경로를 실제로 밟았는지의 분포(최종 상태 + 로그 전체)."""
+    from dobim_core import queries as Q
+    from dobim_core.engine import invert
+    st, g = eng.st, eng.g
+    walls = sorted(st.by_kind.get("wall", ()))
+    nonorth = trimmed = degenerate = parallel_joins = short = 0
+    for w in walls:
+        x1, y1, x2, y2 = st.el[w]["params"]["axis"]
+        if x1 != x2 and y1 != y2:
+            nonorth += 1
+        L = math.sqrt((x2 - x1) ** 2 + (y2 - y1) ** 2)
+        short += L < 10
+        a, b, status = g.q(Q.wall_trim, w)
+        degenerate += status == "degenerate_join"
+        trimmed += (a != 0.0 or b != L) and status == "ok"
+    for (kind, src), dsts in st.out.items():
+        if kind == "joins":
+            parallel_joins += sum(g.q(Q.join_point, src, d) is None for d in dsts)
+    doors = sorted(st.by_kind.get("door", ()))
+    outside = sum(g.q(Q.door_status, d) != "ok" for d in doors)
+    tchg, kinds = 0, {}
+    for *_, inv in log_rows(eng):
+        for e in invert(json.loads(inv)):
+            if e[0] == "pset":
+                if e[4] is not None and e[5] is not None and type(e[4]) is not type(e[5]):
+                    tchg += 1
+                if e[5] is not None:
+                    kinds[type(e[5]).__name__] = kinds.get(type(e[5]).__name__, 0) + 1
+    return {"walls": len(walls), "walls_non_orthogonal": nonorth, "walls_shorter_than_10mm": short,
+            "walls_trimmed_by_join": trimmed, "walls_degenerate_join": degenerate, "joins_parallel_no_intersection": parallel_joins,
+            "doors": len(doors), "doors_outside_trimmed_host": outside,
+            "pset_writes_with_type_change": tchg, "pset_written_value_types": kinds}
+
+
 def property_run(seed: int, n: int, workdir: Path, *, checkpoint_every=0, validate=False, **gen_kw) -> dict:
     """한 시드에 대해 n 개 항목을 실행하고 차등 검사를 한다. 실패하면 items 도 돌려준다."""
     workdir = Path(workdir)
@@ -282,7 +351,8 @@ def property_run(seed: int, n: int, workdir: Path, *, checkpoint_every=0, valida
         if bad_cp:
             res["ok"] = False
             res["diffs"].append(f"중간 점검에서 증분 != 기준: 항목 {bad_cp[:5]}")
-        res.update(seed=seed, n=n, succeeded=sum(oks), failed=len(oks) - sum(oks), items=items)
+        res.update(seed=seed, n=n, succeeded=sum(oks), failed=len(oks) - sum(oks), items=items,
+                   coverage=coverage(sess.eng))
         return res
     finally:
         sess.close()
@@ -382,7 +452,34 @@ def undo_property(seed: int, n: int, workdir: Path) -> dict:
                 which = [nm for nm, x, y in zip(("상태", "파생값", "IFC"), now, hist[k]) if x != y]
                 viol.append(f"{act} 뒤 해시({'·'.join(which)})가 깊이 {k} 의 기록과 다르다")
                 break
-        return {"seed": seed, "violations": viol, "verified_steps": steps, "txns": len(hist) - 1}
+        # 4) 분기: undo 뒤 새 명령을 쓰면 redo 가지는 사라져야 한다. undo/redo/새 명령을 섞어 기대 해시 이력과 대조한다.
+        branch_checks = 0
+        gen2 = Gen(seed + 777, undo_weight=0)
+        for _ in range(80):
+            act = rng.choice(["undo", "undo", "redo", "redo", "new", "new"])
+            d = len(eng.undo_stack)
+            if act in ("undo", "redo"):
+                r = sess.run("history." + act)
+                can = d > 0 if act == "undo" else d < len(hist) - 1
+                if can != r["ok"]:
+                    viol.append(f"분기 단계 {act}: 가능 여부 {can} 인데 결과 {r.get('error', {}).get('code', 'ok')}")
+                    break
+            else:
+                before = eng.rev
+                r = sess.item(gen2.next(eng))
+                if r["ok"] and eng.rev > before:
+                    del hist[len(eng.undo_stack):]       # 새 변경은 그 뒤의 redo 가지를 버린다
+                    hist.append(None)
+                    hist[-1] = triple(eng)
+                    del hist[len(eng.undo_stack) + 1:]
+            now = triple(eng)
+            k = len(eng.undo_stack)
+            branch_checks += 1
+            if k >= len(hist) or now != hist[k]:
+                viol.append(f"분기 단계 {act} 뒤 해시가 기대 이력과 다르다 (깊이 {k})")
+                break
+        return {"seed": seed, "violations": viol, "verified_steps": steps, "branch_checks": branch_checks,
+                "txns": len(hist) - 1}
     finally:
         sess.close()
 

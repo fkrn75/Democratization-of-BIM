@@ -3,6 +3,7 @@
 
 각 변이는 모듈 함수를 바꿔치는 패치다(소스는 건드리지 않는다). 변이마다 아래 검사를 순서대로 돌려
 하나라도 위반을 내거나 예외가 나면 '탐지'로 센다. 변이 없는 대조군은 모든 검사를 통과해야 한다.
+  golden       : 손으로 계산한 기대값 (tools/golden.py)
   differential : 증분 그래프 vs 기준 그래프(캐시 없음) vs 로그 전체 재생 vs 파일 새로 열기 (kit.full_check)
   undo         : 실행 취소·다시 실행 뒤 해시 복원, 실패 커맨드의 원자적 롤백 (kit.undo_property)
   concurrency  : 낡은 expected_rev 거부, 따라잡기 (kit.concurrency_property)
@@ -20,7 +21,8 @@ from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import kit  # noqa: E402
-from dobim_core import commands, engine, graph, queries  # noqa: E402
+import golden  # noqa: E402
+from dobim_core import commands, engine, graph, ifc_model, queries  # noqa: E402
 
 
 # ---------------------------------------------------------------- 변이 정의
@@ -170,6 +172,91 @@ def m_untracked_dependency():
         yield
 
 
+
+@contextmanager
+def m_pset_type_sticks():
+    """D1 회귀: edit_pset 이 기존 속성 타입으로 값을 강제 변환하게 둔다(1 다음 2.5 가 2 로 저장)."""
+    def set_prop(self, eid, pset, prop, value):
+        f, e = self.f, self.ents[eid]
+        cur = ifc_model.ue.get_pset(e, pset)
+        if cur is None:
+            if value is None:
+                return
+            ps = ifc_model.api_pset.add_pset(f, product=e, name=pset)
+        else:
+            ps = f.by_id(cur["id"])
+        ifc_model.api_pset.edit_pset(f, pset=ps, properties={prop: value})
+        remain = ifc_model.ue.get_pset(e, pset)
+        if remain is not None and not [k for k in remain if k != "id"]:
+            ifc_model.api_pset.remove_pset(f, product=e, pset=ps)
+
+    with mock.patch.object(ifc_model.IfcModel, "set_prop", set_prop):
+        yield
+
+
+@contextmanager
+def m_door_area_width_squared():
+    """검수자 변이: 벽 순면적에서 문 면적을 width*width 로 계산."""
+    def wall_row(g, w):
+        p = queries.el(g, w)["params"]
+        lname, elev = g.q(queries.level_info, g.q(queries.wall_level, w))
+        length = g.q(queries.wall_length, w)
+        opening = 0.0
+        hosted = g.q(queries.wall_hosted, w)
+        for d in hosted:
+            dp = queries.el(g, d)["params"]
+            opening += dp["width"] * dp["width"]
+        return (w, p["name"], lname, elev, length, p["height"], p["thickness"], length * p["height"] - opening, len(hosted),
+                queries._pset_val(g, w, "Pset_WallCommon", "FireRating"),
+                queries._pset_val(g, w, "Pset_WallCommon", "IsExternal"),
+                queries.material(g, w), g.q(queries.wall_trim, w)[2])
+
+    with mock.patch.object(queries, "wall_row", wall_row):
+        yield
+
+
+@contextmanager
+def m_door_status_strict_boundary():
+    """검수자 변이: 문 경계 비교를 <= 에서 < 로."""
+    def door_status(g, d):
+        w = g.q(queries.door_host, d)
+        start, end, _ = g.q(queries.wall_trim, w)
+        p = queries.el(g, d)["params"]
+        half = p["width"] / 2.0
+        return "ok" if start < p["offset"] - half and p["offset"] + half < end else "outside_trimmed_host"
+
+    with mock.patch.object(queries, "door_status", door_status):
+        yield
+
+
+@contextmanager
+def m_ctx_set_prop_no_type_check():
+    """검수자 변이: Ctx.set_prop 의 '값과 타입이 같을 때만 변경 없음' 판정에서 타입 검사 제거(1 -> 1.0 이 무시됨)."""
+    def set_prop(self, eid, pset, prop, value):
+        old = self.eng.ifc.get_psets(eid).get(pset, {}).get(prop)
+        if old == value:
+            return False
+        self.emit(["pset", eid, pset, prop, old, value])
+        return True
+
+    with mock.patch.object(engine.Ctx, "set_prop", set_prop):
+        yield
+
+
+@contextmanager
+def m_redo_branch_not_cleared():
+    """새 변경이 redo 가지를 버리지 않는다."""
+    def note(self, op, txn):
+        if op == "history.undo":
+            self.redo_stack.append(self.undo_stack.pop())
+        elif op == "history.redo":
+            self.undo_stack.append(self.redo_stack.pop())
+        elif not self.undo_stack or self.undo_stack[-1] != txn:
+            self.undo_stack.append(txn)
+
+    with mock.patch.object(engine.Engine, "_note_entry", note):
+        yield
+
 MUTANTS = [
     ("M01 관계 입력 무효화 누락", "증분 무효화 누락", m_touch_skip_rel),
     ("M02 속성셋 입력 무효화 누락", "증분 무효화 누락", m_touch_skip_pset),
@@ -183,6 +270,11 @@ MUTANTS = [
     ("M10 expected_rev 검사 생략", "rev 검사 생략", m_rev_check_skipped),
     ("M11 쓰기 전 따라잡기 생략", "동시성 오류", m_no_catch_up),
     ("M12 IFC 투영이 변경을 무시(증분 투영 오류)", "증분 무효화 누락", m_projection_ignores_changes),
+    ("M13 속성 값 타입 고착(D1 회귀)", "값 손상", m_pset_type_sticks),
+    ("M14 [검수자] 벽 순면적의 문 면적을 width*width 로", "질의 의미 오류", m_door_area_width_squared),
+    ("M15 [검수자] door_status 경계 <= 를 < 로", "질의 의미 오류", m_door_status_strict_boundary),
+    ("M16 [검수자] Ctx.set_prop 타입 검사 제거", "값 손상", m_ctx_set_prop_no_type_check),
+    ("M17 새 변경이 redo 가지를 버리지 않음", "undo/redo 오류", m_redo_branch_not_cleared),
 ]
 
 
@@ -190,6 +282,9 @@ MUTANTS = [
 def run_checks(work: Path, seeds_diff, n_diff, seeds_undo, n_undo, shrink_budget) -> dict:
     """검사를 순서대로 돌려 첫 탐지를 돌려준다. 탐지가 없으면 detected=False."""
     try:
+        gv = golden.check_golden(work)
+        if gv:
+            return {"detected": True, "by": "golden", "evidence": gv[:2]}
         for s in seeds_diff:
             r = kit.property_run(s, n_diff, work, checkpoint_every=20)
             if not r["ok"]:

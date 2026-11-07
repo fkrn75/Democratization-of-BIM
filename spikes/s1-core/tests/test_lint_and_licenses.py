@@ -9,9 +9,11 @@ import license_scan
 
 
 def lint(cwd):
-    exe = ROOT / ".venv" / "Scripts" / "lint-imports.exe"
-    cmd = [str(exe)] if exe.exists() else [sys.executable, "-m", "importlinter"]
-    return subprocess.run(cmd, capture_output=True, cwd=cwd, env={**__import__("os").environ, "PYTHONPATH": "src"}, timeout=120)
+    """venv 이름·OS 와 무관하게 현재 인터프리터로 import-linter 를 실행한다."""
+    import os
+    code = "import sys; from importlinter.cli import lint_imports_command; sys.exit(lint_imports_command())"
+    env = {**os.environ, "PYTHONPATH": "src", "PYTHONUTF8": "1"}
+    return subprocess.run([sys.executable, "-c", code], capture_output=True, cwd=cwd, env=env, timeout=120)
 
 
 def test_의존_방향_계약이_지켜진다():

@@ -367,11 +367,15 @@ class Engine:
             _, eid, old, new = e
             self.st.apply_el(eid, old, new)
             p.add(("el", eid))
-            if old is None:
-                self.ifc.create_identity(eid, new["kind"])
-            elif new is None:
-                self.ifc.remove_identity(eid)
-                self._proj_stamp.pop(eid, None)
+            try:   # IFC 쪽이 실패하면 메모리 상태도 되돌려 반쯤 적용된 효과를 남기지 않는다
+                if old is None:
+                    self.ifc.create_identity(eid, new["kind"])
+                elif new is None:
+                    self.ifc.remove_identity(eid)
+                    self._proj_stamp.pop(eid, None)
+            except BaseException:
+                self.st.apply_el(eid, new, old)
+                raise
             if old is None or new is None:
                 kind = (new or old)["kind"]
                 p.add(("bucket", kind, Q.bucket_of(eid)))

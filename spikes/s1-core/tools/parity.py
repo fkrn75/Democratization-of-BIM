@@ -25,7 +25,8 @@ from dobim_core.engine import Engine  # noqa: E402
 
 SRC = str(HERE.parent / "src")
 # 예시 실행 전에 필요한 준비 (양쪽에 같은 경로로 실행한다)
-PRE = {"history.redo": [("history.undo", {})]}
+_EXP = ("ifc.export", {"path": "export-example.ifc"}, True)   # True = 파괴적 커맨드의 확인 토큰 2단계
+PRE = {"history.redo": [("history.undo", {})], "ifc.restore": [_EXP, _EXP], "ifc.snapshots": [_EXP, _EXP]}
 ERROR_CASES = [
     ("없는 커맨드", "no.such.command", {}, {}),
     ("스키마 오류(타입)", "wall.move", {"id": F.W1, "dx": "abc"}, {}),
@@ -37,6 +38,9 @@ ERROR_CASES = [
     ("경로 거부", "ifc.export", {"path": "../escape.ifc"}, {}),
     ("확인 토큰 없음", "ifc.export", {"path": "x.ifc"}, {}),
     ("확인 토큰 위조", "ifc.export", {"path": "x.ifc"}, {"confirm": "9999999999.deadbeefdeadbeefdeadbeef"}),
+    ("내보내기 확장자 거부", "ifc.export", {"path": "x.txt"}, {}),
+    ("내보내기 .dobim 거부", "ifc.export", {"path": "ex.dobim"}, {}),
+    ("내보내기 -wal 거부", "ifc.export", {"path": "ex.dobim-wal"}, {}),
     ("dry-run", "wall.move", {"id": F.W1, "dx": 700}, {"dry_run": True}),
     ("되돌릴 것 없음", "history.redo", {}, {}),
 ]
@@ -164,9 +168,13 @@ async def run_parity(work: Path | None = None) -> dict:
                 pa, pb = f"{label}.dobim", f"{label}.dobim"
                 shutil.copy(base, wa / pa)
                 shutil.copy(base, wb / pb)
-                for pre_name, pre_args in (PRE.get(name, []) if use_pre else []):
+                for pre in (PRE.get(name, []) if use_pre else []):
+                    pre_name, pre_args = pre[0], pre[1]
                     e1, _ = cli.call(pre_name, pre_args, project=pa)
                     e2, _ = await mcp.call(pre_name, pre_args, project=pb)
+                    if len(pre) > 2:
+                        e1, _ = cli.call(pre_name, pre_args, project=pa, confirm=e1["error"]["details"]["confirm_token"])
+                        e2, _ = await mcp.call(pre_name, pre_args, project=pb, confirm=e2["error"]["details"]["confirm_token"])
                     assert norm(e1) == norm(e2) and e1["ok"], (pre_name, e1, e2)
             e1, code = cli.call(name, args, project=pa, **kw)
             e2, is_err = await mcp.call(name, args, project=pb, **kw)

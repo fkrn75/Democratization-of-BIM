@@ -38,7 +38,7 @@ def main():
     out = {"seed": ns.seed, "n_items": ns.n, "elapsed_sec": round(time.perf_counter() - t0, 1),
            "ok": r["ok"], "diffs": r["diffs"], "hashes": r["hashes"], "log_entries": r["rev"],
            "items_succeeded": r["succeeded"], "items_failed": r["failed"], "final_counts": counts,
-           "item_kinds": dict(kinds), "logged_ops": dict(ops), "check_seconds": r["sec"],
+           "item_kinds": dict(kinds), "logged_ops": dict(ops), "check_seconds": r["sec"], "coverage": r["coverage"],
            "platform": platform.platform(), "python": platform.python_version()}
     if not r["ok"]:
         small, evals = kit.shrink(items, work)
