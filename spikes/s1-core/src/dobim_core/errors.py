@@ -23,6 +23,7 @@ EXIT_CODES: dict[str, int] = {
     "RISK_MISMATCH": 6,
     "JOB_TIMEOUT": 7,
     "REPLAY_DIVERGED": 70,
+    "ENGINE_TAINTED": 70,   # IFC 투영 복원에 실패해 로그에서 다시 만들지도 못한 상태: 쓰기·조회를 거부한다
     "INTERNAL": 70,
 }
 

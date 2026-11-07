@@ -260,6 +260,7 @@ class Engine:
         self.eager_t0 = eager_t0
         self.workspace = Path.cwd()
         self.timing: dict[str, float] = {}
+        self._tainted: str | None = None   # IFC 투영이 로그와 어긋났을 수 있는 이유(복구되면 None)
         self.conn = sqlite3.connect(self.path, isolation_level=None, timeout=busy_ms / 1000.0)
         self.conn.execute(f"PRAGMA busy_timeout={int(busy_ms)}")
         self.conn.execute("PRAGMA foreign_keys=OFF")
@@ -403,24 +404,47 @@ class Engine:
             try:   # 실패한 효과는 effects 에 들어가지 않아 롤백되지 않으므로 여기서 원래 값으로 되돌린다
                 self.ifc.set_prop(e[1], e[2], e[3], e[5])
             except BaseException:
-                try:
-                    self.ifc.set_prop(e[1], e[2], e[3], e[4])
-                except BaseException:
-                    pass
+                self._restore_or_taint(lambda: self.ifc.set_prop(e[1], e[2], e[3], e[4]), f"속성 {e[2]}/{e[3]}")
                 raise
             p.add(("pset", e[1]))
         elif t == "mat":
             try:
                 self.ifc.set_material(e[1], e[3])
             except BaseException:
-                try:
-                    self.ifc.set_material(e[1], e[2])
-                except BaseException:
-                    pass
+                self._restore_or_taint(lambda: self.ifc.set_material(e[1], e[2]), f"재료 {e[1]}")
                 raise
             p.add(("mat", e[1]))
         else:
             raise DobimError("INTERNAL", f"알 수 없는 효과: {t}")
+
+    def _restore_or_taint(self, restore, what: str) -> None:
+        """실패한 효과를 원래 값으로 되돌린다. 되돌리기마저 실패하면 삼키지 않고 엔진을 오염 상태로 표시한다."""
+        try:
+            restore()
+        except BaseException as ex:
+            self._tainted = f"{what} 복원 실패: {type(ex).__name__}: {ex}"
+
+    @property
+    def tainted(self) -> str | None:
+        """IFC 투영이 로그와 어긋났을 수 있는 이유. 정상이면 None. 다음 호출 때 자동으로 복구를 시도한다."""
+        return self._tainted or getattr(getattr(self, "ifc", None), "tainted", None)
+
+    def _heal(self) -> None:
+        """오염된 상태를 디스크의 로그에서 다시 만든다(프로젝트를 다시 여는 것과 같다). 못 하면 ENGINE_TAINTED.
+        트랜잭션 밖에서만 부른다."""
+        reason = self.tainted
+        if reason is None:
+            return
+        self._tainted = reason   # 다시 만드는 도중 실패해도 오염 표시가 남아야 한다
+        try:
+            self._load()
+        except BaseException as ex:
+            if isinstance(ex, KeyboardInterrupt):
+                raise
+            raise DobimError("ENGINE_TAINTED", f"IFC 투영이 오염됐고 로그에서 다시 만들지 못했다: {reason} / 복구 실패: "
+                             f"{type(ex).__name__}: {ex}", hint="원인을 없앤 뒤 다시 시도하면 자동으로 복구를 시도한다. "
+                             "프로젝트 파일(.dobim)의 로그는 온전하다: 다시 열면 복구된다") from ex
+        self._tainted = None
 
     def _touch_pending(self) -> None:
         keys, self._pending = self._pending, set()
@@ -430,13 +454,21 @@ class Engine:
     # ------------------------------------------------------------ 따라잡기 (다른 프로세스의 쓰기)
     def sync(self) -> int:
         """다른 프로세스가 로그에 추가한 항목을 메모리 상태에 반영한다 (15.6절 4항)."""
+        if not self.conn.in_transaction:
+            self._heal()   # 이전 실패로 오염됐으면 먼저 로그에서 다시 만든다(못 하면 ENGINE_TAINTED)
         rows = self.conn.execute(
             "SELECT seq, txn_id, op, inverse FROM op_log WHERE seq > ? ORDER BY seq", (self.head,)).fetchall()
-        for seq, txn, op, inv in rows:
-            for e in invert(json.loads(inv)):
-                self._apply_effect(e, persist=False)
-            self._note_entry(op, txn)
-            self.head = seq
+        try:
+            for seq, txn, op, inv in rows:
+                for e in invert(json.loads(inv)):
+                    self._apply_effect(e, persist=False)
+                self._note_entry(op, txn)
+                self.head = seq
+        except BaseException:
+            if self.tainted and not self.conn.in_transaction:
+                self._heal()   # 다시 만들었으면 디스크 기준으로 최신이다
+                return len(rows)
+            raise   # 트랜잭션 안이면 mutate 의 실패 경로가 롤백한 뒤 복구한다
         if rows:
             self._touch_pending()
         return len(rows)
@@ -464,6 +496,7 @@ class Engine:
         """변경 커맨드 1개 이상을 하나의 트랜잭션으로 실행한다. 실패하면 전체를 되돌린다."""
         t_start = time.perf_counter()
         c = self.conn
+        self._heal()   # 이전 실패로 오염됐으면 쓰기 전에 로그에서 다시 만든다(못 하면 ENGINE_TAINTED 로 거부)
         if not dry_run:
             try:
                 c.execute("BEGIN IMMEDIATE")
@@ -500,7 +533,8 @@ class Engine:
             t_t0 = time.perf_counter()
             aff = affected_of(applied)
             if dry_run:
-                self._rollback(applied)
+                done, applied[:] = list(applied), []   # 되돌리는 도중 실패해도 실패 경로가 같은 효과를 또 되돌리지 않게
+                self._rollback(done)
                 return {"rev": self.head, "results": results, "affected": aff, "warnings": warnings,
                         "entries": len(entries), "dry_run": True}
             for seq, op, args, inv in entries:
@@ -520,7 +554,15 @@ class Engine:
             if not dry_run and c.in_transaction:
                 c.execute("ROLLBACK")
             if applied:
-                self._rollback(applied)
+                try:
+                    self._rollback(applied)
+                except BaseException:
+                    pass   # 삼키는 것이 아니다: _rollback 이 이미 오염으로 표시했고, 바로 아래에서 로그로 다시 만든다
+            if self.tainted:
+                try:
+                    self._heal()   # 복원 실패로 IFC 가 로그와 어긋났다: 로그에서 다시 만든다
+                except DobimError as healing_failed:
+                    raise healing_failed from ex   # 다시 만들 수 없으면 이후 쓰기는 ENGINE_TAINTED 로 거부된다
             if isinstance(ex, (DobimError, KeyboardInterrupt)):
                 raise
             if isinstance(ex, sqlite3.OperationalError) and "locked" in str(ex):
@@ -528,9 +570,14 @@ class Engine:
             raise DobimError("INTERNAL", f"{type(ex).__name__}: {ex}") from ex
 
     def _rollback(self, applied: list) -> None:
-        for e in invert(applied):
-            self._apply_effect(e, persist=False)
-        self._touch_pending()
+        """적용한 효과를 거꾸로 되돌린다. 도중에 실패하면 오염으로 표시하고 예외를 올린다."""
+        try:
+            for e in invert(applied):
+                self._apply_effect(e, persist=False)
+            self._touch_pending()
+        except BaseException as rb:
+            self._tainted = self._tainted or f"롤백 실패: {type(rb).__name__}: {rb}"
+            raise
 
     # ------------------------------------------------------------ IFC 투영 (T1 이후, 요청 시)
     def flush_ifc(self) -> int:

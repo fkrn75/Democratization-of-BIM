@@ -1,7 +1,7 @@
 {
   "seed": 20261107,
   "n_items": 10000,
-  "elapsed_sec": 94.7,
+  "elapsed_sec": 99.8,
   "ok": true,
   "diffs": [],
   "hashes": {
@@ -26,12 +26,13 @@
     "door.set": 605,
     "material.set": 274,
     "history.redo": 628,
-    "pset.set": 540,
+    "pset.set": 441,
     "join.set": 881,
     "history.undo": 655,
     "door.place": 855,
     "element.delete": 359,
-    "join.clear": 203
+    "join.clear": 203,
+    "pset.delete": 99
   },
   "logged_ops": {
     "level.create": 152,
@@ -40,15 +41,16 @@
     "door.set": 461,
     "material.set": 222,
     "wall.move": 1245,
-    "pset.set": 1246,
+    "pset.set": 1240,
     "join.set": 1285,
     "history.undo": 655,
     "element.delete": 451,
     "history.redo": 288,
     "wall.set": 637,
-    "join.clear": 6
+    "join.clear": 6,
+    "pset.delete": 6
   },
-  "check_seconds": 51.88,
+  "check_seconds": 52.33,
   "coverage": {
     "walls": 1787,
     "walls_non_orthogonal": 678,

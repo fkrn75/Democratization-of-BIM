@@ -81,6 +81,9 @@ class IfcModel:
         self.openings: dict[str, Any] = {}      # 문 id -> 개구부 엔티티 (투영 소유)
         self.container_of: dict[str, str] = {}  # 요소 id -> 현재 담긴 층 id (투영 상태)
         self._mats: dict[str, Any] = {}         # 재료 이름 -> 엔티티
+        # 복원까지 실패해 IFC 쪽이 로그와 어긋났을 수 있으면 그 이유가 들어간다. 엔진이 이 표시를 보고 로그에서
+        # 투영을 다시 만든다(만들지 못하면 쓰기를 거부한다). 예외를 삼키고 넘어가는 일은 없어야 한다.
+        self.tainted: str | None = None
 
     # ------------------------------------------------------------ 저수준 도우미
     def _placement(self, rel_to, origin=(0.0, 0.0, 0.0), xdir=(1.0, 0.0, 0.0)):
@@ -157,7 +160,8 @@ class IfcModel:
         return m.Name if m is not None else None
 
     def set_prop(self, eid: str, pset: str, prop: str, value) -> None:
-        """속성 하나를 쓴다. 실패하면 원래 값으로 복원하고 예외를 다시 던진다(삭제 뒤 실패해도 속성이 사라지지 않는다)."""
+        """속성 하나를 쓴다. 실패하면 원래 값으로 복원하고 예외를 다시 던진다(삭제 뒤 실패해도 속성이 사라지지 않는다).
+        복원마저 실패하면 삼키지 않고 self.tainted 에 남긴다(엔진이 로그에서 투영을 다시 만든다)."""
         check_value(value)
         f = self.f
         e = self.ents[eid]
@@ -181,13 +185,19 @@ class IfcModel:
                 api_pset.edit_pset(f, pset=ps, properties={prop: None})
                 if old is not None:
                     api_pset.edit_pset(f, pset=ps, properties={prop: old})
-            except BaseException:
-                pass
+            except BaseException as ex:
+                self.tainted = f"속성 복원 실패 {pset}/{prop}: {type(ex).__name__}: {ex}"
+            try:   # 실패해도 빈 속성셋을 남기지 않는다 (상태는 속성 맵의 함수여야 한다)
+                self._drop_empty_pset(e, pset, ps)
+            except BaseException as ex:
+                self.tainted = self.tainted or f"빈 속성셋 정리 실패 {pset}: {type(ex).__name__}: {ex}"
             raise
-        finally:   # 실패해도 빈 속성셋을 남기지 않는다 (상태는 속성 맵의 함수여야 한다)
-            remain = ue.get_pset(e, pset)
-            if remain is not None and not [k for k in remain if k != "id"]:
-                api_pset.remove_pset(f, product=e, pset=ps)
+        self._drop_empty_pset(e, pset, ps)   # 성공 경로: 실패하면 호출자(엔진)가 실패로 다룬다
+
+    def _drop_empty_pset(self, e, pset: str, ps) -> None:
+        remain = ue.get_pset(e, pset)
+        if remain is not None and not [k for k in remain if k != "id"]:
+            api_pset.remove_pset(self.f, product=e, pset=ps)
 
     def set_material(self, eid: str, name: str | None) -> None:
         f = self.f

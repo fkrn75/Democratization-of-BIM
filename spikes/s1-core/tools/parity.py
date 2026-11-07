@@ -41,8 +41,16 @@ ERROR_CASES = [
     ("내보내기 확장자 거부", "ifc.export", {"path": "x.txt"}, {}),
     ("내보내기 .dobim 거부", "ifc.export", {"path": "ex.dobim"}, {}),
     ("내보내기 -wal 거부", "ifc.export", {"path": "ex.dobim-wal"}, {}),
-    # NaN·inf 는 표준 JSON 에 없다: 공식 SDK 클라이언트가 null 로 바꿔 보내므로(= 속성 삭제) MCP 쪽 패리티 사례에서 뺐다.
-    # 서버 쪽 거부는 tests/test_review2.py 와 tools/golden.py 가 CLI 경로로 확인한다.
+    # NaN·inf 는 표준 JSON 에 없다: 공식 SDK 클라이언트가 null 로 바꿔 보내므로 양쪽에 같은 입력(null)을 줄 수 없다.
+    # 그래서 null 이 속성 삭제가 아니라 스키마 오류인지(N7)를 여기서 비교하고, SDK 로 NaN/inf 를 실제로 보내 속성이 남는지는
+    # tests/test_review3.py 가 확인한다. 삭제는 별도 커맨드 pset.delete 이며 모든 커맨드의 예시로 양쪽에서 실행된다.
+    ("속성값 null(삭제 표기 아님)", "pset.set", {"id": F.W1, "pset": "Pset_Z", "prop": "P", "value": None}, {}),
+    ("속성값 null, 이미 있는 속성", "pset.set", {"id": F.D1, "pset": "Pset_DoorCommon", "prop": "FireRating", "value": None}, {}),
+    ("속성 이름 id 거부(쓰기)", "pset.set", {"id": F.W1, "pset": "Pset_Z", "prop": "id", "value": 1}, {}),
+    ("속성 이름 id 거부(삭제)", "pset.delete", {"id": F.W1, "pset": "Pset_Z", "prop": "id"}, {}),
+    ("속성 삭제(있는 속성)", "pset.delete", {"id": F.D1, "pset": "Pset_DoorCommon", "prop": "FireRating"}, {}),
+    ("속성 삭제(없는 속성)", "pset.delete", {"id": F.W1, "pset": "Pset_Z", "prop": "P"}, {}),
+    ("속성 삭제(예약 속성셋)", "pset.delete", {"id": F.W1, "pset": "DoBIM_Intent", "prop": "Intent"}, {}),
     ("속성값 int64 초과", "pset.set", {"id": F.W1, "pset": "Pset_Z", "prop": "P", "value": 2**63}, {}),
     ("속성값 NUL", "pset.set", {"id": F.W1, "pset": "Pset_Z", "prop": "P", "value": "a\x00b"}, {}),
     ("dry-run", "wall.move", {"id": F.W1, "dx": 700}, {"dry_run": True}),

@@ -370,6 +370,83 @@ def m_no_value_validation():
     finally:
         registry.REGISTRY["pset.set"] = orig
 
+
+@contextmanager
+def m_null_value_deletes():
+    """N7 회귀: pset.set 이 value=null 을 받아 속성을 지운다(공식 SDK 가 NaN/inf 를 null 로 보내면 조용히 삭제된다)."""
+    import dataclasses
+    from dobim_core import registry
+
+    class NullOk(commands.A):
+        id: commands.Id
+        pset: commands.PsetName
+        prop: commands.PropName
+        value: commands.PropValue | None
+
+    orig = registry.REGISTRY["pset.set"]
+    registry.REGISTRY["pset.set"] = dataclasses.replace(orig, args_model=NullOk)
+    try:
+        yield
+    finally:
+        registry.REGISTRY["pset.set"] = orig
+
+
+@contextmanager
+def m_restore_failure_swallowed():
+    """N8 회귀: 복원 중에도 실패하면 예외를 삼키고 오염 표시도 하지 않는다(이전 동작: except BaseException: pass)."""
+    def restore(self, fn, what):
+        try:
+            fn()
+        except BaseException:
+            pass
+
+    def set_prop(self, eid, pset, prop, value):
+        ifc_model.check_value(value)
+        f, e = self.f, self.ents[eid]
+        cur = ifc_model.ue.get_pset(e, pset)
+        if cur is None:
+            if value is None:
+                return
+            ps = ifc_model.api_pset.add_pset(f, product=e, name=pset)
+            old = None
+        else:
+            ps = f.by_id(cur["id"])
+            old = cur.get(prop)
+        try:
+            if old is not None and value is not None and type(old) is not type(value):
+                ifc_model.api_pset.edit_pset(f, pset=ps, properties={prop: None})
+            ifc_model.api_pset.edit_pset(f, pset=ps, properties={prop: value})
+        except BaseException:
+            try:
+                ifc_model.api_pset.edit_pset(f, pset=ps, properties={prop: None})
+                if old is not None:
+                    ifc_model.api_pset.edit_pset(f, pset=ps, properties={prop: old})
+            except BaseException:
+                pass
+            raise
+        finally:
+            remain = ifc_model.ue.get_pset(e, pset)
+            if remain is not None and not [k for k in remain if k != "id"]:
+                ifc_model.api_pset.remove_pset(f, product=e, pset=ps)
+
+    with mock.patch.object(engine.Engine, "_restore_or_taint", restore),             mock.patch.object(ifc_model.IfcModel, "set_prop", set_prop):
+        yield
+
+
+@contextmanager
+def m_taint_without_heal():
+    """N8 회귀: 오염 표시는 하지만 로그에서 다시 만들지도, 쓰기를 거부하지도 않는다."""
+    with mock.patch.object(engine.Engine, "_heal", lambda self: None):
+        yield
+
+
+@contextmanager
+def m_prop_id_allowed():
+    """N9 회귀: 속성 이름 "id" 를 거부하지 않는다(쓰기는 ok 인데 조회에 안 보이고 지울 수도 없다)."""
+    with mock.patch.object(commands, "_prop_name_ok", lambda s: s):
+        yield
+
+
 MUTANTS = [
     ("M01 관계 입력 무효화 누락", "증분 무효화 누락", m_touch_skip_rel),
     ("M02 속성셋 입력 무효화 누락", "증분 무효화 누락", m_touch_skip_pset),
@@ -394,6 +471,10 @@ MUTANTS = [
     ("M21 조인 시작/끝 배정의 중간 동률을 끝 쪽으로", "경계 오류", m_trim_tie_to_end),
     ("M22 [N1] 속성 쓰기가 지운 뒤 실패해도 복원 안 함", "값 손상", m_set_prop_no_restore),
     ("M23 [N4] 속성 값 검증 없음(NaN/inf/int64 초과/NUL/서로게이트)", "값 손상", m_no_value_validation),
+    ("M24 [N7] pset.set 의 value=null 이 속성 삭제(SDK 가 NaN 을 null 로 보내면 조용히 삭제)", "값 손상", m_null_value_deletes),
+    ("M25 [N8] 복원 실패를 삼키고 오염 표시도 안 함", "값 손상", m_restore_failure_swallowed),
+    ("M26 [N8] 오염 표시만 하고 복구·거부는 안 함", "값 손상", m_taint_without_heal),
+    ("M27 [N9] 속성 이름 id 허용(쓰기 ok, 조회에 안 보임)", "값 손상", m_prop_id_allowed),
 ]
 
 
@@ -402,7 +483,8 @@ def run_checks(work: Path, seeds_diff, n_diff, seeds_undo, n_undo, shrink_budget
     """검사를 순서대로 돌려 첫 탐지를 돌려준다. 탐지가 없으면 detected=False."""
     try:
         if use_golden:
-            gv = golden.check_golden(work) + golden.check_failure_atomicity(work)
+            gv = (golden.check_golden(work) + golden.check_failure_atomicity(work)
+                  + golden.check_delete_and_names(work) + golden.check_restore_failure(work))
             if gv:
                 return {"detected": True, "by": "golden", "evidence": gv[:2]}
         for s in seeds_diff:

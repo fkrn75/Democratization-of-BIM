@@ -35,7 +35,7 @@
       },
       "mutant": "M01 관계 입력 무효화 누락",
       "family": "증분 무효화 누락",
-      "sec": 3.9
+      "sec": 8.4
     },
     {
       "detected": true,
@@ -56,7 +56,7 @@
       },
       "mutant": "M02 속성셋 입력 무효화 누락",
       "family": "증분 무효화 누락",
-      "sec": 5.7
+      "sec": 10.3
     },
     {
       "detected": true,
@@ -94,7 +94,7 @@
       },
       "mutant": "M04 의존성 기록 없이 읽기(untracked read)",
       "family": "증분 무효화 누락",
-      "sec": 5.1
+      "sec": 9.3
     },
     {
       "detected": true,
@@ -111,7 +111,7 @@
       },
       "mutant": "M05 undo 역연산 오류: 관계 방향 미반전",
       "family": "undo 역연산 오류",
-      "sec": 0.8
+      "sec": 5.3
     },
     {
       "detected": true,
@@ -132,7 +132,7 @@
       },
       "mutant": "M06 undo 역연산 오류: 속성셋 이전 값 유실",
       "family": "undo 역연산 오류",
-      "sec": 6.4
+      "sec": 11.4
     },
     {
       "detected": true,
@@ -152,7 +152,7 @@
       },
       "mutant": "M07 undo 가 배치 첫 항목을 건너뜀",
       "family": "undo 역연산 오류",
-      "sec": 18.2
+      "sec": 27.4
     },
     {
       "detected": true,
@@ -178,7 +178,7 @@
       },
       "mutant": "M08 요소 삭제가 속성셋 복원 정보를 안 남김",
       "family": "undo 역연산 오류",
-      "sec": 16.3
+      "sec": 22.7
     },
     {
       "detected": true,
@@ -188,10 +188,10 @@
         "전체 재생: state 해시가 다르다",
         "전체 재생: derived 해시가 다르다"
       ],
-      "repro_items": 2,
+      "repro_items": 19,
       "repro_from_items": 150,
-      "shrink_evals": 40,
-      "repro": "level.create {\"id\": \"3000000000000010100005\", \"name\": \"L100005\", \"elevation\": 9900}\nbatch[wall.create {\"id\": \"1000000000000010100036\", \"level\": \"3000000000000010100005\", \"axis\": [1000, 5500, 2500, 5500], \"thickness\": 150, \"height\": 3000}; wall.set {\"id\": \"1000000000000010100004\", \"axis\": [14577.5, 8257.75, 15097.0, 8319.0]}; door.place {\"id\": \"2000000000000010100008\", \"host\": \"1000000000000010100004\", \"offset\": 2300, \"width\": 1000, \"height\": 2400, \"sill\": 100}; wall.move {\"id\": \"9000000000000000000007\", \"dx\": 1}]",
+      "shrink_evals": 52,
+      "repro": "door.set {\"id\": \"2000000000000010100002\", \"offset\": 900}\nelement.delete {\"id\": \"1000000000000010100032\"}\ndoor.place {\"id\": \"2000000000000010100006\", \"host\": \"1000000000000010100018\", \"offset\": 8521.604, \"width\": 900, \"height\": 2400, \"sill\": 100}\ndoor.place {\"id\": \"2000000000000010100007\", \"host\": \"1000000000000010100029\", \"offset\": 10147.63, \"width\": 1000, \"height\": 2400, \"sill\": 0}\npset.set {\"id\": \"2000000000000010100004\", \"pset\": \"Pset_Mix\", \"prop\": \"P\", \"value\": \"abc\"}\npset.set {\"id\": \"1000000000000010100031\", \"pset\": \"Pset_Mix\", \"prop\": \"P\", \"value\": \"abc\"}\nwall.create {\"id\": \"100000000000",
       "without_golden": {
         "detected": true,
         "by": "differential",
@@ -199,12 +199,12 @@
           "전체 재생: state 해시가 다르다",
           "전체 재생: derived 해시가 다르다"
         ],
-        "repro_items": 19,
+        "repro_items": 2,
         "repro_from_items": 150
       },
       "mutant": "M09 실패 시 롤백 누락",
       "family": "원자성 오류",
-      "sec": 11.0
+      "sec": 16.4
     },
     {
       "detected": true,
@@ -221,14 +221,14 @@
       },
       "mutant": "M10 expected_rev 검사 생략",
       "family": "rev 검사 생략",
-      "sec": 92.3
+      "sec": 123.6
     },
     {
       "detected": true,
-      "by": "concurrency",
+      "by": "golden",
       "evidence": [
-        "낡은 expected_rev 가 거부되지 않음: {'code': 'NOT_FOUND', 'message': 'wall 를 찾을 수 없다: 1000000000000000000001', 'path': '/id', 'retryable': False, 'hint': None, 'details': {}}",
-        "B 가 따라잡지 못함: {'code': 'NOT_FOUND', 'message': 'wall 를 찾을 수 없다: 1000000000000000000001', 'path': '/id', 'retryable': False, 'hint': None, 'details': {}}"
+        "k1w5: 오염 상태인데 element.get 가 정상 응답함",
+        "k1w5: 조회한 값 None (기대 1): 속성이 조용히 사라지거나 바뀜"
       ],
       "without_golden": {
         "detected": true,
@@ -240,7 +240,7 @@
       },
       "mutant": "M11 쓰기 전 따라잡기 생략",
       "family": "동시성 오류",
-      "sec": 96.6
+      "sec": 64.5
     },
     {
       "detected": true,
@@ -266,7 +266,7 @@
       },
       "mutant": "M12 IFC 투영이 변경을 무시(증분 투영 오류)",
       "family": "증분 무효화 누락",
-      "sec": 160.1
+      "sec": 206.0
     },
     {
       "detected": true,
@@ -287,7 +287,7 @@
       },
       "mutant": "M13 속성 값 타입 고착(D1 회귀)",
       "family": "값 손상",
-      "sec": 12.4
+      "sec": 17.0
     },
     {
       "detected": true,
@@ -301,7 +301,7 @@
       },
       "mutant": "M14 [검수자] 벽 순면적의 문 면적을 width*width 로",
       "family": "질의 의미 오류",
-      "sec": 51.3
+      "sec": 53.0
     },
     {
       "detected": true,
@@ -315,7 +315,7 @@
       },
       "mutant": "M15 [검수자] door_status 경계 <= 를 < 로",
       "family": "질의 의미 오류",
-      "sec": 50.7
+      "sec": 53.0
     },
     {
       "detected": true,
@@ -329,7 +329,7 @@
       },
       "mutant": "M16 [검수자] Ctx.set_prop 타입 검사 제거",
       "family": "값 손상",
-      "sec": 41.9
+      "sec": 53.1
     },
     {
       "detected": true,
@@ -347,7 +347,7 @@
       },
       "mutant": "M17 새 변경이 redo 가지를 버리지 않음",
       "family": "undo/redo 오류",
-      "sec": 21.3
+      "sec": 31.8
     },
     {
       "detected": true,
@@ -371,7 +371,7 @@
       },
       "mutant": "M18 삭제 효과가 속성셋 삽입 순서에 의존(10k 시드 424242가 찾은 실제 결함)",
       "family": "비결정",
-      "sec": 18.8
+      "sec": 27.3
     },
     {
       "detected": true,
@@ -384,7 +384,7 @@
       },
       "mutant": "M19 MIN_TRIMMED 정확 경계(1.0)가 퇴화로 판정됨",
       "family": "경계 오류",
-      "sec": 38.1
+      "sec": 49.9
     },
     {
       "detected": true,
@@ -397,7 +397,7 @@
       },
       "mutant": "M20 JOIN_MAX_EXT 정확 경계(1000)가 무시됨",
       "family": "경계 오류",
-      "sec": 38.3
+      "sec": 49.2
     },
     {
       "detected": true,
@@ -410,7 +410,7 @@
       },
       "mutant": "M21 조인 시작/끝 배정의 중간 동률을 끝 쪽으로",
       "family": "경계 오류",
-      "sec": 44.1
+      "sec": 49.4
     },
     {
       "detected": true,
@@ -424,7 +424,7 @@
       },
       "mutant": "M22 [N1] 속성 쓰기가 지운 뒤 실패해도 복원 안 함",
       "family": "값 손상",
-      "sec": 50.2
+      "sec": 48.8
     },
     {
       "detected": true,
@@ -438,7 +438,63 @@
       },
       "mutant": "M23 [N4] 속성 값 검증 없음(NaN/inf/int64 초과/NUL/서로게이트)",
       "family": "값 손상",
-      "sec": 40.5
+      "sec": 49.2
+    },
+    {
+      "detected": true,
+      "by": "golden",
+      "evidence": [
+        "value=null 이 SCHEMA_INVALID 로 거부되지 않음: {'ok': True, 'rev': 12, 'result': {'changed': True}, 'affected': {'created': [], 'modified': ['1000000000000000000001'], 'deleted': []}, 'warnings': [], 'page': None, 'artifacts': [], 'job': None}",
+        "value=null 이 속성을 지우거나 상태를 바꿨다"
+      ],
+      "without_golden": {
+        "detected": false
+      },
+      "mutant": "M24 [N7] pset.set 의 value=null 이 속성 삭제(SDK 가 NaN 을 null 로 보내면 조용히 삭제)",
+      "family": "값 손상",
+      "sec": 49.1
+    },
+    {
+      "detected": true,
+      "by": "golden",
+      "evidence": [
+        "k2w3: 조회한 값 None (기대 1): 속성이 조용히 사라지거나 바뀜",
+        "k2w3: 복구 뒤 값 None (기대 1)"
+      ],
+      "without_golden": {
+        "detected": false
+      },
+      "mutant": "M25 [N8] 복원 실패를 삼키고 오염 표시도 안 함",
+      "family": "값 손상",
+      "sec": 49.1
+    },
+    {
+      "detected": true,
+      "by": "golden",
+      "evidence": [
+        "k1w2: 오염 상태인데 element.get 가 정상 응답함",
+        "k1w2: 오염 상태인데 wall.move 가 정상 응답함"
+      ],
+      "without_golden": {
+        "detected": false
+      },
+      "mutant": "M26 [N8] 오염 표시만 하고 복구·거부는 안 함",
+      "family": "값 손상",
+      "sec": 48.4
+    },
+    {
+      "detected": true,
+      "by": "golden",
+      "evidence": [
+        "pset.set 가 속성 이름 \"id\" 를 SCHEMA_INVALID(/prop)로 거부하지 않음: {'ok': True, 'rev': 11, 'result': {'changed': True}, 'affected': {'created': [], 'modified': ['1000000000000000000001'], 'deleted': []}, 'warnings': [], 'page': None, 'artifacts': [], 'job': None}",
+        "pset.delete 가 속성 이름 \"id\" 를 SCHEMA_INVALID(/prop)로 거부하지 않음: {'ok': True, 'rev': 11, 'result': {'changed': False}, 'affected': {'created': [], 'modified': [], 'deleted': []}, 'warnings': ['pset.delete: 변경 없음'], 'page': None, 'artifacts': [], 'job': None}"
+      ],
+      "without_golden": {
+        "detected": false
+      },
+      "mutant": "M27 [N9] 속성 이름 id 허용(쓰기 ok, 조회에 안 보임)",
+      "family": "값 손상",
+      "sec": 49.2
     }
   ],
   "control_no_mutation": {
@@ -447,7 +503,7 @@
       "detected": false
     }
   },
-  "detected": 23,
+  "detected": 27,
   "detected_without_golden": 15,
   "missed_without_golden": [
     "M14 [검수자] 벽 순면적의 문 면적을 width*width 로",
@@ -457,9 +513,13 @@
     "M20 JOIN_MAX_EXT 정확 경계(1000)가 무시됨",
     "M21 조인 시작/끝 배정의 중간 동률을 끝 쪽으로",
     "M22 [N1] 속성 쓰기가 지운 뒤 실패해도 복원 안 함",
-    "M23 [N4] 속성 값 검증 없음(NaN/inf/int64 초과/NUL/서로게이트)"
+    "M23 [N4] 속성 값 검증 없음(NaN/inf/int64 초과/NUL/서로게이트)",
+    "M24 [N7] pset.set 의 value=null 이 속성 삭제(SDK 가 NaN 을 null 로 보내면 조용히 삭제)",
+    "M25 [N8] 복원 실패를 삼키고 오염 표시도 안 함",
+    "M26 [N8] 오염 표시만 하고 복구·거부는 안 함",
+    "M27 [N9] 속성 이름 id 허용(쓰기 ok, 조회에 안 보임)"
   ],
-  "total": 23,
+  "total": 27,
   "all_detected": true,
-  "elapsed_sec": 877.9
+  "elapsed_sec": 1246.2
 }

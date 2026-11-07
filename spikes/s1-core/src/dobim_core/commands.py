@@ -39,9 +39,26 @@ def _only_float(v):
 
 Text = Annotated[StrictStr, AfterValidator(_text_ok)]
 Name = Annotated[str, Field(min_length=1, max_length=64), AfterValidator(_text_ok)]
-# 속성 값: 저장값이 입력과 같아야 하므로 NaN/inf, int64 초과, NUL, 홑서로게이트는 스키마에서 거부한다
+# 속성 값: 저장값이 입력과 같아야 하므로 NaN/inf, int64 초과, NUL, 홑서로게이트는 스키마에서 거부한다.
+# null(None) 도 거부한다: 표준 JSON 에는 NaN/inf 가 없어 공식 MCP SDK 클라이언트가 이를 null 로 직렬화하는데,
+# null 이 "삭제"를 뜻하면 서버가 NaN 과 명시적 삭제를 구분할 수 없다. 삭제는 별도 커맨드 pset.delete 로만 한다.
 PropValue = Union[StrictBool, Annotated[StrictInt, Field(ge=-(2**63), le=2**63 - 1)],
-                  Annotated[StrictFloat, BeforeValidator(_only_float), Field(allow_inf_nan=False)], Text, None]
+                  Annotated[StrictFloat, BeforeValidator(_only_float), Field(allow_inf_nan=False)], Text]
+
+
+def _prop_name_ok(s: str) -> str:
+    # ifcopenshell.util.element.get_psets 는 속성 맵마다 IFC 엔티티 번호를 "id" 키로 끼워 넣는다. 속성 이름이 "id" 이면
+    # 쓰기는 성공해도 조회에서 가려지고 지울 수도 없다(상태가 속성 맵의 함수가 아니게 된다). "ID", "Id" 같은 변형은
+    # 이 충돌이 없고 IFC 이름은 대소문자를 구분하므로(왕복·삭제 시험으로 확인) 정확히 "id" 만 막는다.
+    if s == "id":
+        raise ValueError('속성 이름 "id" 는 IFC 라이브러리가 엔티티 번호용으로 예약했다')
+    return s
+
+
+# 함수 객체를 직접 넘기지 않고 호출 시점에 모듈 이름을 찾는다(변이 시험이 검사를 끌 수 있게 하기 위한 간접 호출)
+PsetName = Annotated[str, Field(pattern=r"^[A-Za-z][A-Za-z0-9_]{0,63}$")]
+PropName = Annotated[str, Field(pattern=r"^[A-Za-z][A-Za-z0-9_]{0,63}$", description='속성 이름. "id" 는 예약'),
+                     AfterValidator(lambda s: _prop_name_ok(s))]
 
 
 class A(BaseModel):
@@ -341,12 +358,13 @@ def element_delete(ctx, a: IdArg):
 
 class PsetSet(A):
     id: Id
-    pset: str = Field(pattern=r"^[A-Za-z][A-Za-z0-9_]{0,63}$")
-    prop: str = Field(pattern=r"^[A-Za-z][A-Za-z0-9_]{0,63}$")
-    value: PropValue = Field(description="null 이면 속성을 지운다")
+    pset: PsetName
+    prop: PropName
+    value: PropValue = Field(description="저장할 값: bool, int64 정수, 유한한 float, 문자열. null 은 거부한다 "
+                                         "(속성을 지우려면 pset.delete)")
 
 
-@command("pset.set", kind="mutation", risk="write", group="model.pset", summary="속성셋 값을 쓴다(IFC 정본)",
+@command("pset.set", kind="mutation", risk="write", group="model.pset", summary="속성셋 값을 쓴다(IFC 정본). 지우기는 pset.delete",
          args=PsetSet, since="0.1",
          examples=[{"id": F.D1, "pset": "Pset_DoorCommon", "prop": "FireRating", "value": "EI60"}])
 def pset_set(ctx, a: PsetSet):
@@ -354,6 +372,22 @@ def pset_set(ctx, a: PsetSet):
     if a.pset == RESERVED_PSET:
         raise DobimError("CONSTRAINT", f"{RESERVED_PSET} 는 투영이 소유한 예약 속성셋이다", path="/pset")
     return {"changed": ctx.set_prop(a.id, a.pset, a.prop, a.value)}
+
+
+class PsetDelete(A):
+    id: Id
+    pset: PsetName
+    prop: PropName
+
+
+@command("pset.delete", kind="mutation", risk="write", group="model.pset",
+         summary="속성 하나를 지운다(IFC 정본). 없는 속성이면 변경 없음. 마지막 속성이면 빈 속성셋도 사라진다",
+         args=PsetDelete, since="0.1", examples=[{"id": F.D1, "pset": "Pset_DoorCommon", "prop": "FireRating"}])
+def pset_delete(ctx, a: PsetDelete):
+    ctx.row(a.id)
+    if a.pset == RESERVED_PSET:
+        raise DobimError("CONSTRAINT", f"{RESERVED_PSET} 는 투영이 소유한 예약 속성셋이다", path="/pset")
+    return {"changed": ctx.set_prop(a.id, a.pset, a.prop, None)}
 
 
 class MatSet(A):

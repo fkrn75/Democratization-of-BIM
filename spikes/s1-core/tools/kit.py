@@ -20,7 +20,7 @@ sys.path.insert(0, str(HERE.parent / "src"))
 from dobim_core import dispatch, fixture as F  # noqa: E402
 from dobim_core.engine import Engine, canon  # noqa: E402
 
-# 같은 속성에 서로 다른 타입의 값을 번갈아 쓴다(타입 고착 버그를 잡기 위해). None 은 속성 삭제.
+# 같은 속성에 서로 다른 타입의 값을 번갈아 쓴다(타입 고착 버그를 잡기 위해). None 은 속성 삭제(pset.delete 로 보낸다).
 PSETS = [("Pset_WallCommon", "FireRating", ["EI30", "EI60", "EI90", None]),
          ("Pset_WallCommon", "IsExternal", [True, False, None, 1, "yes"]),
          ("Pset_DoorCommon", "FireRating", ["EI30", "EI60", None, 30, 0.5]),
@@ -147,7 +147,10 @@ class Gen:
             target = r.choice([x for x in (wall, door) if x] or [None])
             if target:
                 pset, prop, vals = r.choice(PSETS)
-                return ("pset.set", {"id": target, "pset": pset, "prop": prop, "value": r.choice(vals)})
+                val = r.choice(vals)
+                if val is None:   # 속성 삭제는 pset.set 의 null 이 아니라 별도 커맨드다(난수 소비는 이전과 같다)
+                    return ("pset.delete", {"id": target, "pset": pset, "prop": prop})
+                return ("pset.set", {"id": target, "pset": pset, "prop": prop, "value": val})
         if k == "mat":
             target = r.choice([x for x in (wall, door) if x] or [None])
             if target:
@@ -243,8 +246,17 @@ def log_rows(eng: Engine):
     return eng.conn.execute("SELECT seq, txn_id, actor, op, args, inverse FROM op_log ORDER BY seq").fetchall()
 
 
-def replay_log(rows, path, guid, *, eager_t0=False) -> Engine:
-    """로그의 (op, args) 를 빈 프로젝트에 처음부터 다시 실행한다(전체 재생). 같은 txn 은 한 배치로 묶는다."""
+def legacy_op(op: str, args: dict) -> tuple[str, dict]:
+    """N7 이전 로그 항목을 지금 커맨드로 옮긴다: `pset.set` 의 value=null(속성 삭제) -> `pset.delete`.
+    지금의 pset.set 은 null 을 받지 않으므로 옛 로그를 그대로 재생하려면 이 변환이 필요하다. 효과(역연산)는 같다."""
+    if op == "pset.set" and "value" in args and args["value"] is None:
+        return "pset.delete", {k: v for k, v in args.items() if k != "value"}
+    return op, args
+
+
+def replay_log(rows, path, guid, *, eager_t0=False, legacy=False) -> Engine:
+    """로그의 (op, args) 를 빈 프로젝트에 처음부터 다시 실행한다(전체 재생). 같은 txn 은 한 배치로 묶는다.
+    legacy=True 이면 N7 이전 형식(pset.set value=null)의 항목을 legacy_op 로 옮겨 실행한다."""
     eng = Engine.create(path, "replay", guid=guid, eager_t0=eager_t0)
     i = 0
     while i < len(rows):
@@ -253,8 +265,11 @@ def replay_log(rows, path, guid, *, eager_t0=False) -> Engine:
             j += 1
         group = []
         for seq, txn, actor, op, args, inv in rows[i:j + 1]:
+            a = json.loads(args)
+            if legacy:
+                op, a = legacy_op(op, a)
             cmd = dispatch.get_command(op)
-            group.append((cmd, dispatch.parse_args(cmd, json.loads(args))))
+            group.append((cmd, dispatch.parse_args(cmd, a)))
         eng.mutate(group)
         i = j + 1
     return eng
