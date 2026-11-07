@@ -161,12 +161,113 @@ def check_golden(work: Path) -> list[str]:
         v.append(f"다시 연 엔진의 값 {got!r} != {prev[0]!r}")
     e2.close()
     s.close()
+
+    # ---- 6. 정확한 경계 (손 계산)
+    # (a) MIN_TRIMMED: 길이 100 벽, 수직 벽이 x=49.5 와 x=50.5 에서 교차 -> 시작 49.5, 끝 50.5, 차 정확히 1.0.
+    #     차가 1.0 미만일 때만 퇴화이므로 정상(ok)이고 길이 1.0.
+    s = kit.Session(work / "g6.dobim")
+    s.run("level.create", {"id": LV, "name": "L", "elevation": 0})
+    s.run("wall.create", {"id": A, "level": LV, "axis": [0, 0, 100, 0]})
+    s.run("wall.create", {"id": X1, "level": LV, "axis": [49.5, -500, 49.5, 500]})
+    s.run("wall.create", {"id": X2, "level": LV, "axis": [50.5, -500, 50.5, 500]})
+    s.run("join.set", {"a": A, "b": X1})
+    s.run("join.set", {"a": A, "b": X2})
+    expect("MIN_TRIMMED 경계 trim", s.eng.g.q(Q.wall_trim, A), (49.5, 50.5, "ok"))
+    s.close()
+    # (b) JOIN_MAX_EXT: 길이 6000 벽. 교차가 시작에서 정확히 1000 이면 정리되고(<=), 1000.5 이면 무시된다.
+    for nm, cx, want in (("정확히 1000", 1000.0, (1000.0, 6000.0, "ok")), ("1000.5", 1000.5, (0.0, 6000.0, "ok"))):
+        s = kit.Session(work / f"g7-{cx}.dobim")
+        s.run("level.create", {"id": LV, "name": "L", "elevation": 0})
+        s.run("wall.create", {"id": A, "level": LV, "axis": [0, 0, 6000, 0]})
+        s.run("wall.create", {"id": X1, "level": LV, "axis": [cx, -500, cx, 500]})
+        s.run("join.set", {"a": A, "b": X1})
+        expect(f"JOIN_MAX_EXT 경계({nm})", s.eng.g.q(Q.wall_trim, A), want)
+        s.close()
+    # (c) 중간 동률: 길이 100 벽, 교차 t=50 은 |t| <= |t-L| 이라 시작 쪽으로 배정 -> (50, 100). 끝 쪽이면 (0, 50) 이 된다.
+    s = kit.Session(work / "g8.dobim")
+    s.run("level.create", {"id": LV, "name": "L", "elevation": 0})
+    s.run("wall.create", {"id": A, "level": LV, "axis": [0, 0, 100, 0]})
+    s.run("wall.create", {"id": X1, "level": LV, "axis": [50, -500, 50, 500]})
+    s.run("join.set", {"a": A, "b": X1})
+    expect("중간 동률 trim", s.eng.g.q(Q.wall_trim, A), (50.0, 100.0, "ok"))
+    s.close()
     return v
+
+
+def check_failure_atomicity(work: Path) -> list[str]:
+    """속성 쓰기가 '지운 뒤' 실패하는 경로(N1)와 값 검증(N4)을 시험한다. 위반 목록을 돌려준다."""
+    import ifcopenshell.api.pset as api_pset
+    import dobim_core.ifc_model as im
+    v = []
+    work = Path(tempfile.mkdtemp(dir=Path(work), prefix="atom-"))
+    s = kit.Session(work / "a1.dobim")
+    for n, a in F.SCRIPT:
+        s.run(n, a)
+    eng = s.eng
+    prop = lambda: eng.ifc.get_psets(F.W1).get("Pset_Z", {}).get("P")   # noqa: E731
+    s.run("pset.set", {"id": F.W1, "pset": "Pset_Z", "prop": "P", "value": 1})
+    before = eng.hashes()
+
+    # 지운 직후의 쓰기에서 실패시킨다(edit_pset 이 None 으로 지운 다음, 값을 쓰는 첫 호출만 예외).
+    real, st = api_pset.edit_pset, {"removed": False, "failed": False}
+
+    def flaky(f, pset, properties=None, **kw):
+        if properties and None in properties.values():
+            st["removed"] = True
+        elif st["removed"] and not st["failed"]:
+            st["failed"] = True
+            raise RuntimeError("지운 뒤 실패(시험용)")
+        return real(f, pset=pset, properties=properties, **kw)
+
+    api_pset.edit_pset = flaky
+    try:
+        r = s.run("pset.set", {"id": F.W1, "pset": "Pset_Z", "prop": "P", "value": 2.5})
+    finally:
+        api_pset.edit_pset = real
+    if r["ok"]:
+        v.append("지운 뒤 실패를 주입했는데 성공으로 끝남(주입이 동작하지 않음)")
+    if prop() != 1 or type(prop()) is not int:
+        v.append(f"삭제 뒤 실패하자 속성이 사라지거나 바뀜: {prop()!r}")
+    if eng.hashes() != before:
+        v.append("삭제 뒤 실패한 쓰기가 해시를 바꿈")
+    s.run("pset.set", {"id": F.W1, "pset": "Pset_Z", "prop": "P", "value": 7})
+    s.run("history.undo")
+    if prop() != 1 or type(prop()) is not int:
+        v.append(f"뒤이은 쓰기를 undo 했더니 {prop()!r} (1 이어야 함)")
+    d = kit.full_check(s, work, tag="-atom")
+    if not d["ok"]:
+        v.append(f"차등 검사 실패: {d['diffs'][:2]}")
+    s.close()
+
+    # N4: 저장할 수 없는 값은 스키마에서 거부된다(상태 불변)
+    s = kit.Session(work / "a2.dobim")
+    for n, a in F.SCRIPT:
+        s.run(n, a)
+    s.run("pset.set", {"id": F.W1, "pset": "Pset_Z", "prop": "P", "value": 1})
+    before = s.eng.hashes()
+    for bad in (float("nan"), float("inf"), float("-inf"), 2**63, -2**63 - 1, "a\x00b", "\ud800", "x\udfffy"):
+        r = s.run("pset.set", {"id": F.W1, "pset": "Pset_Z", "prop": "P", "value": bad})
+        if r["ok"] or r["error"]["code"] != "SCHEMA_INVALID":
+            v.append(f"저장 불가 값 {bad!r} 이 SCHEMA_INVALID 로 거부되지 않음: {r.get('error', {}).get('code', 'ok')}")
+    for good in (2**63 - 1, -2**63, 1e308, "한글"):
+        r = s.run("pset.set", {"id": F.W1, "pset": "Pset_Z", "prop": "P", "value": good})
+        if not r["ok"] or prop_of(s) != good:
+            v.append(f"허용 경계값 {good!r} 이 거부되거나 다르게 저장됨")
+    bad_name = s.run("level.create", {"name": "a\x00b", "elevation": 0})
+    if bad_name["ok"]:
+        v.append("이름의 NUL 이 허용됨")
+    s.close()
+    return v
+
+
+def prop_of(s):
+    return s.eng.ifc.get_psets(F.W1).get("Pset_Z", {}).get("P")
 
 
 if __name__ == "__main__":
     import sys
     import tempfile
-    res = check_golden(Path(tempfile.mkdtemp()))
+    w = Path(tempfile.mkdtemp())
+    res = check_golden(w) + check_failure_atomicity(w)
     print("\n".join(res) or "골든 값 통과")
     sys.exit(1 if res else 0)

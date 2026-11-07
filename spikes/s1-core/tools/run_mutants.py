@@ -276,6 +276,94 @@ def m_delete_pset_order_unsorted():
     with mock.patch.object(commands, "_delete_one", delete_one):
         yield
 
+
+@contextmanager
+def m_min_trimmed_boundary():
+    """경계 변이: 퇴화 판정을 end-start <= MIN_TRIMMED 로(정확히 1.0 이 퇴화가 됨)."""
+    with mock.patch.object(queries, "MIN_TRIMMED", 1.0000001):
+        yield
+
+
+@contextmanager
+def m_join_max_ext_boundary():
+    """경계 변이: 조인 정리 허용 거리를 <= 1000 에서 < 1000 으로."""
+    with mock.patch.object(queries, "JOIN_MAX_EXT", 999.9999999):
+        yield
+
+
+@contextmanager
+def m_trim_tie_to_end():
+    """경계 변이: 시작/끝 배정의 동률을 끝 쪽으로(<= 를 < 로)."""
+    def wall_trim(g, w):
+        x, y, c, s, length = g.q(queries.wall_frame, w)
+        start, end = 0.0, length
+        for other in g.q(queries.wall_joins, w):
+            p = g.q(queries.join_point, min(w, other), max(w, other))
+            if p is None:
+                continue
+            t = (p[0] - x) * c + (p[1] - y) * s
+            if abs(t) < abs(t - length):
+                if abs(t) <= queries.JOIN_MAX_EXT:
+                    start = t
+            elif abs(t - length) <= queries.JOIN_MAX_EXT:
+                end = t
+        if end - start < queries.MIN_TRIMMED:
+            return (0.0, length, "degenerate_join")
+        return (start, end, "ok")
+
+    with mock.patch.object(queries, "wall_trim", wall_trim):
+        yield
+
+
+@contextmanager
+def m_set_prop_no_restore():
+    """N1 회귀: 타입이 바뀌는 쓰기가 속성을 지운 뒤 실패해도 복원하지 않는다."""
+    def set_prop(self, eid, pset, prop, value):
+        ifc_model.check_value(value)
+        f, e = self.f, self.ents[eid]
+        cur = ifc_model.ue.get_pset(e, pset)
+        if cur is None:
+            if value is None:
+                return
+            ps = ifc_model.api_pset.add_pset(f, product=e, name=pset)
+            old = None
+        else:
+            ps = f.by_id(cur["id"])
+            old = cur.get(prop)
+        try:
+            if old is not None and value is not None and type(old) is not type(value):
+                ifc_model.api_pset.edit_pset(f, pset=ps, properties={prop: None})
+            ifc_model.api_pset.edit_pset(f, pset=ps, properties={prop: value})
+        finally:
+            remain = ifc_model.ue.get_pset(e, pset)
+            if remain is not None and not [k for k in remain if k != "id"]:
+                ifc_model.api_pset.remove_pset(f, product=e, pset=ps)
+
+    with mock.patch.object(ifc_model.IfcModel, "set_prop", set_prop):
+        yield
+
+
+@contextmanager
+def m_no_value_validation():
+    """N4 회귀: 속성 값 스키마가 NaN/inf/int64 초과/NUL/홑서로게이트를 거르지 않는다(저수준 검사도 없음)."""
+    import dataclasses
+    from typing import Any
+    from dobim_core import registry
+
+    class Lax(commands.A):
+        id: commands.Id
+        pset: str
+        prop: str
+        value: Any
+
+    orig = registry.REGISTRY["pset.set"]
+    registry.REGISTRY["pset.set"] = dataclasses.replace(orig, args_model=Lax)
+    try:
+        with mock.patch.object(ifc_model, "check_value", lambda v: None):
+            yield
+    finally:
+        registry.REGISTRY["pset.set"] = orig
+
 MUTANTS = [
     ("M01 관계 입력 무효화 누락", "증분 무효화 누락", m_touch_skip_rel),
     ("M02 속성셋 입력 무효화 누락", "증분 무효화 누락", m_touch_skip_pset),
@@ -295,16 +383,22 @@ MUTANTS = [
     ("M16 [검수자] Ctx.set_prop 타입 검사 제거", "값 손상", m_ctx_set_prop_no_type_check),
     ("M17 새 변경이 redo 가지를 버리지 않음", "undo/redo 오류", m_redo_branch_not_cleared),
     ("M18 삭제 효과가 속성셋 삽입 순서에 의존(10k 시드 424242가 찾은 실제 결함)", "비결정", m_delete_pset_order_unsorted),
+    ("M19 MIN_TRIMMED 정확 경계(1.0)가 퇴화로 판정됨", "경계 오류", m_min_trimmed_boundary),
+    ("M20 JOIN_MAX_EXT 정확 경계(1000)가 무시됨", "경계 오류", m_join_max_ext_boundary),
+    ("M21 조인 시작/끝 배정의 중간 동률을 끝 쪽으로", "경계 오류", m_trim_tie_to_end),
+    ("M22 [N1] 속성 쓰기가 지운 뒤 실패해도 복원 안 함", "값 손상", m_set_prop_no_restore),
+    ("M23 [N4] 속성 값 검증 없음(NaN/inf/int64 초과/NUL/서로게이트)", "값 손상", m_no_value_validation),
 ]
 
 
 # ---------------------------------------------------------------- 검사 실행
-def run_checks(work: Path, seeds_diff, n_diff, seeds_undo, n_undo, shrink_budget) -> dict:
+def run_checks(work: Path, seeds_diff, n_diff, seeds_undo, n_undo, shrink_budget, use_golden=True) -> dict:
     """검사를 순서대로 돌려 첫 탐지를 돌려준다. 탐지가 없으면 detected=False."""
     try:
-        gv = golden.check_golden(work)
-        if gv:
-            return {"detected": True, "by": "golden", "evidence": gv[:2]}
+        if use_golden:
+            gv = golden.check_golden(work) + golden.check_failure_atomicity(work)
+            if gv:
+                return {"detected": True, "by": "golden", "evidence": gv[:2]}
         for s in seeds_diff:
             r = kit.property_run(s, n_diff, work, checkpoint_every=20)
             if not r["ok"]:
@@ -345,10 +439,15 @@ def main():
         t1 = time.time()
         with ctxfn():
             res = run_checks(work, seeds_diff, ns.n, seeds_undo, ns.n, 150)
+            # 골든을 끈 탐지: 골든이 앞서 잡아 차등·undo·동시성 시험의 몫이 가려지는 것을 막기 위해 따로 돌린다
+            off = run_checks(work, seeds_diff, ns.n, seeds_undo, ns.n, 150, use_golden=False)
+        res["without_golden"] = {k: v for k, v in off.items() if k in ("detected", "by", "evidence", "repro_items", "repro_from_items")}
         res.update(mutant=name, family=family, sec=round(time.time() - t1, 1))
         out["mutants"].append(res)
         print(f"{name}: {'탐지 (' + res['by'] + ')' if res['detected'] else '놓침!'}  {res.get('evidence', '')}", flush=True)
     out["detected"] = sum(1 for m in out["mutants"] if m["detected"])
+    out["detected_without_golden"] = sum(1 for m in out["mutants"] if m["without_golden"]["detected"])
+    out["missed_without_golden"] = [m["mutant"] for m in out["mutants"] if not m["without_golden"]["detected"]]
     out["total"] = len(out["mutants"])
     out["all_detected"] = out["detected"] == out["total"] and out["control_no_mutation"]["passes_all_checks"]
     out["elapsed_sec"] = round(time.time() - t, 1)
@@ -356,7 +455,8 @@ def main():
     if ns.out:
         Path(ns.out).parent.mkdir(parents=True, exist_ok=True)
         Path(ns.out).write_text(text, encoding="utf-8")
-    print(f"탐지 {out['detected']}/{out['total']}, 대조군 통과 {out['control_no_mutation']['passes_all_checks']}")
+    print(f"탐지 {out['detected']}/{out['total']} (골든 끈 상태 {out['detected_without_golden']}/{out['total']}), "
+          f"대조군 통과 {out['control_no_mutation']['passes_all_checks']}")
     return 0 if out["all_detected"] else 1
 
 

@@ -400,10 +400,24 @@ class Engine:
                 else:
                     self.conn.execute("DELETE FROM relation WHERE kind=? AND src=? AND dst=?", (kind, src, dst))
         elif t == "pset":
-            self.ifc.set_prop(e[1], e[2], e[3], e[5])
+            try:   # 실패한 효과는 effects 에 들어가지 않아 롤백되지 않으므로 여기서 원래 값으로 되돌린다
+                self.ifc.set_prop(e[1], e[2], e[3], e[5])
+            except BaseException:
+                try:
+                    self.ifc.set_prop(e[1], e[2], e[3], e[4])
+                except BaseException:
+                    pass
+                raise
             p.add(("pset", e[1]))
         elif t == "mat":
-            self.ifc.set_material(e[1], e[3])
+            try:
+                self.ifc.set_material(e[1], e[3])
+            except BaseException:
+                try:
+                    self.ifc.set_material(e[1], e[2])
+                except BaseException:
+                    pass
+                raise
             p.add(("mat", e[1]))
         else:
             raise DobimError("INTERNAL", f"알 수 없는 효과: {t}")

@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 import uuid
 from typing import Any
 
@@ -28,6 +29,21 @@ import ifcopenshell.api.unit as api_unit
 import ifcopenshell.guid
 import ifcopenshell.util.element as ue
 import ifcopenshell.validate
+
+from dobim_core.errors import DobimError
+
+def check_value(value) -> None:
+    """IFC 에 안전하게 저장할 수 없는 속성 값을 쓰기 전에 거른다(NaN, inf, int64 초과, NUL, 홑서로게이트)."""
+    bad = None
+    if isinstance(value, float) and not math.isfinite(value):
+        bad = "NaN/inf 는 저장할 수 없다"
+    elif isinstance(value, int) and not isinstance(value, bool) and not -2**63 <= value < 2**63:
+        bad = "정수는 int64 범위여야 한다"
+    elif isinstance(value, str) and ("\x00" in value or any(0xD800 <= ord(c) <= 0xDFFF for c in value)):
+        bad = "문자열에 NUL 이나 홑서로게이트를 넣을 수 없다"
+    if bad:
+        raise DobimError("CONSTRAINT", bad, path="/value")
+
 
 INTENT_PSET = "DoBIM_Intent"   # 투영이 소유하는 예약 속성셋. 정본(의도 저장소)에서 매번 다시 쓴다
 IFC_CLASS = {"level": "IfcBuildingStorey", "wall": "IfcWall", "door": "IfcDoor"}
@@ -141,6 +157,8 @@ class IfcModel:
         return m.Name if m is not None else None
 
     def set_prop(self, eid: str, pset: str, prop: str, value) -> None:
+        """속성 하나를 쓴다. 실패하면 원래 값으로 복원하고 예외를 다시 던진다(삭제 뒤 실패해도 속성이 사라지지 않는다)."""
+        check_value(value)
         f = self.f
         e = self.ents[eid]
         cur = ue.get_pset(e, pset)
@@ -148,14 +166,24 @@ class IfcModel:
             if value is None:
                 return
             ps = api_pset.add_pset(f, product=e, name=pset)
+            old = None
         else:
             ps = f.by_id(cur["id"])
+            old = cur.get(prop)
         # edit_pset 은 기존 속성의 타입을 따라 값을 강제 변환한다(1 다음 2.5 가 2 로 저장). 타입이 바뀌면
         # 속성을 먼저 지우고 새로 만들어 저장값이 입력과 정확히 같게 한다.
         try:
-            if cur is not None and prop in cur and value is not None and type(cur[prop]) is not type(value):
+            if old is not None and value is not None and type(old) is not type(value):
                 api_pset.edit_pset(f, pset=ps, properties={prop: None})
             api_pset.edit_pset(f, pset=ps, properties={prop: value})
+        except BaseException:
+            try:   # 지운 뒤 실패했을 수 있으니 원래 값을 되살린다
+                api_pset.edit_pset(f, pset=ps, properties={prop: None})
+                if old is not None:
+                    api_pset.edit_pset(f, pset=ps, properties={prop: old})
+            except BaseException:
+                pass
+            raise
         finally:   # 실패해도 빈 속성셋을 남기지 않는다 (상태는 속성 맵의 함수여야 한다)
             remain = ue.get_pset(e, pset)
             if remain is not None and not [k for k in remain if k != "id"]:

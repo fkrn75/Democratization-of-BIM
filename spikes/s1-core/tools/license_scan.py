@@ -74,9 +74,10 @@ def scan() -> dict:
 
 if __name__ == "__main__":
     res = scan()
-    text = json.dumps(res, ensure_ascii=False, indent=2)
+    text = json.dumps(res, ensure_ascii=True, indent=2)   # 한글은 \\uXXXX 로 써서 인코딩을 잘못 추측하는 도구에서도 깨지지 않는다
     if len(sys.argv) > 1:
         Path(sys.argv[1]).parent.mkdir(parents=True, exist_ok=True)
-        Path(sys.argv[1]).write_text(text, encoding="utf-8")
+        with open(sys.argv[1], "w", encoding="utf-8", newline="\n") as fh:
+            fh.write(text)
     print(text)
     sys.exit(1 if res["forbidden_found"] else 0)

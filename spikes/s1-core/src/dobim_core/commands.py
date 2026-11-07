@@ -8,10 +8,11 @@ from __future__ import annotations
 
 import base64
 import json
+from pathlib import Path
 from math import sqrt
 from typing import Annotated, Literal, Union
 
-from pydantic import BaseModel, ConfigDict, Field, StrictBool, StrictFloat, StrictInt, StrictStr, model_validator
+from pydantic import AfterValidator, BaseModel, BeforeValidator, ConfigDict, Field, StrictBool, StrictFloat, StrictInt, StrictStr, model_validator
 
 from dobim_core import fixture as F
 from dobim_core import queries as Q
@@ -24,8 +25,23 @@ RESERVED_PSET = "DoBIM_Intent"
 Id = Annotated[str, Field(pattern=r"^[0-9A-Za-z_$]{22}$", description="IFC GlobalId (22자)")]
 Num = Annotated[float, Field(allow_inf_nan=False)]
 Pos = Annotated[float, Field(gt=0, allow_inf_nan=False)]
-Name = Annotated[str, Field(min_length=1, max_length=64)]
-PropValue = Union[StrictBool, StrictInt, StrictFloat, StrictStr, None]
+def _text_ok(s: str) -> str:
+    if "\x00" in s or any(0xD800 <= ord(c) <= 0xDFFF for c in s):
+        raise ValueError("NUL 이나 홑서로게이트는 허용하지 않는다")
+    return s
+
+
+def _only_float(v):
+    if type(v) is not float:   # 범위를 넘은 정수가 float 로 조용히 바뀌는 것을 막는다
+        raise ValueError("float 가 아니다")
+    return v
+
+
+Text = Annotated[StrictStr, AfterValidator(_text_ok)]
+Name = Annotated[str, Field(min_length=1, max_length=64), AfterValidator(_text_ok)]
+# 속성 값: 저장값이 입력과 같아야 하므로 NaN/inf, int64 초과, NUL, 홑서로게이트는 스키마에서 거부한다
+PropValue = Union[StrictBool, Annotated[StrictInt, Field(ge=-(2**63), le=2**63 - 1)],
+                  Annotated[StrictFloat, BeforeValidator(_only_float), Field(allow_inf_nan=False)], Text, None]
 
 
 class A(BaseModel):
@@ -556,32 +572,45 @@ def _target(ctx, raw: str):
     proj = os.path.realpath(ctx.eng.path)
     if os.path.normcase(str(p)) in {os.path.normcase(proj + x) for x in ("", "-wal", "-shm", "-journal")}:
         raise DobimError("PATH_DENIED", "프로젝트 파일 자체는 덮어쓸 수 없다", path="/path")
-    if SNAP_DIR in p.parts:
+    if SNAP_DIR.lower() in [x.lower() for x in p.parts]:   # 대소문자 구분 없이
         raise DobimError("PATH_DENIED", "스냅숏 폴더에는 쓸 수 없다", path="/path")
     if p.is_dir():
         raise DobimError("PATH_DENIED", f"폴더다: {p.name}", path="/path")
     return p
 
 
-def _snapshots(p):
+def _snap_dir(p, ws):
+    """스냅숏 폴더. 접합점·심볼릭 링크로 작업 폴더 밖을 가리키면 거부한다(해석한 실제 경로로 검사)."""
+    import os
     d = p.parent / SNAP_DIR
+    real = Path(os.path.realpath(d))
+    try:
+        real.relative_to(Path(os.path.realpath(ws)))
+    except ValueError:
+        raise DobimError("PATH_DENIED", "스냅숏 폴더가 작업 폴더 밖을 가리킨다", path="/path") from None
+    return d
+
+
+def _snapshots(p, ws):
+    d = _snap_dir(p, ws)
     out = []
     if d.is_dir():
+        pre = p.name + "."
         for f in d.iterdir():
-            pre = p.name + "."
-            if f.name.startswith(pre) and f.name[len(pre):].isdigit():
-                out.append((int(f.name[len(pre):]), f))
+            tail = f.name[len(pre):]
+            if f.name.startswith(pre) and tail.isascii() and tail.isdigit():   # ASCII 숫자만 (isdigit 는 '²' 도 참)
+                out.append((int(tail), f))
     return sorted(out)
 
 
-def _snapshot_existing(p):
+def _snapshot_existing(p, ws):
     """덮어쓰기 전에 기존 파일을 .dobim-snapshots/<이름>.<번호> 로 복사한다. 번호는 결정적으로 증가한다."""
     import shutil
+    d = _snap_dir(p, ws)
     if not p.exists():
         return None
-    d = p.parent / SNAP_DIR
     d.mkdir(exist_ok=True)
-    n = max([k for k, _ in _snapshots(p)], default=0) + 1
+    n = max([k for k, _ in _snapshots(p, ws)], default=0) + 1
     dst = d / f"{p.name}.{n}"
     shutil.copy2(p, dst)
     return f"{SNAP_DIR}/{dst.name}"
@@ -600,6 +629,7 @@ def _replace(p, write):
 
 def _export_preview(ctx, a: IfcExport):
     p = _target(ctx, a.path)
+    _snap_dir(p, ctx.eng.workspace)   # 토큰을 내주기 전에 스냅숏 폴더가 안전한지 확인한다
     return {"will_write": p.name, "overwrites": p.exists(), "snapshot_before_overwrite": p.exists()}
 
 
@@ -609,7 +639,7 @@ def _export_preview(ctx, a: IfcExport):
 def ifc_export(ctx, a: IfcExport):
     p = _target(ctx, a.path)
     ctx.eng.flush_ifc()   # 투영한 요소 수는 프로세스 상태(캐시 유무)에 따라 달라 결과에 넣지 않는다(패리티 C)
-    snap = _snapshot_existing(p)
+    snap = _snapshot_existing(p, ctx.eng.workspace)
     _replace(p, lambda tmp: ctx.eng.ifc.write(str(tmp)))
     return {"path": p.name, "bytes": p.stat().st_size, "rev": ctx.eng.rev, "snapshot": snap}
 
@@ -619,7 +649,7 @@ def ifc_export(ctx, a: IfcExport):
 def ifc_snapshots(ctx, a: IfcExport):
     import os
     p = resolve_in_workspace(ctx.eng.workspace, a.path)
-    items = [{"n": n, "name": f"{SNAP_DIR}/{f.name}", "bytes": f.stat().st_size} for n, f in _snapshots(p)]
+    items = [{"n": n, "name": f"{SNAP_DIR}/{f.name}", "bytes": f.stat().st_size} for n, f in _snapshots(p, ctx.eng.workspace)]
     return {"items": items, "page": {"next_cursor": None, "total": len(items)}}
 
 
@@ -630,7 +660,7 @@ class IfcRestore(A):
 
 def _restore_preview(ctx, a: IfcRestore):
     p = _target(ctx, a.path)
-    found = dict(_snapshots(p)).get(a.snapshot)
+    found = dict(_snapshots(p, ctx.eng.workspace)).get(a.snapshot)   # 폴더 탈출도 여기서 거부된다
     if found is None:
         raise DobimError("NOT_FOUND", f"스냅숏이 없다: {a.snapshot}", path="/snapshot")
     return {"will_write": p.name, "from_snapshot": a.snapshot, "overwrites": p.exists(), "snapshot_before_overwrite": p.exists()}
@@ -642,9 +672,9 @@ def _restore_preview(ctx, a: IfcRestore):
 def ifc_restore(ctx, a: IfcRestore):
     import shutil
     p = _target(ctx, a.path)
-    src = dict(_snapshots(p)).get(a.snapshot)
+    src = dict(_snapshots(p, ctx.eng.workspace)).get(a.snapshot)
     if src is None:
         raise DobimError("NOT_FOUND", f"스냅숏이 없다: {a.snapshot}", path="/snapshot")
-    snap = _snapshot_existing(p)
+    snap = _snapshot_existing(p, ctx.eng.workspace)
     _replace(p, lambda tmp: shutil.copyfile(src, tmp))
     return {"path": p.name, "restored_from": a.snapshot, "bytes": p.stat().st_size, "snapshot": snap}

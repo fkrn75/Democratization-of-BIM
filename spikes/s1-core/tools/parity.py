@@ -41,6 +41,10 @@ ERROR_CASES = [
     ("내보내기 확장자 거부", "ifc.export", {"path": "x.txt"}, {}),
     ("내보내기 .dobim 거부", "ifc.export", {"path": "ex.dobim"}, {}),
     ("내보내기 -wal 거부", "ifc.export", {"path": "ex.dobim-wal"}, {}),
+    # NaN·inf 는 표준 JSON 에 없다: 공식 SDK 클라이언트가 null 로 바꿔 보내므로(= 속성 삭제) MCP 쪽 패리티 사례에서 뺐다.
+    # 서버 쪽 거부는 tests/test_review2.py 와 tools/golden.py 가 CLI 경로로 확인한다.
+    ("속성값 int64 초과", "pset.set", {"id": F.W1, "pset": "Pset_Z", "prop": "P", "value": 2**63}, {}),
+    ("속성값 NUL", "pset.set", {"id": F.W1, "pset": "Pset_Z", "prop": "P", "value": "a\x00b"}, {}),
     ("dry-run", "wall.move", {"id": F.W1, "dx": 700}, {"dry_run": True}),
     ("되돌릴 것 없음", "history.redo", {}, {}),
 ]
