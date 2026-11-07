@@ -1,0 +1,62 @@
+{
+  "seed": 20261107,
+  "steps": 80,
+  "cli_writes": 33,
+  "mcp_writes": 29,
+  "undo_redo_steps": 20,
+  "cross_actor_undos": 13,
+  "hash_checks": 90,
+  "hash_mismatches": [],
+  "step_failures": [],
+  "explicit_cross_undo": {
+    "mcp_undid_cli_writes": true,
+    "differs_from_after_writes": true,
+    "cli_redo_restores": true
+  },
+  "final": {
+    "rev": 73,
+    "reopen_equals_replay": true,
+    "equals_oracle": true,
+    "actors_in_log": [
+      "cli",
+      "mcp"
+    ]
+  },
+  "race": {
+    "free_writes_attempted": 12,
+    "free_ok": 12,
+    "free_locked": 0,
+    "free_other_errors": 0,
+    "log_growth": 16,
+    "rev_rounds": [
+      {
+        "winners": 1,
+        "rev_conflict": 2,
+        "locked": 0,
+        "exactly_one_winner": true
+      },
+      {
+        "winners": 1,
+        "rev_conflict": 2,
+        "locked": 0,
+        "exactly_one_winner": true
+      },
+      {
+        "winners": 1,
+        "rev_conflict": 2,
+        "locked": 0,
+        "exactly_one_winner": true
+      },
+      {
+        "winners": 1,
+        "rev_conflict": 2,
+        "locked": 0,
+        "exactly_one_winner": true
+      }
+    ],
+    "all_rev_rounds_exactly_one_winner": true,
+    "reopen_equals_replay_after_race": true,
+    "log_growth_equals_successful_writes": true
+  },
+  "pass": true
+}

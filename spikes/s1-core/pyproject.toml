@@ -27,6 +27,8 @@ where = ["src"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+pythonpath = ["src", "tools"]
+markers = ["slow: 서브프로세스·장시간 시험"]
 addopts = "-q"
 
 [tool.importlinter]
@@ -47,6 +49,22 @@ forbidden_modules = ["dobim_core.engine", "dobim_core.cli", "dobim_core.mcp_serv
 allow_indirect_imports = true
 
 [[tool.importlinter.contracts]]
-name = "프로토콜 계층끼리 의존하지 않는다"
-type = "independence"
-modules = ["dobim_core.cli", "dobim_core.mcp_server"]
+name = "MCP 서버는 CLI 를 모른다 (CLI 는 mcp serve 로 서버를 띄울 수 있다)"
+type = "forbidden"
+source_modules = ["dobim_core.mcp_server", "dobim_core.dispatch", "dobim_core.engine", "dobim_core.commands"]
+forbidden_modules = ["dobim_core.cli"]
+
+[[tool.importlinter.contracts]]
+name = "디스패치·엔진·커맨드는 프로토콜 계층(MCP 서버)을 모른다"
+type = "forbidden"
+source_modules = ["dobim_core.dispatch", "dobim_core.engine", "dobim_core.commands", "dobim_core.registry"]
+forbidden_modules = ["dobim_core.mcp_server", "mcp"]
+
+[[tool.importlinter.contracts]]
+name = "ifcopenshell 은 엔진과 IFC 투영 모듈만 import 한다 (커맨드는 IFC 파일을 직접 고치지 못한다, ADR-0005)"
+type = "forbidden"
+source_modules = ["dobim_core.commands", "dobim_core.queries", "dobim_core.graph", "dobim_core.registry",
+                  "dobim_core.dispatch", "dobim_core.cli", "dobim_core.mcp_server", "dobim_core.fixture",
+                  "dobim_core.paths", "dobim_core.errors"]
+forbidden_modules = ["ifcopenshell"]
+allow_indirect_imports = true

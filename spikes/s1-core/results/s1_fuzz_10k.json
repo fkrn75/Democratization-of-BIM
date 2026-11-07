@@ -1,0 +1,54 @@
+{
+  "seed": 20261107,
+  "n_items": 10000,
+  "elapsed_sec": 93.4,
+  "ok": true,
+  "diffs": [],
+  "hashes": {
+    "state": "e11a93f31adee4564d30ceb147d66c3ecf74d5ec8bc00aae45eafd1bf3c29843",
+    "derived": "5637ebaa79247883bbef8301025e7687a7f1d4292e84572ac1ef6dc37c00b00e",
+    "ifc": "e440fb94c599f234f350031ccf04b85efcfb079d462df7b7674873262f412c2a"
+  },
+  "log_entries": 8464,
+  "items_succeeded": 8817,
+  "items_failed": 1183,
+  "final_counts": {
+    "level": 135,
+    "wall": 1484,
+    "door": 719
+  },
+  "item_kinds": {
+    "level.create": 147,
+    "wall.set": 756,
+    "wall.move": 1349,
+    "wall.create": 1597,
+    "door.place": 1024,
+    "element.delete": 392,
+    "door.set": 656,
+    "batch": 400,
+    "history.undo": 718,
+    "history.redo": 729,
+    "pset.set": 629,
+    "join.set": 996,
+    "join.clear": 260,
+    "material.set": 347
+  },
+  "logged_ops": {
+    "level.create": 147,
+    "wall.create": 1734,
+    "element.delete": 357,
+    "door.place": 1025,
+    "wall.move": 1325,
+    "door.set": 500,
+    "wall.set": 706,
+    "history.undo": 718,
+    "history.redo": 315,
+    "pset.set": 542,
+    "material.set": 279,
+    "join.set": 797,
+    "join.clear": 19
+  },
+  "check_seconds": 51.22,
+  "platform": "Windows-11-10.0.26200-SP0",
+  "python": "3.12.2"
+}

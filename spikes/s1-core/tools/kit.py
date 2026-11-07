@@ -273,6 +273,7 @@ def property_run(seed: int, n: int, workdir: Path, *, checkpoint_every=0, valida
         def step(i, it, r):
             if checkpoint_every and (i + 1) % checkpoint_every == 0:
                 sess.eng.sync()
+                sess.eng.flush_ifc()   # 증분 투영을 중간중간 실행해 둔다(마지막에 한 번에 투영하면 증분 오류가 가려진다)
                 cps.append((i + 1, sess.eng.derived_hash() == sess.eng.derived_hash(reference=True)))
 
         items, oks = generate_and_run(sess, seed, n, on_step=step, **gen_kw)
