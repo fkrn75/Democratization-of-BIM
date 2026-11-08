@@ -20,7 +20,7 @@
         "속성 Representation"
       ]
     },
-    "elapsed_s": 5.4,
+    "elapsed_s": 10.1,
     "elements": {
       "authored": 8,
       "detached": 2,
@@ -39,6 +39,7 @@
         "properties_changed": 2
       },
       "ifcdiff_deleted": 0,
+      "ifcdiff_id_only_changed": 0,
       "ifcdiff_total": 2,
       "ifcdiff_version": "0.9.0",
       "strict_products_changed": 1,
@@ -67,6 +68,7 @@
         "properties_changed": 1
       },
       "ifcdiff_deleted": 0,
+      "ifcdiff_id_only_changed": 0,
       "ifcdiff_total": 3,
       "ifcdiff_version": "0.9.0",
       "strict_products_changed": 2,
@@ -80,6 +82,7 @@
       "ifcdiff_changed": 0,
       "ifcdiff_changed_kinds": {},
       "ifcdiff_deleted": 0,
+      "ifcdiff_id_only_changed": 0,
       "ifcdiff_total": 0,
       "ifcdiff_version": "0.9.0",
       "strict_products_changed": 0,
@@ -93,7 +96,7 @@
     "detached": 2,
     "door_on_moved_host_authored": true,
     "door_with_changed_opening_detached": true,
-    "elapsed_s": 0.2,
+    "elapsed_s": 0.3,
     "elements": {
       "authored": 5,
       "detached": 2,

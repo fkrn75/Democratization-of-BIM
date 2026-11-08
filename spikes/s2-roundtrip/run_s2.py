@@ -16,6 +16,7 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 import scenarios as S  # noqa: E402
+import scenarios_review as V  # noqa: E402
 
 import ifcopenshell  # noqa: E402
 
@@ -60,9 +61,18 @@ def main(argv=None) -> int:
             alias = f"revit_ra01_{variant.lower()}"
             revit[alias] = {"t1": timed(S.t1_passthrough, p, work / f"t1_{alias}"), "t2": timed(S.t2_property_edit, p, work / f"t2_{alias}")}
     if revit:
-        save("s2_t3_revit_local.json", {"note": "로컬 측정, 파일 비공개: 회사 계정 Revit 으로 RA-01 을 열어 내보낸 표본. 이 저장소에 파일·일부·파생 IFC 가 없다", "samples": revit})
+        save("s2_t3_revit_local.json", {"note": "로컬 Revit 2025 내보내기, 파일 비공개: RA-01 을 열어 내보낸 표본. 이 저장소에 파일·일부·파생 IFC 가 없다", "samples": revit})
     save("s2_t4_authored_roundtrip.json", timed(S.t4_authored_roundtrip, work / "t4"))
     save("s2_t5_tamper.json", {"t5": timed(S.t5_tamper, work / "t5"), "t5b": timed(S.t5b_dependents, work / "t5b")})
+    save("s2_review_fixes.json", {"note": "독립 검수 결함(R1~R9)의 재현·수정 확인. 시험은 tests/test_s2_review.py",
+                                  "r1_style_preserved": timed(V.r1_style_preserved, work / "r1"),
+                                  "r2_delete_undo_attachments": timed(V.r2_delete_undo_attachments, work / "r2"),
+                                  "r3_skeleton": timed(V.r3_skeleton, work / "r3"),
+                                  "r4_opening_identity": timed(V.r4_opening_identity, work / "r4"),
+                                  "r5_numeric_range": timed(V.r5_numeric_range, work / "r5"),
+                                  "r6_misses": timed(V.r6_misses, work / "r6"),
+                                  "r8_more_tampers": timed(V.r8_more_tampers, work / "r8"),
+                                  "r9_foreign_void_delete_warning": timed(V.r9_foreign_void_delete_warning, work / "r9")})
     x23 = S.revit_path("IFC2x3")
     save("s2_rejections.json", {"checks": S.reject_checks(work / "rej", x23), "ifc2x3_sample_alias": "revit_ra01_ifc2x3" if x23 else None})
     print("결과를 썼다:", ", ".join(sorted(p.name for p in out.glob("s2_*.json"))))

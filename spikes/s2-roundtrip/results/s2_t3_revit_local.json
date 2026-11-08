@@ -7,7 +7,7 @@
     "pydantic": "2.14.3",
     "python": "3.12.2"
   },
-  "note": "로컬 측정, 파일 비공개: 회사 계정 Revit 으로 RA-01 을 열어 내보낸 표본. 이 저장소에 파일·일부·파생 IFC 가 없다",
+  "note": "로컬 Revit 2025 내보내기, 파일 비공개: RA-01 을 열어 내보낸 표본. 이 저장소에 파일·일부·파생 IFC 가 없다",
   "samples": {
     "revit_ra01_ifc4dtv": {
       "t1": {
@@ -18,13 +18,14 @@
           "ifcdiff_changed": 0,
           "ifcdiff_changed_kinds": {},
           "ifcdiff_deleted": 0,
+          "ifcdiff_id_only_changed": 0,
           "ifcdiff_total": 0,
           "ifcdiff_version": "0.9.0",
           "strict_products_changed": 0,
           "strict_relationships_changed": 0,
           "strict_total": 0
         },
-        "elapsed_s": 13.5,
+        "elapsed_s": 17.7,
         "elements": {
           "authored": 0,
           "detached": 0,
@@ -89,6 +90,7 @@
           "ifcdiff_changed": 0,
           "ifcdiff_changed_kinds": {},
           "ifcdiff_deleted": 0,
+          "ifcdiff_id_only_changed": 0,
           "ifcdiff_total": 0,
           "ifcdiff_version": "0.9.0",
           "strict_products_changed": 0,
@@ -105,13 +107,14 @@
             "properties_changed": 1
           },
           "ifcdiff_deleted": 0,
+          "ifcdiff_id_only_changed": 0,
           "ifcdiff_total": 1,
           "ifcdiff_version": "0.9.0",
           "strict_products_changed": 0,
           "strict_relationships_changed": 2,
           "strict_total": 2
         },
-        "elapsed_s": 14.1,
+        "elapsed_s": 16.6,
         "products_in": 74,
         "products_out": 74,
         "props_changed": 1,
@@ -170,13 +173,14 @@
           "ifcdiff_changed": 0,
           "ifcdiff_changed_kinds": {},
           "ifcdiff_deleted": 0,
+          "ifcdiff_id_only_changed": 0,
           "ifcdiff_total": 0,
           "ifcdiff_version": "0.9.0",
           "strict_products_changed": 0,
           "strict_relationships_changed": 0,
           "strict_total": 0
         },
-        "elapsed_s": 14.2,
+        "elapsed_s": 16.5,
         "elements": {
           "authored": 0,
           "detached": 0,
@@ -241,6 +245,7 @@
           "ifcdiff_changed": 0,
           "ifcdiff_changed_kinds": {},
           "ifcdiff_deleted": 0,
+          "ifcdiff_id_only_changed": 0,
           "ifcdiff_total": 0,
           "ifcdiff_version": "0.9.0",
           "strict_products_changed": 0,
@@ -257,13 +262,14 @@
             "properties_changed": 1
           },
           "ifcdiff_deleted": 0,
+          "ifcdiff_id_only_changed": 0,
           "ifcdiff_total": 1,
           "ifcdiff_version": "0.9.0",
           "strict_products_changed": 0,
           "strict_relationships_changed": 2,
           "strict_total": 2
         },
-        "elapsed_s": 14.2,
+        "elapsed_s": 19.9,
         "products_in": 74,
         "products_out": 74,
         "props_changed": 1,

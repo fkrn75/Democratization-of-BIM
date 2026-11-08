@@ -15,13 +15,14 @@
     "ifcdiff_changed": 0,
     "ifcdiff_changed_kinds": {},
     "ifcdiff_deleted": 0,
+    "ifcdiff_id_only_changed": 0,
     "ifcdiff_total": 0,
     "ifcdiff_version": "0.9.0",
     "strict_products_changed": 0,
     "strict_relationships_changed": 0,
     "strict_total": 0
   },
-  "elapsed_s": 8.1,
+  "elapsed_s": 10.1,
   "elements": {
     "authored": 7,
     "detached": 0,
