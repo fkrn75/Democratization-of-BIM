@@ -714,10 +714,10 @@ def history_list(ctx, a: HistoryList):
     more_in_limit = len(rows) > a.limit
     window, clipped_rows = [], []
     for s_, t, ac, b, o, g in rows[:a.limit]:
-        args_ = json.loads(g)
-        if len(g) > HISTORY_ARG_BYTES:   # 레시피 전문처럼 큰 인자는 응답 상한을 지키려고 크기만 보인다(전문은 요소 행에 있다)
-            args_ = {"omitted_bytes": len(g.encode("utf-8"))}
-        it, n = limits.clip_deep({"seq": s_, "txn": t, "actor": ac, "base_rev": b, "op": o, "args": args_})
+        it, n = limits.clip_deep({"seq": s_, "txn": t, "actor": ac, "base_rev": b, "op": o, "args": json.loads(g)})
+        if limits.jsize(it["args"]) > HISTORY_ARG_BYTES:   # 문자열을 자르고도 큰 인자(레시피 전문 등)는 크기만 보인다(전문은 요소 행에 있다)
+            it = {**it, "args": {"omitted_bytes": len(g.encode("utf-8"))}}
+            n += 1   # 자른 것으로 센다: 항목의 clipped 와 page.truncated 로 알린다
         if n:   # 상한이 생기기 전의 옛 로그에 긴 값이 있으면 앞 255자만 보이고 이 항목에 표시한다
             it = {**it, "clipped": n}
             clipped_rows.append(s_)
