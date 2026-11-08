@@ -3,29 +3,30 @@
     {
       "name": "DoBIM-S7_0.0.1_x64_en-US.msi",
       "kind": "msi",
-      "bytes": 93844268,
-      "mib": 89.5,
-      "sha256": "666c12eece8a3092e8cf690ea64f278820c3f3fc7566e69ce71dbc65381055d0"
+      "bytes": 90116272,
+      "mib": 85.9,
+      "sha256": "0d5b586539e60b5b98d8da094fac9b7aed80c056b560ae0856a06193df0e253f"
     },
     {
       "name": "DoBIM-S7_0.0.1_x64-setup.exe",
       "kind": "exe",
-      "bytes": 69956056,
-      "mib": 66.7,
-      "sha256": "6d7262e4a793cda2355a61776a3981d002ae7422bdf13a199e72fa6047869043"
+      "bytes": 67691386,
+      "mib": 64.6,
+      "sha256": "0672808e6d13e14d1751c8f3bbe078bc329eefe79ec3222631c2b5a5293c3eb4"
     }
   ],
   "shell_exe": {
-    "bytes": 4549632,
-    "sha256": "cd185e57c5f6b142ba9d96d9205bce0724c83ee22c97e8aacd1b4ff2a792e60a"
+    "bytes": 4535808,
+    "sha256": "891414860923341d474909062b2897ad449b99f973479afe3dac3f28a9833e3b"
   },
-  "frozen_internal_files": 1484,
+  "frozen_internal_files": 1479,
   "nsis_script": {
-    "file_commands": 1490,
+    "file_commands": 1486,
     "has_dobim_exe": true,
     "has_dobim_mcp_exe": true,
-    "internal_entries": 1484,
+    "internal_entries": 1479,
     "has_third_party_notices": true,
+    "has_library_replacement_doc": true,
     "install_mode_line": "!define INSTALLMODE \"currentUser\"",
     "internal_matches_frozen": true
   },
