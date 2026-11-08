@@ -65,17 +65,18 @@ def build_compliant(unit: str = "MILLIMETERS") -> ifcopenshell.file:
         ifcopenshell.api.aggregate.assign_object(f, products=[st], relating_object=building)
         storeys.append((st, elev))
 
-    # 층마다 실 하나(서로 겹치지 않음) + 외벽 하나 + 문 하나
+    # 층마다 실 둘(나란히 붙어 있어 경계만 닿고 겹치지 않음) + 외벽 하나 + 문 하나
     for idx, (st, elev) in enumerate(storeys):
-        space = ifcopenshell.api.root.create_entity(f, ifc_class="IfcSpace", name=f"01.00{idx + 1}.01")
-        space.LongName = "사무실" if idx else "기계실"
-        rep = ifcopenshell.api.geometry.add_profile_representation(
-            f, context=body, profile=f.createIfcRectangleProfileDef("AREA", None, None, 5000.0 * k, 4000.0 * k), depth=2.8)
-        ifcopenshell.api.geometry.assign_representation(f, product=space, representation=rep)
-        _place(f, space, 2500.0 * k, 2000.0 * k, elev)
-        ifcopenshell.api.aggregate.assign_object(f, products=[space], relating_object=st)
-        ifcopenshell.api.classification.add_reference(
-            f, products=[space], identification="33202" if idx else "33405", name="분류", classification=cls)
+        for sub, (sx, long_name) in enumerate(((2500.0, "사무실" if idx else "기계실"), (7500.0, "회의실"))):
+            space = ifcopenshell.api.root.create_entity(f, ifc_class="IfcSpace", name=f"01.00{idx + 1}.0{sub + 1}")
+            space.LongName = long_name
+            rep = ifcopenshell.api.geometry.add_profile_representation(
+                f, context=body, profile=f.createIfcRectangleProfileDef("AREA", None, None, 5000.0 * k, 4000.0 * k), depth=2.8)
+            ifcopenshell.api.geometry.assign_representation(f, product=space, representation=rep)
+            _place(f, space, sx * k, 2000.0 * k, elev)
+            ifcopenshell.api.aggregate.assign_object(f, products=[space], relating_object=st)
+            ifcopenshell.api.classification.add_reference(
+                f, products=[space], identification="33202" if idx else "33405", name="분류", classification=cls)
 
         wall = ifcopenshell.api.root.create_entity(f, ifc_class="IfcWall", name=f"W{idx + 1}")
         wrep = ifcopenshell.api.geometry.add_wall_representation(f, context=body, length=5.0, height=2.8, thickness=0.2)

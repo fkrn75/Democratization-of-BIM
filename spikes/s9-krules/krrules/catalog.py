@@ -13,10 +13,11 @@ BAS = "MOLIT-BASIC"        # 국토부 건설산업 BIM 기본지침(2020-12)
 
 
 def R(rid, src, clause, page, summary, mode, ifc, checks=None, interp=False, duty="필수",
-      why_not="", stage="실시설계"):
+      why_not="", stage="실시설계", proxy=False):
+    """proxy=True: 원문이 요구하는 것을 직접 검사하지 못하고 가까운 대리 지표로만 검사한다(해석)."""
     return {"id": rid, "source": src, "clause": clause, "page": page, "summary": summary,
             "mode": mode, "ifc": ifc, "checks": checks or [], "interpretation": interp,
-            "obligation": duty, "stage": stage,
+            "proxy_indicator": proxy, "obligation": duty, "stage": stage,
             "status": "구현" if checks else "후보만", "not_implemented_reason": why_not}
 
 
@@ -27,7 +28,7 @@ REQUIREMENTS = [
     R("REQ-002", ORD, "4.2(1)가", "64", "BIM 저작 소프트웨어는 IFC 2x3 이상을 지원", "코드", "FILE_SCHEMA, 헤더 originating_system", ["KR-CODE-01"]),
     R("REQ-003", PPS, "5.5.2(3)", "110", "납품 IFC 파일명은 건물번호(2자리)_건물명_구분(BA/BS/BM/BE/BC/BL/B/E).ifc", "코드",
       "파일 이름(IFC 안에는 없음)", ["KR-CODE-02"]),
-    R("REQ-004", DES, "3.1(3)", "88", "BIM 데이터 파일명은 영문·한글·숫자·'-'·'_' 만 사용", "코드", "파일 이름", ["KR-CODE-03"]),
+    R("REQ-004", DES, "3.1(3)(가)", "88", "BIM 데이터 파일명은 영문·한글·숫자·'-'·'_' 만 사용(발주자편 3.6.3 p51, 부속서1 5.3 나 p66도 같은 규칙)", "코드", "파일 이름", ["KR-CODE-03"]),
     R("REQ-005", PPS, "5.2.2(5)다", "86", "BIM 데이터 단위는 밀리미터(mm) 원칙", "코드", "IfcProject 단위 지정(IfcUnitAssignment 의 LENGTHUNIT)", ["KR-CODE-04"]),
     R("REQ-006", DES, "2.3.2(1)(가)", "47", "BIM 데이터 단위는 m 또는 mm(ISO 십진 미터법). 기본지침도 같은 취지에 프로젝트 내 한 형식으로 통일", "코드",
       "IfcSIUnit LENGTHUNIT", ["KR-CODE-05"], duty="필수"),
@@ -38,7 +39,7 @@ REQUIREMENTS = [
     R("REQ-009", PPS, "5.5.3(1)", "111", "성과품 폴더 구성: BIM 보고서 / IFC(건물별 파일, 외피 선택) / 원본 / 도면", "코드", "폴더·파일 이름",
       ["KR-CODE-18"], interp=True),
     # ---- 공간 구조 ----
-    R("REQ-010", PPS, "5.2.2(3)가·나, 5.2.2(4)나", "83-85", "공간 객체(층, 구역, 실)를 건축 BIM 데이터와 함께 작성", "IDS",
+    R("REQ-010", PPS, "5.2.2(3)다, 5.2.2(4)나", "84-85", "공간 객체는 건축 BIM 데이터와 함께 작성(5.2.2(3)다). 최소 부위 작성 대상의 공간은 층, 구역, 실(5.2.2(4)나)", "IDS",
       "IfcBuildingStorey, IfcSpace(구역=IfcZone 은 선택)", ["KR-IDS-01", "KR-IDS-02"]),
     R("REQ-011", PPS, "5.2.2(6)가, 5.2.2(6)나", "86-87", "모든 공간·부위 객체는 특정 층에 소속. 여러 층에 걸쳐도 층 단위로 나눠 작성", "코드",
       "IfcRelContainedInSpatialStructure, IfcRelAggregates", ["KR-CODE-06"]),
@@ -67,15 +68,15 @@ REQUIREMENTS = [
       "IfcBuildingElementProxy + 분류 참조", ["KR-IDS-06"], interp=True),
     R("REQ-026", PPS, "5.2.5(2)", "90-91", "창호는 벽에 소속되도록 작성(벽 먼저, 그 벽에 창호)", "코드", "IfcRelFillsElement -> IfcOpeningElement -> IfcRelVoidsElement -> IfcWall", ["KR-CODE-14"]),
     R("REQ-027", PPS, "5.2.2(4)다", "85", "모든 부위 객체는 구분해 작성(기둥과 보를 한 객체로 합치지 않음)", "불가", "객체 분리 여부", why_not="모델링 의도 판정, 기계 판별 불가(부분 신호: 한 객체의 형상이 둘 이상 부재 형상인지)"),
-    R("REQ-028", PPS, "5.2.2(4)라", "85", "모든 부위 객체는 해당 부위 작성 기능으로 작성(기둥은 기둥 기능)", "코드", "클래스 분포(IfcBuildingElementProxy 비율)", ["KR-IDS-06"], interp=True, duty="권고"),
+    R("REQ-028", PPS, "5.2.2(4)라", "85", "모든 부위 객체는 해당 부위 작성 기능으로 작성(기둥은 기둥 기능). 대리 지표: 작성 기능 사용 여부는 IFC 에서 알 수 없어, 범용객체(IfcBuildingElementProxy)가 분류 정보를 갖는지(KR-IDS-06)만 본다", "IDS", "IfcBuildingElementProxy + 분류 참조(범용객체 비율은 검사하지 않음)", ["KR-IDS-06"], interp=True, duty="권고", proxy=True),
     R("REQ-029", PPS, "5.2.2(4)나", "85", "최소 부위 작성 대상 존재: 구조(기초·기둥·보·벽·바닥·지붕·계단), 건축(벽·문·창·커튼월·천장·난간·지붕이차구조)", "IDS",
       "IfcFooting, IfcColumn, IfcBeam, IfcWall, IfcSlab, IfcRoof, IfcStair, IfcDoor, IfcWindow, IfcCurtainWall, IfcCovering, IfcRailing", [],
       why_not="업무수행계획서로 범위를 조정할 수 있어 '모든 클래스 필수' 로 고정하면 오탐. 대신 KR-IDS-07, KR-CODE-19 가 존재하는 객체에만 요구. 별도 IDS 템플릿으로는 쓸 수 있음", duty="조건부"),
     # ---- 에너지·외피 ----
-    R("REQ-030", PPS, "5.2.5(4)나", "91", "에너지 검토 시 바닥·벽체·지붕·기둥·문·창문·커튼월 7종 중 외기에 면한 객체는 IsExternal=True", "IDS",
+    R("REQ-030", PPS, "5.2.5(4)나", "91", "에너지 검토(환경 시뮬레이션) 수행 시에만: 바닥·벽체·지붕·기둥·문·창문·커튼월 7종 중 외기에 면한 객체는 IsExternal=True", "IDS",
       "Pset_*Common.IsExternal", ["KR-IDS-08"], duty="조건부"),
-    R("REQ-031", PPS, "5.2.5(4)나", "91", "외기에 면한 바닥·벽체·지붕·문·창문·커튼월 6종에는 열관류율 정보", "IDS", "Pset_*Common.ThermalTransmittance", ["KR-IDS-09"], duty="조건부"),
-    R("REQ-032", DES, "2.3.2 건축 ③", "56", "외기에 면한 벽체·지붕·문·창문·커튼월 5종에 열관류율(선택 사항). 조달청은 바닥을 더한 6종이라 두 문서가 다름", "IDS",
+    R("REQ-031", PPS, "5.2.5(4)나", "91", "에너지 검토 수행 시에만: 외기에 면한 바닥·벽체·지붕·문·창문·커튼월 6종에는 열관류율 정보(부속서-1 4.2는 열관류율을 환경시뮬레이션 수행 시 선택사항으로 적음)", "IDS", "Pset_*Common.ThermalTransmittance", ["KR-IDS-09"], duty="조건부"),
+    R("REQ-032", DES, "2.3.2 건축 ③", "56", "환경 시뮬레이션 수행 시에만: 외기에 면한 벽체·지붕·문·창문·커튼월 5종에 열관류율(선택 사항). 조달청은 바닥을 더한 6종이라 두 문서가 다름", "IDS",
       "Pset_*Common.ThermalTransmittance", ["KR-IDS-10"], duty="선택"),
     R("REQ-033", PPS, "5.2.5(4)가", "91", "건물 내부와 외부에 공기가 통하는 뚫린 곳이 없도록 모델링, 내벽·외벽 분리", "불가", "외피 폐합성", why_not="외피 밀폐 판정은 별도 기하 해석 필요(IDS 불가, 코드도 이번 범위 밖)"),
     # ---- 사업정보 ----
@@ -87,7 +88,7 @@ REQUIREMENTS = [
     # ---- 좌표 ----
     R("REQ-039", PPS, "5.2.7(2)가", "93", "대지 좌표는 임시수준점(TBM) 기준, GIS 좌표는 위도·경도와 TM 좌표계", "IDS", "IfcSite.RefLatitude/RefLongitude", ["KR-IDS-11"], interp=True),
     R("REQ-040", PPS, "5.2.7(2)다, DES 2.3.2(1)(나)", "93, 48", "BIM 데이터 기준점의 상대 평면좌표(X,Y)·지반레벨·진북 방향각 관리", "코드", "IfcGeometricRepresentationContext.TrueNorth, IfcMapConversion", ["KR-CODE-11"], interp=True),
-    R("REQ-041", DES, "2.3.2(1)(나)", "47", "측량 기준계는 GRS80 + TM(서부·중부·동부·동해 원점). 기본지침은 통상 UTM52 계열", "코드", "IfcProjectedCRS, IfcMapConversion", ["KR-CODE-12"], interp=True),
+    R("REQ-041", DES, "2.3.2(1)(나)", "47-48", "측량 기준계는 GRS80 + TM(서부·중부·동부·동해 원점). 단 발주자가 정하면 상대 기준 좌표계도 허용(p48). 기본지침은 통상 UTM52 계열", "코드", "IfcProjectedCRS, IfcMapConversion(IFC4 이상. IFC2X3 은 판정하지 않음)", ["KR-CODE-12"], interp=True, duty="권고"),
     # ---- 품질 ----
     R("REQ-042", PPS, "5.3(4)나", "96", "부위 객체 간 간섭 금지. 구조-설비 간섭 불허, 그 외 허용오차 10mm", "코드", "객체 형상 쌍 교차", [], why_not="지오메트리 교차 계산(OCC)이 필요, 구조·설비 분야 파일 쌍이 있어야 의미. 이번 범위 밖(코드로 가능)"),
     R("REQ-043", PPS, "5.3(4)다", "96", "기초 위 기둥·보·바닥 등 구조 부재는 다른 구조 부재가 지지", "불가", "IfcRelConnects*, 형상 접촉", why_not="지지 관계 그래프 + 형상 접촉 판정, 이번 범위 밖"),
@@ -107,19 +108,23 @@ REQUIREMENTS = [
 ]
 
 # 구현된 검사. mode: ids | code. severity: 필수 | 조건부 | 권고 | 참고
+# 조건부 = 원문이 "에너지 검토(환경 시뮬레이션) 수행 시"로 한정한 규칙(KR-IDS-08/09/10). 실행기는 --energy 일 때만 판정한다.
 CHECKS = {
     "KR-IDS-01": ("ids", "필수"), "KR-IDS-02": ("ids", "필수"), "KR-IDS-03": ("ids", "필수"),
     "KR-IDS-04": ("ids", "필수"), "KR-IDS-05": ("ids", "필수"), "KR-IDS-06": ("ids", "필수"),
     "KR-IDS-07": ("ids", "필수"), "KR-IDS-08": ("ids", "조건부"),
-    "KR-IDS-09": ("ids", "조건부"), "KR-IDS-10": ("ids", "권고"), "KR-IDS-11": ("ids", "필수"),
+    "KR-IDS-09": ("ids", "조건부"), "KR-IDS-10": ("ids", "조건부"), "KR-IDS-11": ("ids", "필수"),
     "KR-IDS-12": ("ids", "필수"), "KR-IDS-13": ("ids", "필수"), "KR-IDS-14": ("ids", "필수"),
     "KR-IDS-15": ("ids", "필수"), "KR-IDS-16": ("ids", "필수"), "KR-IDS-17": ("ids", "필수"),
     "KR-IDS-18": ("ids", "필수"),
     "KR-CODE-01": ("code", "필수"), "KR-CODE-02": ("code", "필수"), "KR-CODE-03": ("code", "필수"),
     "KR-CODE-04": ("code", "필수"), "KR-CODE-05": ("code", "필수"), "KR-CODE-06": ("code", "필수"),
     "KR-CODE-07": ("code", "필수"), "KR-CODE-08": ("code", "권고"), "KR-CODE-09": ("code", "필수"),
-    "KR-CODE-10": ("code", "필수"), "KR-CODE-11": ("code", "필수"), "KR-CODE-12": ("code", "필수"),
+    "KR-CODE-10": ("code", "필수"), "KR-CODE-11": ("code", "필수"), "KR-CODE-12": ("code", "권고"),
     "KR-CODE-13": ("code", "필수"), "KR-CODE-14": ("code", "필수"), "KR-CODE-15": ("code", "권고"),
     "KR-CODE-16": ("code", "권고"), "KR-CODE-17": ("code", "권고"), "KR-CODE-18": ("code", "필수"),
     "KR-CODE-19": ("code", "필수"),
 }
+
+# 에너지 검토를 켰을 때만 판정하는 규칙
+ENERGY_ONLY = sorted(cid for cid, (_, sev) in CHECKS.items() if sev == "조건부")

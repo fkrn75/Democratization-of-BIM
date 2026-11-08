@@ -18,7 +18,7 @@
             </applicability>
             <requirements />
         </specification>
-        <specification name="실(IfcSpace)이 1개 이상 있어야 함" ifcVersion="IFC2X3 IFC4 IFC4X3_ADD2" identifier="KR-IDS-02" description="조달청 v2.1 5.2.2(3) 공간객체 작성, 5.2.2(4)나 최소부위(공간: 실)" instructions="">
+        <specification name="실(IfcSpace)이 1개 이상 있어야 함" ifcVersion="IFC2X3 IFC4 IFC4X3_ADD2" identifier="KR-IDS-02" description="조달청 v2.1 5.2.2(3)다 공간객체는 건축 BIM 데이터와 함께 작성, 5.2.2(4)나 최소부위(공간: 실)" instructions="">
             <applicability minOccurs="1" maxOccurs="unbounded">
                 <entity>
                     <name>
@@ -125,7 +125,7 @@
                 </attribute>
             </requirements>
         </specification>
-        <specification name="에너지 검토 시 7종 부위에는 IsExternal 값이 있어야 함" ifcVersion="IFC2X3 IFC4 IFC4X3_ADD2" identifier="KR-IDS-08" description="조달청 v2.1 5.2.5(4)나 / 국토부 시행지침 설계자편 2.3.2 건축: 바닥·벽체·지붕·기둥·문·창문·커튼월" instructions="조건부 규칙(환경시뮬레이션 수행 시). 값이 외기 면 실제와 맞는지는 기하 판정이 필요해 검사하지 않음">
+        <specification name="에너지 검토 시 7종 부위에는 IsExternal 값이 있어야 함" ifcVersion="IFC2X3 IFC4 IFC4X3_ADD2" identifier="KR-IDS-08" description="조달청 v2.1 5.2.5(4)나 / 국토부 시행지침 설계자편 2.3.2 건축: 바닥·벽체·지붕·기둥·문·창문·커튼월" instructions="조건부 규칙: 에너지 검토(환경시뮬레이션) 수행 시에만 적용(실행기 --energy). 값이 외기 면 실제와 맞는지는 기하 판정이 필요해 검사하지 않음. 데이터 타입(IfcBoolean/IfcLogical)은 묻지 않음. propertySet 은 Pset_*Common 만 보며, 다른 Pset 에 둔 값은 실행기가 따로 재판정함">
             <applicability minOccurs="0" maxOccurs="unbounded">
                 <entity>
                     <name>
@@ -142,7 +142,7 @@
                 </entity>
             </applicability>
             <requirements>
-                <property dataType="IFCBOOLEAN" cardinality="required">
+                <property cardinality="required">
                     <propertySet>
                         <xs:restriction base="xs:string">
                             <xs:pattern value="Pset_.*Common" />
@@ -154,7 +154,7 @@
                 </property>
             </requirements>
         </specification>
-        <specification name="외기에 면한 6종 부위에는 열관류율이 있어야 함" ifcVersion="IFC2X3 IFC4 IFC4X3_ADD2" identifier="KR-IDS-09" description="조달청 v2.1 5.2.5(4)나: 바닥·벽체·지붕·문·창문·커튼월 6종" instructions="조건부: IsExternal=TRUE 인 객체만 대상. 두 문서의 대상 종류가 달라(바닥 포함 여부) 따로 둠">
+        <specification name="외기에 면한 6종 부위에는 열관류율이 있어야 함" ifcVersion="IFC2X3 IFC4 IFC4X3_ADD2" identifier="KR-IDS-09" description="조달청 v2.1 5.2.5(4)나: 바닥·벽체·지붕·문·창문·커튼월 6종" instructions="조건부: 에너지 검토 수행 시에만 적용(실행기 --energy). IsExternal=TRUE 인 객체만 대상이고 데이터 타입은 묻지 않음. 두 문서의 대상 종류가 달라(바닥 포함 여부) 따로 둠. Pset_*Common 밖에 둔 값은 실행기가 재판정함">
             <applicability minOccurs="0" maxOccurs="unbounded">
                 <entity>
                     <name>
@@ -168,7 +168,7 @@
                         </xs:restriction>
                     </name>
                 </entity>
-                <property dataType="IFCBOOLEAN">
+                <property>
                     <propertySet>
                         <xs:restriction base="xs:string">
                             <xs:pattern value="Pset_.*Common" />
@@ -183,7 +183,7 @@
                 </property>
             </applicability>
             <requirements>
-                <property dataType="IFCTHERMALTRANSMITTANCEMEASURE" cardinality="required">
+                <property cardinality="required">
                     <propertySet>
                         <xs:restriction base="xs:string">
                             <xs:pattern value="Pset_.*Common" />
@@ -195,7 +195,7 @@
                 </property>
             </requirements>
         </specification>
-        <specification name="외기에 면한 5종 부위에는 열관류율이 있어야 함" ifcVersion="IFC2X3 IFC4 IFC4X3_ADD2" identifier="KR-IDS-10" description="국토부 시행지침 설계자편 2.3.2 건축: 벽체·지붕·문·창문·커튼월 5종(선택 사항)" instructions="조건부: IsExternal=TRUE 인 객체만 대상. 두 문서의 대상 종류가 달라(바닥 포함 여부) 따로 둠">
+        <specification name="외기에 면한 5종 부위에는 열관류율이 있어야 함" ifcVersion="IFC2X3 IFC4 IFC4X3_ADD2" identifier="KR-IDS-10" description="국토부 시행지침 설계자편 2.3.2 건축(p56): 환경 시뮬레이션 수행 시 벽체·지붕·문·창문·커튼월 5종(선택 사항)" instructions="조건부: 에너지 검토 수행 시에만 적용(실행기 --energy). IsExternal=TRUE 인 객체만 대상이고 데이터 타입은 묻지 않음. 두 문서의 대상 종류가 달라(바닥 포함 여부) 따로 둠. Pset_*Common 밖에 둔 값은 실행기가 재판정함">
             <applicability minOccurs="0" maxOccurs="unbounded">
                 <entity>
                     <name>
@@ -208,7 +208,7 @@
                         </xs:restriction>
                     </name>
                 </entity>
-                <property dataType="IFCBOOLEAN">
+                <property>
                     <propertySet>
                         <xs:restriction base="xs:string">
                             <xs:pattern value="Pset_.*Common" />
@@ -223,7 +223,7 @@
                 </property>
             </applicability>
             <requirements>
-                <property dataType="IFCTHERMALTRANSMITTANCEMEASURE" cardinality="required">
+                <property cardinality="required">
                     <propertySet>
                         <xs:restriction base="xs:string">
                             <xs:pattern value="Pset_.*Common" />

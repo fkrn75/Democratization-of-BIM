@@ -20,6 +20,8 @@ import ifcopenshell.util.unit as uunit
 
 MAX_EXAMPLES = 5
 SIZE_LIMIT_BYTES = 200 * 1024 * 1024  # 시행지침 발주자편 부속서2: 원본 200MB 초과 시 분할 검토(IFC 에 준용)
+MAX_SPACES = 3000          # KR-CODE-10: 공간 형상을 계산할 최대 개수(넘으면 판정 생략, 경고)
+MAX_GEOM_ELEMENTS = 20000  # KR-CODE-17: 형상 중복을 계산할 최대 객체 수(넘으면 GlobalId 중복만 판정)
 
 
 def _res(status, applicable=0, failed=0, examples=None, note=""):
@@ -51,14 +53,25 @@ def _storey_of(e):
 
 # ---------------------------------------------------------------- 파일·형식
 
+def schema_ok(name):
+    """스키마 이름이 IFC 2x3 이상인지. IFC2X_FINAL·IFC2X2_FINAL 등 2x3 미만과 알 수 없는 이름은 거짓."""
+    n = (name or "").upper()
+    return n == "IFC2X3" or n.startswith("IFC4")
+
+
+def check_schema_name(name):
+    ok = schema_ok(name)
+    return _res("pass" if ok else "fail", 1, 0 if ok else 1, [] if ok else [{"reason": f"스키마 {name}"}],
+                note=f"스키마={name}")
+
+
 def check_schema(f, **_):
-    """KR-CODE-01: 제출 IFC 는 2x3 이상(조달청 5.2.1(2), 5.5.2(1)). IFC2X2 이하는 이 도구가 못 열어 도달하지 못한다."""
-    ok = f.schema in ("IFC2X3", "IFC4", "IFC4X1", "IFC4X2", "IFC4X3", "IFC4X3_ADD1", "IFC4X3_ADD2")
-    return _res("pass" if ok else "fail", 1, 0 if ok else 1, [] if ok else [{"reason": f"스키마 {f.schema}"}],
-                note=f"스키마={f.schema}")
+    """KR-CODE-01: 제출 IFC 는 2x3 이상(조달청 5.2.1(2), 5.5.2(1)). IFC2X2 이하는 실행기가 헤더에서 먼저 걸러 같은 판정을 쓴다."""
+    return check_schema_name(f.schema)
 
 
-_PPS_NAME = re.compile(r"^(\d{2})_(.+)_(BA|BS|BM|BE|BC|BL|B|E)\.ifc$|^00_전체\.ifc$", re.I)
+# 원문(조달청 5.5.2(3) 표)의 구분 코드는 대문자, 확장자 ifc 는 소문자라 대소문자를 구분한다
+_PPS_NAME = re.compile(r"^(\d{2})_(.+)_(BA|BS|BM|BE|BC|BL|B|E)\.ifc$|^00_전체\.ifc$")
 
 
 def check_filename_pps(f, filename="", deliverable=False, **_):
@@ -74,7 +87,7 @@ _CHARSET = re.compile(r"^[A-Za-z0-9가-힣_\-]+$")
 
 
 def check_filename_charset(f, filename="", deliverable=False, **_):
-    """KR-CODE-03: BIM 데이터 파일명은 영문·한글·숫자·'-'·'_' 만(시행지침 설계자편 3.1(3), 발주자편 4.x)."""
+    """KR-CODE-03: BIM 데이터 파일명은 영문·한글·숫자·'-'·'_' 만(시행지침 설계자편 3.1(3)(가), 발주자편 3.6.3·부속서1 5.3 나)."""
     if not deliverable:
         return _res("na", note="납품 후보 파일에만 적용(--deliverable)")
     stem = Path(filename).stem
@@ -190,28 +203,49 @@ def _bbox(shape_cache, f, e, settings):
 
 
 def check_space_overlap(f, tol=0.01, **_):
-    """KR-CODE-10: 공간객체끼리 겹치지 않음(조달청 5.2.2(3)바, 5.3(4)가).
-    근사: 같은 층 공간의 축 정렬 경계상자(AABB)가 tol(m)보다 깊게 겹치면 위반. 비직사각형 방은 오탐 가능."""
+    """KR-CODE-10: 같은 층의 공간객체끼리 겹치지 않음(조달청 5.2.2(3)바, 5.3(4)가).
+    근사: 같은 층 공간의 축 정렬 경계상자(AABB)가 tol(m)보다 깊게 겹치면 위반. 비직사각형 방은 오탐 가능.
+    층이 다른 공간은 비교하지 않고(소속 층이 없는 공간끼리만 한 묶음), 공간이 MAX_SPACES 를 넘으면 판정을 생략한다."""
     spaces = list(f.by_type("IfcSpace"))
     if len(spaces) < 2:
         return _res("na", note="공간 2개 미만")
+    if len(spaces) > MAX_SPACES:
+        return _res("warn", 0, 0, [{"reason": f"공간 {len(spaces)}개 > 한도 {MAX_SPACES}: 겹침 판정 생략"}],
+                    note=f"공간 {len(spaces)}개가 한도 {MAX_SPACES} 초과라 판정하지 않음")
     settings = ifcopenshell.geom.settings()
     settings.set("use-world-coords", True)
     cache = {}
-    boxes = [(s, _bbox(cache, f, s, settings)) for s in spaces]
-    missing = [s for s, b in boxes if b is None]
-    boxes = [(s, b) for s, b in boxes if b is not None]
+    groups = {}  # 소속 층 id(없으면 None) -> [(공간, 상자)]
+    missing = 0
+    for s in spaces:
+        b = _bbox(cache, f, s, settings)
+        if b is None:
+            missing += 1
+            continue
+        st = _storey_of(s)
+        groups.setdefault(st.id() if st is not None else None, []).append((s, b))
     bad = []
     pairs = 0
-    for (a, ba), (b, bb) in itertools.combinations(boxes, 2):
-        pairs += 1
-        dx = min(ba[3], bb[3]) - max(ba[0], bb[0])
-        dy = min(ba[4], bb[4]) - max(ba[1], bb[1])
-        dz = min(ba[5], bb[5]) - max(ba[2], bb[2])
-        if dx > tol and dy > tol and dz > tol:
-            bad.append({"class": "IfcSpace", "name": f"{a.Name} / {b.Name}", "global_id": a.GlobalId,
-                        "reason": f"AABB 겹침 {dx:.3f}x{dy:.3f}x{dz:.3f} m"})
-    note = "AABB 근사" + (f"; 형상 없는 공간 {len(missing)}개 제외" if missing else "")
+    for key in sorted(groups, key=lambda k: -1 if k is None else k):
+        items = sorted(groups[key], key=lambda it: it[1][0])  # x 최솟값 순(스윕으로 후보 쌍을 줄임)
+        n = len(items)
+        pairs += n * (n - 1) // 2
+        for i in range(n):
+            a, ba = items[i]
+            for k in range(i + 1, n):
+                b, bb = items[k]
+                if bb[0] >= ba[3] - tol:  # 이후 상자는 x 로 겹칠 수 없음
+                    break
+                dx = min(ba[3], bb[3]) - max(ba[0], bb[0])
+                dy = min(ba[4], bb[4]) - max(ba[1], bb[1])
+                dz = min(ba[5], bb[5]) - max(ba[2], bb[2])
+                if dx > tol and dy > tol and dz > tol:
+                    bad.append({"class": "IfcSpace", "name": f"{a.Name} / {b.Name}", "global_id": a.GlobalId,
+                                "reason": f"AABB 겹침 {dx:.3f}x{dy:.3f}x{dz:.3f} m"})
+    bad.sort(key=lambda e: (e["name"] or "", e["global_id"] or ""))
+    note = "AABB 근사, 같은 층끼리만" + (f"; 형상 없는 공간 {missing}개 제외" if missing else "")
+    if pairs == 0:
+        return _res("na", note=note + "; 비교할 같은 층 공간 쌍이 없음")
     return _res("pass" if not bad else "fail", pairs, len(bad), bad, note)
 
 
@@ -240,13 +274,16 @@ _KR_CRS = re.compile(r"(EPSG:)?(5173|5174|5175|5176|5178|5179|518[0-8]|32652)\b|
 
 
 def check_crs(f, **_):
-    """KR-CODE-12: 좌표계 선언(시행지침 설계자편 2.3.2(1)(나): GRS80 TM / 기본지침: 통상 UTM52 계열).
-    해석: IFC4 이상은 IfcMapConversion + IfcProjectedCRS 존재 및 한국 좌표계 EPSG 로 보이는지. IFC2X3 은 좌표계 개체가 없다."""
+    """KR-CODE-12: 좌표계 선언 권고(시행지침 설계자편 2.3.2(1)(나): GRS80 TM / 기본지침: 통상 UTM52 계열).
+    해석: IFC4 이상은 IfcMapConversion + IfcProjectedCRS 가 있고 한국 좌표계 EPSG 로 보이는지. 설계자편은 발주자가 정하면
+    상대 기준 좌표계도 허용하므로 선언이 없거나 한국 좌표계가 아니어도 위반이 아니라 경고(사람 확인)다.
+    IFC2X3 에는 좌표계 개체가 없어 판정하지 않는다(위경도·진북은 KR-IDS-11, KR-CODE-11)."""
     if f.schema == "IFC2X3":
-        return _res("fail", 1, 1, [{"reason": "IFC2X3 에는 좌표계 개체가 없음(대안 속성 규약 미정의)"}])
+        return _res("na", note="IFC2X3 에는 IfcMapConversion/IfcProjectedCRS 가 없어 좌표계 선언을 판정하지 않음")
     maps = f.by_type("IfcMapConversion")
     if not maps:
-        return _res("fail", 1, 1, [{"reason": "IfcMapConversion 없음"}])
+        return _res("warn", 1, 1, [{"reason": "IfcMapConversion 없음(상대 기준 좌표계를 쓰는 경우 정상일 수 있어 발주자 확인 필요)"}],
+                    note="좌표계 선언 없음")
     crs = maps[0].TargetCRS
     name = getattr(crs, "Name", None) or ""
     if _KR_CRS.search(name):
@@ -322,11 +359,15 @@ def check_duplicates(f, **_):
             bad.append(_ex(r, f"GlobalId 중복({seen[gid].is_a()})"))
         else:
             seen[gid] = r
+    elems = [e for e in f.by_type("IfcElement") if e.Representation is not None and not e.is_a("IfcOpeningElement")]
+    note = ""
+    if len(elems) > MAX_GEOM_ELEMENTS:
+        note = f"형상 중복 판정 생략(형상 있는 객체 {len(elems)}개 > 한도 {MAX_GEOM_ELEMENTS}); GlobalId 중복만 판정"
+        elems = []
     settings = ifcopenshell.geom.settings()
     settings.set("use-world-coords", True)
     cache = {}
     keys = {}
-    elems = [e for e in f.by_type("IfcElement") if e.Representation is not None and not e.is_a("IfcOpeningElement")]
     for e in elems:
         b = _bbox(cache, f, e, settings)
         if b is None:
@@ -336,7 +377,7 @@ def check_duplicates(f, **_):
             bad.append(_ex(e, f"{keys[k].Name} 와 같은 위치·크기의 중복"))
         else:
             keys[k] = e
-    return _res("pass" if not bad else "fail", total + len(elems), len(bad), bad)
+    return _res("pass" if not bad else "fail", total + len(elems), len(bad), bad, note)
 
 
 # ---------------------------------------------------------------- 납품 폴더(파일 시스템)

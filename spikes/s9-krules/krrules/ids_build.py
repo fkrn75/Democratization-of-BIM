@@ -63,7 +63,7 @@ def build() -> ids.Ids:
     doc.specifications.append(s)
 
     s = _spec("KR-IDS-02", "실(IfcSpace)이 1개 이상 있어야 함",
-              "조달청 v2.1 5.2.2(3) 공간객체 작성, 5.2.2(4)나 최소부위(공간: 실)", "", required_exist=True)
+              "조달청 v2.1 5.2.2(3)다 공간객체는 건축 BIM 데이터와 함께 작성, 5.2.2(4)나 최소부위(공간: 실)", "", required_exist=True)
     s.applicability.append(ids.Entity(name="IFCSPACE"))
     doc.specifications.append(s)
 
@@ -108,23 +108,24 @@ def build() -> ids.Ids:
     # --- 에너지 검토용 외피 정보(조달청 5.2.5(4)나, 시행지침 설계자편 2.3.2) ---
     s = _spec("KR-IDS-08", "에너지 검토 시 7종 부위에는 IsExternal 값이 있어야 함",
               "조달청 v2.1 5.2.5(4)나 / 국토부 시행지침 설계자편 2.3.2 건축: 바닥·벽체·지붕·기둥·문·창문·커튼월",
-              "조건부 규칙(환경시뮬레이션 수행 시). 값이 외기 면 실제와 맞는지는 기하 판정이 필요해 검사하지 않음")
+              "조건부 규칙: 에너지 검토(환경시뮬레이션) 수행 시에만 적용(실행기 --energy). 값이 외기 면 실제와 맞는지는 기하 판정이 필요해 검사하지 않음. "
+              "데이터 타입(IfcBoolean/IfcLogical)은 묻지 않음. propertySet 은 Pset_*Common 만 보며, 다른 Pset 에 둔 값은 실행기가 따로 재판정함")
     s.applicability.append(ids.Entity(name=_enum(ENERGY_7)))
     s.requirements.append(ids.Property(propertySet=_pat("Pset_.*Common"), baseName="IsExternal",
-                                       dataType="IFCBOOLEAN", cardinality="required"))
+                                       cardinality="required"))
     doc.specifications.append(s)
 
     for ident, label, classes, src in (
         ("KR-IDS-09", "6종", THERMAL_6, "조달청 v2.1 5.2.5(4)나: 바닥·벽체·지붕·문·창문·커튼월 6종"),
-        ("KR-IDS-10", "5종", THERMAL_5, "국토부 시행지침 설계자편 2.3.2 건축: 벽체·지붕·문·창문·커튼월 5종(선택 사항)"),
+        ("KR-IDS-10", "5종", THERMAL_5, "국토부 시행지침 설계자편 2.3.2 건축(p56): 환경 시뮬레이션 수행 시 벽체·지붕·문·창문·커튼월 5종(선택 사항)"),
     ):
         s = _spec(ident, f"외기에 면한 {label} 부위에는 열관류율이 있어야 함", src,
-                  "조건부: IsExternal=TRUE 인 객체만 대상. 두 문서의 대상 종류가 달라(바닥 포함 여부) 따로 둠")
+                  "조건부: 에너지 검토 수행 시에만 적용(실행기 --energy). IsExternal=TRUE 인 객체만 대상이고 데이터 타입은 묻지 않음. "
+                  "두 문서의 대상 종류가 달라(바닥 포함 여부) 따로 둠. Pset_*Common 밖에 둔 값은 실행기가 재판정함")
         s.applicability.append(ids.Entity(name=_enum(classes)))
-        s.applicability.append(ids.Property(propertySet=_pat("Pset_.*Common"), baseName="IsExternal",
-                                            value="TRUE", dataType="IFCBOOLEAN"))
+        s.applicability.append(ids.Property(propertySet=_pat("Pset_.*Common"), baseName="IsExternal", value="TRUE"))
         s.requirements.append(ids.Property(propertySet=_pat("Pset_.*Common"), baseName="ThermalTransmittance",
-                                           dataType="IFCTHERMALTRANSMITTANCEMEASURE", cardinality="required"))
+                                           cardinality="required"))
         doc.specifications.append(s)
 
     # --- 사업정보·대지(조달청 부속서-1 2, 5.2.7(2)) ---

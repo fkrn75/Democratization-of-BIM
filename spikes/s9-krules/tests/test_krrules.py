@@ -43,12 +43,13 @@ def base(tmp_path):
 # ---------------------------------------------------------------- 양성 대조군
 
 def test_compliant_model_has_no_failures(base, tmp_path):
-    checks, res = _run(base, tmp_path, deliverable=True)
+    checks, res = _run(base, tmp_path, deliverable=True, energy=True)
     bad = {k: (v["status"], v["examples"][:1]) for k, v in checks.items() if v["status"] in ("fail", "warn")}
     assert not bad, bad
     # 범용객체가 없으니 KR-IDS-06 만 해당 없음이어야 한다
     assert {k for k, v in checks.items() if v["status"] == "na"} == {"KR-IDS-06"}
     assert res["summary"]["total"] == 36
+    assert res["summary"]["conditional"] == {"enabled": True, "pass": 3}
 
 
 def test_sample_ra01_has_known_findings():
@@ -102,7 +103,7 @@ def test_missing_is_external_and_thermal(base, tmp_path):
     door = base.by_type("IfcDoor")[0]
     dp = base.by_id(uel.get_psets(door, psets_only=True)["Pset_DoorCommon"]["id"])
     ifcopenshell.api.pset.edit_pset(base, pset=dp, properties={"ThermalTransmittance": None})
-    checks, _ = _run(base, tmp_path)
+    checks, _ = _run(base, tmp_path, energy=True)
     assert {"KR-IDS-08", "KR-IDS-09", "KR-IDS-10"} <= _failed(checks)  # 7종 IsExternal / 6종·5종 열관류율
 
 
@@ -139,16 +140,53 @@ def test_duplicate_object(base, tmp_path):
     assert "KR-CODE-17" in _failed(checks)
 
 
-def test_overlapping_spaces(base, tmp_path):
+def _stack_spaces(base, same_storey):
+    """두 공간을 같은 위치에 겹쳐 놓는다. same_storey=False 면 서로 다른 층의 공간을 고른다."""
     import numpy as np
     import ifcopenshell.api.geometry as g
-    s0, s1 = base.by_type("IfcSpace")
+    spaces = list(base.by_type("IfcSpace"))
+    s0 = spaces[0]
+    s1 = next(s for s in spaces[1:] if (_storey_of(s) == _storey_of(s0)) == same_storey)
     m = np.eye(4)
     m[:3, 3] = (2500.0, 2000.0, 0.0)
     for s in (s0, s1):
         g.edit_object_placement(base, product=s, matrix=m, is_si=False)
+
+
+def _storey_of(space):
+    return next(r.RelatingObject for r in space.Decomposes)
+
+
+def test_overlapping_spaces(base, tmp_path):
+    _stack_spaces(base, same_storey=True)
     checks, _ = _run(base, tmp_path)
     assert _failed(checks) == {"KR-CODE-10"}
+
+
+def test_overlapping_spaces_on_different_storeys_not_compared(base, tmp_path):
+    # 원문은 같은 층 공간끼리의 중첩을 금지한다. 층이 다르면 상자가 겹쳐도 비교하지 않는다
+    _stack_spaces(base, same_storey=False)
+    checks, _ = _run(base, tmp_path)
+    # 나머지 쌍(같은 층 이웃 공간)은 경계만 닿으므로 위반이 아니다
+    assert checks["KR-CODE-10"]["status"] == "pass"
+    assert checks["KR-CODE-10"]["applicable"] == 2   # 층마다 1쌍
+
+
+def test_space_overlap_size_guard(base, tmp_path, monkeypatch):
+    _stack_spaces(base, same_storey=True)
+    monkeypatch.setattr(codechecks, "MAX_SPACES", 1)
+    checks, _ = _run(base, tmp_path)
+    assert checks["KR-CODE-10"]["status"] == "warn" and "생략" in checks["KR-CODE-10"]["examples"][0]["reason"]
+
+
+def test_duplicate_geometry_size_guard(base, tmp_path, monkeypatch):
+    import ifcopenshell.api.root as r
+    wall = base.by_type("IfcWall")[0]
+    dup = r.copy_class(base, product=wall)
+    dup.Representation, dup.ObjectPlacement = wall.Representation, wall.ObjectPlacement
+    monkeypatch.setattr(codechecks, "MAX_GEOM_ELEMENTS", 1)
+    checks, _ = _run(base, tmp_path)
+    assert checks["KR-CODE-17"]["status"] == "pass" and "생략" in checks["KR-CODE-17"]["note"]
 
 
 def test_workcode_syntax_and_presence(base, tmp_path):
@@ -173,6 +211,19 @@ def test_no_georeference(base, tmp_path):
     ifcopenshell.api.georeference.remove_georeferencing(base)
     checks, _ = _run(base, tmp_path)
     assert {"KR-CODE-11", "KR-CODE-12"} <= _failed(checks)
+    # 좌표계 선언은 권고다(설계자편 p48: 발주자가 정하면 상대 기준 좌표계 허용): 위반이 아니라 경고
+    assert checks["KR-CODE-12"]["status"] == "warn" and checks["KR-CODE-12"]["severity"] == "권고"
+
+
+def test_ifc2x3_has_no_crs_entities(tmp_path):
+    import ifcopenshell.api.project as proj
+    f = proj.create_file(version="IFC2X3")
+    import ifcopenshell.guid
+    f.create_entity("IfcProject", GlobalId=ifcopenshell.guid.new(), Name="P")   # 2X3 api 는 OwnerHistory 사용자가 필요해 직접 만든다
+    checks, res = _run(f, tmp_path)
+    assert res["schema"] == "IFC2X3"
+    assert checks["KR-CODE-12"]["status"] == "na" and "IFC2X3" in checks["KR-CODE-12"]["note"]
+    assert not [c for c in checks.values() if c["status"] == "error"]
 
 
 def test_non_korean_crs_is_warning_only(base, tmp_path):
@@ -191,6 +242,10 @@ def test_filename_rules(base, tmp_path):
     assert checks["KR-CODE-02"]["status"] == "na"
     checks, _ = _run(base, tmp_path, name="RA-01.ifc", deliverable=True, as_name="00_본관_B.ifc")
     assert checks["KR-CODE-02"]["status"] == "pass"
+    # 원문의 구분 코드(BA 등)와 확장자(ifc)는 소문자·대문자를 구분한다
+    for bad in ("00_본관_ba.ifc", "00_본관_BA.IFC"):
+        checks, _ = _run(base, tmp_path, name="x.ifc", deliverable=True, as_name=bad)
+        assert checks["KR-CODE-02"]["status"] == "fail", bad
 
 
 def test_two_buildings_warn(base, tmp_path):

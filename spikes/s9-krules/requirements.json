@@ -23,6 +23,7 @@
         "KR-CODE-01"
       ],
       "interpretation": false,
+      "proxy_indicator": false,
       "obligation": "필수",
       "stage": "실시설계",
       "status": "구현",
@@ -40,6 +41,7 @@
         "KR-CODE-01"
       ],
       "interpretation": false,
+      "proxy_indicator": false,
       "obligation": "필수",
       "stage": "실시설계",
       "status": "구현",
@@ -57,6 +59,7 @@
         "KR-CODE-02"
       ],
       "interpretation": false,
+      "proxy_indicator": false,
       "obligation": "필수",
       "stage": "실시설계",
       "status": "구현",
@@ -65,15 +68,16 @@
     {
       "id": "REQ-004",
       "source": "MOLIT-IMPL-DESIGN",
-      "clause": "3.1(3)",
+      "clause": "3.1(3)(가)",
       "page": "88",
-      "summary": "BIM 데이터 파일명은 영문·한글·숫자·'-'·'_' 만 사용",
+      "summary": "BIM 데이터 파일명은 영문·한글·숫자·'-'·'_' 만 사용(발주자편 3.6.3 p51, 부속서1 5.3 나 p66도 같은 규칙)",
       "mode": "코드",
       "ifc": "파일 이름",
       "checks": [
         "KR-CODE-03"
       ],
       "interpretation": false,
+      "proxy_indicator": false,
       "obligation": "필수",
       "stage": "실시설계",
       "status": "구현",
@@ -91,6 +95,7 @@
         "KR-CODE-04"
       ],
       "interpretation": false,
+      "proxy_indicator": false,
       "obligation": "필수",
       "stage": "실시설계",
       "status": "구현",
@@ -108,6 +113,7 @@
         "KR-CODE-05"
       ],
       "interpretation": false,
+      "proxy_indicator": false,
       "obligation": "필수",
       "stage": "실시설계",
       "status": "구현",
@@ -125,6 +131,7 @@
         "KR-CODE-16"
       ],
       "interpretation": true,
+      "proxy_indicator": false,
       "obligation": "권고",
       "stage": "실시설계",
       "status": "구현",
@@ -143,6 +150,7 @@
         "KR-CODE-18"
       ],
       "interpretation": true,
+      "proxy_indicator": false,
       "obligation": "필수",
       "stage": "실시설계",
       "status": "구현",
@@ -160,6 +168,7 @@
         "KR-CODE-18"
       ],
       "interpretation": true,
+      "proxy_indicator": false,
       "obligation": "필수",
       "stage": "실시설계",
       "status": "구현",
@@ -168,9 +177,9 @@
     {
       "id": "REQ-010",
       "source": "PPS-V21",
-      "clause": "5.2.2(3)가·나, 5.2.2(4)나",
-      "page": "83-85",
-      "summary": "공간 객체(층, 구역, 실)를 건축 BIM 데이터와 함께 작성",
+      "clause": "5.2.2(3)다, 5.2.2(4)나",
+      "page": "84-85",
+      "summary": "공간 객체는 건축 BIM 데이터와 함께 작성(5.2.2(3)다). 최소 부위 작성 대상의 공간은 층, 구역, 실(5.2.2(4)나)",
       "mode": "IDS",
       "ifc": "IfcBuildingStorey, IfcSpace(구역=IfcZone 은 선택)",
       "checks": [
@@ -178,6 +187,7 @@
         "KR-IDS-02"
       ],
       "interpretation": false,
+      "proxy_indicator": false,
       "obligation": "필수",
       "stage": "실시설계",
       "status": "구현",
@@ -195,6 +205,7 @@
         "KR-CODE-06"
       ],
       "interpretation": false,
+      "proxy_indicator": false,
       "obligation": "필수",
       "stage": "실시설계",
       "status": "구현",
@@ -212,6 +223,7 @@
         "KR-CODE-07"
       ],
       "interpretation": true,
+      "proxy_indicator": false,
       "obligation": "필수",
       "stage": "실시설계",
       "status": "구현",
@@ -227,6 +239,7 @@
       "ifc": "IfcBuildingStorey.Elevation, IfcSlab 형상",
       "checks": [],
       "interpretation": false,
+      "proxy_indicator": false,
       "obligation": "필수",
       "stage": "실시설계",
       "status": "후보만",
@@ -244,6 +257,7 @@
         "KR-IDS-03"
       ],
       "interpretation": true,
+      "proxy_indicator": false,
       "obligation": "필수",
       "stage": "실시설계",
       "status": "구현",
@@ -261,6 +275,7 @@
         "KR-IDS-04"
       ],
       "interpretation": true,
+      "proxy_indicator": false,
       "obligation": "필수",
       "stage": "실시설계",
       "status": "구현",
@@ -278,6 +293,7 @@
         "KR-CODE-08"
       ],
       "interpretation": true,
+      "proxy_indicator": false,
       "obligation": "권고",
       "stage": "실시설계",
       "status": "구현",
@@ -296,6 +312,7 @@
         "KR-CODE-09"
       ],
       "interpretation": true,
+      "proxy_indicator": false,
       "obligation": "필수",
       "stage": "실시설계",
       "status": "구현",
@@ -313,6 +330,7 @@
         "KR-CODE-10"
       ],
       "interpretation": true,
+      "proxy_indicator": false,
       "obligation": "필수",
       "stage": "실시설계",
       "status": "구현",
@@ -328,6 +346,7 @@
       "ifc": "IfcSpace 형상, IfcSlab 형상",
       "checks": [],
       "interpretation": false,
+      "proxy_indicator": false,
       "obligation": "필수",
       "stage": "실시설계",
       "status": "후보만",
@@ -343,6 +362,7 @@
       "ifc": "IfcStyledItem/IfcSurfaceStyle",
       "checks": [],
       "interpretation": false,
+      "proxy_indicator": false,
       "obligation": "권고",
       "stage": "실시설계",
       "status": "후보만",
@@ -358,6 +378,7 @@
       "ifc": "IfcSpace.LongName",
       "checks": [],
       "interpretation": false,
+      "proxy_indicator": false,
       "obligation": "필수",
       "stage": "실시설계",
       "status": "후보만",
@@ -375,6 +396,7 @@
         "KR-IDS-07"
       ],
       "interpretation": true,
+      "proxy_indicator": false,
       "obligation": "필수",
       "stage": "실시설계",
       "status": "구현",
@@ -392,6 +414,7 @@
         "KR-CODE-19"
       ],
       "interpretation": true,
+      "proxy_indicator": false,
       "obligation": "필수",
       "stage": "실시설계",
       "status": "구현",
@@ -409,6 +432,7 @@
         "KR-CODE-13"
       ],
       "interpretation": true,
+      "proxy_indicator": false,
       "obligation": "필수",
       "stage": "실시설계",
       "status": "구현",
@@ -426,6 +450,7 @@
         "KR-IDS-06"
       ],
       "interpretation": true,
+      "proxy_indicator": false,
       "obligation": "필수",
       "stage": "실시설계",
       "status": "구현",
@@ -443,6 +468,7 @@
         "KR-CODE-14"
       ],
       "interpretation": false,
+      "proxy_indicator": false,
       "obligation": "필수",
       "stage": "실시설계",
       "status": "구현",
@@ -458,6 +484,7 @@
       "ifc": "객체 분리 여부",
       "checks": [],
       "interpretation": false,
+      "proxy_indicator": false,
       "obligation": "필수",
       "stage": "실시설계",
       "status": "후보만",
@@ -468,13 +495,14 @@
       "source": "PPS-V21",
       "clause": "5.2.2(4)라",
       "page": "85",
-      "summary": "모든 부위 객체는 해당 부위 작성 기능으로 작성(기둥은 기둥 기능)",
-      "mode": "코드",
-      "ifc": "클래스 분포(IfcBuildingElementProxy 비율)",
+      "summary": "모든 부위 객체는 해당 부위 작성 기능으로 작성(기둥은 기둥 기능). 대리 지표: 작성 기능 사용 여부는 IFC 에서 알 수 없어, 범용객체(IfcBuildingElementProxy)가 분류 정보를 갖는지(KR-IDS-06)만 본다",
+      "mode": "IDS",
+      "ifc": "IfcBuildingElementProxy + 분류 참조(범용객체 비율은 검사하지 않음)",
       "checks": [
         "KR-IDS-06"
       ],
       "interpretation": true,
+      "proxy_indicator": true,
       "obligation": "권고",
       "stage": "실시설계",
       "status": "구현",
@@ -490,6 +518,7 @@
       "ifc": "IfcFooting, IfcColumn, IfcBeam, IfcWall, IfcSlab, IfcRoof, IfcStair, IfcDoor, IfcWindow, IfcCurtainWall, IfcCovering, IfcRailing",
       "checks": [],
       "interpretation": false,
+      "proxy_indicator": false,
       "obligation": "조건부",
       "stage": "실시설계",
       "status": "후보만",
@@ -500,13 +529,14 @@
       "source": "PPS-V21",
       "clause": "5.2.5(4)나",
       "page": "91",
-      "summary": "에너지 검토 시 바닥·벽체·지붕·기둥·문·창문·커튼월 7종 중 외기에 면한 객체는 IsExternal=True",
+      "summary": "에너지 검토(환경 시뮬레이션) 수행 시에만: 바닥·벽체·지붕·기둥·문·창문·커튼월 7종 중 외기에 면한 객체는 IsExternal=True",
       "mode": "IDS",
       "ifc": "Pset_*Common.IsExternal",
       "checks": [
         "KR-IDS-08"
       ],
       "interpretation": false,
+      "proxy_indicator": false,
       "obligation": "조건부",
       "stage": "실시설계",
       "status": "구현",
@@ -517,13 +547,14 @@
       "source": "PPS-V21",
       "clause": "5.2.5(4)나",
       "page": "91",
-      "summary": "외기에 면한 바닥·벽체·지붕·문·창문·커튼월 6종에는 열관류율 정보",
+      "summary": "에너지 검토 수행 시에만: 외기에 면한 바닥·벽체·지붕·문·창문·커튼월 6종에는 열관류율 정보(부속서-1 4.2는 열관류율을 환경시뮬레이션 수행 시 선택사항으로 적음)",
       "mode": "IDS",
       "ifc": "Pset_*Common.ThermalTransmittance",
       "checks": [
         "KR-IDS-09"
       ],
       "interpretation": false,
+      "proxy_indicator": false,
       "obligation": "조건부",
       "stage": "실시설계",
       "status": "구현",
@@ -534,13 +565,14 @@
       "source": "MOLIT-IMPL-DESIGN",
       "clause": "2.3.2 건축 ③",
       "page": "56",
-      "summary": "외기에 면한 벽체·지붕·문·창문·커튼월 5종에 열관류율(선택 사항). 조달청은 바닥을 더한 6종이라 두 문서가 다름",
+      "summary": "환경 시뮬레이션 수행 시에만: 외기에 면한 벽체·지붕·문·창문·커튼월 5종에 열관류율(선택 사항). 조달청은 바닥을 더한 6종이라 두 문서가 다름",
       "mode": "IDS",
       "ifc": "Pset_*Common.ThermalTransmittance",
       "checks": [
         "KR-IDS-10"
       ],
       "interpretation": false,
+      "proxy_indicator": false,
       "obligation": "선택",
       "stage": "실시설계",
       "status": "구현",
@@ -556,6 +588,7 @@
       "ifc": "외피 폐합성",
       "checks": [],
       "interpretation": false,
+      "proxy_indicator": false,
       "obligation": "필수",
       "stage": "실시설계",
       "status": "후보만",
@@ -573,6 +606,7 @@
         "KR-IDS-13"
       ],
       "interpretation": true,
+      "proxy_indicator": false,
       "obligation": "필수",
       "stage": "실시설계",
       "status": "구현",
@@ -590,6 +624,7 @@
         "KR-IDS-12"
       ],
       "interpretation": true,
+      "proxy_indicator": false,
       "obligation": "필수",
       "stage": "실시설계",
       "status": "구현",
@@ -608,6 +643,7 @@
         "KR-IDS-15"
       ],
       "interpretation": true,
+      "proxy_indicator": false,
       "obligation": "필수",
       "stage": "실시설계",
       "status": "구현",
@@ -627,6 +663,7 @@
         "KR-IDS-18"
       ],
       "interpretation": true,
+      "proxy_indicator": false,
       "obligation": "필수",
       "stage": "실시설계",
       "status": "구현",
@@ -642,6 +679,7 @@
       "ifc": "(표준 속성 없음)",
       "checks": [],
       "interpretation": false,
+      "proxy_indicator": false,
       "obligation": "필수",
       "stage": "실시설계",
       "status": "후보만",
@@ -659,6 +697,7 @@
         "KR-IDS-11"
       ],
       "interpretation": true,
+      "proxy_indicator": false,
       "obligation": "필수",
       "stage": "실시설계",
       "status": "구현",
@@ -676,6 +715,7 @@
         "KR-CODE-11"
       ],
       "interpretation": true,
+      "proxy_indicator": false,
       "obligation": "필수",
       "stage": "실시설계",
       "status": "구현",
@@ -685,15 +725,16 @@
       "id": "REQ-041",
       "source": "MOLIT-IMPL-DESIGN",
       "clause": "2.3.2(1)(나)",
-      "page": "47",
-      "summary": "측량 기준계는 GRS80 + TM(서부·중부·동부·동해 원점). 기본지침은 통상 UTM52 계열",
+      "page": "47-48",
+      "summary": "측량 기준계는 GRS80 + TM(서부·중부·동부·동해 원점). 단 발주자가 정하면 상대 기준 좌표계도 허용(p48). 기본지침은 통상 UTM52 계열",
       "mode": "코드",
-      "ifc": "IfcProjectedCRS, IfcMapConversion",
+      "ifc": "IfcProjectedCRS, IfcMapConversion(IFC4 이상. IFC2X3 은 판정하지 않음)",
       "checks": [
         "KR-CODE-12"
       ],
       "interpretation": true,
-      "obligation": "필수",
+      "proxy_indicator": false,
+      "obligation": "권고",
       "stage": "실시설계",
       "status": "구현",
       "not_implemented_reason": ""
@@ -708,6 +749,7 @@
       "ifc": "객체 형상 쌍 교차",
       "checks": [],
       "interpretation": false,
+      "proxy_indicator": false,
       "obligation": "필수",
       "stage": "실시설계",
       "status": "후보만",
@@ -723,6 +765,7 @@
       "ifc": "IfcRelConnects*, 형상 접촉",
       "checks": [],
       "interpretation": false,
+      "proxy_indicator": false,
       "obligation": "필수",
       "stage": "실시설계",
       "status": "후보만",
@@ -740,6 +783,7 @@
         "KR-CODE-17"
       ],
       "interpretation": true,
+      "proxy_indicator": false,
       "obligation": "권고",
       "stage": "실시설계",
       "status": "구현",
@@ -755,6 +799,7 @@
       "ifc": "원본 모델과 IFC 비교",
       "checks": [],
       "interpretation": false,
+      "proxy_indicator": false,
       "obligation": "필수",
       "stage": "실시설계",
       "status": "후보만",
@@ -773,6 +818,7 @@
         "KR-CODE-19"
       ],
       "interpretation": true,
+      "proxy_indicator": false,
       "obligation": "필수",
       "stage": "실시설계",
       "status": "구현",
@@ -788,6 +834,7 @@
       "ifc": "BIL 표 대비 형상 상세도",
       "checks": [],
       "interpretation": false,
+      "proxy_indicator": false,
       "obligation": "필수",
       "stage": "실시설계",
       "status": "후보만",
@@ -803,6 +850,7 @@
       "ifc": "IfcElementType, 분류 참조, Pset_ManufacturerTypeInformation",
       "checks": [],
       "interpretation": false,
+      "proxy_indicator": false,
       "obligation": "필수",
       "stage": "실시설계",
       "status": "후보만",
@@ -818,6 +866,7 @@
       "ifc": "(파일 형식)",
       "checks": [],
       "interpretation": false,
+      "proxy_indicator": false,
       "obligation": "필수",
       "stage": "실시설계",
       "status": "후보만",
@@ -833,6 +882,7 @@
       "ifc": "클래스 분포 + 파일 구분(_BA/_BS/_BM/_BE)",
       "checks": [],
       "interpretation": false,
+      "proxy_indicator": false,
       "obligation": "필수",
       "stage": "실시설계",
       "status": "후보만",
@@ -850,6 +900,7 @@
         "KR-CODE-12"
       ],
       "interpretation": true,
+      "proxy_indicator": false,
       "obligation": "권고",
       "stage": "실시설계",
       "status": "구현",
@@ -867,6 +918,7 @@
         "KR-CODE-01"
       ],
       "interpretation": false,
+      "proxy_indicator": false,
       "obligation": "필수",
       "stage": "실시설계",
       "status": "구현",
@@ -951,7 +1003,7 @@
     {
       "id": "KR-IDS-10",
       "mode": "ids",
-      "severity": "권고",
+      "severity": "조건부",
       "requirements": [
         "REQ-032"
       ]
@@ -1113,7 +1165,7 @@
     {
       "id": "KR-CODE-12",
       "mode": "code",
-      "severity": "필수",
+      "severity": "권고",
       "requirements": [
         "REQ-041",
         "REQ-051"
