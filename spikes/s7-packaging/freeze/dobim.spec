@@ -12,6 +12,20 @@ datas, binaries, hidden = [], [], []
 # ifcopenshell: api/util 이 하위 모듈을 이름으로 동적 import 하고, 스키마 데이터와 플러그인 DLL(TK*.dll 등)이 필요하다
 d, b, h = collect_all("ifcopenshell", include_py_files=False)   # .py 는 아래 module_collection_mode 로 따로 싣는다
 datas += d; binaries += b; hidden += h
+
+# 배포물에서 뺄 네이티브 DLL (독립 검수 결과, tools/audit_native.py 가 부재를 강제한다).
+# - ifcopenshell_geometry_kernel_cgal*.dll, ifcopenshell_geometry_svgfill.dll: CGAL·GMP/MPIR·MPFR(LGPL)·libxml2 가 정적으로 들어 있고,
+#   CGAL 이 GPL 패키지에 링크됐는지 확인되지 않았다. 코어는 지오메트리 커널을 쓰지 않는다(tools/slim_check.py: 제거해도 해시 동일).
+# - manifold.dll + ifcopenshell_geometry_kernel_manifold.dll: 같은 시험에서 함께 뺀 형상 커널. 플러그인이 manifold.dll 을 import 하므로 한 쌍으로 뺀다.
+# 지오메트리 커널이 필요한 후속 스파이크(S3·S6)는 이 목록을 다시 판단해야 한다.
+EXCLUDE_NATIVE = {
+    "ifcopenshell_geometry_kernel_cgal.dll", "ifcopenshell_geometry_kernel_cgalsimple.dll", "ifcopenshell_geometry_svgfill.dll",
+    "manifold.dll", "ifcopenshell_geometry_kernel_manifold.dll",
+}
+# DOBIM_KEEP_NATIVE=1 이면 제외하지 않는다 — tools/slim_check.py 가 '뺀 것이 정말 필요 없는지' 비교할 전체 빌드(build/dist_full)용
+if os.environ.get("DOBIM_KEEP_NATIVE") != "1":
+    binaries = [t for t in binaries if os.path.basename(t[0]).lower() not in EXCLUDE_NATIVE]
+    datas = [t for t in datas if os.path.basename(t[0]).lower() not in EXCLUDE_NATIVE]
 # mcp.cli 는 typer(선택 의존)가 필요해 import 시 종료하므로 제외한다. 코어는 mcp.server 만 쓴다
 hidden += collect_submodules("mcp", filter=lambda n: not n.startswith("mcp.cli"))
 hidden += collect_submodules("mcp_types")

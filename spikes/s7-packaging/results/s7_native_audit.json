@@ -1,0 +1,153 @@
+{
+  "dir_is_slim": true,
+  "files_scanned": 186,
+  "static_libs_found": {
+    "rocksdb": {
+      "component": "RocksDB (ifcopenshell 에 정적 링크)",
+      "files": 2,
+      "sample": [
+        "ifcopenshell/_ifcopenshell_wrapper.cp312-win_amd64.pyd",
+        "ifcopenshell/ifcopenshell.parse.dll"
+      ]
+    },
+    "proj": {
+      "component": "PROJ (ifcopenshell_geometry_glb.dll 에 정적 링크)",
+      "files": 1,
+      "sample": [
+        "ifcopenshell/ifcopenshell_geometry_glb.dll"
+      ]
+    },
+    "sqlite": {
+      "component": "SQLite",
+      "files": 2,
+      "sample": [
+        "ifcopenshell/ifcopenshell_geometry_glb.dll",
+        "sqlite3.dll"
+      ]
+    },
+    "nlohmann": {
+      "component": "nlohmann/json (헤더 라이브러리, 정적 포함)",
+      "files": 5,
+      "sample": [
+        "Shapely.libs/geos-bf067cd6ff74ee0ad5f3ff52c7ef08c9.dll",
+        "ifcopenshell/ifcopenshell_document_json_ifc2x3.dll",
+        "ifcopenshell/ifcopenshell_document_json_ifc4.dll"
+      ]
+    },
+    "eigen": {
+      "component": "Eigen (헤더 라이브러리, ifcopenshell 에 정적 포함)",
+      "files": 17,
+      "sample": [
+        "ifcopenshell/_ifcopenshell_wrapper.cp312-win_amd64.pyd",
+        "ifcopenshell/ifcopenshell.geometry.dll",
+        "ifcopenshell/ifcopenshell_document_xml_ifc2x3.dll"
+      ]
+    },
+    "boost": {
+      "component": "Boost (ifcopenshell 휠에 동봉)",
+      "files": 26,
+      "sample": [
+        "ifcopenshell/_ifcopenshell_wrapper.cp312-win_amd64.pyd",
+        "ifcopenshell/boost_container-vc143-mt-x64-1_92.dll",
+        "ifcopenshell/boost_program_options-vc143-mt-x64-1_92.dll"
+      ]
+    },
+    "libgfortran": {
+      "component": "GCC 런타임 라이브러리 (libgfortran, OpenBLAS 에 정적 링크)",
+      "files": 1,
+      "sample": [
+        "numpy.libs/libscipy_openblas64_-ed4f167a5330424524f45258e7ca2c8d.dll"
+      ]
+    },
+    "expat": {
+      "component": "Expat (CPython pyexpat 에 정적 링크)",
+      "files": 2,
+      "sample": [
+        "_elementtree.pyd",
+        "pyexpat.pyd"
+      ]
+    },
+    "mpdecimal": {
+      "component": "mpdecimal (CPython _decimal 에 정적 링크)",
+      "files": 1,
+      "sample": [
+        "_decimal.pyd"
+      ]
+    },
+    "zlib": {
+      "component": "zlib (CPython 에 정적 링크)",
+      "files": 2,
+      "sample": [
+        "ifcopenshell/python312.dll",
+        "python312.dll"
+      ]
+    },
+    "bzip2": {
+      "component": "bzip2 (CPython _bz2 에 정적 링크)",
+      "files": 1,
+      "sample": [
+        "_bz2.pyd"
+      ]
+    },
+    "liblzma": {
+      "component": "liblzma / XZ Utils (CPython _lzma 에 정적 링크)",
+      "files": 1,
+      "sample": [
+        "_lzma.pyd"
+      ]
+    }
+  },
+  "static_lib_versions": {
+    "rocksdb": [
+      "9.11.2"
+    ],
+    "boost": [
+      "1.92.0"
+    ],
+    "proj": [
+      "9.4.1"
+    ]
+  },
+  "banned_found": {},
+  "build_deps_paths": {
+    "rocksdb-9.11.2": [
+      "ifcopenshell/_ifcopenshell_wrapper.cp312-win_amd64.pyd",
+      "ifcopenshell/ifcopenshell.parse.dll"
+    ],
+    "boost-1.92.0": [
+      "ifcopenshell/ifcopenshell.geometry.dll",
+      "ifcopenshell/ifcopenshell.parse.dll",
+      "ifcopenshell/ifcopenshell_document_xml_ifc2x3.dll",
+      "ifcopenshell/ifcopenshell_document_xml_ifc4.dll",
+      "ifcopenshell/ifcopenshell_document_xml_ifc4x3_add2.dll"
+    ],
+    "occt_git": [
+      "ifcopenshell/TKBRep.dll",
+      "ifcopenshell/TKBool.dll",
+      "ifcopenshell/TKCDF.dll",
+      "ifcopenshell/TKDEGLTF.dll",
+      "ifcopenshell/TKDESTEP.dll",
+      "ifcopenshell/TKG3d.dll",
+      "ifcopenshell/TKGeomAlgo.dll",
+      "ifcopenshell/TKMeshVS.dll",
+      "ifcopenshell/TKService.dll",
+      "ifcopenshell/TKTopAlgo.dll",
+      "ifcopenshell/TKV3d.dll",
+      "ifcopenshell/TKernel.dll"
+    ]
+  },
+  "build_roots": {
+    "D:/a/IfcOpenShell": 150,
+    "D:/a/1": 100,
+    "D:/a/infra": 93,
+    "D:/a/pywin32": 6,
+    "D:/a/_work": 5,
+    "D:/a/cryptography": 1
+  },
+  "present_excluded_files": [],
+  "dangling_imports": {},
+  "static_libs_missing_in_notices": [],
+  "limits": "문자열 흔적 기반이다. 심볼·문자열이 제거된 바이너리나 흔적 없는 헤더 라이브러리는 못 잡는다(native_libs.py 머리말).",
+  "problems": [],
+  "pass": true
+}

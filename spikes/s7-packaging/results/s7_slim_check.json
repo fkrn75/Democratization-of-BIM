@@ -1,14 +1,22 @@
 {
+  "base": "제외 전 전체 빌드(dist_full)",
   "base_bytes": 224289709,
   "baseline_ok": true,
   "stages": {
     "S1_cgal_svgfill_manifold": {
-      "removed_files": 4,
-      "bytes_after": 215042989,
+      "removed_files": 5,
+      "bytes_after": 214832045,
       "run_ok": true,
       "hash_equal_to_baseline": true,
       "validate_ok": true,
-      "failure": null
+      "failure": null,
+      "removed_names": [
+        "ifcopenshell_geometry_kernel_cgal.dll",
+        "ifcopenshell_geometry_kernel_cgalsimple.dll",
+        "ifcopenshell_geometry_kernel_manifold.dll",
+        "ifcopenshell_geometry_svgfill.dll",
+        "manifold.dll"
+      ]
     },
     "S2_all_geometry_plugins": {
       "removed_files": 24,
@@ -18,8 +26,34 @@
       "validate_ok": null,
       "failure": {
         "stage": "project.new",
-        "stderr_tail": "ifcopenshell\\__init__.py\", line 89, in <module>\r\n    raise ImportError(\"IfcOpenShell not built for '%s' (%s)\" % (python_distribution, e)) from e\r\nImportError: IfcOpenShell not built for 'windows\\64bit\\python3.12' (DLL load failed while importing _ifcopenshell_wrapper: ������ ����� ã�� �� �����ϴ�.)\r\n"
-      }
+        "stderr_tail": "_internal\\ifcopenshell\\__init__.py\", line 89, in <module>\r\n    raise ImportError(\"IfcOpenShell not built for '%s' (%s)\" % (python_distribution, e)) from e\r\nImportError: IfcOpenShell not built for 'windows\\64bit\\python3.12' (DLL load failed while importing _ifcopenshell_wrapper: 지정된 모듈을 찾을 수 없습니다.)\r\n"
+      },
+      "removed_names": [
+        "ifcopenshell.geometry.dll",
+        "ifcopenshell.geometry.writer.dll",
+        "ifcopenshell_geometry_dae.dll",
+        "ifcopenshell_geometry_glb.dll",
+        "ifcopenshell_geometry_igs.dll",
+        "ifcopenshell_geometry_kernel_cgal.dll",
+        "ifcopenshell_geometry_kernel_cgalsimple.dll",
+        "ifcopenshell_geometry_kernel_manifold.dll",
+        "ifcopenshell_geometry_kernel_opencascade.dll",
+        "ifcopenshell_geometry_kernel_passthrough.dll",
+        "ifcopenshell_geometry_mapping_ifc2x3.dll",
+        "ifcopenshell_geometry_mapping_ifc4.dll",
+        "ifcopenshell_geometry_mapping_ifc4x3_add2.dll",
+        "ifcopenshell_geometry_obj.dll",
+        "ifcopenshell_geometry_stp.dll",
+        "ifcopenshell_geometry_svg.dll",
+        "ifcopenshell_geometry_svgfill.dll",
+        "ifcopenshell_geometry_tree_opencascade_brep.dll",
+        "ifcopenshell_geometry_tree_opencascade_trianglebvh.dll",
+        "ifcopenshell_geometry_ttl.dll",
+        "ifcopenshell_geometry_writer_ifc2x3.dll",
+        "ifcopenshell_geometry_writer_ifc4.dll",
+        "ifcopenshell_geometry_writer_ifc4x3_add2.dll",
+        "manifold.dll"
+      ]
     },
     "S3_geometry_plus_occt": {
       "removed_files": 73,
@@ -29,8 +63,83 @@
       "validate_ok": null,
       "failure": {
         "stage": "project.new",
-        "stderr_tail": "ifcopenshell\\__init__.py\", line 89, in <module>\r\n    raise ImportError(\"IfcOpenShell not built for '%s' (%s)\" % (python_distribution, e)) from e\r\nImportError: IfcOpenShell not built for 'windows\\64bit\\python3.12' (DLL load failed while importing _ifcopenshell_wrapper: ������ ����� ã�� �� �����ϴ�.)\r\n"
-      }
+        "stderr_tail": "_internal\\ifcopenshell\\__init__.py\", line 89, in <module>\r\n    raise ImportError(\"IfcOpenShell not built for '%s' (%s)\" % (python_distribution, e)) from e\r\nImportError: IfcOpenShell not built for 'windows\\64bit\\python3.12' (DLL load failed while importing _ifcopenshell_wrapper: 지정된 모듈을 찾을 수 없습니다.)\r\n"
+      },
+      "removed_names": [
+        "TKBO.dll",
+        "TKBRep.dll",
+        "TKBin.dll",
+        "TKBinL.dll",
+        "TKBinTObj.dll",
+        "TKBinXCAF.dll",
+        "TKBool.dll",
+        "TKCAF.dll",
+        "TKCDF.dll",
+        "TKDE.dll",
+        "TKDECascade.dll",
+        "TKDEGLTF.dll",
+        "TKDEIGES.dll",
+        "TKDEOBJ.dll",
+        "TKDEPLY.dll",
+        "TKDESTEP.dll",
+        "TKDESTL.dll",
+        "TKDEVRML.dll",
+        "TKExpress.dll",
+        "TKFeat.dll",
+        "TKFillet.dll",
+        "TKG2d.dll",
+        "TKG3d.dll",
+        "TKGeomAlgo.dll",
+        "TKGeomBase.dll",
+        "TKHLR.dll",
+        "TKLCAF.dll",
+        "TKMath.dll",
+        "TKMesh.dll",
+        "TKMeshVS.dll",
+        "TKOffset.dll",
+        "TKPrim.dll",
+        "TKRWMesh.dll",
+        "TKService.dll",
+        "TKShHealing.dll",
+        "TKStd.dll",
+        "TKStdL.dll",
+        "TKTObj.dll",
+        "TKTopAlgo.dll",
+        "TKV3d.dll",
+        "TKVCAF.dll",
+        "TKXCAF.dll",
+        "TKXMesh.dll",
+        "TKXSBase.dll",
+        "TKXml.dll",
+        "TKXmlL.dll",
+        "TKXmlTObj.dll",
+        "TKXmlXCAF.dll",
+        "TKernel.dll",
+        "ifcopenshell.geometry.dll",
+        "ifcopenshell.geometry.writer.dll",
+        "ifcopenshell_geometry_dae.dll",
+        "ifcopenshell_geometry_glb.dll",
+        "ifcopenshell_geometry_igs.dll",
+        "ifcopenshell_geometry_kernel_cgal.dll",
+        "ifcopenshell_geometry_kernel_cgalsimple.dll",
+        "ifcopenshell_geometry_kernel_manifold.dll",
+        "ifcopenshell_geometry_kernel_opencascade.dll",
+        "ifcopenshell_geometry_kernel_passthrough.dll",
+        "ifcopenshell_geometry_mapping_ifc2x3.dll",
+        "ifcopenshell_geometry_mapping_ifc4.dll",
+        "ifcopenshell_geometry_mapping_ifc4x3_add2.dll",
+        "ifcopenshell_geometry_obj.dll",
+        "ifcopenshell_geometry_stp.dll",
+        "ifcopenshell_geometry_svg.dll",
+        "ifcopenshell_geometry_svgfill.dll",
+        "ifcopenshell_geometry_tree_opencascade_brep.dll",
+        "ifcopenshell_geometry_tree_opencascade_trianglebvh.dll",
+        "ifcopenshell_geometry_ttl.dll",
+        "ifcopenshell_geometry_writer_ifc2x3.dll",
+        "ifcopenshell_geometry_writer_ifc4.dll",
+        "ifcopenshell_geometry_writer_ifc4x3_add2.dll",
+        "manifold.dll"
+      ]
     }
   }
 }
