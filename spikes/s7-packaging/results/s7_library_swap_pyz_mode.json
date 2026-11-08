@@ -1,5 +1,5 @@
 {
-  "source_dir_is_py_mode": true,
+  "guid_py_file_present_in_source_dir": true,
   "baseline": {
     "ok": true,
     "hash": {
@@ -21,12 +21,14 @@
     "marker_seen_on_stderr": false,
     "pass": false
   },
+  "effective_loader": "PYZ 우선: 파일이 있어도 수정이 반영되지 않는다 -> LGPL 교체 가능 의무 미충족",
   "E2_wheel_swap": [
     {
       "wheel": "ifcopenshell-0.8.5-py312-none-win_amd64.whl",
       "files_before": 670,
       "files_after": 580,
       "run_ok": false,
+      "loaded_version": null,
       "failure": {
         "stage": "project.new",
         "stderr_tail": "\"dobim_core\\engine.py\", line 25, in <module>\r\n  File \"pyimod02_importers.py\", line 457, in exec_module\r\n  File \"ifcopenshell\\__init__.py\", line 89, in <module>\r\n    raise ImportError(\"IfcOpenShell not built for '%s'\" % python_distribution)\r\nImportError: IfcOpenShell not built for 'windows\\64bit\\python3.12' (module 'ifcopenshell._ifcopenshell_wrapper' has no attribute 'SWIG_PyInstanceMethod_New')\r\n",
@@ -38,6 +40,7 @@
       "files_before": 670,
       "files_after": 695,
       "run_ok": true,
+      "loaded_version": null,
       "hash_equal_to_baseline": true,
       "validate_ok": true,
       "hash": {
@@ -51,6 +54,7 @@
       "files_before": 670,
       "files_after": 670,
       "run_ok": true,
+      "loaded_version": null,
       "hash_equal_to_baseline": true,
       "validate_ok": true,
       "hash": {
@@ -60,10 +64,121 @@
       }
     }
   ],
+  "E3_geos_swap": {
+    "scope": "빌드 venv 의 shapely 2.2.0·numpy 파일(동결 폴더의 GEOS DLL 과 바이트 동일: 아래 확인)을 임시 폴더에 복사하고, 격리 파이썬 3.12(-I -S)로 그 폴더만 경로에 올려 shapely 휠을 파일만 바꿔 본다. 동결 인터프리터 안에서의 교체는 시험하지 못했다: 코어가 shapely 를 부르지 않아 dobim.exe 로 GEOS 를 부를 수 없고, 동결본에서 shapely 의 .py 는 PYZ 안에 있어 휠 폴더 교체와 PYZ 의 옛 .py 가 어긋날 수 있다.",
+    "frozen_geos_dlls_identical_to_venv": true,
+    "baseline": {
+      "shapely": "2.2.0",
+      "geos": [
+        3,
+        14,
+        1
+      ],
+      "buffer_area": 313.654849055,
+      "intersection_area": 6.0,
+      "shapely_file_under_stage": true
+    },
+    "swaps": [
+      {
+        "wheel": "shapely-2.0.7-cp312-cp312-win_amd64.whl",
+        "geos_dlls_before": [
+          "geos-bf067cd6ff74ee0ad5f3ff52c7ef08c9.dll",
+          "geos_c-6dd9fd915eef8a7928285416bef1e666.dll",
+          "msvcp140-0fa7eb792d3fbcf2233e4ea47e9144b9.dll"
+        ],
+        "geos_dlls_after": [
+          "geos-601667c569b99092781bd4af7fecde0b.dll",
+          "geos_c-2ec21252057a9a4d4390485e0e576a5a.dll",
+          "msvcp140-4cdfd5d0df96900d509f170af6d4ba5f.dll"
+        ],
+        "probe": {
+          "shapely": "2.0.7",
+          "geos": [
+            3,
+            11,
+            4
+          ],
+          "buffer_area": 313.654849055,
+          "intersection_area": 6.0,
+          "shapely_file_under_stage": true
+        }
+      },
+      {
+        "wheel": "shapely-2.1.2-cp312-cp312-win_amd64.whl",
+        "geos_dlls_before": [
+          "geos-bf067cd6ff74ee0ad5f3ff52c7ef08c9.dll",
+          "geos_c-6dd9fd915eef8a7928285416bef1e666.dll",
+          "msvcp140-0fa7eb792d3fbcf2233e4ea47e9144b9.dll"
+        ],
+        "geos_dlls_after": [
+          "geos-ae6efa0782962b98e358f10ea539ae5f.dll",
+          "geos_c-072b7a9224d16d3e4ab2395bb855b2d3.dll",
+          "msvcp140-90bc62d4947a5878f1dc1057312f3be2.dll"
+        ],
+        "probe": {
+          "shapely": "2.1.2",
+          "geos": [
+            3,
+            13,
+            1
+          ],
+          "buffer_area": 313.654849055,
+          "intersection_area": 6.0,
+          "shapely_file_under_stage": true
+        }
+      }
+    ],
+    "summary": {
+      "frozen_geos_dlls_identical_to_venv": true,
+      "baseline_geos": [
+        3,
+        14,
+        1
+      ],
+      "swapped_geos_versions": {
+        "shapely-2.0.7-cp312-cp312-win_amd64.whl": [
+          3,
+          11,
+          4
+        ],
+        "shapely-2.1.2-cp312-cp312-win_amd64.whl": [
+          3,
+          13,
+          1
+        ]
+      },
+      "loaded_other_geos_by_file_swap": true,
+      "buffer_and_intersection_same_as_baseline": true,
+      "pass": true
+    }
+  },
   "pass": false,
   "summary": {
     "py_modification_effective": false,
     "same_version_reinstall_ok": true,
+    "geos_swap": {
+      "frozen_geos_dlls_identical_to_venv": true,
+      "baseline_geos": [
+        3,
+        14,
+        1
+      ],
+      "swapped_geos_versions": {
+        "shapely-2.0.7-cp312-cp312-win_amd64.whl": [
+          3,
+          11,
+          4
+        ],
+        "shapely-2.1.2-cp312-cp312-win_amd64.whl": [
+          3,
+          13,
+          1
+        ]
+      },
+      "loaded_other_geos_by_file_swap": true,
+      "buffer_and_intersection_same_as_baseline": true,
+      "pass": true
+    },
     "other_versions": {
       "ifcopenshell-0.8.5-py312-none-win_amd64.whl": "실행 실패",
       "ifcopenshell-0.9.0-py312-none-win_amd64.whl": "해시 동일",

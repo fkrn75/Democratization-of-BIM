@@ -5,6 +5,7 @@
   dobim-mcp.exe  -> binaries/dobim-mcp-<triple>.exe
   _internal/     -> resources/_internal/                (resources {"resources/": ""} 로 설치 폴더 루트에 그대로 놓인다)
   THIRD-PARTY-NOTICES.txt -> resources/
+  docs/installed/*.md (교체 절차 LIBRARY-REPLACEMENT.md) -> resources/   (설치 폴더 루트에 함께 설치된다)
 PyInstaller 6 onedir 는 실행 파일 옆의 _internal 을 찾으므로 이 배치가 곧 설치 폴더 배치다.
 """
 from __future__ import annotations
@@ -33,6 +34,8 @@ def main() -> int:
     notices = RESULTS / "THIRD-PARTY-NOTICES.txt"
     if notices.exists():
         shutil.copy2(notices, res / "THIRD-PARTY-NOTICES.txt")
+    for md in sorted((S7 / "docs" / "installed").glob("*.md")):
+        shutil.copy2(md, res / md.name)
     n = sum(1 for _ in res.rglob("*") if _.is_file())
     print(f"배치 완료: binaries 2개, resources 파일 {n}개")
     return 0

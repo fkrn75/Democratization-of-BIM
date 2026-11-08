@@ -54,6 +54,7 @@ def main() -> int:
             "has_dobim_mcp_exe": any(n.lower() == "dobim-mcp.exe" for n in names),
             "internal_entries": sum(1 for n in names if n.replace("/", "\\").lower().startswith("_internal\\")),
             "has_third_party_notices": any("THIRD-PARTY-NOTICES" in n for n in names),
+            "has_library_replacement_doc": any("LIBRARY-REPLACEMENT" in n for n in names),
             "install_mode_line": next((ln.strip() for ln in txt.splitlines() if "INSTALLMODE" in ln.upper() and "!define" in ln), None),
         }
         out["nsis_script"]["internal_matches_frozen"] = out["nsis_script"]["internal_entries"] == frozen_files
@@ -66,8 +67,9 @@ def main() -> int:
         shutil.copy2(bins / "dobim-x86_64-pc-windows-msvc.exe", inst / "dobim.exe")
         shutil.copy2(bins / "dobim-mcp-x86_64-pc-windows-msvc.exe", inst / "dobim-mcp.exe")
         shutil.copytree(TAURI / "resources" / "_internal", inst / "_internal")
-        if (TAURI / "resources" / "THIRD-PARTY-NOTICES.txt").exists():
-            shutil.copy2(TAURI / "resources" / "THIRD-PARTY-NOTICES.txt", inst / "THIRD-PARTY-NOTICES.txt")
+        for extra in ("THIRD-PARTY-NOTICES.txt", "LIBRARY-REPLACEMENT.md"):
+            if (TAURI / "resources" / extra).exists():
+                shutil.copy2(TAURI / "resources" / extra, inst / extra)
         ws = work / "ws"
         ws.mkdir()
         p = run_quiet([inst / "dobim.exe", "--workspace", ws, "list", "--query", "wall"], cwd=ws)
