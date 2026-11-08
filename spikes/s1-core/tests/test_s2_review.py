@@ -187,3 +187,27 @@ def test_R7_코어가_직접_만든_모델의_ifc_해시는_확장_전과_같다
     assert prods and rels
     assert {json.loads(x)["t"] for x in others} <= {"IfcProject", "IfcMaterial"}   # 새 항목(스타일·타입·수량 세트)이 끼어들지 않는다
     b.close()
+
+
+def test_R10_projection_hash는_가져올_때의_값으로_남고_편집해도_지워지지_않는다(tmp_path):
+    import sqlite3
+    from dobim_core import fixture as F
+    b, f = V.prepare(tmp_path)
+    try:
+        V.write_import(b, f)
+        db = tmp_path / V.P
+
+        def hashes():
+            c = sqlite3.connect(str(db))
+            try:
+                return dict(c.execute("SELECT id, projection_hash FROM element WHERE origin='authored'"))
+            finally:
+                c.close()
+
+        h0 = hashes()
+        assert len(h0) == 7 and all(h0.values())
+        assert b.run("wall.move", {"id": F.W1, "dx": 300}, project=V.P)["ok"]
+        b.hashes(V.P)   # 투영을 일으켜도
+        assert hashes() == h0
+    finally:
+        b.close()

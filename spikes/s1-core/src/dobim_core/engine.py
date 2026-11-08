@@ -483,10 +483,9 @@ class Engine:
                     self._sql(f"요소 {eid}", "DELETE FROM element WHERE id=?", (eid,))
                 else:
                     self._sql(f"요소 {eid}",
-                              "INSERT INTO element (id, kind, ifc_class, origin, family_id, params) VALUES (?,?,?,?,?,?) "
-                              "ON CONFLICT(id) DO UPDATE SET kind=excluded.kind, ifc_class=excluded.ifc_class, origin=excluded.origin, "
-                              "family_id=excluded.family_id, params=excluded.params",   # projection_hash 는 건드리지 않는다
-                              (eid, new["kind"], new["ifc_class"], new["origin"], new["family_id"], canon(new["params"])))
+                              "INSERT OR REPLACE INTO element (id, kind, ifc_class, origin, family_id, params, projection_hash) "
+                              "VALUES (?,?,?,?,?,?, (SELECT projection_hash FROM element WHERE id=?))",   # 가져올 때의 해시는 유지한다
+                              (eid, new["kind"], new["ifc_class"], new["origin"], new["family_id"], canon(new["params"]), eid))
         elif t == "rel":
             _, kind, src, dst, _, new = e
             self.st.apply_rel(kind, src, dst, bool(new))
