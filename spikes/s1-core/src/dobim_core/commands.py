@@ -114,10 +114,18 @@ def _axis_len2(axis):
     return dx * dx + dy * dy
 
 
+def _in_split_history(ctx, eid) -> bool:
+    """분할 이력(관계 succ)에 한 번이라도 쓰인 id 인가(지워진 벽 포함: 이력은 지워져도 남는다)."""
+    return bool(ctx.rels_out("succ", eid) or ctx.rels_in("succ", eid))
+
+
 def _fresh_id(ctx, a, kind):
     a.id = a.id or ctx.new_id(kind)
     if a.id in ctx.st.el:
         raise DobimError("CONSTRAINT", f"이미 있는 id 다: {a.id}", path="/id")
+    if _in_split_history(ctx, a.id):   # 지워진 벽의 id 를 다시 쓰면 분할 이력을 따라가는 참조가 엉뚱한 새 벽을 가리킨다
+        raise DobimError("CONSTRAINT", f"벽 분할 이력에 쓰인 id 라 다시 쓸 수 없다: {a.id}", path="/id",
+                         hint="새 id 를 쓰거나 생략하세요")
     return a.id
 
 
@@ -351,6 +359,20 @@ def _trim_raw(wid, axis, partners):
     return (start, end)
 
 
+def _assert_succ_acyclic(ctx, start) -> None:
+    """불변식: 분할 이력(succ)은 순환하지 않는다. start 에서 이력을 따라가 같은 벽을 두 번 만나면 거절한다
+    (new_id 검사가 막으므로 정상 흐름에서는 일어나지 않는다. 손상된 로그를 재생할 때의 마지막 안전망)."""
+    seen, x = {start}, start
+    while True:
+        nxt = ctx.rels_out("succ", x)
+        if not nxt:
+            return
+        x = nxt[0]
+        if x in seen:
+            raise DobimError("CONSTRAINT", f"벽 분할 이력이 순환한다: {x}", path="/new_id")
+        seen.add(x)
+
+
 class WallSplit(A):
     id: Id
     at: Pos = Field(description="축선 시작점에서 분할 위치 mm")
@@ -364,7 +386,8 @@ def wall_split(ctx, a: WallSplit):
     """벽 W 를 분할점에서 둘로 나눈다. W 는 시작 쪽을 지키고, 끝 쪽은 새 벽 N 이 된다.
     - 형상이 그대로여야 한다: 조인 보정(trim)이 분할로 달라지면 거절한다(문을 가로지르는 분할도 거절).
     - 문은 놓인 쪽 벽으로 옮겨진다(id 유지, 오프셋만 이동). 조인은 조인 지점이 있는 쪽 벽이 가진다. 속성·재료는 복사한다.
-    - 분할 이력은 관계 succ(W -> N)로 남는다. 주석 참조의 끝 역할(axis.end, trim.end)이 이 관계를 따라가 값이 변하지 않는다."""
+    - 분할 이력은 관계 succ(W -> N)로 남는다. 주석 참조의 끝 역할(axis.end, trim.end)이 이 관계를 따라가 값이 변하지 않는다.
+    - 지워진 벽도 이력에는 남으므로, 이력에 한 번이라도 쓰인 id 는 new_id 로 다시 쓸 수 없다(succ 순환·엉뚱한 부활 방지)."""
     r = ctx.row(a.id, "wall")
     p = r["params"]
     x1, y1, x2, y2 = p["axis"]
@@ -374,6 +397,9 @@ def wall_split(ctx, a: WallSplit):
     nid = a.new_id = a.new_id or ctx.new_id("wall")    # 로그에 새 벽 id 를 명시해 재생이 같은 id 를 만들게 한다
     if nid in ctx.st.el:
         raise DobimError("CONSTRAINT", f"이미 있는 id 다: {nid}", path="/new_id")
+    if _in_split_history(ctx, nid):   # 지워진 후계 id 로 다시 나누면 succ(X -> X) 순환이 생긴다
+        raise DobimError("CONSTRAINT", f"벽 분할 이력에 쓰인 id 라 다시 쓸 수 없다: {nid}", path="/new_id",
+                         hint="new_id 를 생략하거나 새 id 를 쓰세요")
     sx, sy = x1 + a.at * c, y1 + a.at * s
     ax_w, ax_n = [x1, y1, sx, sy], [sx, sy, x2, y2]
     doors_n = []
@@ -416,6 +442,7 @@ def wall_split(ctx, a: WallSplit):
         ctx.rel("succ", a.id, nx, False)
         ctx.rel("succ", nid, nx, True)
     ctx.rel("succ", a.id, nid, True)
+    _assert_succ_acyclic(ctx, a.id)
     for pset, props in sorted(ctx.psets(a.id).items()):
         for prop in sorted(props):
             ctx.set_prop(nid, pset, prop, props[prop])
@@ -1042,8 +1069,8 @@ def view_affected(ctx, a: ViewAffected):
 # ================================================================ 주석: 치수·태그 (S5)
 # 주석은 의도 요소(kind dim, tag)이고 IFC 로 투영하지 않는다(IFC 해시 불변). 값은 저장하지 않고 항상 파생이다(그래프 질의).
 # 대상이 사라지면 조용히 지우지 않고 고아로 표시한다(annot.check). 뷰를 지우면 그 뷰의 주석도 같이 지운다(응답에 나열, undo 로 복귀).
-RefStr = Annotated[str, Field(pattern=r"^(wall|door|level):[0-9A-Za-z_$]{22}#[a-z]{3,9}(\.[a-z]{3,9})?$", max_length=48,
-                              description="안정 참조 '종류:id#역할'. wall: axis.start axis.end trim.start trim.end axis face.left face.right base top / door: center jamb.start jamb.end sill head / level: elevation")]
+RefStr = Annotated[str, Field(pattern=r"^(wall|door|level):[0-9A-Za-z_$]{22}#[a-z]{3,9}(\.[a-z]{3,9}){0,2}$", max_length=48,
+                              description="안정 참조 '종류:id#역할'. wall: axis.start axis.end(분할 뒤에도 원래 끝) own.end(이 벽 자신의 끝) trim.start trim.end own.trim.end axis face.left face.right base top / door: center jamb.start jamb.end sill head / level: elevation")]
 Off = Annotated[float, Field(allow_inf_nan=False, ge=-1e5, le=1e5)]
 _ANNOT_KINDS = ("dim", "tag")
 
@@ -1098,6 +1125,15 @@ def _dim_checked(ctx, view, a_ref, b_ref, at):
     return vertical, ra, rb, g
 
 
+def _dir_fp(ctx, ref):
+    """참조가 가리키는 벽 축선의 방향 지문(방향에 의존하는 역할일 때만, 아니면 None)."""
+    kind, eid, role = AN.parse_ref(ref)
+    if not AN.uses_direction(kind, role):
+        return None
+    w = eid if kind == "wall" else ctx.rels_in("hosts", eid)[0]
+    return AN.unit_dir(ctx.st.el[w]["params"]["axis"])
+
+
 def _new_annot(ctx, a, kind, params):
     ctx.put_el(a.id, row(kind, "", f"annot.{kind}", params))
     ctx.rel("annot_of", a.id, a.view, True)
@@ -1121,7 +1157,8 @@ class DimCreate(A):
 def annot_dim_create(ctx, a: DimCreate):
     _fresh_id(ctx, a, "dim")
     vertical, ra, rb, g = _dim_checked(ctx, a.view, a.a, a.b, a.at)
-    params = {"name": a.name or f"DIM-{a.id[-6:]}", "view": a.view, "a": a.a, "b": a.b, "off": a.offset, "home": [0.0, 0.0]}
+    params = {"name": a.name or f"DIM-{a.id[-6:]}", "view": a.view, "a": a.a, "b": a.b, "off": a.offset, "home": [0.0, 0.0],
+              "dirs": {"a": _dir_fp(ctx, a.a), "b": _dir_fp(ctx, a.b)}}
     if vertical:
         params["at"] = list(a.at or [0.0, 0.0])
     (ax, ay), (bx, by) = AN.dim_ends(g, params, ra, rb)
@@ -1193,6 +1230,11 @@ def annot_rebind(ctx, a: AnnotRebind):
             raise DobimError("CONSTRAINT", "치수에는 a, b 만 쓴다", path="/target")
         p["a"], p["b"] = a.a or p["a"], a.b or p["b"]
         vertical, ra, rb, g = _dim_checked(ctx, p["view"], p["a"], p["b"], p.get("at"))
+        dirs = dict(p.get("dirs") or {})
+        for side, given in (("a", a.a), ("b", a.b)):   # 다시 묶은 쪽만 지문을 새로 잡는다(같은 참조를 다시 주면 경고를 확인한 것으로 본다)
+            if given is not None:
+                dirs[side] = _dir_fp(ctx, given)
+        p["dirs"] = {"a": dirs.get("a"), "b": dirs.get("b")}
         (ax, ay), (bx, by) = AN.dim_ends(g, p, ra, rb)
         p["home"] = [round((ax + bx) / 2, 3), round((ay + by) / 2, 3)]
     else:
@@ -1226,6 +1268,9 @@ def _annot_item(ctx, aid):
         out.update(a=p["a"], b=p["b"])
     else:
         out.update(target=p["target"], fields=p["fields"])
+    flags = ctx.g.q(AN.annot_flags, aid)
+    if flags:
+        out["warnings"] = list(flags)
     if st[1] == "ok":
         out["value" if r["kind"] == "dim" else "text"] = st[2]
     elif st[1] == "orphan":
@@ -1267,9 +1312,15 @@ class AnnotCheck(A):
          args=AnnotCheck, idempotent=True, examples=[{}])
 def annot_check(ctx, a: AnnotCheck):
     ids = ctx.g.q(AN.all_annots)
-    orphan, invalid, ok, problems = {}, {}, 0, []
+    orphan, invalid, ok, problems, warned, warn_kinds = {}, {}, 0, [], [], {}
     for i in ids:
         st = ctx.g.q(AN.annot_state, i)
+        flags = ctx.g.q(AN.annot_flags, i)
+        for fl in flags:
+            k = fl.split(":", 1)[0]
+            warn_kinds[k] = warn_kinds.get(k, 0) + 1
+        if flags:
+            warned.append(i)
         if st[1] == "ok":
             ok += 1
             continue
@@ -1277,15 +1328,16 @@ def annot_check(ctx, a: AnnotCheck):
         key = st[2][0][1] if st[1] == "orphan" else st[2]
         bucket[key] = bucket.get(key, 0) + 1
         problems.append(i)
+    listed = sorted(set(problems) | set(warned))   # 목록에는 고아·무효와 경고가 걸린 주석을 함께 낸다
     dangling = sum(1 for i in ids if ctx.st.el[i]["params"]["view"] not in ctx.st.el)   # 뷰가 없는 주석(있으면 결함)
     after = _dec_cursor(a.cursor, "id")
-    start = 0 if after is None else next((k for k, e in enumerate(problems) if e > after), len(problems))
-    window = [_annot_item(ctx, i) for i in problems[start:start + a.limit]]
+    start = 0 if after is None else next((k for k, e in enumerate(listed) if e > after), len(listed))
+    window = [_annot_item(ctx, i) for i in listed[start:start + a.limit]]
     head = {"total": len(ids), "ok": ok, "orphan": dict(sorted(orphan.items())), "invalid": dict(sorted(invalid.items())),
-            "dangling_view": dangling, "problems": len(problems)}
+            "warnings": dict(sorted(warn_kinds.items())), "dangling_view": dangling, "problems": len(problems)}
     items, cut = _fit(window, base=head, cursor_of=lambda i: _enc_cursor(window[i]["id"]))
-    nxt = _enc_cursor(items[-1]["id"]) if start + len(items) < len(problems) else None
-    return {**head, "items": items, "page": _page(nxt, len(problems), cut)}
+    nxt = _enc_cursor(items[-1]["id"]) if start + len(items) < len(listed) else None
+    return {**head, "items": items, "page": _page(nxt, len(listed), cut)}
 
 
 # ================================================================ 이력

@@ -10,7 +10,16 @@
 from __future__ import annotations
 
 from math import atan2, degrees
+import re
 from xml.sax.saxutils import escape
+
+# XML 1.0 이 허용하지 않는 글자(제어문자 대부분, 홑서로게이트, U+FFFE/FFFF). 사용자 글(뷰 이름·태그 필드 값)에 들어 있어도 SVG 가 깨지면 안 된다
+_XML_BAD = re.compile("[\x00-\x08\x0b\x0c\x0e-\x1f\ud800-\udfff￾￿]")
+
+
+def _esc(s) -> str:
+    """SVG 글 안전 처리: XML 금지 문자는 U+FFFD 로 바꾸고 &, <, > 를 이스케이프한다."""
+    return escape(_XML_BAD.sub("�", str(s)))
 
 MARGIN = 15.0          # 용지 여백 mm
 TITLE_H = 16.0         # 제목 블록 높이 mm
@@ -88,14 +97,14 @@ def annot_svg(data, tx, ty) -> list[str]:
             ang = degrees(atan2(upy, upx))
             ang = ang - 180.0 if ang > 90.0 else (ang + 180.0 if ang <= -90.0 else ang)
             out.append(f'<text transform="translate({tx(tpos[0]):.3f},{ty(tpos[1]):.3f}) rotate({ang:.2f})" text-anchor="middle" '
-                       f'dy="-0.8" stroke="none">{escape(text)}</text>')
+                       f'dy="-0.8" stroke="none">{_esc(text)}</text>')
             out.append("</g>")
         elif t == "tag":
             _, _, anc, lab, text = it
             out.append(f'<g class="tag" data-id="{aid}" fill="#8a3b00" stroke="#8a3b00">')
             out.append(f'<line x1="{tx(anc[0]):.3f}" y1="{ty(anc[1]):.3f}" x2="{tx(lab[0]):.3f}" y2="{ty(lab[1]):.3f}"/>')
             out.append(f'<circle cx="{tx(anc[0]):.3f}" cy="{ty(anc[1]):.3f}" r="0.5" stroke="none"/>')
-            out.append(f'<text x="{tx(lab[0]) + 0.6:.3f}" y="{ty(lab[1]):.3f}" stroke="none">{escape(text)}</text>')
+            out.append(f'<text x="{tx(lab[0]) + 0.6:.3f}" y="{ty(lab[1]):.3f}" stroke="none">{_esc(text)}</text>')
             out.append("</g>")
         else:
             _, _, kind, reason, x, y = it
@@ -106,7 +115,7 @@ def annot_svg(data, tx, ty) -> list[str]:
             out.append(f'<line x1="{px - 1:.3f}" y1="{py - 1:.3f}" x2="{px + 1:.3f}" y2="{py + 1:.3f}"/>'
                        f'<line x1="{px - 1:.3f}" y1="{py + 1:.3f}" x2="{px + 1:.3f}" y2="{py - 1:.3f}"/>'
                        f'<circle cx="{px:.3f}" cy="{py:.3f}" r="1.6" fill="none" stroke-dasharray="0.6 0.4"/>')
-            out.append(f'<text x="{px + 2.2:.3f}" y="{py + 0.8:.3f}" stroke="none">{escape(label)}</text>')
+            out.append(f'<text x="{px + 2.2:.3f}" y="{py + 0.8:.3f}" stroke="none">{_esc(label)}</text>')
             out.append("</g>")
     out.append("</g>")
     return out
@@ -125,7 +134,7 @@ def render_svg(data) -> bytes:
     w, h, tx, ty, datums, (dx0, dx1) = _frame(data)
     out = [f'<?xml version="1.0" encoding="UTF-8"?>\n<svg xmlns="http://www.w3.org/2000/svg" width="{w:.2f}mm" height="{h:.2f}mm" '
            f'viewBox="0 0 {w:.2f} {h:.2f}" font-family="{FONT}">',
-           f'<title>{escape(title_text(data))}</title>',
+           f'<title>{_esc(title_text(data))}</title>',
            f'<rect x="0" y="0" width="{w:.2f}" height="{h:.2f}" fill="#ffffff"/>']
     if data["fills"]:
         out.append('<g id="fills" fill="#cfcfcf" stroke="none">')
@@ -136,7 +145,7 @@ def render_svg(data) -> bytes:
         out.append(f'<g id="datums" stroke="#555555" stroke-width="{DATUM_W}" stroke-dasharray="3 1.5" fill="#555555" font-size="2.6">')
         for name, z in datums:
             out.append(f'<line x1="{tx(dx0):.3f}" y1="{ty(z):.3f}" x2="{tx(dx1):.3f}" y2="{ty(z):.3f}"/>')
-            out.append(f'<text x="{tx(dx0) + 1:.3f}" y="{ty(z) - 0.8:.3f}" stroke="none">{escape(datum_label(name, z))}</text>')
+            out.append(f'<text x="{tx(dx0) + 1:.3f}" y="{ty(z) - 0.8:.3f}" stroke="none">{_esc(datum_label(name, z))}</text>')
         out.append("</g>")
     for cls in ("proj", "symbol", "cut"):                    # 굵은 선이 위로 온다
         sel = [ln for ln in data["lines"] if ln[0] == cls]
@@ -148,7 +157,7 @@ def render_svg(data) -> bytes:
             out.append(f'<line x1="{tx(x0):.3f}" y1="{ty(y0):.3f}" x2="{tx(x1):.3f}" y2="{ty(y1):.3f}"/>')
         out.append("</g>")
     out += annot_svg(data, tx, ty)
-    out.append(f'<text x="{MARGIN}" y="{h - 5:.2f}" font-size="5" fill="#000000">{escape(title_text(data))}</text>')
+    out.append(f'<text x="{MARGIN}" y="{h - 5:.2f}" font-size="5" fill="#000000">{_esc(title_text(data))}</text>')
     out.append("</svg>\n")
     return "\n".join(out).encode("utf-8")
 

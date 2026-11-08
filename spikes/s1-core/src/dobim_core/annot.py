@@ -7,6 +7,7 @@
 
     wall   axis.start / axis.end   축선 양 끝점(조인 보정 전)             pt
            trim.start / trim.end   조인으로 정리된 벽 양 끝점(축선 위)     pt
+           own.end / own.trim.end  이 벽 자신의 현재 끝점(분할 이력을 따라가지 않는다)  pt
            axis / face.left / face.right  축선, 진행 방향 왼쪽·오른쪽 면선   line
            base / top              벽 밑·윗면 높이(레벨 + 벽 높이)         z
     door   center / jamb.start / jamb.end  호스트 축선 위 문 중심·문틀 양쪽  pt
@@ -15,8 +16,11 @@
 
 요소 id 만으로 부족한 경우의 규칙:
     - 벽 분할(wall.split): 분할은 벽의 "끝"을 새 벽에 넘긴다. 분할 이력은 관계 succ(원래 벽 -> 끝 쪽을 가진 벽)로 남고,
-      끝 역할(axis.end, trim.end)은 이 관계를 끝까지 따라가 마지막 벽의 같은 역할로 해석된다. 그래서 치수 값이 변하지 않는다.
+      끝 역할(axis.end, trim.end)은 이 관계를 끝까지 따라가 사슬 끝 벽의 같은 역할로 해석된다("원래 끝", chain). 그래서 치수 값이 변하지 않는다.
+      사슬 중간 벽이 지워져도 succ 는 지워진 벽을 지나 이어지므로, 사슬 끝 벽이 살아 있으면 값이 나온다.
+      사슬 끝 벽까지 없을 때만 successor_deleted 다. 분할 뒤 이 벽 자신의 끝을 재려면 own.end / own.trim.end 를 쓴다.
       시작·선·면·높이 역할은 원래 벽에 남는다(분할 뒤에도 같은 직선이고 같은 시작점이다).
+    - 한 번이라도 succ 에 쓰인 id 는 다시 만들 수 없다(wall.split 의 new_id 와 모든 생성 커맨드가 거절한다). 그래서 succ 는 순환하지 않는다.
     - 문 이동·문 폭 변경·조인 변경·벽 이동은 id 와 역할이 그대로이고 기하만 달라진다. 참조는 끊기지 않고 값이 따라간다.
     - 문이 분할로 다른 벽에 옮겨져도 문 id 가 그대로라 참조가 유지된다(호스트는 문의 속성이지 참조의 일부가 아니다).
 
@@ -26,22 +30,30 @@
     bad_ref            문법이 틀렸거나 그 종류에 없는 역할(생성 때 거절하므로 정상 흐름에서는 나오지 않는다)  고아 위반
     대상이 살아 있는데 고아로 나오면(또는 대상이 없는데 값이 나오면) 결함이다. 시험의 오라클이 이를 세운다.
 
+경고(고아가 아니다): direction_changed — 치수를 만들 때 방향에 의존하는 참조(시작·끝·왼쪽·오른쪽·문틀)의 벽 축선 단위 방향을
+    params.dirs 에 지문으로 저장하고, 지금 방향과 내적이 음수(90도 넘게 돌았거나 반전)이면 알린다. 값은 그대로 따라가지만
+    "시작"이 다른 쪽 끝이 된 것이므로 사람이 확인해야 한다(annot.check 의 warnings). annot.rebind 로 같은 참조를 다시 묶으면 지문이 갱신된다.
+    값이 유한하지 않으면(좌표가 1e308 근처라 제곱이 넘침) 값을 만들지 않고 invalid:non_finite 로 낸다.
+
 queries.py 와 같은 규칙: 순수 함수, 시각·난수·파일 접근 금지, sqrt 와 사칙연산만.
 """
 from __future__ import annotations
 
-from math import sqrt
+from math import isfinite, sqrt
 
 from dobim_core import drawing as D
 from dobim_core import queries as Q
 
 ROLE_TYPES = {
-    "wall": {"axis.start": "pt", "axis.end": "pt", "trim.start": "pt", "trim.end": "pt",
+    "wall": {"axis.start": "pt", "axis.end": "pt", "trim.start": "pt", "trim.end": "pt", "own.end": "pt", "own.trim.end": "pt",
              "axis": "line", "face.left": "line", "face.right": "line", "base": "z", "top": "z"},
     "door": {"center": "pt", "jamb.start": "pt", "jamb.end": "pt", "sill": "z", "head": "z"},
     "level": {"elevation": "z"},
 }
-END_ROLES = frozenset({"axis.end", "trim.end"})
+END_ROLES = frozenset({"axis.end", "trim.end"})           # 분할 이력(succ)을 따라가는 역할
+OWN_ROLE = {"own.end": "axis.end", "own.trim.end": "trim.end"}   # 이력을 따라가지 않는 짝
+DIR_ROLES = {"wall": frozenset({"axis.start", "axis.end", "trim.start", "trim.end", "own.end", "own.trim.end", "face.left", "face.right"}),
+             "door": frozenset({"center", "jamb.start", "jamb.end"})}   # 벽 축선의 방향에 의미가 걸린 역할
 TAG_FIELDS = {
     "wall": ("name", "thickness", "height", "length", "fire_rating", "material", "level"),
     "door": ("name", "width", "height", "sill", "fire_rating", "material", "level", "host"),
@@ -73,6 +85,20 @@ def ref_type(ref: str):
     return None if p is None else ROLE_TYPES[p[0]][p[2]]
 
 
+# ================================================================ 방향 지문
+def unit_dir(axis):
+    """축선 [x1,y1,x2,y2] 의 단위 방향 (소수 6자리). 길이 0 이면 None."""
+    dx, dy = axis[2] - axis[0], axis[3] - axis[1]
+    ln = sqrt(dx * dx + dy * dy)
+    if not isfinite(ln) or ln < 1e-9:
+        return None
+    return [round(dx / ln, 6), round(dy / ln, 6)]
+
+
+def uses_direction(kind: str, role: str) -> bool:
+    return role in DIR_ROLES.get(kind, ())
+
+
 # ================================================================ 참조 해석 (그래프 노드: 참조 문자열 하나가 노드 하나)
 def ref_resolve(g, ref):
     """참조를 기하로 푼다. 반환:
@@ -93,13 +119,30 @@ def ref_resolve(g, ref):
     return ("z", g.q(Q.level_info, eid)[1])
 
 
+def chain_tail(g, w):
+    """분할 이력(succ)을 끝까지 따라간 마지막 벽 id(지워진 벽을 지나도 이어진다). 순환이면 None(불변식 위반: 정상 흐름에서는 없다)."""
+    seen, x = {w}, w
+    while True:
+        nxt = Q.rel_out(g, "succ", x)
+        if not nxt:
+            return x
+        x = nxt[0]
+        if x in seen:
+            return None
+        seen.add(x)
+
+
 def _wall_ref(g, w, role, row):
-    if role in END_ROLES:                         # 분할로 끝을 넘겨준 벽이면 이어받은 벽의 같은 역할로 해석한다
-        nxt = Q.rel_out(g, "succ", w)
-        if nxt:
-            if Q.el(g, nxt[0]) is None:
+    if role in OWN_ROLE:                          # 자기 끝: 이력을 따라가지 않고 이 벽의 같은 끝 역할로 바로 푼다
+        role = OWN_ROLE[role]
+    elif role in END_ROLES:                       # 분할로 끝을 넘겨준 벽이면 사슬 끝 벽의 같은 역할로 해석한다
+        tail = chain_tail(g, w)
+        if tail is None:
+            return ("orphan", "bad_ref")
+        if tail != w:
+            if Q.el(g, tail) is None:
                 return ("orphan", "successor_deleted")
-            return g.q(ref_resolve, make_ref("wall", nxt[0], role))
+            return g.q(ref_resolve, make_ref("wall", tail, role))
     p = row["params"]
     if role == "axis.start":
         return ("pt", p["axis"][0], p["axis"][1])
@@ -135,7 +178,15 @@ def _door_ref(g, d, role, row):
 
 # ================================================================ 치수 값
 def measure(ra, rb):
-    """두 해석 결과 사이의 거리. ("ok", 값) 또는 ("invalid", 이유). 평면 거리와 높이 거리는 섞지 않는다."""
+    """두 해석 결과 사이의 거리. ("ok", 값) 또는 ("invalid", 이유). 평면 거리와 높이 거리는 섞지 않는다.
+    좌표가 너무 커서 제곱이 넘치면 inf/nan 이 나오는데, 이 값으로 글자를 만들면 터지므로 값 없음(non_finite)으로 낸다."""
+    st, v = _measure(ra, rb)
+    if st == "ok" and not isfinite(v):
+        return ("invalid", "non_finite")
+    return st, v
+
+
+def _measure(ra, rb):
     ta, tb = ra[0], rb[0]
     if "orphan" in (ta, tb):
         return ("invalid", "orphan_ref")
@@ -168,11 +219,55 @@ def dim_value(g, d):
     return measure(ra, rb)
 
 
+def dim_flags(g, d):
+    """치수의 경고: ("direction_changed:a" | "direction_changed:b", ...). 만들 때 저장한 방향 지문과 지금 벽 축선 방향의 내적이 음수이면 낸다.
+    사슬 끝 역할(axis.end, trim.end)은 값을 내는 사슬 끝 벽의 방향도 본다. 고아·무효와는 별개의 경고다(값은 그대로 따라간다)."""
+    row = Q.el(g, d)
+    if row is None or row["kind"] != "dim":
+        return ()
+    p = row["params"]
+    dirs = p.get("dirs") or {}
+    out = []
+    for side in ("a", "b"):
+        fp = dirs.get(side)
+        pr = parse_ref(p[side])
+        if fp is None or pr is None:
+            continue
+        kind, eid, role = pr
+        cand = []
+        if Q.el(g, eid) is not None:
+            if kind == "wall":
+                cand.append(eid)
+                if role in END_ROLES:
+                    tail = chain_tail(g, eid)
+                    if tail is not None and tail != eid and Q.el(g, tail) is not None:
+                        cand.append(tail)
+            else:
+                cand.append(g.q(Q.door_host, eid))
+        for w in cand:
+            cur = unit_dir(Q.el(g, w)["params"]["axis"])
+            if cur is not None and cur[0] * fp[0] + cur[1] * fp[1] < 0:
+                out.append(f"direction_changed:{side}")
+                break
+    return tuple(out)
+
+
+def annot_flags(g, a):
+    """주석 하나의 경고 목록(치수만 있다)."""
+    return g.q(dim_flags, a)
+
+
 # ================================================================ 태그 텍스트
 def fmt_num(v) -> str:
-    """mm 값을 글자로. 0.05 미만 차이는 정수로 본다."""
+    """mm 값을 글자로. 0.05 미만 차이는 정수로 본다. 유한하지 않은 값은 호출 쪽이 먼저 걸러야 하며, 오면 '-' 로 낸다(터지지 않게)."""
+    if not isfinite(v):
+        return "-"
     r = round(v)
     return str(int(r)) if abs(v - r) < 0.05 else f"{v:.1f}"
+
+
+class _NonFinite(Exception):
+    """태그 필드 값이 유한하지 않다(좌표가 너무 커서 길이가 넘쳤다). tag_text 가 받아 invalid:non_finite 로 낸다."""
 
 
 def _field(g, kind, eid, row, name):
@@ -184,7 +279,10 @@ def _field(g, kind, eid, row, name):
     if kind == "wall":
         lv = g.q(Q.wall_level, eid)
         if name == "length":
-            return fmt_num(g.q(Q.wall_length, eid))
+            n = g.q(Q.wall_length, eid)
+            if not isfinite(n):
+                raise _NonFinite()
+            return fmt_num(n)
         pset = "Pset_WallCommon"
     else:
         w = g.q(Q.door_host, eid)
@@ -202,7 +300,7 @@ def _field(g, kind, eid, row, name):
 
 
 def tag_text(g, t):
-    """태그 하나의 상태: ("ok", 글) | ("orphan", ((target, 이유),)) | ("gone",)."""
+    """태그 하나의 상태: ("ok", 글) | ("orphan", ((target, 이유),)) | ("invalid", 이유) | ("gone",)."""
     row = Q.el(g, t)
     if row is None:
         return ("gone",)
@@ -212,7 +310,10 @@ def tag_text(g, t):
         return ("orphan", (("target", "target_deleted"),))
     if tgt["kind"] not in TAG_FIELDS or any(f not in TAG_FIELDS[tgt["kind"]] for f in p["fields"]):
         return ("orphan", (("target", "bad_ref"),))
-    return ("ok", " ".join(_field(g, tgt["kind"], p["target"], tgt, f) for f in p["fields"]))
+    try:
+        return ("ok", " ".join(_field(g, tgt["kind"], p["target"], tgt, f) for f in p["fields"]))
+    except _NonFinite:
+        return ("invalid", "non_finite")
 
 
 def annot_state(g, a):
@@ -225,7 +326,9 @@ def annot_state(g, a):
 
 # ================================================================ 그림 (뷰 좌표, SVG 내보내기용)
 def _r(*vals):
-    return tuple(round(v, RND) for v in vals)
+    # + 0.0 은 -0.0 을 0.0 으로 바꾼다: 증분 그래프는 값이 같으면(-0.0 == 0.0) 옛 값을 그대로 두므로, 부호 있는 0 이 남으면
+    # 기준 그래프와 해시가 달라진다(축선 반전을 섞은 임의 편집열이 찾았다)
+    return tuple(round(v, RND) + 0.0 for v in vals)
 
 
 def _foot(pt, ln):
@@ -275,13 +378,17 @@ def annot_draw(g, a):
     st = g.q(dim_value if kind == "dim" else tag_text, a)
     if st[0] == "orphan":
         return ("orphan", a, kind, st[1][0][1], *_r(*p["home"]))
+    if st[0] != "ok":
+        return ("invalid", a, kind, st[1], *_r(*p["home"]))
     if kind == "dim":
-        if st[0] != "ok":
-            return ("invalid", a, kind, st[1], *_r(*p["home"]))
         ra, rb = g.q(ref_resolve, p["a"]), g.q(ref_resolve, p["b"])
         e0, e1, line, tpos, u = dim_geometry(g, p, ra, rb)
+        if not all(isfinite(v) for part in (e0, e1, line, tpos, u) for v in part):   # 값은 유한해도 보조선 계산이 넘칠 수 있다
+            return ("invalid", a, kind, "non_finite", *_r(*p["home"]))
         return ("dim", a, e0, e1, line, fmt_num(st[1]), tpos, u)
     ax, ay = tag_anchor(g, p["target"])
+    if not (isfinite(ax) and isfinite(ay)):
+        return ("invalid", a, kind, "non_finite", *_r(*p["home"]))
     return ("tag", a, _r(ax, ay), _r(ax + p["off"][0], ay + p["off"][1]), st[1])
 
 
@@ -312,7 +419,8 @@ def all_annots(g):
 def annot_bundle(g):
     """차등 시험용: 모든 주석의 값 상태와 그림. 증분 그래프와 기준 그래프가 같아야 한다."""
     ids = g.q(all_annots)
-    return {"state": {a: g.q(annot_state, a) for a in ids}, "draw": {a: g.q(annot_draw, a) for a in ids}}
+    return {"state": {a: g.q(annot_state, a) for a in ids}, "draw": {a: g.q(annot_draw, a) for a in ids},
+            "flags": {a: g.q(annot_flags, a) for a in ids}}
 
 
 def classify(st) -> str:
@@ -328,4 +436,4 @@ def classify(st) -> str:
 
 
 # 질의 노드가 주석 전용인지 알아보기 위한 함수 집합(계측용: 편집 하나가 다시 계산시킨 주석 노드 수)
-ANNOT_FNS = frozenset({ref_resolve, dim_value, tag_text, annot_state, annot_draw, view_annots})
+ANNOT_FNS = frozenset({ref_resolve, dim_value, dim_flags, annot_flags, tag_text, annot_state, annot_draw, view_annots})
