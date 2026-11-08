@@ -937,7 +937,7 @@ def check_token_budget(work: Path) -> list[str]:
     for korean in (False, True):
         m = size_check.build(work, korean)
         c = size_check.InProc(work)
-        rows = asyncio.run(size_check.measure(c, encs, m, korean))
+        rows = asyncio.run(size_check.measure(c, encs, m, "한글" if korean else "영문"))
         asyncio.run(c.close())
         for r in rows:
             t = max(r["worst"]["tokens"].values())

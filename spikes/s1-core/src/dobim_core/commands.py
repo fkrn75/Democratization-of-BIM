@@ -164,7 +164,7 @@ def commands_search(env, a: Search):
     after = _dec_cursor(a.cursor, "name")
     start = 0 if after is None else next((i for i, c in enumerate(rows) if c["name"] > after), len(rows))
     window = rows[start:start + a.limit]
-    items, cut = _fit(window, cursor_of=lambda i: _enc_cursor(window[i]["name"]))
+    items, cut = _fit(window, cursor_of=lambda i: _enc_cursor(window[i]["name"]), trusted=True)   # 레지스트리 내용: 입력이 섞이지 않는다
     more = start + len(items) < len(rows)
     return {"items": items, "page": _page(_enc_cursor(items[-1]["name"]) if more else None, len(rows), cut)}
 

@@ -188,7 +188,7 @@ async def measure(caller, encs, m: dict, lang: str) -> list:
     return rows
 
 
-async def run(out: str, inproc: bool, cap: int | None) -> int:
+async def run(out: str, inproc: bool, cap: int | None, all_classes: bool = False) -> int:
     import tiktoken
     if cap:
         limits.RESPONSE_CAP_BYTES = cap
@@ -201,7 +201,8 @@ async def run(out: str, inproc: bool, cap: int | None) -> int:
     import token_campaign as T   # 문자 종류별 적대 모델: 이름 64자·속성값 255자를 종류별로 채운다(합격 기준의 일곱 종류 + 교대 패턴)
     rnd = random.Random(21)
     for cname, gen in T.classes(rnd).items():
-        if cname in T.REQUIRED or cname in ("숫자-기호 교대", "문자-숫자 교대"):
+        wanted = (T.REQUIRED + ("숫자-기호 교대", "문자-숫자 교대")) if all_classes else ("무작위 한글", "이모지", "제어문자")
+        if cname in wanted:
             cm = T.build(work, cname, gen, rnd, n_wall=420, n_door=150, n_pset=40)
             cm["s"].close()
             models.append((cname, {"project": cm["s"].path.name, "level": cm["level"], "walls": cm["walls"], "random": rnd}))
@@ -218,7 +219,7 @@ async def run(out: str, inproc: bool, cap: int | None) -> int:
            "transport": "in-process dispatch" if inproc else "stdio MCP 서버 + 공식 SDK 클라이언트",
            "tiktoken": tiktoken.__version__, "encodings": list(ENCODINGS), "python": platform.python_version(),
            "model": {"walls": N_WALL, "doors": N_DOOR, "random_guid": True,
-                     "names": ["영문", "한글 64자"] + ["문자 종류별 이름 64자·값 255자: " + ", ".join(T_REQUIRED)]},
+                     "names": ["영문", "한글 64자"] + ["문자 종류별 이름 64자·값 255자: " + ", ".join(T_REQUIRED if all_classes else ["무작위 한글", "이모지", "제어문자"])]},
            "cap": {"RESPONSE_CAP_BYTES": limits.RESPONSE_CAP_BYTES, "RESPONSE_CAP_TOKENS": limits.RESPONSE_CAP_TOKENS},
            "target_tokens": TARGET_TOKENS, "worst_tokens_any": worst, "rows": rows,
            "pass": worst <= TARGET_TOKENS and all(r.get("history_affected_matches_counts", True) for r in rows)}
@@ -235,8 +236,9 @@ def main() -> int:
     ap.add_argument("out")
     ap.add_argument("--inprocess", action="store_true")
     ap.add_argument("--cap", type=int, default=None)
+    ap.add_argument("--all-classes", action="store_true", help="문자 종류별 모델을 모두 잰다(기본은 무작위 한글·이모지·제어문자만: 시간 절약)")
     ns = ap.parse_args()
-    return asyncio.run(run(ns.out, ns.inprocess, ns.cap))
+    return asyncio.run(run(ns.out, ns.inprocess, ns.cap, ns.all_classes))
 
 
 if __name__ == "__main__":

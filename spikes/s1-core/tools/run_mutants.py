@@ -650,7 +650,7 @@ def m_warnings_uncapped():
 @contextmanager
 def m_fit_fixed_reserve():
     """[3] 목록 자르기가 봉투 뼈대·다음 쪽 커서를 실제 크기로 재지 않고 고정 예비 900바이트로 어림한다(이모지·제어문자 이름이면 상한 초과)."""
-    def old_fit(rows, base=None, cursor_of=None, extra_bytes=0, extra_tokens=0.0):
+    def old_fit(rows, base=None, cursor_of=None, extra_bytes=0, extra_tokens=0.0, trusted=False):
         used = 900 + (limits.jsize(base) if base else 0)
         out = []
         for r in rows:

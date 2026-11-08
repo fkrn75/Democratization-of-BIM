@@ -100,11 +100,13 @@ def _skeleton(result: Any, pg: Any, affected: dict | None = None, warnings: list
 
 
 def fit(rows: list, base: dict | None = None, cursor_of: Callable[[int], str] | None = None,
-        extra_bytes: int = 0, extra_tokens: float = 0.0) -> tuple[list, bool]:
+        extra_bytes: int = 0, extra_tokens: float = 0.0, trusted: bool = False) -> tuple[list, bool]:
     """rows 를 앞에서부터 상한 안에서 담는다. (담은 항목, 상한 때문에 잘렸는지). 최소 한 건은 담아 이어받기가 진전된다.
 
     크기는 실제 봉투로 잰다: 봉투 뼈대 + base(result 의 다른 키들) + 항목들 + 다음 쪽 커서(그 항목이 마지막일 때의 실제 길이).
     cursor_of(i) 는 rows[i] 가 마지막 항목일 때 낼 커서 문자열이다(없으면 최악 길이를 가정한다).
+    trusted=True 는 내용을 개발자가 정한 정적 목록(커맨드 레지스트리)용이다: 입력이 섞이지 않으므로 보수적인 토큰 추정을 쓰지 않고 바이트 상한만 본다.
+    (실측은 results/s1_response_sizes.json 의 commands.search 행: 합계 3,404토큰.)
     (한 건이 상한보다 큰 경우는 그 한 건을 그대로 돌려준다: 단건은 입력 길이 상한과 호출자의 분할이 책임진다.)"""
     skel = _skeleton({**(base or {}), "items": []}, page("", _BIG, True))
     used_b = jsize(skel) + extra_bytes
@@ -113,7 +115,7 @@ def fit(rows: list, base: dict | None = None, cursor_of: Callable[[int], str] | 
     for i, r in enumerate(rows):
         cur = cursor_of(i) if cursor_of else "a" * DEFAULT_CURSOR_CHARS
         b, t = jsize(r) + len(cur), est_tokens(r) + W_LIST_ENTRY + str_tokens(cur)
-        if out and (used_b + b > RESPONSE_CAP_BYTES or used_t + t > RESPONSE_CAP_TOKENS):
+        if out and (used_b + b > RESPONSE_CAP_BYTES or (not trusted and used_t + t > RESPONSE_CAP_TOKENS)):
             return out, True
         used_b += jsize(r)
         used_t += est_tokens(r) + W_LIST_ENTRY
