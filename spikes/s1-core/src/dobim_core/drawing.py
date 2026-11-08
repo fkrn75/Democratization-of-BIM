@@ -13,7 +13,7 @@ queries.py 와 같은 규칙을 따른다: 순수 함수, 시각·난수·파일
     view_lines(V)            뷰 하나의 최종 선분(겹침 병합 포함)
 
 좌표: 평면은 (x, y) mm 위가 +y. 단면·입면은 (s, z): s 는 오른쪽, z 는 위. 가림 판정용 깊이 w 는 보는 사람에서 멀어질수록 크다.
-알려진 한계는 spikes/s3-drawings/results/report.md 에 적었다.
+알려진 한계는 spikes/s3-drawings/report.md 에 적었다.
 """
 from __future__ import annotations
 
@@ -350,7 +350,7 @@ def plan_wall_lines(g, v, w):
             lines += [("proj", a[0], a[1], b[0], b[1]) for a, b in outline_edges(list(proj), others, w)]
     if cut:
         for op in sol[9]:
-            if op[2] <= cfg[2] + EPS:
+            if op[2] <= cfg[2] + EPS and cfg[2] <= op[3] + EPS:   # 절단면이 문 개구부 높이 안에 있을 때만(문 위를 자르면 벽이 이어져 문이 안 보인다)
                 lines += _door_symbol(sol, op)
     return tuple(lines)
 
@@ -697,8 +697,13 @@ def view_cache_state(g, vids):
     return out
 
 
-def views_depending_on(g, input_keys, vids):
-    """입력 노드들에서 역의존을 따라가 도달하는 뷰 선분 노드의 뷰 id. 아직 계산한 적 없는 뷰(캐시 없음)는 보수적으로 포함한다."""
+def views_depending_on(g, input_keys, vids, include_not_fresh=True):
+    """입력 노드들에서 역의존을 따라가 도달하는 뷰 선분 노드의 뷰 id(살아 있는 뷰 vids 안에서만).
+    보수적으로 더 포함하는 뷰 (놓치는 것보다 많이 알리는 쪽이 안전하다):
+      - 아직 계산한 적 없는 뷰(캐시 없음): 읽은 입력을 모른다. 항상 포함.
+      - 다시 계산하지 않아 낡은(stale) 뷰: 의존 목록이 마지막 계산 때 것이라, 그 뒤 새로 읽게 될 입력(새 벽 등)을 모른다.
+        include_not_fresh=False 면 뺀다(시험이 키 따라가기만 따로 검사하려고 쓴다)."""
+    live = set(vids)
     seen, todo = set(), []
     for k in input_keys:
         n = g.nodes.get(k)
@@ -713,4 +718,20 @@ def views_depending_on(g, input_keys, vids):
         if n.key[0] is view_lines:
             hit.add(n.key[1])
         todo.extend(n.rdeps)
-    return sorted(hit | {v for v in vids if (view_lines, v) not in g.nodes})
+    state = view_cache_state(g, vids)
+    extra = {v for v, s in state.items() if s == "new" or (include_not_fresh and s != "fresh")}
+    return sorted((hit | extra) & live)
+
+
+# 뷰 하나에 딸린 질의 노드의 함수들 (첫 인자가 뷰 id). 뷰를 지우면 이 노드들을 그래프에서 치운다.
+VIEW_SCOPED = frozenset({view_cfg, scope_walls, plan_pieces, plan_bbox, plan_nbrs, plan_wall_lines, vpieces, vbbox, vnbrs,
+                         vcut_rects, vedges, vwall_lines, view_lines, view_fills})
+
+
+def forget_views(g, vids) -> int:
+    """지워진 뷰의 질의 노드(선분·조각·경계 상자 등)를 그래프에서 치운다. 치운 노드 수를 돌려준다.
+    뷰 id 는 다른 요소와 겹치지 않으므로 (함수, 뷰 id, ...) 노드만 정확히 골라낸다."""
+    vids = set(vids)
+    if not vids:
+        return 0
+    return g.drop([k for k in g.nodes if k[0] in VIEW_SCOPED and k[1] in vids])

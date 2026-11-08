@@ -71,6 +71,23 @@ class Graph:
         node.changed = self.clock
         self._mark(node)
 
+    def drop(self, keys) -> int:
+        """질의 노드를 그래프에서 치운다(뷰 삭제 뒤의 낡은 노드 정리용). 치우는 노드를 아직 읽고 있는 남은 노드가 있으면
+        그 노드는 처음부터 다시 계산하게 표시한다. 입력 노드도 치울 수 있고, 다음에 읽으면 다시 만들어진다."""
+        gone = [n for n in (self.nodes.pop(k, None) for k in keys) if n is not None]
+        for n in gone:
+            for d in n.deps:
+                d.rdeps.discard(n)
+        gone_ids = {id(n) for n in gone}
+        for n in gone:
+            for r in n.rdeps:
+                if id(r) not in gone_ids:
+                    r.deps = [d for d in r.deps if d is not n]
+                    r.state = NEW
+                    self._mark(r)
+            n.rdeps = set()
+        return len(gone)
+
     def _mark(self, node: Node) -> None:
         todo = list(node.rdeps)
         on_mark = self.on_mark

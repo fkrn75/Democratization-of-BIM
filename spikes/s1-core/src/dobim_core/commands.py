@@ -599,7 +599,20 @@ class Validate(A):
 def model_validate(ctx, a: Validate):
     ctx.eng.flush_ifc()
     v = ctx.eng.ifc.validate(express=a.express_rules)
-    return {"errors": v["errors"], "warnings": v["warnings"], "violations": v["samples"]}
+    dangling = _dangling_view_levels(ctx)
+    samples = v["samples"] + [f"평면 뷰 '{name}' 의 레벨이 없다: {lv}" for name, lv in dangling]
+    return {"errors": v["errors"] + len(dangling), "warnings": v["warnings"], "violations": samples[:8]}
+
+
+def _dangling_view_levels(ctx) -> list:
+    """평면 뷰가 가리키는 레벨이 없는(지워진) 경우 [(뷰 이름, 레벨 id)]. 이런 뷰는 선분이 비어 도면이 조용히 사라진다."""
+    st = ctx.st
+    out = []
+    for vid in sorted(st.by_kind.get("view", ())):
+        p = st.el[vid]["params"]
+        if p["type"] == "plan" and st.el.get(p["level"], {}).get("kind") != "level":
+            out.append((p["name"], p["level"]))
+    return out
 
 
 class ScheduleRows(A):
@@ -648,7 +661,9 @@ def schedule_summary(ctx, a: ScheduleKind):
 
 
 # ================================================================ 뷰·도면 (S3)
-Point2 = Annotated[list[Num], Field(min_length=2, max_length=2, description="[x,y] mm")]
+# 뷰 좌표·거리는 ±1e7mm(10km)로 제한한다: 제곱이 넘치거나(OverflowError) 무한대·NaN 기하가 되는 입력을 스키마에서 거른다
+VCoord = Annotated[float, Field(allow_inf_nan=False, ge=-1e7, le=1e7)]
+Point2 = Annotated[list[VCoord], Field(min_length=2, max_length=2, description="[x,y] mm (±1e7)")]
 Scale = Annotated[int, Field(strict=True, ge=1, le=1000, description="축척 분모 (100 = 1:100)")]
 _PLAN_ONLY, _SEC_ONLY, _ELEV_ONLY = ("level", "cut_height", "view_depth"), ("p1", "p2", "depth", "flip"), ("dir",)
 
@@ -658,11 +673,11 @@ class ViewCreate(A):
     name: Name
     type: Literal["plan", "section", "elevation"]
     level: Id | None = Field(None, description="평면: 레벨 id (필수)")
-    cut_height: Num = Field(1200.0, description="평면: 레벨 바닥에서 절단면까지 mm")
-    view_depth: Num = Field(300.0, ge=0, description="평면: 절단면 아래로 투영선을 보일 깊이 mm")
+    cut_height: VCoord = Field(1200.0, description="평면: 레벨 바닥에서 절단면까지 mm (±1e7)")
+    view_depth: VCoord = Field(300.0, ge=0, description="평면: 절단면 아래로 투영선을 보일 깊이 mm (0..1e7)")
     p1: Point2 | None = Field(None, description="단면: 절단선 시작점 (필수)")
     p2: Point2 | None = Field(None, description="단면: 절단선 끝점 (필수)")
-    depth: Num = Field(20000.0, gt=0, description="단면: 절단면 뒤로 보이는 거리 mm")
+    depth: VCoord = Field(20000.0, gt=0, description="단면: 절단면 뒤로 보이는 거리 mm (0 초과 1e7 이하)")
     flip: bool = Field(False, description="단면: 거짓이면 절단선 진행 방향의 왼쪽을 본다, 참이면 오른쪽")
     dir: Literal["N", "E", "S", "W"] | None = Field(None, description="입면: 건물을 바라보는 면의 방위 (N = 북측 입면, 바깥에서 남쪽을 봄)")
     scale: Scale = 100
@@ -679,11 +694,16 @@ class ViewCreate(A):
         if self.type == "section":
             if self.p1 is None or self.p2 is None:
                 raise ValueError("단면 뷰에는 p1, p2 가 필요하다")
-            if (self.p2[0] - self.p1[0]) ** 2 + (self.p2[1] - self.p1[1]) ** 2 < 1.0:
+            if _seg_len2(self.p1, self.p2) < 1.0:
                 raise ValueError("절단선 길이는 1mm 이상이어야 한다")
         if self.type == "elevation" and self.dir is None:
             raise ValueError("입면 뷰에는 dir 이 필요하다")
         return self
+
+
+def _seg_len2(p1, p2) -> float:
+    dx, dy = p2[0] - p1[0], p2[1] - p1[1]
+    return dx * dx + dy * dy   # ** 대신 곱셈: 좌표 범위가 제한돼 넘치지 않는다
 
 
 def _view_name_free(ctx, name, except_id=None):
@@ -716,11 +736,11 @@ class ViewSet(A):
     forbid_null = True
     id: Id
     name: Name | None = None
-    cut_height: Num | None = None
-    view_depth: Num | None = Field(None, ge=0)
+    cut_height: VCoord | None = None
+    view_depth: VCoord | None = Field(None, ge=0)
     p1: Point2 | None = None
     p2: Point2 | None = None
-    depth: Num | None = Field(None, gt=0)
+    depth: VCoord | None = Field(None, gt=0)
     flip: bool | None = None
     dir: Literal["N", "E", "S", "W"] | None = None
     scale: Scale | None = None
@@ -747,7 +767,7 @@ def view_set(ctx, a: ViewSet):
         p[k] = list(v) if k in ("p1", "p2") else v
     if a.name is not None:
         _view_name_free(ctx, a.name, a.id)
-    if p["type"] == "section" and (p["p2"][0] - p["p1"][0]) ** 2 + (p["p2"][1] - p["p1"][1]) ** 2 < 1.0:
+    if p["type"] == "section" and _seg_len2(p["p1"], p["p2"]) < 1.0:
         raise DobimError("CONSTRAINT", "절단선 길이는 1mm 이상이어야 한다", path="/p2")
     ctx.put_el(a.id, dict(r, params=p))
     return {"id": a.id}
@@ -806,7 +826,7 @@ def view_linework(ctx, a: ViewLinework):
 class ViewExport(A):
     id: Id
     path: str = Field(max_length=260, description="작업 폴더 안의 .svg 또는 .pdf 경로 (확장자가 형식을 정한다). 응답에는 경로·크기·요약만 담는다. PDF 는 글꼴을 내장하지 않아 한글을 물음표로 쓴다")
-    overwrite: bool = Field(False, description="거짓이면 이미 있는 파일을 덮어쓰지 않는다")
+    overwrite: bool = Field(False, description="거짓이면 이미 있는 파일을 덮어쓰지 않는다. 참이면 덮어쓰며 덮어쓰기 전에 자동 스냅숏을 남긴다(이 커맨드는 destructive 라 확인 토큰이 필요하다)")
 
 
 def _render_view(ctx, vid):
@@ -820,31 +840,53 @@ def _render_view(ctx, vid):
             "datums": levels}
 
 
-@command("view.export", kind="job", risk="write", group="view",
-         summary="뷰를 SVG·PDF 파일로 쓴다",
-         args=ViewExport, since="0.1", examples=[{"id": F.V1, "path": "view-example.svg", "overwrite": True}])
-def view_export(ctx, a: ViewExport):
+def _view_export_target(ctx, a: ViewExport):
+    """내보내기 대상 검사(미리보기와 실행이 같이 쓴다): 작업 폴더 안, .svg/.pdf, 스냅숏 폴더·폴더·대체 데이터 스트림(:) 아님, 덮어쓰기 동의."""
     p = resolve_in_workspace(ctx.eng.workspace, a.path)
     ext = p.suffix.lower()
     if ext not in (".svg", ".pdf"):
         raise DobimError("PATH_DENIED", f"내보내기 대상은 .svg 또는 .pdf 여야 한다: {p.name}", path="/path")
-    if SNAP_DIR.lower() in [x.lower() for x in p.parts] or p.is_dir():
+    if SNAP_DIR.lower() in [x.lower() for x in p.parts] or p.is_dir() or ":" in p.name:
         raise DobimError("PATH_DENIED", f"쓸 수 없는 경로다: {p.name}", path="/path")
     if p.exists() and not a.overwrite:
         raise DobimError("FILE_EXISTS", f"이미 있는 파일이다: {p.name}", path="/path", hint="overwrite=true 로 덮어쓰거나 다른 이름을 쓰세요")
+    return p, ext
+
+
+def _view_export_preview(ctx, a: ViewExport):
+    ctx.row(a.id, "view")   # 없는 뷰는 토큰을 내주기 전에 거절한다
+    p, ext = _view_export_target(ctx, a)
+    _snap_dir(p, ctx.eng.workspace)   # 토큰을 내주기 전에 스냅숏 폴더가 안전한지 확인한다
+    return {"will_write": p.name, "format": ext[1:], "overwrites": p.exists(), "snapshot_before_overwrite": p.exists()}
+
+
+# destructive 인 이유: overwrite=true 는 작업 폴더의 기존 파일을 바꾼다(아키텍처의 파괴적 커맨드 규칙: 파일 덮어쓰기 = 확인 토큰 + 자동 스냅숏).
+# ifc.export 와 같은 절차를 탄다: 1회차 미리보기·확인 토큰, 덮어쓰기 전 .dobim-snapshots/<이름>.<번호> 스냅숏(ifc.snapshots 로 목록).
+# 새 파일 내보내기도 같은 절차를 탄다: 확인 없이 쓰는 길을 두지 않는다(overwrite 인자는 토큰이 묶는 인자에 들어간다).
+@command("view.export", kind="session", risk="destructive", group="view",
+         summary="뷰를 SVG·PDF 파일로 쓴다",   # commands.search 가 응답 상한 안에 들도록 짧게(destructive 는 risk 에 나온다)
+         args=ViewExport, since="0.1", preview=_view_export_preview,
+         examples=[{"id": F.V1, "path": "view-example.svg", "overwrite": True}])
+def view_export(ctx, a: ViewExport):
+    p, ext = _view_export_target(ctx, a)
     data = _render_view(ctx, a.id)
     dropped = False
     if ext == ".svg":
         blob = DX.render_svg(data)
     else:
         blob, dropped = DX.render_pdf(data)
-    _replace(p, lambda tmp: tmp.write_bytes(blob))
+    snap = _snapshot_existing(p, ctx.eng.workspace)
+    try:
+        _replace(p, lambda tmp: tmp.write_bytes(blob))
+    except BaseException:   # 쓰지 못했으면 방금 만든 스냅숏은 필요 없다(재시도마다 쌓이지 않게)
+        _drop_snapshot(p, snap, ctx.eng.workspace)
+        raise
     return {"path": p.name, "bytes": len(blob), "format": ext[1:], "segments": len(data["lines"]), "fills": len(data["fills"]),
-            "non_ascii_dropped": dropped, "digest": D.view_summary(data["lines"])["digest"], "rev": ctx.eng.rev}
+            "non_ascii_dropped": dropped, "digest": D.view_summary(data["lines"])["digest"], "rev": ctx.eng.rev, "snapshot": snap}
 
 
 class ViewAffected(A):
-    rev: int | None = Field(None, ge=1, description="변경 응답의 rev. 그 변경이 건드린 요소에 의존하는 뷰를 돌려준다. 생략하면 지금 다시 계산해야 하는(stale·new) 뷰")
+    rev: int | None = Field(None, ge=1, description="변경 응답의 rev. 그 변경이 건드린 입력(요소·목록·관계)에 의존하는 뷰와 다시 계산 안 한 뷰(보수적)를 돌려준다. 생략하면 지금 다시 계산해야 하는(stale·new) 뷰")
 
 
 @command("view.affected", kind="query", risk="read", group="view",
@@ -861,10 +903,10 @@ def view_affected(ctx, a: ViewAffected):
         row_ = ctx.eng.conn.execute("SELECT txn_id FROM op_log WHERE seq=?", (a.rev,)).fetchone()
         if row_ is None:
             raise DobimError("NOT_FOUND", f"로그에 없는 리비전이다: {a.rev}", path="/rev")
-        from dobim_core.engine import affected_of, invert   # 지연 import: 레지스트리 로드가 엔진에 의존하지 않게
-        aff = affected_of([x for e in ctx.eng.txn_entries(row_[0]) for x in invert(json.loads(e[4]))])
-        keys = [("el", e) for k in ("created", "modified", "deleted") for e in aff[k]]
-        hit = D.views_depending_on(g, keys, vids)
+        from dobim_core.engine import input_keys_of, invert   # 지연 import: 레지스트리 로드가 엔진에 의존하지 않게
+        # 효과가 건드린 그래프 입력 키 전체(요소·버킷·개수·관계)에서 역의존을 따라간다. 요소 id 만 보면 새 요소·아직 읽히지 않은 입력을 놓친다
+        keys = input_keys_of([x for e in ctx.eng.txn_entries(row_[0]) for x in invert(json.loads(e[4]))])
+        hit = D.views_depending_on(g, keys, vids)   # vids 는 살아 있는 뷰만이라 지워졌거나 생성 취소된 뷰는 나오지 않는다
         basis = "dependency"
     items = [{"id": v, "name": ctx.st.el[v]["params"]["name"], "type": ctx.st.el[v]["params"]["type"]} for v in hit]
     return {"basis": basis, "count": len(items), "items": items[:200], "truncated": len(items) > 200}

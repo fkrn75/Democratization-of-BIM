@@ -24,6 +24,7 @@ from typing import Any
 
 import ifcopenshell.guid
 
+from dobim_core import drawing as D
 from dobim_core import queries as Q
 from dobim_core.errors import DobimError, internal_error
 from dobim_core.graph import Graph, RefGraph
@@ -253,6 +254,27 @@ class Ctx:
         return self.eng.txn_entries(txn)
 
 
+def input_keys_of(effects: list) -> set:
+    """효과들이 건드리는 그래프 입력 키. `_apply_effect` 가 pending 에 넣는 키와 같아야 한다(시험이 대조한다).
+    view.affected 가 요소 id 만이 아니라 버킷·개수·관계 키까지 따라가게 하려고 있다: 새 요소를 만들면 그 요소의 노드는 아직 없고,
+    그 요소를 처음 읽게 될 뷰는 버킷(`wall` 목록)이나 관계(`on_level`)를 이미 읽고 있기 때문이다."""
+    keys = set()
+    for e in effects:
+        t = e[0]
+        if t == "el":
+            keys.add(("el", e[1]))
+            if e[2] is None or e[3] is None:
+                kind = (e[3] or e[2])["kind"]
+                keys.add(("bucket", kind, Q.bucket_of(e[1])))
+                keys.add(("count", kind))
+        elif t == "rel":
+            keys.add(("rel_out", e[1], e[2]))
+            keys.add(("rel_in", e[1], e[3]))
+        else:   # pset, mat
+            keys.add((t, e[1]))
+    return keys
+
+
 def affected_of(effects: list) -> dict:
     created, deleted, modified = set(), set(), set()
     for e in effects:
@@ -343,6 +365,7 @@ class Engine:
         self._rebuild_ifc(log)
         self._proj_stamp: dict[str, int] = {}
         self._pending: set = set()
+        self._dead_views: set = set()   # 지워진 뷰: 그래프에 남은 그 뷰의 노드를 다음 갱신 때 정리한다
         self.g = Graph(_Inputs(self))
 
     def _rebuild_ifc(self, log):
@@ -391,6 +414,8 @@ class Engine:
             _, eid, old, new = e
             self.st.apply_el(eid, old, new)
             p.add(("el", eid))
+            if new is None and old is not None and old["kind"] == "view":
+                self._dead_views.add(eid)
             try:   # IFC 쪽이 실패하면 메모리 상태도 되돌리고, IFC 는 어떤 상태인지 모르니 오염으로 표시한다
                 if (new or old)["kind"] in Q.NON_IFC_KINDS:
                     pass   # 뷰 정의 같은 비 IFC 요소는 신원이 없다
@@ -487,6 +512,9 @@ class Engine:
         keys, self._pending = self._pending, set()
         for k in keys:
             self.g.touch(k)
+        if self._dead_views:   # 삭제·생성 취소된 뷰의 낡은 노드를 치운다(되살리면 처음부터 다시 계산한다)
+            dead, self._dead_views = self._dead_views, set()
+            D.forget_views(self.g, {v for v in dead if v not in self.st.el})
 
     # ------------------------------------------------------------ 따라잡기 (다른 프로세스의 쓰기)
     def sync(self) -> int:
