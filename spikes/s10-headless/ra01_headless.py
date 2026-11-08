@@ -253,7 +253,8 @@ def main(argv=None) -> int:
     out["platform"] = {"system": platform.system(), "python": platform.python_version(), "machine": platform.machine()}
     if args.timing:
         out["wall_seconds"] = round(time.perf_counter() - t0, 3)
-    sys.stdout.write(json.dumps(out, ensure_ascii=False, sort_keys=True) + "\n")
+    # 콘솔 코드페이지(cp949 등)와 무관하게 UTF-8 바이트로 쓴다(실패 경로의 OS 메시지에 한글이 섞일 수 있다)
+    sys.stdout.buffer.write((json.dumps(out, ensure_ascii=False, sort_keys=True) + "\n").encode("utf-8"))
     sys.stdout.flush()
     return code
 
