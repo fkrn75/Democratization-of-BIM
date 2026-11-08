@@ -1,4 +1,5 @@
 {
+  "mode": "strict",
   "components": [
     {
       "name": "annotated-types",
@@ -6,6 +7,9 @@
       "license_expression": "MIT",
       "license_source": "metadata License-Expression",
       "kind": "python-package",
+      "public_note": "",
+      "url": "https://github.com/annotated-types/annotated-types",
+      "internal_note": "",
       "verdict": "ok",
       "chosen_alternative": "MIT",
       "evidence_count": 1,
@@ -22,6 +26,9 @@
       "license_expression": "MIT",
       "license_source": "metadata License-Expression",
       "kind": "python-package",
+      "public_note": "",
+      "url": "https://github.com/agronholm/anyio",
+      "internal_note": "",
       "verdict": "ok",
       "chosen_alternative": "MIT",
       "evidence_count": 1,
@@ -38,6 +45,9 @@
       "license_expression": "MIT",
       "license_source": "metadata License-Expression",
       "kind": "python-package",
+      "public_note": "",
+      "url": "",
+      "internal_note": "",
       "verdict": "ok",
       "chosen_alternative": "MIT",
       "evidence_count": 2,
@@ -51,17 +61,38 @@
     },
     {
       "name": "Boost (ifcopenshell 휠에 동봉)",
-      "version": "",
+      "version": "1.92.0",
       "license_expression": "BSL-1.0",
-      "license_source": "패턴 표(수동 귀속): Boost Software License",
+      "license_source": "파일 이름 패턴 표(수동 귀속)",
       "kind": "native",
+      "public_note": "Boost Software License",
+      "url": "https://www.boost.org",
+      "internal_note": "",
       "verdict": "ok",
       "chosen_alternative": "BSL-1.0",
-      "evidence_count": 2,
+      "evidence_count": 26,
       "license_file_names": [],
       "evidence_sample": [
+        "ifcopenshell/_ifcopenshell_wrapper.cp312-win_amd64.pyd",
         "ifcopenshell/boost_container-vc143-mt-x64-1_92.dll",
         "ifcopenshell/boost_program_options-vc143-mt-x64-1_92.dll"
+      ]
+    },
+    {
+      "name": "bzip2 (CPython _bz2 에 정적 링크)",
+      "version": "",
+      "license_expression": "bzip2-1.0.6",
+      "license_source": "정적 링크 흔적 탐지(native_libs.py)",
+      "kind": "native",
+      "public_note": "압축 라이브러리",
+      "url": "https://sourceware.org/bzip2",
+      "internal_note": "",
+      "verdict": "ok",
+      "chosen_alternative": "bzip2-1.0.6",
+      "evidence_count": 1,
+      "license_file_names": [],
+      "evidence_sample": [
+        "_bz2.pyd"
       ]
     },
     {
@@ -70,6 +101,9 @@
       "license_expression": "MIT-0",
       "license_source": "metadata License-Expression",
       "kind": "python-package",
+      "public_note": "",
+      "url": "https://github.com/python-cffi/cffi",
+      "internal_note": "",
       "verdict": "ok",
       "chosen_alternative": "MIT-0",
       "evidence_count": 1,
@@ -81,26 +115,14 @@
       ]
     },
     {
-      "name": "CGAL 기반 지오메트리 커널 (ifcopenshell 휠에 동봉)",
-      "version": "",
-      "license_expression": "LicenseRef-CGAL-UNVERIFIED",
-      "license_source": "패턴 표(수동 귀속): CGAL 은 패키지별로 LGPL-3.0+ 또는 GPL-3.0+ 이다. 이 DLL 이 GPL 패키지(Nef 다면체 등)에 링크됐는지 확인되지 않았다 -> 법무 확인 필요. 코어는 지오메트리 커널을 쓰지 않으므로 동결본에서 제거하는 완화책을 시험했다(slim 시험 결과 참고)",
-      "kind": "native",
-      "verdict": "unknown",
-      "chosen_alternative": "LicenseRef-CGAL-UNVERIFIED",
-      "evidence_count": 2,
-      "license_file_names": [],
-      "evidence_sample": [
-        "ifcopenshell/ifcopenshell_geometry_kernel_cgal.dll",
-        "ifcopenshell/ifcopenshell_geometry_kernel_cgalsimple.dll"
-      ]
-    },
-    {
       "name": "click",
       "version": "8.5.1",
       "license_expression": "BSD-3-Clause",
       "license_source": "metadata License-Expression",
       "kind": "python-package",
+      "public_note": "",
+      "url": "https://github.com/pallets/click/",
+      "internal_note": "",
       "verdict": "ok",
       "chosen_alternative": "BSD-3-Clause",
       "evidence_count": 1,
@@ -117,6 +139,9 @@
       "license_expression": "BSD-3-Clause",
       "license_source": "metadata classifier",
       "kind": "python-package",
+      "public_note": "",
+      "url": "https://github.com/tartley/colorama",
+      "internal_note": "",
       "verdict": "ok",
       "chosen_alternative": "BSD-3-Clause",
       "evidence_count": 1,
@@ -131,8 +156,11 @@
       "name": "CPython 3.12 런타임",
       "version": "",
       "license_expression": "PSF-2.0",
-      "license_source": "패턴 표(수동 귀속): 표준 파이썬 배포본. pyexpat 은 expat(MIT)을 포함",
+      "license_source": "파일 이름 패턴 표(수동 귀속)",
       "kind": "native",
+      "public_note": "표준 파이썬 배포본. zlib·bzip2·liblzma·expat·mpdecimal 은 아래 별도 항목",
+      "url": "https://www.python.org",
+      "internal_note": "",
       "reference_keys": [
         "cpython"
       ],
@@ -140,7 +168,7 @@
       "chosen_alternative": "PSF-2.0",
       "evidence_count": 22,
       "license_file_names": [
-        "[참고 사본] cpython: 파이썬 설치본의 LICENSE.txt"
+        "[일반 전문] cpython"
       ],
       "evidence_sample": [
         "_asyncio.pyd",
@@ -154,6 +182,9 @@
       "license_expression": "Apache-2.0 OR BSD-3-Clause",
       "license_source": "metadata License-Expression",
       "kind": "python-package",
+      "public_note": "",
+      "url": "https://github.com/pyca/cryptography/",
+      "internal_note": "",
       "verdict": "ok",
       "chosen_alternative": "Apache-2.0",
       "evidence_count": 2,
@@ -173,6 +204,9 @@
       "license_expression": "MPL-2.0",
       "license_source": "pyproject.toml",
       "kind": "project",
+      "public_note": "",
+      "url": "",
+      "internal_note": "",
       "verdict": "weak",
       "chosen_alternative": "MPL-2.0",
       "evidence_count": 1,
@@ -182,11 +216,74 @@
       ]
     },
     {
-      "name": "GEOS (shapely 휠에 동봉)",
+      "name": "Eigen (헤더 라이브러리, ifcopenshell 에 정적 포함)",
       "version": "",
-      "license_expression": "LGPL-2.1-only",
-      "license_source": "패턴 표(수동 귀속): shapely 의 LICENSE_GEOS. LGPL 이므로 교체 가능해야 한다 (별도 DLL 이라 파일 교체로 충족, 교체 시험은 library_swap 참고)",
+      "license_expression": "MPL-2.0",
+      "license_source": "정적 링크 흔적 탐지(native_libs.py)",
       "kind": "native",
+      "public_note": "선형대수 헤더 라이브러리. MPL-2.0 은 파일 단위 카피레프트이며 소스는 상류에서 받을 수 있다",
+      "url": "https://gitlab.com/libeigen/eigen",
+      "internal_note": "",
+      "reference_keys": [
+        "MPL-2.0"
+      ],
+      "verdict": "weak",
+      "chosen_alternative": "MPL-2.0",
+      "evidence_count": 17,
+      "license_file_names": [
+        "[일반 전문] MPL-2.0"
+      ],
+      "evidence_sample": [
+        "ifcopenshell/_ifcopenshell_wrapper.cp312-win_amd64.pyd",
+        "ifcopenshell/ifcopenshell.geometry.dll",
+        "ifcopenshell/ifcopenshell_document_xml_ifc2x3.dll"
+      ]
+    },
+    {
+      "name": "Expat (CPython pyexpat 에 정적 링크)",
+      "version": "",
+      "license_expression": "MIT",
+      "license_source": "정적 링크 흔적 탐지(native_libs.py)",
+      "kind": "native",
+      "public_note": "XML 파서",
+      "url": "https://libexpat.github.io",
+      "internal_note": "",
+      "verdict": "ok",
+      "chosen_alternative": "MIT",
+      "evidence_count": 2,
+      "license_file_names": [],
+      "evidence_sample": [
+        "_elementtree.pyd",
+        "pyexpat.pyd"
+      ]
+    },
+    {
+      "name": "GCC 런타임 라이브러리 (libgfortran, OpenBLAS 에 정적 링크)",
+      "version": "",
+      "license_expression": "GPL-3.0-or-later WITH GCC-exception-3.1",
+      "license_source": "정적 링크 흔적 탐지(native_libs.py)",
+      "kind": "native",
+      "public_note": "GCC 런타임 라이브러리 예외가 적용된다(컴파일러가 만든 결과물에 런타임을 링크한 경우 독점·다른 라이선스 배포를 허용). 전문은 numpy 항목의 LICENSE.txt 에 있다",
+      "url": "https://gcc.gnu.org/git/?p=gcc.git;a=tree;f=libgfortran",
+      "internal_note": "",
+      "text_in": "numpy",
+      "verdict": "weak",
+      "chosen_alternative": "GPL-3.0-or-later WITH GCC-exception-3.1",
+      "evidence_count": 1,
+      "license_file_names": [],
+      "evidence_sample": [
+        "numpy.libs/libscipy_openblas64_-ed4f167a5330424524f45258e7ca2c8d.dll"
+      ]
+    },
+    {
+      "name": "GEOS (shapely 휠에 동봉)",
+      "version": "3.14.1",
+      "license_expression": "LGPL-2.1-only",
+      "license_source": "파일 이름 패턴 표(수동 귀속)",
+      "kind": "native",
+      "public_note": "LGPL-2.1. 별도 DLL 이라 교체할 수 있다(절차는 LIBRARY-REPLACEMENT.md)",
+      "url": "https://github.com/libgeos/geos",
+      "internal_note": "",
       "verdict": "weak",
       "chosen_alternative": "LGPL-2.1-only",
       "evidence_count": 2,
@@ -204,6 +301,9 @@
       "license_expression": "MIT",
       "license_source": "metadata classifier",
       "kind": "python-package",
+      "public_note": "",
+      "url": "https://github.com/python-hyper/h11",
+      "internal_note": "",
       "verdict": "ok",
       "chosen_alternative": "MIT",
       "evidence_count": 1,
@@ -220,6 +320,9 @@
       "license_expression": "BSD-3-Clause",
       "license_source": "metadata License-Expression",
       "kind": "python-package",
+      "public_note": "",
+      "url": "https://github.com/pydantic/httpx2/blob/main/src/httpcore2",
+      "internal_note": "",
       "verdict": "ok",
       "chosen_alternative": "BSD-3-Clause",
       "evidence_count": 1,
@@ -236,6 +339,9 @@
       "license_expression": "BSD-3-Clause",
       "license_source": "metadata License-Expression",
       "kind": "python-package",
+      "public_note": "",
+      "url": "https://github.com/pydantic/httpx2",
+      "internal_note": "",
       "verdict": "ok",
       "chosen_alternative": "BSD-3-Clause",
       "evidence_count": 1,
@@ -252,6 +358,9 @@
       "license_expression": "BSD-3-Clause",
       "license_source": "metadata License-Expression",
       "kind": "python-package",
+      "public_note": "",
+      "url": "https://github.com/kjd/idna",
+      "internal_note": "",
       "verdict": "ok",
       "chosen_alternative": "BSD-3-Clause",
       "evidence_count": 1,
@@ -268,16 +377,19 @@
       "license_expression": "LGPL-3.0-or-later",
       "license_source": "metadata License-Expression",
       "kind": "python-package",
+      "public_note": "",
+      "url": "https://github.com/IfcOpenShell/IfcOpenShell",
+      "internal_note": "",
       "reference_keys": [
         "LGPL-3.0",
         "GPL-3.0"
       ],
       "verdict": "weak",
       "chosen_alternative": "LGPL-3.0-or-later",
-      "evidence_count": 612,
+      "evidence_count": 611,
       "license_file_names": [
-        "[참고 사본] LGPL-3.0: setuptools 번들(autocommand)의 LGPL-3.0 전문",
-        "[참고 사본] GPL-3.0: Git for Windows 의 GPL-3.0 전문(COPYING3)"
+        "[일반 전문] LGPL-3.0",
+        "[일반 전문] GPL-3.0"
       ],
       "evidence_sample": [
         "ifcopenshell/__init__.py",
@@ -291,6 +403,9 @@
       "license_expression": "MIT",
       "license_source": "metadata License-Expression",
       "kind": "python-package",
+      "public_note": "",
+      "url": "https://github.com/pytest-dev/iniconfig",
+      "internal_note": "",
       "verdict": "ok",
       "chosen_alternative": "MIT",
       "evidence_count": 1,
@@ -307,6 +422,9 @@
       "license_expression": "BSD-3-Clause",
       "license_source": "metadata classifier",
       "kind": "python-package",
+      "public_note": "",
+      "url": "https://github.com/gweis/isodate/",
+      "internal_note": "",
       "verdict": "ok",
       "chosen_alternative": "BSD-3-Clause",
       "evidence_count": 1,
@@ -323,6 +441,9 @@
       "license_expression": "MIT",
       "license_source": "metadata License-Expression",
       "kind": "python-package",
+      "public_note": "",
+      "url": "https://github.com/python-jsonschema/jsonschema",
+      "internal_note": "",
       "verdict": "ok",
       "chosen_alternative": "MIT",
       "evidence_count": 2,
@@ -340,6 +461,9 @@
       "license_expression": "MIT",
       "license_source": "metadata License-Expression",
       "kind": "python-package",
+      "public_note": "",
+      "url": "https://github.com/python-jsonschema/jsonschema-specifications",
+      "internal_note": "",
       "verdict": "ok",
       "chosen_alternative": "MIT",
       "evidence_count": 21,
@@ -358,6 +482,9 @@
       "license_expression": "MIT",
       "license_source": "metadata classifier",
       "kind": "python-package",
+      "public_note": "",
+      "url": "https://github.com/lark-parser/lark",
+      "internal_note": "",
       "verdict": "ok",
       "chosen_alternative": "MIT",
       "evidence_count": 6,
@@ -374,8 +501,11 @@
       "name": "libffi",
       "version": "",
       "license_expression": "MIT",
-      "license_source": "패턴 표(수동 귀속): 파이썬 배포본에 동봉",
+      "license_source": "파일 이름 패턴 표(수동 귀속)",
       "kind": "native",
+      "public_note": "파이썬 배포본에 동봉",
+      "url": "https://github.com/libffi/libffi",
+      "internal_note": "",
       "reference_keys": [
         "libffi"
       ],
@@ -383,24 +513,27 @@
       "chosen_alternative": "MIT",
       "evidence_count": 1,
       "license_file_names": [
-        "[참고 사본] libffi: Git for Windows 동봉 libffi 의 LICENSE"
+        "[일반 전문] libffi"
       ],
       "evidence_sample": [
         "libffi-8.dll"
       ]
     },
     {
-      "name": "Manifold (ifcopenshell 휠에 동봉)",
+      "name": "liblzma / XZ Utils (CPython _lzma 에 정적 링크)",
       "version": "",
-      "license_expression": "Apache-2.0",
-      "license_source": "패턴 표(수동 귀속): Manifold 형상 라이브러리",
+      "license_expression": "LicenseRef-public-domain",
+      "license_source": "정적 링크 흔적 탐지(native_libs.py)",
       "kind": "native",
+      "public_note": "XZ Utils 의 liblzma 는 퍼블릭 도메인(0BSD)",
+      "url": "https://tukaani.org/xz",
+      "internal_note": "",
       "verdict": "ok",
-      "chosen_alternative": "Apache-2.0",
+      "chosen_alternative": "LicenseRef-public-domain",
       "evidence_count": 1,
       "license_file_names": [],
       "evidence_sample": [
-        "ifcopenshell/manifold.dll"
+        "_lzma.pyd"
       ]
     },
     {
@@ -409,6 +542,9 @@
       "license_expression": "MIT",
       "license_source": "metadata classifier",
       "kind": "python-package",
+      "public_note": "",
+      "url": "https://github.com/modelcontextprotocol/python-sdk",
+      "internal_note": "",
       "verdict": "ok",
       "chosen_alternative": "MIT",
       "evidence_count": 2,
@@ -426,6 +562,9 @@
       "license_expression": "MIT",
       "license_source": "metadata classifier",
       "kind": "python-package",
+      "public_note": "",
+      "url": "https://github.com/modelcontextprotocol/python-sdk",
+      "internal_note": "",
       "verdict": "ok",
       "chosen_alternative": "MIT",
       "evidence_count": 2,
@@ -441,8 +580,11 @@
       "name": "Microsoft Universal CRT",
       "version": "",
       "license_expression": "LicenseRef-MS-Redistributable",
-      "license_source": "패턴 표(수동 귀속): Windows 유니버설 CRT 재배포 파일(파이썬 배포본이 동봉). 재배포 조항을 따른다(비 OSS)",
+      "license_source": "파일 이름 패턴 표(수동 귀속)",
       "kind": "native",
+      "public_note": "Windows 유니버설 CRT 재배포 파일. 재배포 조항을 따른다(오픈소스 라이선스가 아님)",
+      "url": "",
+      "internal_note": "재배포 조항 준수 여부는 법무 확인 대상",
       "verdict": "weak",
       "chosen_alternative": "LicenseRef-MS-Redistributable",
       "evidence_count": 41,
@@ -457,8 +599,11 @@
       "name": "Microsoft Visual C++ 런타임",
       "version": "",
       "license_expression": "LicenseRef-MS-Redistributable",
-      "license_source": "패턴 표(수동 귀속): 마이크로소프트 재배포 가능 파일. Visual Studio/VC++ Redistributable 의 재배포 조항을 따른다(비 OSS)",
+      "license_source": "파일 이름 패턴 표(수동 귀속)",
       "kind": "native",
+      "public_note": "마이크로소프트 재배포 가능 파일. Visual C++ Redistributable 의 재배포 조항을 따른다(오픈소스 라이선스가 아님)",
+      "url": "",
+      "internal_note": "재배포 조항 준수 여부는 법무 확인 대상",
       "verdict": "weak",
       "chosen_alternative": "LicenseRef-MS-Redistributable",
       "evidence_count": 3,
@@ -473,8 +618,11 @@
       "name": "Microsoft Visual C++ 런타임 (numpy 휠에 동봉)",
       "version": "",
       "license_expression": "LicenseRef-MS-Redistributable",
-      "license_source": "패턴 표(수동 귀속): 재배포 가능 파일",
+      "license_source": "파일 이름 패턴 표(수동 귀속)",
       "kind": "native",
+      "public_note": "재배포 가능 파일",
+      "url": "",
+      "internal_note": "",
       "verdict": "weak",
       "chosen_alternative": "LicenseRef-MS-Redistributable",
       "evidence_count": 1,
@@ -487,8 +635,11 @@
       "name": "Microsoft Visual C++ 런타임 (shapely 휠에 동봉)",
       "version": "",
       "license_expression": "LicenseRef-MS-Redistributable",
-      "license_source": "패턴 표(수동 귀속): 재배포 가능 파일",
+      "license_source": "파일 이름 패턴 표(수동 귀속)",
       "kind": "native",
+      "public_note": "재배포 가능 파일",
+      "url": "",
+      "internal_note": "",
       "verdict": "weak",
       "chosen_alternative": "LicenseRef-MS-Redistributable",
       "evidence_count": 1,
@@ -498,11 +649,50 @@
       ]
     },
     {
+      "name": "mpdecimal (CPython _decimal 에 정적 링크)",
+      "version": "",
+      "license_expression": "BSD-2-Clause",
+      "license_source": "정적 링크 흔적 탐지(native_libs.py)",
+      "kind": "native",
+      "public_note": "십진 연산 라이브러리",
+      "url": "https://www.bytereef.org/mpdecimal",
+      "internal_note": "",
+      "verdict": "ok",
+      "chosen_alternative": "BSD-2-Clause",
+      "evidence_count": 1,
+      "license_file_names": [],
+      "evidence_sample": [
+        "_decimal.pyd"
+      ]
+    },
+    {
+      "name": "nlohmann/json (헤더 라이브러리, 정적 포함)",
+      "version": "",
+      "license_expression": "MIT",
+      "license_source": "정적 링크 흔적 탐지(native_libs.py)",
+      "kind": "native",
+      "public_note": "JSON 헤더 라이브러리",
+      "url": "https://github.com/nlohmann/json",
+      "internal_note": "",
+      "verdict": "ok",
+      "chosen_alternative": "MIT",
+      "evidence_count": 5,
+      "license_file_names": [],
+      "evidence_sample": [
+        "Shapely.libs/geos-bf067cd6ff74ee0ad5f3ff52c7ef08c9.dll",
+        "ifcopenshell/ifcopenshell_document_json_ifc2x3.dll",
+        "ifcopenshell/ifcopenshell_document_json_ifc4.dll"
+      ]
+    },
+    {
       "name": "numpy",
       "version": "2.5.4",
       "license_expression": "BSD-3-Clause AND 0BSD AND MIT AND Zlib AND CC0-1.0",
       "license_source": "metadata License-Expression",
       "kind": "python-package",
+      "public_note": "",
+      "url": "https://github.com/numpy/numpy",
+      "internal_note": "",
       "verdict": "ok",
       "chosen_alternative": "BSD-3-Clause AND 0BSD AND MIT AND Zlib AND CC0-1.0",
       "evidence_count": 14,
@@ -537,12 +727,20 @@
       "name": "Open CASCADE Technology (OCCT, ifcopenshell 휠에 동봉)",
       "version": "",
       "license_expression": "LGPL-2.1-only WITH OCCT-exception-1.0",
-      "license_source": "패턴 표(수동 귀속): OCCT 7.x 는 LGPL-2.1 + OCCT 예외. ADR-0003 의 휠 고지 항목",
+      "license_source": "파일 이름 패턴 표(수동 귀속)",
       "kind": "native",
+      "public_note": "LGPL-2.1 + OCCT 예외. 별도 DLL(TK*.dll)로 있어 교체할 수 있다",
+      "url": "https://github.com/Open-Cascade-SAS/OCCT",
+      "internal_note": "ADR-0003 의 휠 고지 항목. 버전은 ifcopenshell 휠 빌드 기준이라 문자열로는 확인되지 않았다",
+      "reference_keys": [
+        "LGPL-2.1"
+      ],
       "verdict": "weak",
       "chosen_alternative": "LGPL-2.1-only WITH OCCT-exception-1.0",
       "evidence_count": 49,
-      "license_file_names": [],
+      "license_file_names": [
+        "[일반 전문] LGPL-2.1"
+      ],
       "evidence_sample": [
         "ifcopenshell/TKBO.dll",
         "ifcopenshell/TKBRep.dll",
@@ -553,8 +751,12 @@
       "name": "OpenBLAS (numpy 휠에 동봉)",
       "version": "",
       "license_expression": "BSD-3-Clause",
-      "license_source": "패턴 표(수동 귀속): numpy 의 LICENSES_bundled 에 근거",
+      "license_source": "파일 이름 패턴 표(수동 귀속)",
       "kind": "native",
+      "public_note": "numpy 휠에 동봉. 전문은 numpy 항목의 LICENSE.txt 에 있다",
+      "url": "https://github.com/OpenMathLib/OpenBLAS",
+      "internal_note": "",
+      "text_in": "numpy",
       "verdict": "ok",
       "chosen_alternative": "BSD-3-Clause",
       "evidence_count": 1,
@@ -567,8 +769,11 @@
       "name": "OpenSSL 3.x",
       "version": "",
       "license_expression": "Apache-2.0",
-      "license_source": "패턴 표(수동 귀속): 파이썬 배포본에 동봉된 OpenSSL. 저작권 문구는 해당 배포본 기준",
+      "license_source": "파일 이름 패턴 표(수동 귀속)",
       "kind": "native",
+      "public_note": "파이썬 배포본에 동봉된 OpenSSL",
+      "url": "https://www.openssl.org",
+      "internal_note": "",
       "reference_keys": [
         "openssl"
       ],
@@ -576,7 +781,7 @@
       "chosen_alternative": "Apache-2.0",
       "evidence_count": 2,
       "license_file_names": [
-        "[참고 사본] openssl: Git for Windows 동봉 OpenSSL 의 라이선스 문서"
+        "[일반 전문] openssl"
       ],
       "evidence_sample": [
         "libcrypto-3.dll",
@@ -589,6 +794,9 @@
       "license_expression": "Apache-2.0",
       "license_source": "metadata License-Expression",
       "kind": "python-package",
+      "public_note": "",
+      "url": "https://github.com/open-telemetry/opentelemetry-python",
+      "internal_note": "",
       "verdict": "ok",
       "chosen_alternative": "Apache-2.0",
       "evidence_count": 1,
@@ -605,6 +813,9 @@
       "license_expression": "Apache-2.0 OR BSD-2-Clause",
       "license_source": "metadata License-Expression",
       "kind": "python-package",
+      "public_note": "",
+      "url": "https://github.com/pypa/packaging",
+      "internal_note": "",
       "verdict": "ok",
       "chosen_alternative": "Apache-2.0",
       "evidence_count": 1,
@@ -623,6 +834,9 @@
       "license_expression": "MIT",
       "license_source": "metadata classifier",
       "kind": "python-package",
+      "public_note": "",
+      "url": "https://github.com/pytest-dev/pluggy",
+      "internal_note": "",
       "verdict": "ok",
       "chosen_alternative": "MIT",
       "evidence_count": 1,
@@ -634,11 +848,31 @@
       ]
     },
     {
+      "name": "PROJ (ifcopenshell_geometry_glb.dll 에 정적 링크)",
+      "version": "9.4.1",
+      "license_expression": "MIT",
+      "license_source": "정적 링크 흔적 탐지(native_libs.py)",
+      "kind": "native",
+      "public_note": "좌표계 변환 라이브러리",
+      "url": "https://github.com/OSGeo/PROJ",
+      "internal_note": "",
+      "verdict": "ok",
+      "chosen_alternative": "MIT",
+      "evidence_count": 1,
+      "license_file_names": [],
+      "evidence_sample": [
+        "ifcopenshell/ifcopenshell_geometry_glb.dll"
+      ]
+    },
+    {
       "name": "pydantic",
       "version": "2.14.3",
       "license_expression": "MIT",
       "license_source": "metadata License-Expression",
       "kind": "python-package",
+      "public_note": "",
+      "url": "https://github.com/pydantic/pydantic",
+      "internal_note": "",
       "verdict": "ok",
       "chosen_alternative": "MIT",
       "evidence_count": 1,
@@ -655,6 +889,9 @@
       "license_expression": "MIT",
       "license_source": "metadata License-Expression",
       "kind": "python-package",
+      "public_note": "",
+      "url": "https://github.com/pydantic/pydantic/tree/main/pydantic-core",
+      "internal_note": "",
       "verdict": "ok",
       "chosen_alternative": "MIT",
       "evidence_count": 2,
@@ -672,6 +909,9 @@
       "license_expression": "BSD-2-Clause",
       "license_source": "metadata License-Expression",
       "kind": "python-package",
+      "public_note": "",
+      "url": "https://github.com/pygments/pygments",
+      "internal_note": "",
       "verdict": "ok",
       "chosen_alternative": "BSD-2-Clause",
       "evidence_count": 1,
@@ -687,8 +927,11 @@
       "name": "PyInstaller 부트로더",
       "version": "",
       "license_expression": "GPL-2.0-or-later WITH Bootloader-exception",
-      "license_source": "패턴 표(수동 귀속): 실행 파일 앞부분의 부트로더. PyInstaller 의 예외절이 어떤 라이선스의 앱에도 쓰도록 허용한다(법무 확인 대상으로 남긴다)",
+      "license_source": "파일 이름 패턴 표(수동 귀속)",
       "kind": "native",
+      "public_note": "실행 파일 앞부분의 부트로더. PyInstaller 의 부트로더 예외가 어떤 라이선스의 프로그램에도 쓰도록 허용한다",
+      "url": "https://github.com/pyinstaller/pyinstaller",
+      "internal_note": "GPL 부트로더 + 예외절. 예외절 적용 범위는 법무 확인 대상",
       "verdict": "weak",
       "chosen_alternative": "GPL-2.0-or-later WITH Bootloader-exception",
       "evidence_count": 2,
@@ -706,6 +949,9 @@
       "license_expression": "MIT",
       "license_source": "metadata License-Expression",
       "kind": "python-package",
+      "public_note": "",
+      "url": "https://github.com/pyparsing/pyparsing.git",
+      "internal_note": "",
       "verdict": "ok",
       "chosen_alternative": "MIT",
       "evidence_count": 1,
@@ -722,6 +968,9 @@
       "license_expression": "MIT",
       "license_source": "metadata License-Expression",
       "kind": "python-package",
+      "public_note": "",
+      "url": "https://github.com/pytest-dev/pytest",
+      "internal_note": "",
       "verdict": "ok",
       "chosen_alternative": "MIT",
       "evidence_count": 3,
@@ -740,6 +989,9 @@
       "license_expression": "BSD-3-Clause",
       "license_source": "metadata License-Expression",
       "kind": "python-package",
+      "public_note": "",
+      "url": "https://github.com/dateutil/dateutil",
+      "internal_note": "",
       "verdict": "ok",
       "chosen_alternative": "BSD-3-Clause",
       "evidence_count": 1,
@@ -757,6 +1009,9 @@
       "license_expression": "Apache-2.0",
       "license_source": "metadata License-Expression",
       "kind": "python-package",
+      "public_note": "",
+      "url": "https://github.com/Kludex/python-multipart",
+      "internal_note": "",
       "verdict": "ok",
       "chosen_alternative": "Apache-2.0",
       "evidence_count": 2,
@@ -774,6 +1029,9 @@
       "license_expression": "PSF-2.0",
       "license_source": "override: pywin32 프로젝트 문서의 라이선스 표기(PSF). 메타데이터에 식이 없다",
       "kind": "python-package",
+      "public_note": "",
+      "url": "https://github.com/mhammond/pywin32",
+      "internal_note": "",
       "verdict": "ok",
       "chosen_alternative": "PSF-2.0",
       "evidence_count": 11,
@@ -805,6 +1063,9 @@
       "license_expression": "MIT",
       "license_source": "metadata License-Expression",
       "kind": "python-package",
+      "public_note": "",
+      "url": "https://github.com/python-jsonschema/referencing",
+      "internal_note": "",
       "verdict": "ok",
       "chosen_alternative": "MIT",
       "evidence_count": 1,
@@ -816,11 +1077,37 @@
       ]
     },
     {
+      "name": "RocksDB (ifcopenshell 에 정적 링크)",
+      "version": "9.11.2",
+      "license_expression": "Apache-2.0 OR GPL-2.0-only",
+      "license_source": "정적 링크 흔적 탐지(native_libs.py)",
+      "kind": "native",
+      "public_note": "RocksDB 는 Apache-2.0 과 GPL-2.0 중 선택하는 이중 라이선스이며 Apache-2.0 으로 사용한다",
+      "url": "https://github.com/facebook/rocksdb",
+      "internal_note": "",
+      "reference_keys": [
+        "Apache-2.0"
+      ],
+      "verdict": "ok",
+      "chosen_alternative": "Apache-2.0",
+      "evidence_count": 2,
+      "license_file_names": [
+        "[일반 전문] Apache-2.0"
+      ],
+      "evidence_sample": [
+        "ifcopenshell/_ifcopenshell_wrapper.cp312-win_amd64.pyd",
+        "ifcopenshell/ifcopenshell.parse.dll"
+      ]
+    },
+    {
       "name": "rpds-py",
       "version": "2026.9.1",
       "license_expression": "MIT",
       "license_source": "metadata License-Expression",
       "kind": "python-package",
+      "public_note": "",
+      "url": "https://github.com/crate-py/rpds",
+      "internal_note": "",
       "verdict": "ok",
       "chosen_alternative": "MIT",
       "evidence_count": 2,
@@ -838,6 +1125,9 @@
       "license_expression": "BSD-3-Clause",
       "license_source": "metadata License-Expression",
       "kind": "python-package",
+      "public_note": "",
+      "url": "https://github.com/shapely/shapely",
+      "internal_note": "",
       "verdict": "ok",
       "chosen_alternative": "BSD-3-Clause",
       "evidence_count": 4,
@@ -856,13 +1146,17 @@
       "name": "SQLite",
       "version": "",
       "license_expression": "blessing",
-      "license_source": "패턴 표(수동 귀속): 퍼블릭 도메인(저작권 포기). 고지 의무 없음",
+      "license_source": "파일 이름 패턴 표(수동 귀속)",
       "kind": "native",
+      "public_note": "퍼블릭 도메인(저작권 포기). 고지 의무 없음",
+      "url": "https://sqlite.org",
+      "internal_note": "",
       "verdict": "ok",
       "chosen_alternative": "blessing",
-      "evidence_count": 1,
+      "evidence_count": 2,
       "license_file_names": [],
       "evidence_sample": [
+        "ifcopenshell/ifcopenshell_geometry_glb.dll",
         "sqlite3.dll"
       ]
     },
@@ -872,6 +1166,9 @@
       "license_expression": "BSD-3-Clause",
       "license_source": "metadata License-Expression",
       "kind": "python-package",
+      "public_note": "",
+      "url": "https://github.com/sysid/sse-starlette",
+      "internal_note": "",
       "verdict": "ok",
       "chosen_alternative": "BSD-3-Clause",
       "evidence_count": 1,
@@ -889,6 +1186,9 @@
       "license_expression": "BSD-3-Clause",
       "license_source": "metadata License-Expression",
       "kind": "python-package",
+      "public_note": "",
+      "url": "https://github.com/Kludex/starlette",
+      "internal_note": "",
       "verdict": "ok",
       "chosen_alternative": "BSD-3-Clause",
       "evidence_count": 1,
@@ -900,25 +1200,14 @@
       ]
     },
     {
-      "name": "svgfill (ifcopenshell 휠에 동봉)",
-      "version": "",
-      "license_expression": "LicenseRef-CGAL-UNVERIFIED",
-      "license_source": "패턴 표(수동 귀속): svgfill 은 CGAL 을 쓴다. 위와 같은 사유로 라이선스 확인 필요",
-      "kind": "native",
-      "verdict": "unknown",
-      "chosen_alternative": "LicenseRef-CGAL-UNVERIFIED",
-      "evidence_count": 1,
-      "license_file_names": [],
-      "evidence_sample": [
-        "ifcopenshell/ifcopenshell_geometry_svgfill.dll"
-      ]
-    },
-    {
       "name": "truststore",
       "version": "0.10.5",
       "license_expression": "MIT",
       "license_source": "metadata License-Expression",
       "kind": "python-package",
+      "public_note": "",
+      "url": "https://github.com/sethmlarson/truststore",
+      "internal_note": "",
       "verdict": "ok",
       "chosen_alternative": "MIT",
       "evidence_count": 1,
@@ -935,6 +1224,9 @@
       "license_expression": "MIT",
       "license_source": "metadata License-Expression",
       "kind": "python-package",
+      "public_note": "",
+      "url": "https://github.com/pydantic/typing-inspection",
+      "internal_note": "",
       "verdict": "ok",
       "chosen_alternative": "MIT",
       "evidence_count": 1,
@@ -951,6 +1243,9 @@
       "license_expression": "PSF-2.0",
       "license_source": "metadata License-Expression",
       "kind": "python-package",
+      "public_note": "",
+      "url": "https://github.com/python/typing_extensions",
+      "internal_note": "",
       "verdict": "ok",
       "chosen_alternative": "PSF-2.0",
       "evidence_count": 1,
@@ -967,6 +1262,9 @@
       "license_expression": "Apache-2.0",
       "license_source": "metadata License 필드",
       "kind": "python-package",
+      "public_note": "",
+      "url": "https://github.com/python/tzdata",
+      "internal_note": "",
       "verdict": "ok",
       "chosen_alternative": "Apache-2.0",
       "evidence_count": 606,
@@ -986,6 +1284,9 @@
       "license_expression": "BSD-3-Clause",
       "license_source": "metadata License-Expression",
       "kind": "python-package",
+      "public_note": "",
+      "url": "https://github.com/Kludex/uvicorn",
+      "internal_note": "",
       "verdict": "ok",
       "chosen_alternative": "BSD-3-Clause",
       "evidence_count": 1,
@@ -995,33 +1296,48 @@
       "evidence_sample": [
         "module:uvicorn"
       ]
+    },
+    {
+      "name": "zlib (CPython 에 정적 링크)",
+      "version": "",
+      "license_expression": "Zlib",
+      "license_source": "정적 링크 흔적 탐지(native_libs.py)",
+      "kind": "native",
+      "public_note": "압축 라이브러리",
+      "url": "https://zlib.net",
+      "internal_note": "",
+      "verdict": "ok",
+      "chosen_alternative": "Zlib",
+      "evidence_count": 2,
+      "license_file_names": [],
+      "evidence_sample": [
+        "ifcopenshell/python312.dll",
+        "python312.dll"
+      ]
     }
   ],
   "counts": {
-    "components": 58,
-    "files_in_frozen_dir": 1486,
+    "components": 65,
+    "files_in_frozen_dir": 1481,
     "forbid": 0,
-    "unknown": 2,
-    "weak_copyleft_or_redistributable": 9,
-    "ok": 47
+    "unknown": 0,
+    "weak_copyleft_or_redistributable": 11,
+    "ok": 54
   },
   "forbidden": [],
-  "unknown_or_unclear": [
-    {
-      "name": "CGAL 기반 지오메트리 커널 (ifcopenshell 휠에 동봉)",
-      "license_expression": "LicenseRef-CGAL-UNVERIFIED",
-      "note": "패턴 표(수동 귀속): CGAL 은 패키지별로 LGPL-3.0+ 또는 GPL-3.0+ 이다. 이 DLL 이 GPL 패키지(Nef 다면체 등)에 링크됐는지 확인되지 않았다 -> 법무 확인 필요. 코어는 지오메트리 커널을 쓰지 않으므로 동결본에서 제거하는 완화책을 시험했다(slim 시험 결과 참고)"
-    },
-    {
-      "name": "svgfill (ifcopenshell 휠에 동봉)",
-      "license_expression": "LicenseRef-CGAL-UNVERIFIED",
-      "note": "패턴 표(수동 귀속): svgfill 은 CGAL 을 쓴다. 위와 같은 사유로 라이선스 확인 필요"
-    }
-  ],
+  "unknown_or_unclear": [],
   "weak_obligations": [
     {
       "name": "dobim-core (이 프로젝트)",
       "license_expression": "MPL-2.0"
+    },
+    {
+      "name": "Eigen (헤더 라이브러리, ifcopenshell 에 정적 포함)",
+      "license_expression": "MPL-2.0"
+    },
+    {
+      "name": "GCC 런타임 라이브러리 (libgfortran, OpenBLAS 에 정적 링크)",
+      "license_expression": "GPL-3.0-or-later WITH GCC-exception-3.1"
     },
     {
       "name": "GEOS (shapely 휠에 동봉)",
@@ -1059,63 +1375,87 @@
   "missing_license_text": [
     {
       "name": "Boost (ifcopenshell 휠에 동봉)",
-      "version": "",
+      "version": "1.92.0",
       "license_expression": "BSL-1.0",
-      "reason": "배포물/동결본에 라이선스 전문이 없다"
+      "reason": "배포물/동결본에 라이선스 전문이 없다",
+      "upstream": "https://www.boost.org"
     },
     {
-      "name": "CGAL 기반 지오메트리 커널 (ifcopenshell 휠에 동봉)",
+      "name": "bzip2 (CPython _bz2 에 정적 링크)",
       "version": "",
-      "license_expression": "LicenseRef-CGAL-UNVERIFIED",
-      "reason": "배포물/동결본에 라이선스 전문이 없다"
+      "license_expression": "bzip2-1.0.6",
+      "reason": "배포물/동결본에 라이선스 전문이 없다",
+      "upstream": "https://sourceware.org/bzip2"
     },
     {
-      "name": "Manifold (ifcopenshell 휠에 동봉)",
+      "name": "Expat (CPython pyexpat 에 정적 링크)",
       "version": "",
-      "license_expression": "Apache-2.0",
-      "reason": "배포물/동결본에 라이선스 전문이 없다"
+      "license_expression": "MIT",
+      "reason": "배포물/동결본에 라이선스 전문이 없다",
+      "upstream": "https://libexpat.github.io"
+    },
+    {
+      "name": "liblzma / XZ Utils (CPython _lzma 에 정적 링크)",
+      "version": "",
+      "license_expression": "LicenseRef-public-domain",
+      "reason": "배포물/동결본에 라이선스 전문이 없다",
+      "upstream": "https://tukaani.org/xz"
     },
     {
       "name": "Microsoft Universal CRT",
       "version": "",
       "license_expression": "LicenseRef-MS-Redistributable",
-      "reason": "배포물/동결본에 라이선스 전문이 없다"
+      "reason": "배포물/동결본에 라이선스 전문이 없다",
+      "upstream": ""
     },
     {
       "name": "Microsoft Visual C++ 런타임",
       "version": "",
       "license_expression": "LicenseRef-MS-Redistributable",
-      "reason": "배포물/동결본에 라이선스 전문이 없다"
+      "reason": "배포물/동결본에 라이선스 전문이 없다",
+      "upstream": ""
     },
     {
       "name": "Microsoft Visual C++ 런타임 (numpy 휠에 동봉)",
       "version": "",
       "license_expression": "LicenseRef-MS-Redistributable",
-      "reason": "배포물/동결본에 라이선스 전문이 없다"
+      "reason": "배포물/동결본에 라이선스 전문이 없다",
+      "upstream": ""
     },
     {
       "name": "Microsoft Visual C++ 런타임 (shapely 휠에 동봉)",
       "version": "",
       "license_expression": "LicenseRef-MS-Redistributable",
-      "reason": "배포물/동결본에 라이선스 전문이 없다"
+      "reason": "배포물/동결본에 라이선스 전문이 없다",
+      "upstream": ""
     },
     {
-      "name": "Open CASCADE Technology (OCCT, ifcopenshell 휠에 동봉)",
+      "name": "mpdecimal (CPython _decimal 에 정적 링크)",
       "version": "",
-      "license_expression": "LGPL-2.1-only WITH OCCT-exception-1.0",
-      "reason": "배포물/동결본에 라이선스 전문이 없다"
+      "license_expression": "BSD-2-Clause",
+      "reason": "배포물/동결본에 라이선스 전문이 없다",
+      "upstream": "https://www.bytereef.org/mpdecimal"
     },
     {
-      "name": "OpenBLAS (numpy 휠에 동봉)",
+      "name": "nlohmann/json (헤더 라이브러리, 정적 포함)",
       "version": "",
-      "license_expression": "BSD-3-Clause",
-      "reason": "배포물/동결본에 라이선스 전문이 없다"
+      "license_expression": "MIT",
+      "reason": "배포물/동결본에 라이선스 전문이 없다",
+      "upstream": "https://github.com/nlohmann/json"
     },
     {
-      "name": "svgfill (ifcopenshell 휠에 동봉)",
+      "name": "PROJ (ifcopenshell_geometry_glb.dll 에 정적 링크)",
+      "version": "9.4.1",
+      "license_expression": "MIT",
+      "reason": "배포물/동결본에 라이선스 전문이 없다",
+      "upstream": "https://github.com/OSGeo/PROJ"
+    },
+    {
+      "name": "zlib (CPython 에 정적 링크)",
       "version": "",
-      "license_expression": "LicenseRef-CGAL-UNVERIFIED",
-      "reason": "배포물/동결본에 라이선스 전문이 없다"
+      "license_expression": "Zlib",
+      "reason": "배포물/동결본에 라이선스 전문이 없다",
+      "upstream": "https://zlib.net"
     }
   ],
   "reference_text_only": [
@@ -1123,36 +1463,114 @@
       "name": "CPython 3.12 런타임",
       "version": "",
       "license_expression": "PSF-2.0",
-      "reason": "배포물/동결본에 라이선스 전문이 없다 -> 같은 라이선스의 참고 사본으로 대체(해당 버전 원문으로 교체 필요)"
+      "reason": "배포물/동결본에 라이선스 전문이 없다 -> 같은 라이선스의 일반 전문으로 대체(해당 버전 원문과 저작권 줄로 교체 필요)",
+      "upstream": "https://www.python.org"
+    },
+    {
+      "name": "Eigen (헤더 라이브러리, ifcopenshell 에 정적 포함)",
+      "version": "",
+      "license_expression": "MPL-2.0",
+      "reason": "배포물/동결본에 라이선스 전문이 없다 -> 같은 라이선스의 일반 전문으로 대체(해당 버전 원문과 저작권 줄로 교체 필요)",
+      "upstream": "https://gitlab.com/libeigen/eigen"
     },
     {
       "name": "ifcopenshell",
       "version": "0.9.0.post1",
       "license_expression": "LGPL-3.0-or-later",
-      "reason": "배포물/동결본에 라이선스 전문이 없다 -> 같은 라이선스의 참고 사본으로 대체(해당 버전 원문으로 교체 필요)"
+      "reason": "배포물/동결본에 라이선스 전문이 없다 -> 같은 라이선스의 일반 전문으로 대체(해당 버전 원문과 저작권 줄로 교체 필요)",
+      "upstream": "https://github.com/IfcOpenShell/IfcOpenShell"
     },
     {
       "name": "libffi",
       "version": "",
       "license_expression": "MIT",
-      "reason": "배포물/동결본에 라이선스 전문이 없다 -> 같은 라이선스의 참고 사본으로 대체(해당 버전 원문으로 교체 필요)"
+      "reason": "배포물/동결본에 라이선스 전문이 없다 -> 같은 라이선스의 일반 전문으로 대체(해당 버전 원문과 저작권 줄로 교체 필요)",
+      "upstream": "https://github.com/libffi/libffi"
+    },
+    {
+      "name": "Open CASCADE Technology (OCCT, ifcopenshell 휠에 동봉)",
+      "version": "",
+      "license_expression": "LGPL-2.1-only WITH OCCT-exception-1.0",
+      "reason": "배포물/동결본에 라이선스 전문이 없다 -> 같은 라이선스의 일반 전문으로 대체(해당 버전 원문과 저작권 줄로 교체 필요)",
+      "upstream": "https://github.com/Open-Cascade-SAS/OCCT"
     },
     {
       "name": "OpenSSL 3.x",
       "version": "",
       "license_expression": "Apache-2.0",
-      "reason": "배포물/동결본에 라이선스 전문이 없다 -> 같은 라이선스의 참고 사본으로 대체(해당 버전 원문으로 교체 필요)"
+      "reason": "배포물/동결본에 라이선스 전문이 없다 -> 같은 라이선스의 일반 전문으로 대체(해당 버전 원문과 저작권 줄로 교체 필요)",
+      "upstream": "https://www.openssl.org"
+    },
+    {
+      "name": "RocksDB (ifcopenshell 에 정적 링크)",
+      "version": "9.11.2",
+      "license_expression": "Apache-2.0 OR GPL-2.0-only",
+      "reason": "배포물/동결본에 라이선스 전문이 없다 -> 같은 라이선스의 일반 전문으로 대체(해당 버전 원문과 저작권 줄로 교체 필요)",
+      "upstream": "https://github.com/facebook/rocksdb"
     }
   ],
   "unattributed_files": [],
   "reference_texts_appended": [
+    "Apache-2.0",
     "GPL-3.0",
+    "LGPL-2.1",
     "LGPL-3.0",
+    "MPL-2.0",
     "cpython",
     "libffi",
     "openssl"
   ],
-  "notices_bytes": 525355,
+  "static_link_scan": {
+    "files_scanned": 186,
+    "found": {
+      "rocksdb": 2,
+      "proj": 1,
+      "sqlite": 2,
+      "nlohmann": 5,
+      "eigen": 17,
+      "boost": 26,
+      "libgfortran": 1,
+      "expat": 2,
+      "mpdecimal": 1,
+      "zlib": 2,
+      "bzip2": 1,
+      "liblzma": 1
+    },
+    "versions": {
+      "rocksdb": [
+        "9.11.2"
+      ],
+      "boost": [
+        "1.92.0"
+      ],
+      "proj": [
+        "9.4.1"
+      ]
+    },
+    "banned_found": {}
+  },
+  "rust_crates": {
+    "count": 234,
+    "forbid": [],
+    "unknown": [],
+    "mpl_2_0_crates": [
+      "cssparser 0.37.0=MPL-2.0",
+      "cssparser-macros 0.7.1=MPL-2.0",
+      "dtoa-short 0.3.5=MPL-2.0",
+      "option-ext 0.2.0=MPL-2.0",
+      "selectors 0.38.0=MPL-2.0"
+    ],
+    "without_license_file": [
+      "alloc-stdlib 0.3.0",
+      "selectors 0.38.0",
+      "webview2-com 0.39.1",
+      "webview2-com-macros 0.8.1",
+      "webview2-com-sys 0.39.1"
+    ],
+    "unique_license_texts": 130
+  },
+  "notices_bytes": 991580,
   "injected": [],
+  "fail_reasons": [],
   "pass": true
 }
