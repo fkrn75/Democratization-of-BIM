@@ -289,7 +289,7 @@ def ifc_spec(g, e):
         if h:
             wp = el(g, h)["params"]
             host = {"host_thickness": wp["thickness"], "host_height": wp["height"]}
-        return {**FS.finst_spec(el(g, tid)["params"], p, tid, h, g.q(finst_level, e), host), "intent": intent}
+        return {**FS.finst_spec(el(g, tid)["params"], p, tid, h, g.q(finst_level, e), host, tolerant=True), "intent": intent}
     if kind == "wall":
         x, y, c, s, _ = g.q(wall_frame, e)
         return {"kind": kind, "name": p["name"], "level": g.q(wall_level, e), "origin": (x, y), "xdir": (c, s),

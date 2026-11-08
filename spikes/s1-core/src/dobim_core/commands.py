@@ -270,9 +270,14 @@ def wall_set(ctx, a: WallSet):
         p["axis"] = list(a.axis)
         length = sqrt(_axis_len2(a.axis))
         for d in ctx.rels_out("hosts", a.id):
+            if ctx.st.el[d]["kind"] != "door":
+                continue   # 패밀리 인스턴스는 아래 check_hosted_fit 이 개구부 범위(cut)로 정확히 본다
             dp = ctx.st.el[d]["params"]
             if dp["offset"] - dp["width"] / 2 < 0 or dp["offset"] + dp["width"] / 2 > length:
                 raise DobimError("CONSTRAINT", f"호스팅된 문이 벽 밖으로 나간다: {d}", path="/axis")
+    # 호스팅된 패밀리 인스턴스(finst)는 호스트 두께·높이·길이에 제약을 가진다: 새 벽 치수로 미리 재평가해 깨지면 거절한다
+    from dobim_core.commands_family import check_hosted_fit
+    check_hosted_fit(ctx, a.id, r["params"], p)
     ctx.put_el(a.id, dict(r, params=p))
     return {"id": a.id}
 
@@ -603,7 +608,13 @@ class Validate(A):
 def model_validate(ctx, a: Validate):
     ctx.eng.flush_ifc()
     v = ctx.eng.ifc.validate(express=a.express_rules)
-    return {"errors": v["errors"], "warnings": v["warnings"], "violations": v["samples"]}
+    # 패밀리 인스턴스를 평가하지 못하는 요소(레시피 제약을 깨는 값이 로그에 있는 프로젝트 등)는 오류로 보고한다
+    bad = []
+    for eid in sorted(ctx.st.by_kind.get("finst", ())):
+        err = ctx.eng.g.q(Q.ifc_spec, eid).get("error")
+        if err:
+            bad.append(f"패밀리 인스턴스 {eid} 를 평가할 수 없다({err['code']} {err['path']}): {err['message']}")
+    return {"errors": v["errors"] + len(bad), "warnings": v["warnings"], "violations": (bad + v["samples"])[:8]}
 
 
 class ScheduleRows(A):

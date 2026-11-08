@@ -15,6 +15,7 @@ import hashlib
 import json
 import math
 import re
+from collections import OrderedDict
 from dataclasses import dataclass
 from typing import Any
 
@@ -301,7 +302,8 @@ def _toposort(graph: dict[str, list[str]]) -> tuple[list[str], list[str] | None]
     return out, None
 
 
-_LOAD_CACHE: dict[str, tuple[Recipe, Plan]] = {}
+_LOAD_CACHE: OrderedDict[str, tuple[Recipe, Plan]] = OrderedDict()   # 정확한 LRU(가득 차도 새 레시피를 캐시한다)
+_LOAD_MAX = 256
 
 
 def load_recipe(data: dict) -> tuple[Recipe, Plan]:
@@ -309,6 +311,7 @@ def load_recipe(data: dict) -> tuple[Recipe, Plan]:
     key = digest(data)
     hit = _LOAD_CACHE.get(key)
     if hit is not None:
+        _LOAD_CACHE.move_to_end(key)
         return hit
     r = parse_recipe(data)
     plan, issues = analyze(r)
@@ -316,8 +319,9 @@ def load_recipe(data: dict) -> tuple[Recipe, Plan]:
     if errs:
         raise FamilyError(errs)
     assert plan is not None
-    if len(_LOAD_CACHE) < 256:
-        _LOAD_CACHE[key] = (r, plan)
+    _LOAD_CACHE[key] = (r, plan)
+    while len(_LOAD_CACHE) > _LOAD_MAX:
+        _LOAD_CACHE.popitem(last=False)
     return r, plan
 
 

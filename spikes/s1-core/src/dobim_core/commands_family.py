@@ -150,7 +150,6 @@ def _check_values_keys(vals: dict, what: str) -> None:
 
 def _make_type(ctx, tid: str, recipe: dict, r, plan, tv: dict, name: str | None) -> None:
     rhash = FS.recipe_hash_of(recipe)
-    FS.remember(rhash, recipe)
     try:
         ev = FE.evaluate(r, plan, tv, None, None)
     except FamilyError as ex:
@@ -246,6 +245,49 @@ def _inst_geometry(ctx, tp: dict, values: dict, host_id: str | None, offset, ele
 
 def _wall_height(ctx, host_id: str) -> float:
     return ctx.st.el[host_id]["params"]["height"]
+
+
+def check_hosted_fit(ctx, wall_id: str, old_wp: dict, new_wp: dict) -> None:
+    """벽 치수(두께·높이·축선)가 바뀔 때 호스팅된 패밀리 인스턴스를 새 값으로 미리 재평가한다.
+
+    레시피 제약(예: host_thickness >= leaf_t + 20)이 깨지거나 개구부가 새 벽 밖으로 나가면 CONSTRAINT 로 거절해
+    커밋 전에 막는다. (이전에는 wall.set 이 ok 로 로그에 남고 flush 때 FamilyError → INTERNAL, 재오픈 실패였다.)
+    개구부 크기가 호스트 높이에 따라 달라지는 레시피면 저장된 width/height(파생값)도 새 값으로 맞춘다.
+    호스트 형상을 바꾸는 커맨드는 wall.set 뿐이다(wall.move 는 평행이동이라 두께·높이·길이가 그대로고, join 은 파생 트림만 바꾼다).
+    """
+    changed = next((k for k in ("thickness", "height", "axis") if old_wp[k] != new_wp[k]), None)
+    if changed is None:
+        return
+    path = "/" + changed
+    length = C.sqrt(C._axis_len2(new_wp["axis"]))
+    host_ctx = {"host_thickness": new_wp["thickness"], "host_height": new_wp["height"]}
+    for d in sorted(ctx.rels_out("hosts", wall_id)):
+        row = ctx.st.el[d]
+        if row["kind"] != "finst":
+            continue
+        p = row["params"]
+        tp = ctx.st.el[p["type"]]["params"]
+        try:
+            ev = FS.finst_eval(tp, {"values": p["values"]}, host_ctx)
+        except FamilyError as ex:
+            first = ex.issues[0]
+            raise DobimError("CONSTRAINT", f"호스팅된 패밀리 인스턴스 {d}({row['family_id']})가 새 벽 치수를 받아들이지 못한다: {first.message}",
+                             path=path, hint="벽 값을 레시피 제약 안으로 두거나, 호스팅된 인스턴스를 먼저 옮기거나 지우세요",
+                             details={"instance": d, "issue": first.to_dict()}) from None
+        cut = ev["cut"]
+        if not cut:
+            continue
+        x0, x1 = cut["x"]
+        z0, z1 = cut["z"]
+        if p["offset"] + x0 < 0 or p["offset"] + x1 > length:
+            raise DobimError("CONSTRAINT", f"호스팅된 패밀리 인스턴스 {d} 의 개구부가 새 벽({length:.1f}mm) 밖으로 나간다", path=path,
+                             details={"instance": d})
+        if p["elevation"] + z0 < 0 or p["elevation"] + z1 > new_wp["height"]:
+            raise DobimError("CONSTRAINT", f"호스팅된 패밀리 인스턴스 {d} 의 개구부가 새 벽 높이({new_wp['height']:g}mm) 밖으로 나간다", path=path,
+                             details={"instance": d})
+        w, h = x1 - x0, z1 - z0
+        if w != p["width"] or h != p["height"]:
+            ctx.put_el(d, dict(row, params=dict(p, width=w, height=h)))
 
 
 def _inst_params(a_name, tid, values, ev, hosted, offset, position, rotation, elevation) -> dict:
