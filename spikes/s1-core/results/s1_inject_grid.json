@@ -1,6 +1,6 @@
 {
  "what": "IFC 호출(edit_pset 등 11종)과 SQL 쓰기(5종)를 시나리오 x 방식(한 번/계속) x k번째 호출부터 실패시킨 뒤, 라이브 엔진 = 디스크 재오픈 (해시 3종, undo/redo 스택, 리비전, undo·redo 뒤, 차등 검사)",
- "elapsed_sec": 272.1,
+ "elapsed_sec": 226.4,
  "python": "3.12.2",
  "pass": true,
  "violations": [],

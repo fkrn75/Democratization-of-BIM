@@ -182,6 +182,6 @@
  "campaign_worst_bytes_any": 5964,
  "violations": [],
  "target_tokens": 8000,
- "elapsed_sec": 84.8,
+ "elapsed_sec": 59.9,
  "pass": true
 }

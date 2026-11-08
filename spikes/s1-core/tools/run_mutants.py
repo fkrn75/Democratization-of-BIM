@@ -820,7 +820,7 @@ def m_cleanup_raises():
 @contextmanager
 def m_all_oserror_locked():
     """[10] 디스크 가득 같은 OSError 전반을 FILE_LOCKED 로 보고한다."""
-    with mock.patch.object(commands, "_io_error", lambda p, ex: commands._locked(p)):
+    with mock.patch.object(commands, "_io_error", lambda p, ex, **kw: commands._locked(p)):
         yield
 
 
