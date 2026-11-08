@@ -1,0 +1,13 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "최소 권한: 코어 + dobim 사이드카 실행만",
+  "windows": ["main"],
+  "permissions": [
+    "core:default",
+    {
+      "identifier": "shell:allow-execute",
+      "allow": [{ "name": "binaries/dobim", "sidecar": true, "args": true }]
+    }
+  ]
+}
