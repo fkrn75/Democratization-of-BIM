@@ -1,7 +1,8 @@
 # SPDX-License-Identifier: MPL-2.0
-"""IFC 호출 실패 주입 격자: 어느 시점에 어느 IFC 호출이 실패해도 '라이브 엔진 = 디스크에서 새로 연 엔진'이어야 한다.
+"""IFC 호출과 SQL 쓰기 실패 주입 격자: 어느 시점에 어느 IFC 호출·SQL 쓰기가 실패해도 '라이브 엔진 = 디스크에서 새로 연 엔진'이어야 한다.
 
-시나리오(속성·재료·요소 생성/삭제·undo/redo·dry-run·배치·투영) x 실패시킬 IFC 함수 x 방식(한 번 / 계속) x 몇 번째 호출부터.
+시나리오(속성·재료·요소 생성/삭제·undo/redo·dry-run·배치·투영) x 실패시킬 지점(IFC 함수 11종 + SQL 쓰기 5종) x 방식(한 번 / 계속) x 몇 번째 호출부터.
+SQL 쓰기는 엔진의 연결을 감싸는 대리 객체로 주입한다(sqlite3.Connection 은 속성을 바꿀 수 없다): 문장이 패턴으로 시작하면 OperationalError.
 각 경우에 대해 검사한다.
   1. 예외가 봉투 없이 새지 않는다(실패는 오류 봉투).
   2. 실패하는 동안 오염된 엔진은 정상 응답을 주지 않는다(ENGINE_TAINTED 또는 복구한 뒤 응답).
@@ -12,6 +13,7 @@
 from __future__ import annotations
 
 import json
+import sqlite3
 import sys
 import tempfile
 from collections import Counter
@@ -32,6 +34,39 @@ TARGETS = [(api_pset, "edit_pset"), (api_pset, "add_pset"), (api_pset, "remove_p
            (api_material, "unassign_material"), (api_material, "remove_material"),
            (api_root, "create_entity"), (api_root, "remove_product"),
            (api_feature, "add_feature"), (api_feature, "remove_feature")]
+# SQL 쓰기 지점(엔진이 effect 를 디스크에 쓰는 문장). ("sql", 문장 시작 패턴)
+SQL_TARGETS = [("sql", "INSERT OR REPLACE INTO element"), ("sql", "DELETE FROM element"),
+               ("sql", "INSERT OR IGNORE INTO relation"), ("sql", "DELETE FROM relation"), ("sql", "INSERT INTO op_log")]
+TARGETS = TARGETS + SQL_TARGETS
+
+
+class _SqlProxy:
+    """엔진 연결 대리: 패턴으로 시작하는 문장을 실행하기 전에 hook() 을 부른다(hook 이 예외를 던지면 그 문장은 실행되지 않는다)."""
+
+    def __init__(self, real, pattern, hook):
+        self._real, self._pattern, self._hook = real, pattern, hook
+
+    def __getattr__(self, k):
+        return getattr(self._real, k)
+
+    def execute(self, sql, *a):
+        if sql.lstrip().startswith(self._pattern):
+            self._hook()
+        return self._real.execute(sql, *a)
+
+
+def _install(tgt, s, hook_factory):
+    """주입 지점에 훅을 건다. hook_factory(이름) -> 인자 없는 함수(IFC 는 *a, **kw 를 받는 함수). 되돌리는 함수를 돌려준다."""
+    mod, name = tgt
+    if mod == "sql":
+        real = s.eng.conn
+        s.eng.conn = _SqlProxy(real, name, hook_factory(name))
+        return lambda: setattr(s.eng, "conn", real)
+    real = getattr(mod, name)
+    setattr(mod, name, hook_factory(name, real))
+    return lambda: setattr(mod, name, real)
+
+
 W, D, W3 = F.W1, F.D1, F.W3
 Z = {"id": W, "pset": "Pset_Z", "prop": "P"}
 NEW_WALL = "1" + "%021d" % 900
@@ -144,23 +179,28 @@ def _core(h):
 
 
 def count_calls(tmp: Path, scen: str) -> dict:
-    """시나리오가 각 IFC 함수를 몇 번 부르는지 센다(실패를 주입하지 않고)."""
+    """시나리오가 각 주입 지점을 몇 번 부르는지 센다(실패를 주입하지 않고)."""
     s = setup(tmp, f"cnt-{scen}")
     counts = Counter()
-    reals = []
-    for mod, name in TARGETS:
-        real = getattr(mod, name)
-        reals.append((mod, name, real))
+    restores = []
 
-        def wrap(*a, _real=real, _n=name, **kw):
-            counts[_n] += 1
-            return _real(*a, **kw)
-        setattr(mod, name, wrap)
+    def counter(name, real=None):
+        if real is None:   # SQL: 문장을 세기만 한다
+            def hook():
+                counts[name] += 1
+            return hook
+
+        def wrap(*a, **kw):
+            counts[name] += 1
+            return real(*a, **kw)
+        return wrap
+    for tgt in TARGETS:
+        restores.append(_install(tgt, s, counter))
     try:
         SCEN[scen](s)
     finally:
-        for mod, name, real in reals:
-            setattr(mod, name, real)
+        for undo in reversed(restores):
+            undo()
     s.close()
     return dict(counts)
 
@@ -170,18 +210,27 @@ def run_case(tmp: Path, scen: str, tgt, mode: str, k: int, n: int) -> dict:
     s = setup(tmp, f"c{n}")
     eng = s.eng
     s.mark = eng.rev
-    real = getattr(mod, name)
     calls = [0]
 
-    def flaky(*a, **kw):
+    def trip():
         calls[0] += 1
         if (mode == "once" and calls[0] == k) or (mode == "persist" and calls[0] >= k):
+            if mod == "sql":
+                raise sqlite3.OperationalError(f"disk I/O error 주입 {name}#{calls[0]}")
             raise RuntimeError(f"주입 {name}#{calls[0]}")
-        return real(*a, **kw)
+
+    def flaky_factory(nm, real=None):
+        if real is None:
+            return trip
+
+        def flaky(*a, **kw):
+            trip()
+            return real(*a, **kw)
+        return flaky
 
     res = {"scen": scen, "tgt": name, "mode": mode, "k": k, "viol": []}
     v = res["viol"]
-    setattr(mod, name, flaky)
+    undo_inject = _install(tgt, s, flaky_factory)
     try:
         try:
             r = SCEN[scen](s)
@@ -204,7 +253,7 @@ def run_case(tmp: Path, scen: str, tgt, mode: str, k: int, n: int) -> dict:
                 if not q["ok"] and q["error"]["code"] not in ("ENGINE_TAINTED", "INTERNAL"):
                     v.append(f"{probe[0]} 가 {q['error']['code']} 로 실패")
     finally:
-        setattr(mod, name, real)
+        undo_inject()
     if not res["injected"]:
         s.close()
         return res
@@ -278,7 +327,7 @@ def main():
     ns = ap.parse_args()
     t = time.time()
     viol, summ = check_inject_grid(Path(tempfile.mkdtemp(prefix="dobim-grid-")), quick=ns.quick)
-    out = {"what": "IFC 호출(edit_pset 등 11종)을 시나리오 x 방식(한 번/계속) x k번째 호출부터 실패시킨 뒤, 라이브 엔진 = 디스크 재오픈 "
+    out = {"what": "IFC 호출(edit_pset 등 11종)과 SQL 쓰기(5종)를 시나리오 x 방식(한 번/계속) x k번째 호출부터 실패시킨 뒤, 라이브 엔진 = 디스크 재오픈 "
                    "(해시 3종, undo/redo 스택, 리비전, undo·redo 뒤, 차등 검사)", "elapsed_sec": round(time.time() - t, 1),
            "python": platform.python_version(), "pass": not viol, "violations": viol[:50]} | {k: v for k, v in summ.items() if k != "rows"}
     out["rows"] = [{k: v for k, v in r.items() if k != "viol"} | {"viol": len(r["viol"])} for r in summ["rows"]]

@@ -178,17 +178,7 @@ def main(argv: list[str] | None = None) -> int:
                 env_out = dispatch.run_batch(env, items, project=ns.project, expected_rev=ns.expected_rev,
                                              dry_run=ns.dry_run)
             else:
-                results, rev, code = [], None, 0
-                for item in items:
-                    r = dispatch.run(env, item.get("command") or item.get("name") or "", item.get("args"),
-                                     project=ns.project, dry_run=ns.dry_run)
-                    results.append(r)
-                    rev = r.get("rev", rev)
-                    code = code or exit_code_of(r)
-                    if not r["ok"]:
-                        break
-                env_out = dispatch.ok_env(rev, results) if code == 0 else {
-                    "ok": False, "rev": rev, "error": results[-1]["error"], "result": results}
+                env_out = dispatch.run_script(env, items, project=ns.project, dry_run=ns.dry_run)
         out.emit(env_out)
         return exit_code_of(env_out)
     except DobimError as ex:

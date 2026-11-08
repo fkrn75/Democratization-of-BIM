@@ -8,7 +8,9 @@ EXIT_CODES: dict[str, int] = {
     "NOTHING_TO_UNDO": 1,
     "NOTHING_TO_REDO": 1,
     "FILE_EXISTS": 1,
-    "FILE_LOCKED": 1,
+    "FILE_LOCKED": 1,       # 다른 프로그램이 파일을 열고 있다(공유 위반·잠금 위반): 닫고 다시 시도하면 된다
+    "DISK_FULL": 1,         # 디스크 공간·할당량이 모자라 쓰지 못했다: 공간을 확보하고 다시 시도하면 된다
+    "IO_ERROR": 1,          # 그 밖의 파일 입출력 실패(읽기 전용, 장치 오류 등). 메시지에 운영체제 오류 번호가 있다
     "NO_PROJECT": 2,
     "USAGE": 2,
     "UNSUPPORTED": 2,
@@ -30,6 +32,13 @@ EXIT_CODES: dict[str, int] = {
 RETRYABLE = {"REV_CONFLICT", "LOCKED", "FILE_LOCKED"}
 
 
+MAX_ERROR_TEXT = 400
+
+
+def _clip(s: str | None) -> str | None:
+    return s if s is None or len(s) <= MAX_ERROR_TEXT else s[:MAX_ERROR_TEXT - 1] + "…"
+
+
 class DobimError(Exception):
     """커맨드 실패. 봉투의 error 필드로 그대로 직렬화된다."""
 
@@ -45,12 +54,13 @@ class DobimError(Exception):
         self.details = details or {}
 
     def to_dict(self) -> dict:
+        # 입력(커맨드 이름 등)이 메시지에 섞여도 오류 봉투가 상한 없이 커지지 않게 문자열은 길이를 제한한다
         return {
             "code": self.code,
-            "message": self.message,
-            "path": self.path,
+            "message": _clip(self.message),
+            "path": _clip(self.path),
             "retryable": self.code in RETRYABLE,
-            "hint": self.hint,
+            "hint": _clip(self.hint),
             "details": self.details,
         }
 

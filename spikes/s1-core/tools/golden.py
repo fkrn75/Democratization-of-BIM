@@ -833,7 +833,7 @@ def check_cursor_and_batch_input(work: Path) -> list[str]:
     past = [("schedule.rows", {"kind": "door", "limit": 1}, enc(["zzzz", "zzzz", "9" * 22])),
             ("relation.list", {"id": F.LV1, "limit": 1}, enc([2, 1, "z" * 22])),
             ("element.query", {"limit": 1}, enc("z" * 22)), ("history.list", {"limit": 1}, enc(0)),
-            ("history.affected", {"limit": 1}, enc([2, "z" * 22])), ("commands.search", {"limit": 1}, enc("zzzz")),
+            ("history.affected", {"limit": 1}, enc([2, 10 ** 6, "z" * 22])), ("commands.search", {"limit": 1}, enc("zzzz")),
             ("ifc.snapshots", {"path": "x.ifc", "limit": 1}, enc(10 ** 6))]
     for name, base, cur in past:
         r = s.run(name, dict(base, cursor=cur))
@@ -900,7 +900,8 @@ def check_mutation_cap(work: Path) -> list[str]:
     # undo / redo 동작은 같다: 해시 복원, ops 는 잘려도 ops_total 이 정확하다
     h_after = {k: x for k, x in eng.hashes().items() if k != "rev"}
     u = s.run("history.undo")
-    if not u["ok"] or u["result"]["ops_total"] != n or u["result"]["truncated"] is not True or len(_json.dumps(u, ensure_ascii=False).encode("utf-8")) > limits.RESPONSE_CAP_BYTES:
+    if (not u["ok"] or u["result"]["ops_total"] != n or u["result"]["ops"] != [{"op": "wall.create", "count": n}]
+            or len(_json.dumps(u, ensure_ascii=False).encode("utf-8")) > limits.RESPONSE_CAP_BYTES):
         v.append(f"큰 배치의 undo 응답이 틀렸다: {u.get('error') or {k: x for k, x in u['result'].items() if k != 'ops'}}")
     if eng.st.by_kind.get("wall"):
         v.append("undo 가 600개 벽을 되돌리지 못했다")

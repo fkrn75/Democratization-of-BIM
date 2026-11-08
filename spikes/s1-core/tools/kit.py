@@ -285,7 +285,7 @@ def replay_log(rows, path, guid, *, eager_t0=False, legacy=False) -> Engine:
             if legacy:
                 op, a = legacy_op(op, a)
             cmd = dispatch.get_command(op)
-            group.append((cmd, dispatch.parse_args(cmd, a)))
+            group.append((cmd, dispatch.parse_args(cmd, a, replay=True)))   # 옛 로그의 긴 값도 재생된다(길이 상한은 새 입력에만)
         eng.mutate(group)
         i = j + 1
     return eng

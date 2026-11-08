@@ -394,12 +394,12 @@ class Engine:
                 p.add(("count", kind))
             if persist:
                 if new is None:
-                    self.conn.execute("DELETE FROM element WHERE id=?", (eid,))
+                    self._sql(f"요소 {eid}", "DELETE FROM element WHERE id=?", (eid,))
                 else:
-                    self.conn.execute(
-                        "INSERT OR REPLACE INTO element (id, kind, ifc_class, origin, family_id, params) "
-                        "VALUES (?,?,?,?,?,?)",
-                        (eid, new["kind"], new["ifc_class"], new["origin"], new["family_id"], canon(new["params"])))
+                    self._sql(f"요소 {eid}",
+                              "INSERT OR REPLACE INTO element (id, kind, ifc_class, origin, family_id, params) "
+                              "VALUES (?,?,?,?,?,?)",
+                              (eid, new["kind"], new["ifc_class"], new["origin"], new["family_id"], canon(new["params"])))
         elif t == "rel":
             _, kind, src, dst, _, new = e
             self.st.apply_rel(kind, src, dst, bool(new))
@@ -407,10 +407,9 @@ class Engine:
             p.add(("rel_in", kind, dst))
             if persist:
                 if new:
-                    self.conn.execute("INSERT OR IGNORE INTO relation (kind, src, dst) VALUES (?,?,?)",
-                                      (kind, src, dst))
+                    self._sql(f"관계 {kind}", "INSERT OR IGNORE INTO relation (kind, src, dst) VALUES (?,?,?)", (kind, src, dst))
                 else:
-                    self.conn.execute("DELETE FROM relation WHERE kind=? AND src=? AND dst=?", (kind, src, dst))
+                    self._sql(f"관계 {kind}", "DELETE FROM relation WHERE kind=? AND src=? AND dst=?", (kind, src, dst))
         elif t == "pset":
             try:   # 실패한 효과는 effects 에 들어가지 않아 롤백되지 않는다: 오염으로 표시해 로그에서 다시 만들게 한다
                 self.ifc.set_prop(e[1], e[2], e[3], e[5])
@@ -427,6 +426,16 @@ class Engine:
             p.add(("mat", e[1]))
         else:
             raise DobimError("INTERNAL", f"알 수 없는 효과: {t}")
+
+    def _sql(self, what: str, sql: str, params: tuple) -> None:
+        """효과의 SQL 쓰기. 메모리 상태와 IFC 는 이미 바뀐 뒤라, 쓰기가 실패하면(디스크 오류 등) 메모리가 디스크와 어긋난다.
+        실패한 효과는 effects 에 들어가지 않아 롤백되지 않으므로 IFC 실패와 같게 오염으로 표시한다: 호출 쪽 실패 경로가
+        트랜잭션을 롤백한 뒤 로그(디스크)에서 상태와 투영을 다시 만든다."""
+        try:
+            self.conn.execute(sql, params)
+        except BaseException as ex:
+            self._taint(f"SQL 쓰기 {what}", ex)
+            raise
 
     def _taint(self, what: str, ex: BaseException) -> None:
         """IFC 호출이 예외를 던졌다: 호출이 어디까지 적용됐는지 알 수 없다(고아 재료·중복 재료·반쯤 지워진 요소).
@@ -525,7 +534,7 @@ class Engine:
             base = self.head
             txn = f"t{base + 1}"
             ts = time.strftime("%Y-%m-%dT%H:%M:%S", time.gmtime())
-            entries, results, warnings = [], [], []
+            entries, results, warnings, seqs = [], [], [], []
             for cmd, model in cmds:
                 if cmd.name.startswith("history.") and len(cmds) > 1:
                     raise DobimError("USAGE", "history.* 는 배치에 섞을 수 없다")
@@ -539,7 +548,9 @@ class Engine:
                 warnings.extend(ctx.warnings)
                 if ctx.effects:
                     entries.append((seq, cmd.name, log_args(model), invert(ctx.effects)))
+                    seqs.append(seq)
                 else:
+                    seqs.append(None)
                     warnings.append(f"{cmd.name}: 변경 없음")
             t_apply = time.perf_counter()
             self._t0()
@@ -548,7 +559,7 @@ class Engine:
             if dry_run:
                 done, applied[:] = list(applied), []   # 되돌리는 도중 실패해도 실패 경로가 같은 효과를 또 되돌리지 않게
                 self._rollback(done)
-                return {"rev": self.head, "results": results, "affected": aff, "warnings": warnings,
+                return {"rev": self.head, "results": results, "seqs": seqs, "affected": aff, "warnings": warnings,
                         "entries": len(entries), "dry_run": True}
             for seq, op, args, inv in entries:
                 c.execute("INSERT INTO op_log (seq, txn_id, actor, base_rev, ts, op, args, inverse) "
@@ -561,7 +572,7 @@ class Engine:
             self.timing = {"sync_ms": (t_sync - t_start) * 1e3, "apply_ms": (t_apply - t_sync) * 1e3,
                            "t0_ms": (t_t0 - t_apply) * 1e3, "commit_ms": (t_end - t_t0) * 1e3,
                            "total_ms": (t_end - t_start) * 1e3}
-            return {"rev": self.head, "results": results, "affected": aff, "warnings": warnings,
+            return {"rev": self.head, "results": results, "seqs": seqs, "affected": aff, "warnings": warnings,
                     "entries": len(entries), "dry_run": False}
         except BaseException as ex:
             if not dry_run and c.in_transaction:

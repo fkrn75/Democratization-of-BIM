@@ -7,7 +7,8 @@
   differential : 증분 그래프 vs 기준 그래프(캐시 없음) vs 로그 전체 재생 vs 파일 새로 열기 (kit.full_check)
   undo         : 실행 취소·다시 실행 뒤 해시 복원, 실패 커맨드의 원자적 롤백 (kit.undo_property)
   concurrency  : 낡은 expected_rev 거부, 따라잡기 (kit.concurrency_property)
-  inject_grid  : IFC 호출 실패 주입 후 라이브 엔진 = 디스크 재오픈 (tools/inject_grid.py, 빠른 부분)
+  protocol     : 응답 크기·잘림·오류 분류 검사 (tools/protocol_checks.py). 골든 함수와 별개라 골든을 꺼도 돈다
+  inject_grid  : IFC 호출·SQL 쓰기 실패 주입 후 라이브 엔진 = 디스크 재오픈 (tools/inject_grid.py, 빠른 부분)
 """
 from __future__ import annotations
 
@@ -24,6 +25,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import kit  # noqa: E402
 import golden  # noqa: E402
 import inject_grid  # noqa: E402
+import protocol_checks  # noqa: E402
 from dobim_core import commands, dispatch, engine, graph, ifc_model, limits, queries  # noqa: E402
 
 
@@ -532,7 +534,7 @@ def m_export_lock_unconverted():
 @contextmanager
 def m_no_response_cap():
     """S11 회귀: 목록형 응답 크기 상한이 없다(limit 최댓값이 그대로 나간다)."""
-    with mock.patch.object(limits, "RESPONSE_CAP_BYTES", 10**9):
+    with mock.patch.object(limits, "RESPONSE_CAP_BYTES", 10**9), mock.patch.object(limits, "RESPONSE_CAP_TOKENS", 10**9):
         yield
 
 
@@ -553,7 +555,7 @@ def m_offset_cursors():
         rows = ctx.g.q(queries.schedule_sorted, a.kind)
         start = limits.dec_cursor(a.cursor, "int") or 0
         cols = list(queries.ROW_COLUMNS[a.kind])
-        items, cut = limits.fit([list(r) for r in rows[start:start + a.limit]], base=cols)
+        items, cut = limits.fit([list(r) for r in rows[start:start + a.limit]], base={"columns": cols})
         nxt = limits.enc_cursor(start + len(items)) if start + len(items) < len(rows) else None
         return {"columns": cols, "items": items, "page": limits.page(nxt, len(rows), cut)}
 
@@ -597,19 +599,19 @@ def m_cursor_shape_unchecked():
 
 @contextmanager
 def m_old_byte_cap():
-    """D 회귀: 상한을 옛 값(바이트/3 추정으로 정한 12,000바이트)으로 둔다 - 실측 토크나이저로는 8,000토큰을 넘는다."""
-    with mock.patch.object(limits, "RESPONSE_CAP_BYTES", 12_000):
+    """D 회귀: 상한을 옛 값(바이트/3 추정으로 정한 12,000바이트)으로 두고 토큰 추정은 쓰지 않는다 - 실측 토크나이저로는 8,000토큰을 넘는다."""
+    with mock.patch.object(limits, "RESPONSE_CAP_BYTES", 12_000), mock.patch.object(limits, "RESPONSE_CAP_TOKENS", 10**9):
         yield
 
 
 @contextmanager
 def m_mutation_uncapped():
     """E 회귀: 변경 응답(results·affected)에 상한이 없다."""
-    def fit_mutation(results, affected, rev, dry_run):
+    def fit_mutation(results, affected, rev, dry_run, warnings=(), must_keep=None, how=None):
         out = dict(affected)
         out["counts"] = {k: len(affected[k]) for k in ("created", "modified", "deleted")}
         out["truncated"] = False
-        return results, out, None, []
+        return results, out, None, list(warnings)
 
     with mock.patch.object(limits, "fit_mutation", fit_mutation):
         yield
@@ -620,12 +622,222 @@ def m_mutation_counts_shown():
     """E 회귀: affected.counts 가 정확한 건수가 아니라 잘리고 남은 길이다."""
     orig = limits.fit_mutation
 
-    def fit_mutation(results, affected, rev, dry_run):
-        shown, out, page, warns = orig(results, affected, rev, dry_run)
+    def fit_mutation(results, affected, rev, dry_run, warnings=(), must_keep=None, how=None):
+        shown, out, page, warns = orig(results, affected, rev, dry_run, warnings, must_keep, how)
         out["counts"] = {k: len(out[k]) for k in ("created", "modified", "deleted")}
         return shown, out, page, warns
 
     with mock.patch.object(limits, "fit_mutation", fit_mutation):
+        yield
+
+
+# ---------------------------------------------------------------- 6차 검수 후속 변이 (M42~)
+@contextmanager
+def m_empty_affected_shared():
+    """[1] 빈 affected 가 모든 응답이 공유하는 가변 객체다(한 응답을 고치면 다음 응답이 오염된다)."""
+    shared = limits.empty_affected()
+    with mock.patch.object(limits, "empty_affected", lambda: shared):
+        yield
+
+
+@contextmanager
+def m_warnings_uncapped():
+    """[2] 경고를 묶지도 자르지도 않는다(변경 없는 명령 1,000건이면 경고가 1,000줄)."""
+    with mock.patch.object(limits, "group_warnings", lambda w: list(w)):
+        yield
+
+
+@contextmanager
+def m_fit_fixed_reserve():
+    """[3] 목록 자르기가 봉투 뼈대·다음 쪽 커서를 실제 크기로 재지 않고 고정 예비 900바이트로 어림한다(이모지·제어문자 이름이면 상한 초과)."""
+    def old_fit(rows, base=None, cursor_of=None, extra_bytes=0, extra_tokens=0.0):
+        used = 900 + (limits.jsize(base) if base else 0)
+        out = []
+        for r in rows:
+            sz = limits.jsize(r)
+            if out and used + sz > limits.RESPONSE_CAP_BYTES:
+                return out, True
+            used += sz
+            out.append(r)
+        return out, False
+
+    with mock.patch.object(limits, "fit", old_fit), mock.patch.object(commands, "_fit", old_fit):
+        yield
+
+
+@contextmanager
+def m_no_token_estimate():
+    """[4] 토큰 추정을 쓰지 않는다(바이트 상한 6,000 만 본다): 무작위 한글·한자·이모지 이름이면 8,000토큰을 넘는다."""
+    with mock.patch.object(limits, "RESPONSE_CAP_TOKENS", 10**9):
+        yield
+
+
+@contextmanager
+def m_wide_chars_as_ascii():
+    """[4] 비 ASCII 문자를 ASCII 와 같은 가중치(0.8)로 센다: 한글·한자·이모지 이름의 토큰을 과소평가한다."""
+    with mock.patch.object(limits, "_wide_weight", lambda ch: 0.8):
+        yield
+
+
+@contextmanager
+def m_results_unnumbered():
+    """[5] 배치 results 항목에 명령 번호(index)와 seq 가 없다(잘리면 어느 명령의 결과인지 알 수 없다)."""
+    with mock.patch.object(dispatch, "_number_results", lambda results, seqs: list(results)):
+        yield
+
+
+@contextmanager
+def m_affected_without_seq():
+    """[5] history.affected 항목에 seq 가 없다(잘린 results 와 이어 맞출 수 없다)."""
+    import dataclasses
+    from dobim_core import registry
+    orig = registry.REGISTRY["history.affected"]
+
+    def func(ctx, a):
+        out = orig.func(ctx, a)
+        out["items"] = [{k: v for k, v in it.items() if k != "seq"} for it in out["items"]]
+        return out
+    registry.REGISTRY["history.affected"] = dataclasses.replace(orig, func=func)
+    try:
+        yield
+    finally:
+        registry.REGISTRY["history.affected"] = orig
+
+
+@contextmanager
+def m_undo_ops_repeated():
+    """[6] undo/redo 의 ops 가 커맨드 이름을 건수만큼 되풀이한다(요약 아님)."""
+    import dataclasses
+    from dobim_core import registry
+    origs = {n: registry.REGISTRY[n] for n in ("history.undo", "history.redo")}
+
+    def wrap(orig):
+        def func(ctx, a):
+            out = orig.func(ctx, a)
+            out["ops"] = [o["op"] for o in out["ops"] for _ in range(o["count"])]
+            return out
+        return func
+    for n, c in origs.items():
+        registry.REGISTRY[n] = dataclasses.replace(c, func=wrap(c))
+    try:
+        yield
+    finally:
+        registry.REGISTRY.update(origs)
+
+
+@contextmanager
+def m_failures_droppable():
+    """[7] 응답을 줄일 때 실패 결과를 지켜 주지 않는다(중간 실패가 잘려 사라진다)."""
+    orig = limits.fit_mutation
+
+    def fit_mutation(results, affected, rev, dry_run, warnings=(), must_keep=None, how=None, extra_bytes=0, extra_tokens=0.0):
+        return orig(results, affected, rev, dry_run, warnings, None, how, extra_bytes, extra_tokens)
+
+    with mock.patch.object(limits, "fit_mutation", fit_mutation):
+        yield
+
+
+@contextmanager
+def m_script_uncapped():
+    """[7] 비원자 script 가 항목마다 봉투 한 벌을 그대로 싣고 상한이 없다(옛 구현)."""
+    def run_script(env, items, *, project, dry_run=False):
+        results, rev, code = [], None, 0
+        for item in items:
+            r = dispatch.run(env, item.get("command") or item.get("name") or "", item.get("args"), project=project, dry_run=dry_run)
+            results.append(r)
+            rev = r.get("rev", rev)
+            code = code or (0 if r["ok"] else 1)
+            if not r["ok"]:
+                break
+        return dispatch.ok_env(rev, results) if code == 0 else {"ok": False, "rev": rev, "error": results[-1]["error"], "result": results}
+
+    with mock.patch.object(dispatch, "run_script", run_script):
+        yield
+
+
+@contextmanager
+def m_no_input_string_limit():
+    """[8] 속성 문자열 입력 길이 상한이 없다(40,000자 값이 history.list·element.get 한 건을 120KB 로 만든다)."""
+    with mock.patch.object(limits, "STR_MAX", 10**9):
+        yield
+
+
+@contextmanager
+def m_element_get_relations_uncapped():
+    """[8] element.get 의 관계 수 상한이 없다(벽이 많은 레벨의 element.get 이 상한을 넘는다)."""
+    with mock.patch.object(commands, "RELATIONS_SHOWN", 10**6):
+        yield
+
+
+@contextmanager
+def m_no_clip_legacy_values():
+    """[8] 옛 로그의 긴 값을 자르지 않는다(단건이 상한을 넘고 truncated 도 알리지 않는다)."""
+    with mock.patch.object(limits, "clip_text", lambda s: (s, False)):
+        yield
+
+
+@contextmanager
+def m_replay_enforces_limit():
+    """[8] 재생에도 길이 상한을 건다(상한이 생기기 전의 옛 로그가 재생에서 SCHEMA_INVALID 로 깨진다)."""
+    orig = dispatch.parse_args
+
+    def parse_args(cmd, raw, *, replay=False):
+        return orig(cmd, raw, replay=False)
+
+    with mock.patch.object(dispatch, "parse_args", parse_args):
+        yield
+
+
+@contextmanager
+def m_sql_write_not_tainted():
+    """[9] effect 의 SQL 쓰기가 실패해도 오염으로 표시하지 않는다(메모리와 IFC 만 바뀌고 디스크는 그대로)."""
+    def sql(self, what, stmt, params):
+        self.conn.execute(stmt, params)
+
+    with mock.patch.object(engine.Engine, "_sql", sql):
+        yield
+
+
+@contextmanager
+def m_snapshot_leaks_on_failure():
+    """[10] 내보내기가 실패해도 방금 만든 스냅숏을 지우지 않는다(재시도마다 쌓인다)."""
+    with mock.patch.object(commands, "_drop_snapshot", lambda p, snap, ws: None):
+        yield
+
+
+@contextmanager
+def m_cleanup_raises():
+    """[10] 실패 뒤 .tmp 정리가 다른 프로세스에 잡혀 PermissionError 를 내면 INTERNAL 로 샌다."""
+    def cleanup(path):
+        path.unlink(missing_ok=True)
+
+    with mock.patch.object(commands, "_cleanup", cleanup):
+        yield
+
+
+@contextmanager
+def m_all_oserror_locked():
+    """[10] 디스크 가득 같은 OSError 전반을 FILE_LOCKED 로 보고한다."""
+    with mock.patch.object(commands, "_io_error", lambda p, ex: commands._locked(p)):
+        yield
+
+
+@contextmanager
+def m_replace_without_preopen():
+    """[10] .tmp 를 먼저 열어 보지 않는다(다른 프로세스가 .tmp 를 잡으면 IFC 라이브러리 예외가 INTERNAL 로 샌다)."""
+    def replace(p, write):
+        tmp = p.with_name(p.name + ".tmp")
+        try:
+            write(tmp)
+            tmp.replace(p)
+        except OSError as ex:
+            commands._cleanup(tmp)
+            raise commands._io_error(p, ex) from ex
+        except BaseException:
+            commands._cleanup(tmp)
+            raise
+
+    with mock.patch.object(commands, "_replace", replace):
         yield
 
 
@@ -671,6 +883,25 @@ MUTANTS = [
     ("M39 [D] 상한이 옛 12,000바이트(바이트/3 추정 근거, 실측 토큰 초과)", "프로토콜", m_old_byte_cap),
     ("M40 [E] 변경 응답 상한 없음(배치 600건이 36KB)", "프로토콜", m_mutation_uncapped),
     ("M41 [E] affected.counts 가 잘린 길이(정확한 건수 아님)", "프로토콜", m_mutation_counts_shown),
+    ("M42 [6차-1] 빈 affected 가 공유 가변 객체", "프로토콜", m_empty_affected_shared),
+    ("M43 [6차-2] 경고를 묶지도 자르지도 않음(변경 없는 배치 1,000건)", "프로토콜", m_warnings_uncapped),
+    ("M44 [6차-3] 상한 판정이 커서·뼈대를 실제 크기로 재지 않고 예비 900바이트로 어림", "프로토콜", m_fit_fixed_reserve),
+    ("M45 [6차-4] 토큰 추정 없음(바이트 상한만): 무작위 한글·이모지가 8,000토큰 초과", "프로토콜", m_no_token_estimate),
+    ("M46 [6차-4] 비 ASCII 문자를 ASCII 가중치로 셈", "프로토콜", m_wide_chars_as_ascii),
+    ("M47 [6차-5] 배치 results 에 명령 번호·seq 없음", "프로토콜", m_results_unnumbered),
+    ("M48 [6차-5] history.affected 항목에 seq 없음", "프로토콜", m_affected_without_seq),
+    ("M49 [6차-6] undo/redo ops 가 커맨드 이름을 건수만큼 되풀이", "프로토콜", m_undo_ops_repeated),
+    ("M50 [6차-7] 응답을 줄일 때 실패 결과가 잘려 사라짐", "프로토콜", m_failures_droppable),
+    ("M51 [6차-7] 비원자 script 응답에 상한이 없음(옛 구현)", "프로토콜", m_script_uncapped),
+    ("M52 [6차-8] 속성 문자열 입력 길이 상한 없음", "프로토콜", m_no_input_string_limit),
+    ("M53 [6차-8] element.get 관계 수 상한 없음", "프로토콜", m_element_get_relations_uncapped),
+    ("M54 [6차-8] 옛 로그의 긴 값을 자르지도 표시하지도 않음", "프로토콜", m_no_clip_legacy_values),
+    ("M55 [6차-8] 재생에도 길이 상한을 걸어 옛 로그가 깨짐", "프로토콜", m_replay_enforces_limit),
+    ("M56 [6차-9] effect SQL 쓰기 실패를 오염으로 표시하지 않음", "값 손상", m_sql_write_not_tainted),
+    ("M57 [6차-10] 내보내기 실패 뒤 스냅숏을 지우지 않음", "프로토콜", m_snapshot_leaks_on_failure),
+    ("M58 [6차-10] 실패 뒤 .tmp 정리 실패가 INTERNAL 로 샘", "프로토콜", m_cleanup_raises),
+    ("M59 [6차-10] OSError 전반을 FILE_LOCKED 로 보고", "프로토콜", m_all_oserror_locked),
+    ("M60 [6차-10] .tmp 를 먼저 열어 보지 않아 잠긴 .tmp 가 INTERNAL 로 샘", "프로토콜", m_replace_without_preopen),
 ]
 
 
@@ -687,6 +918,9 @@ def run_checks(work: Path, seeds_diff, n_diff, seeds_undo, n_undo, shrink_budget
                   + golden.check_mutation_cap(work) + golden.check_token_budget(work))
             if gv:
                 return {"detected": True, "by": "golden", "evidence": gv[:2]}
+        pv = protocol_checks.run_all(work)   # 골든과 별개: 골든을 끈 상태에서도 돈다
+        if pv:
+            return {"detected": True, "by": "protocol", "evidence": pv[:2]}
         gviol, _ = inject_grid.check_inject_grid(work, quick=True, ks=(1,))   # 실패 주입: 라이브 = 디스크 (골든과 별개의 기준)
         if gviol:
             return {"detected": True, "by": "inject_grid", "evidence": gviol[:2]}

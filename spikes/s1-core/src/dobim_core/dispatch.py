@@ -73,7 +73,7 @@ class Env:
 # ---------------------------------------------------------------- 봉투
 def ok_env(rev, result, *, affected=None, warnings=None, page=None, dry_run=False) -> dict:
     out = {"ok": True, "rev": rev, "result": result,
-           "affected": affected or limits.EMPTY_AFFECTED,
+           "affected": affected or limits.empty_affected(),
            "warnings": warnings or [], "page": page, "artifacts": [], "job": None}
     if dry_run:
         out["dry_run"] = True
@@ -87,10 +87,12 @@ def err_env(ex: DobimError, rev=None) -> dict:
     return out
 
 
-def _mutation_env(eng_rev: int, results, affected: dict, warnings: list, dry_run: bool) -> dict:
-    """변경 응답: results·affected 가 길면 상한 안으로 줄인다(변경은 이미 끝났다). 잘린 나머지는 history.affected 로 얻는다."""
-    shown, aff, page, extra = limits.fit_mutation(results, affected, eng_rev, dry_run)
-    return ok_env(eng_rev, _clean(shown), affected=aff, warnings=list(warnings) + extra, page=page, dry_run=dry_run)
+def _mutation_env(eng_rev: int, results, affected: dict, warnings: list, dry_run: bool, must_keep=None, how=None,
+                  extra: Any = None) -> dict:
+    """변경 응답: results·affected·warnings 가 길면 상한 안으로 줄인다(변경은 이미 끝났다). 잘린 나머지는 history.affected 로 얻는다."""
+    eb, et = (limits.jsize(extra), limits.est_tokens(extra)) if extra is not None else (0, 0.0)
+    shown, aff, page, warns = limits.fit_mutation(results, affected, eng_rev, dry_run, warnings, must_keep, how, eb, et)
+    return ok_env(eng_rev, _clean(shown), affected=aff, warnings=warns, page=page, dry_run=dry_run)
 
 
 def _rev_of(eng):
@@ -109,9 +111,11 @@ def _pointer(loc) -> str:
     return "/" + "/".join(str(p) for p in loc) if loc else ""
 
 
-def parse_args(cmd: registry.Command, raw: dict | None):
+def parse_args(cmd: registry.Command, raw: dict | None, *, replay: bool = False):
+    """커맨드 인자를 스키마로 검증한다. replay=True 는 이미 로그에 있는 항목을 다시 실행할 때만 쓴다: 문자열 길이 상한은 새 입력에만
+    적용하므로(옛 로그에 상한을 넘는 값이 있어도 재생이 깨지지 않는다) 이때는 길이 상한을 검사하지 않는다."""
     try:
-        return cmd.args_model.model_validate(raw or {})
+        return cmd.args_model.model_validate(raw or {}, context={"replay": True} if replay else None)
     except ValidationError as ex:
         errs = ex.errors()
         first = errs[0]
@@ -205,6 +209,12 @@ def _run_destructive(eng, cmd, model, confirm, dry_run) -> dict:
     return ok_env(eng.rev, _clean(result), warnings=warns)
 
 
+def _number_results(results: list, seqs: list) -> list:
+    """결과마다 명령 번호(index)와 로그 항목 번호(seq, 변경이 없던 명령은 null)를 붙인다: 응답이 잘려도 어느 명령의 결과인지 알고,
+    history.affected 의 항목(seq)과 이어 맞출 수 있다."""
+    return [dict({"index": i, "seq": sq}, **x) for i, (x, sq) in enumerate(zip(results, seqs))]
+
+
 def run_batch(env: Env, commands: list[dict], *, project: str | None, expected_rev: int | None = None,
               dry_run: bool = False, allowed_risks: set[str] | None = None) -> dict:
     """변경 커맨드 여러 개를 하나의 원자적 트랜잭션으로 실행한다 (한 번에 되돌려진다)."""
@@ -230,8 +240,64 @@ def run_batch(env: Env, commands: list[dict], *, project: str | None, expected_r
                 raise
         eng = env.engine(project)
         r = eng.mutate(parsed, expected_rev=expected_rev, dry_run=dry_run)
-        return _mutation_env(r["rev"], r["results"], r["affected"], r["warnings"], r["dry_run"])
+        return _mutation_env(r["rev"], _number_results(r["results"], r["seqs"]), r["affected"], r["warnings"], r["dry_run"])
     except DobimError as ex:
         return err_env(ex, _rev_of(eng))
     except Exception as ex:
         return err_env(internal_error(ex), _rev_of(eng))
+
+
+def _merge_affected(parts: list[dict]) -> dict:
+    """따로 실행한 변경들의 affected 를 합친다. 같은 요소를 만들고 나중에 지웠으면 흔적을 남기지 않는다(트랜잭션 하나의 규칙과 같다)."""
+    c, m, d = set(), set(), set()
+    for a in parts:
+        c.update(a["created"])
+        m.update(a["modified"])
+        d.update(a["deleted"])
+    both = c & d
+    c -= both
+    d -= both
+    m -= c | d | both
+    return {"created": sorted(c), "modified": sorted(m), "deleted": sorted(d)}
+
+
+def run_script(env: Env, items: list, *, project: str | None, dry_run: bool = False) -> dict:
+    """비원자 배치(CLI script): 항목마다 따로 실행하고 첫 실패에서 멈춘다. 응답은 원자 배치와 같은 크기 상한 안에 든다.
+
+    항목 결과는 {index, ok, rev, result} 로 줄여 싣고(항목마다 봉투 한 벌을 싣지 않는다), affected 는 모두 합쳐 한 번만 싣는다.
+    상한을 넘으면 앞부분만 남기고 page 로 알린다. 실패 항목은 어떤 경우에도 잘려 사라지지 않는다. 항목마다 따로 커밋됐으므로
+    생략된 항목은 각 항목의 rev 로 history.affected / history.list 에서 얻는다."""
+    entries, parts, warns, rev, failure, aff_cut = [], [], [], None, None, False
+    for i, item in enumerate(items):
+        if isinstance(item, dict):
+            r = run(env, item.get("command") or item.get("name") or "", item.get("args"), project=project, dry_run=dry_run)
+        else:
+            r = err_env(DobimError("SCHEMA_INVALID", "스크립트 항목은 {command, args} 객체여야 한다", path=f"/{i}"))
+        rev = r.get("rev", rev)
+        e: dict = {"index": i, "ok": r["ok"]}
+        if r["ok"]:
+            e["rev"] = r["rev"]
+            e["result"] = r["result"]
+            if r.get("page"):
+                e["page"] = r["page"]
+            parts.append(r["affected"])
+            aff_cut = aff_cut or r["affected"]["truncated"]
+            warns.extend(r["warnings"])
+        else:
+            if "rev" in r:
+                e["rev"] = r["rev"]
+            e["error"] = r["error"]
+            failure = r["error"]
+        entries.append(e)
+        if failure is not None:
+            break
+    merged = _merge_affected(parts)
+    how = ("각 항목이 따로 커밋됐다: 생략된 항목은 그 항목의 rev 로 history.affected(rev=...) 를, 전체 이력은 history.list 를 쓰세요"
+           if not dry_run else "dry_run 이라 로그에 남지 않아 이어받을 수 없다: dry_run 없이 실행한 뒤 history.list 를 쓰세요")
+    out = _mutation_env(rev if rev is not None else 0, entries, merged, warns, dry_run, must_keep=lambda e: not e["ok"], how=how,
+                        extra=failure)   # 실패한 오류는 최상위에 한 번 더 싣는다
+    if aff_cut:
+        out["warnings"].append("일부 항목의 affected 가 이미 잘려 있어 합친 affected 가 전부가 아닐 수 있다")
+    if failure is not None:
+        out = {"ok": False, "error": failure, **{k: v for k, v in out.items() if k != "ok"}}
+    return out

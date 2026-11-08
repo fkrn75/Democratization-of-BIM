@@ -29,9 +29,13 @@ RESERVED_PSET = "DoBIM_Intent"
 Id = Annotated[str, Field(pattern=r"^[0-9A-Za-z_$]{22}$", description="IFC GlobalId (22자)")]
 Num = Annotated[float, Field(allow_inf_nan=False)]
 Pos = Annotated[float, Field(gt=0, allow_inf_nan=False)]
-def _text_ok(s: str) -> str:
+def _text_ok(s: str, info: ValidationInfo) -> str:
     if "\x00" in s or any(0xD800 <= ord(c) <= 0xDFFF for c in s):
         raise ValueError("NUL 이나 홑서로게이트는 허용하지 않는다")
+    # 길이 상한은 새 입력에만 건다. 이미 로그에 있는 항목을 다시 실행할 때(replay)는 건너뛰어, 상한이 생기기 전의 옛 로그가 재생에서 깨지지 않는다.
+    # (재오픈과 다른 프로세스의 쓰기 따라잡기는 효과를 직접 적용하므로 스키마를 거치지 않는다.)
+    if len(s) > limits.STR_MAX and not (info.context or {}).get("replay"):
+        raise ValueError(f"문자열은 {limits.STR_MAX}자 이하여야 한다(현재 {len(s)}자)")
     return s
 
 
@@ -41,7 +45,10 @@ def _only_float(v):
     return v
 
 
-Text = Annotated[StrictStr, AfterValidator(_text_ok)]
+# 속성 문자열 값의 길이 상한 255자: IFC4 의 IfcLabel·IfcIdentifier 가 255자이고 방화등급·재질·분류 코드·제품 번호·층 이름 같은 속성값이 이 틀에
+# 든다(Revit 의 공유 매개변수 이름도 같은 규모). 긴 서술형 텍스트(IfcText)는 S1 속성 범위 밖이다. 상한 덕에 단건 응답(history.list 항목의 args,
+# element.get 의 속성 하나, 일람표 셀)이 어떤 문자 종류로 채워져도 응답 상한 안에 든다(255자 x 최악 6바이트 = 1.5KB).
+Text = Annotated[StrictStr, Field(json_schema_extra={"maxLength": limits.STR_MAX}), AfterValidator(_text_ok)]
 Name = Annotated[str, Field(min_length=1, max_length=64), AfterValidator(_text_ok)]
 # 속성 값: 저장값이 입력과 같아야 하므로 NaN/inf, int64 초과, NUL, 홑서로게이트는 스키마에서 거부한다.
 # null(None) 도 거부한다: 표준 JSON 에는 NaN/inf 가 없어 공식 MCP SDK 클라이언트가 이를 null 로 직렬화하는데,
@@ -113,8 +120,8 @@ def _fresh_id(ctx, a, kind):
 
 # ================================================================ 프로젝트·시스템
 class ProjectNew(A):
-    path: str = Field(description="작업 폴더 안의 .dobim 경로")
-    guid: str | None = Field(None, description="프로젝트 UUID. 생략하면 무작위, 지정하면 재현 가능")
+    path: str = Field(max_length=260, description="작업 폴더 안의 .dobim 경로")
+    guid: str | None = Field(None, max_length=36, description="프로젝트 UUID. 생략하면 무작위, 지정하면 재현 가능")
 
 
 @command("project.new", kind="session", risk="write", group="project", summary="새 프로젝트 파일(.dobim)을 만든다",
@@ -143,11 +150,11 @@ def project_info(ctx, a):
 
 
 class Search(A):
-    query: str = ""
-    group: str | None = None
+    query: str = Field("", max_length=256)
+    group: str | None = Field(None, max_length=64)
     risk: Literal["read", "write", "destructive", "code_exec"] | None = None
     limit: int = Field(100, ge=1, le=1000, description="최대 개수. 응답 크기 상한에 걸리면 이보다 적게 돌려주고 page.truncated 로 알린다")
-    cursor: str | None = Field(None, description="이전 응답의 page.next_cursor")
+    cursor: str | None = Field(None, max_length=2048, description="이전 응답의 page.next_cursor")
 
 
 @command("commands.search", kind="query", risk="read", group="system", summary="커맨드를 키워드·그룹·위험 등급으로 찾는다",
@@ -156,13 +163,14 @@ def commands_search(env, a: Search):
     rows = registry.search(a.query, a.group, a.risk)
     after = _dec_cursor(a.cursor, "name")
     start = 0 if after is None else next((i for i, c in enumerate(rows) if c["name"] > after), len(rows))
-    items, cut = _fit(rows[start:start + a.limit])
+    window = rows[start:start + a.limit]
+    items, cut = _fit(window, cursor_of=lambda i: _enc_cursor(window[i]["name"]))
     more = start + len(items) < len(rows)
     return {"items": items, "page": _page(_enc_cursor(items[-1]["name"]) if more else None, len(rows), cut)}
 
 
 class Describe(A):
-    name: str
+    name: str = Field(max_length=64)
 
 
 @command("commands.describe", kind="query", risk="read", group="system", summary="커맨드 하나의 스키마와 예시",
@@ -453,33 +461,70 @@ _fit = limits.fit
 _page = limits.page
 
 
+RELATIONS_SHOWN = 20   # element.get 이 보여 주는 관계 수. 더 많으면 relation.list 로 이어 읽는다(레벨은 벽 수만큼 관계가 있다)
+
+
 class ElementGet(A):
     id: Id
+    limit: int = Field(100, ge=1, le=1000, description="속성(속성셋/속성 쌍)을 한 번에 돌려줄 최대 개수. 응답 크기 상한에 걸리면 이보다 적게 돌려주고 page.truncated 로 알린다")
+    cursor: str | None = Field(None, max_length=2048, description="이전 응답의 page.next_cursor (속성 목록의 다음 쪽)")
 
 
-@command("element.get", kind="query", risk="read", group="query", summary="요소 하나의 의도·속성·파생값",
+@command("element.get", kind="query", risk="read", group="query",
+         summary="요소 하나의 의도·속성·파생값. 속성이 많으면 page 로 나눠 돌려주고, 관계는 20건까지만(나머지는 relation.list)",
          args=ElementGet, idempotent=True, examples=[{"id": F.W1}])
 def element_get(ctx, a: ElementGet):
     r = ctx.row(a.id)
+    rel_all = [(k, x) for k in ("on_level", "joins", "hosts") for x in ctx.rels_out(k, a.id) + [f"<-{x}" for x in ctx.rels_in(k, a.id)]]
+    relations: dict = {}
+    for k, x in rel_all[:RELATIONS_SHOWN]:
+        relations.setdefault(k, []).append(x)
     out = {"id": a.id, "kind": r["kind"], "ifc_class": r["ifc_class"], "origin": r["origin"],
-           "family_id": r["family_id"], "params": r["params"], "psets": ctx.psets(a.id),
-           "material": ctx.material(a.id),
-           "relations": {k: ctx.rels_out(k, a.id) + [f"<-{x}" for x in ctx.rels_in(k, a.id)]
-                         for k in ("on_level", "joins", "hosts") if ctx.rels_out(k, a.id) or ctx.rels_in(k, a.id)}}
+           "family_id": r["family_id"], "params": r["params"], "material": ctx.material(a.id),
+           "relations": relations, "relations_total": len(rel_all)}
     if r["kind"] == "wall":
         start, end, status = ctx.g.q(Q.wall_trim, a.id)
         out["derived"] = {"trim_start": start, "trim_end": end, "length": end - start, "status": status}
     elif r["kind"] == "door":
         out["derived"] = {"world": list(ctx.g.q(Q.door_world, a.id)), "status": ctx.g.q(Q.door_status, a.id)}
-    return out
+    # 속성: (속성셋, 속성) 순서로 펼쳐 키셋 커서로 나눈다. 값이 길어 상한을 넘는 옛 값은 앞 255자만 보이고 clipped 에 적는다.
+    psets = ctx.psets(a.id)
+    pairs = [[ps, pr, psets[ps][pr]] for ps in sorted(psets) for pr in sorted(psets[ps])]
+    after = _dec_cursor(a.cursor, "pair")
+    start_i = 0 if after is None else next((i for i, t in enumerate(pairs) if [t[0], t[1]] > after), len(pairs))
+    window, clipped = [], []
+    for ps, pr, v in pairs[start_i:start_i + a.limit]:
+        if isinstance(v, str):
+            v, was = limits.clip_text(v)
+            if was:
+                clipped.append({"pset": ps, "prop": pr})
+        window.append([ps, pr, v])
+    items, cut = _fit(window, base={**out, "psets": {}, "clipped": clipped}, cursor_of=lambda i: _enc_cursor([window[i][0], window[i][1]]),
+                      extra_bytes=420, extra_tokens=200.0)   # 잘렸을 때 붙는 경고 몫
+    clipped = [c for c in clipped if any(t[0] == c["pset"] and t[1] == c["prop"] for t in items)]
+    more = start_i + len(items) < len(pairs)
+    nested: dict = {}
+    for ps, pr, v in items:
+        nested.setdefault(ps, {})[pr] = v
+    out["psets"] = nested
+    if clipped:
+        out["clipped"] = clipped
+        ctx.warn(f"길이 상한({limits.STR_MAX}자)을 넘는 옛 속성값 {len(clipped)}개는 앞 {limits.STR_MAX}자만 보인다: "
+                 "전체 값은 읽을 수 없으니 pset.set 으로 짧게 다시 쓰거나 pset.delete 로 지우세요")
+    if more:
+        ctx.warn(f"속성 {len(pairs)}개 중 {start_i + len(items)}개까지 보였다: page.next_cursor 를 cursor 로 넘겨 이어 읽으세요")
+    if len(rel_all) > RELATIONS_SHOWN:
+        ctx.warn(f"관계 {len(rel_all)}건 중 {RELATIONS_SHOWN}건만 보인다: relation.list 로 이어 읽으세요")
+    return {**out, "page": _page(_enc_cursor([items[-1][0], items[-1][1]]) if more else None, len(pairs),
+                               cut or bool(clipped) or len(rel_all) > RELATIONS_SHOWN)}
 
 
 class ElementQuery(A):
     kind: Literal["level", "wall", "door"] | None = None
     level: Id | None = None
-    name_contains: str | None = None
+    name_contains: str | None = Field(None, max_length=64)
     limit: int = Field(100, ge=1, le=1000, description="최대 개수. 응답 크기 상한에 걸리면 이보다 적게 돌려주고 page.truncated 로 알린다")
-    cursor: str | None = Field(None, description="이전 응답의 page.next_cursor")
+    cursor: str | None = Field(None, max_length=2048, description="이전 응답의 page.next_cursor")
 
 
 @command("element.query", kind="query", risk="read", group="query", summary="요소 목록(종류·레벨·이름 필터, 페이지)",
@@ -498,7 +543,7 @@ def element_query(ctx, a: ElementQuery):
         hits.append(eid)
     start = 0 if after is None else next((i for i, e in enumerate(hits) if e > after), len(hits))
     window = [{"id": e, "kind": st.el[e]["kind"], "name": st.el[e]["params"]["name"]} for e in hits[start:start + a.limit]]
-    items, cut = _fit(window)
+    items, cut = _fit(window, cursor_of=lambda i: _enc_cursor(window[i]["id"]))
     nxt = _enc_cursor(items[-1]["id"]) if start + len(items) < len(hits) else None
     return {"items": items, "page": _page(nxt, len(hits), cut)}
 
@@ -506,7 +551,7 @@ def element_query(ctx, a: ElementQuery):
 class RelationList(A):
     id: Id
     limit: int = Field(100, ge=1, le=1000, description="최대 개수. 응답 크기 상한에 걸리면 이보다 적게 돌려주고 page.truncated 로 알린다")
-    cursor: str | None = Field(None, description="이전 응답의 page.next_cursor")
+    cursor: str | None = Field(None, max_length=2048, description="이전 응답의 page.next_cursor")
 
 
 @command("relation.list", kind="query", risk="read", group="query", summary="요소의 관계(레벨·조인·호스팅), 페이지",
@@ -522,7 +567,7 @@ def relation_list(ctx, a: RelationList):
     keyed.sort(key=lambda t: t[0])
     after = _dec_cursor(a.cursor, "relation")
     rest = keyed if after is None else [t for t in keyed if t[0] > tuple(after)]
-    items, cut = _fit([it for _, it in rest[:a.limit]])
+    items, cut = _fit([it for _, it in rest[:a.limit]], cursor_of=lambda i: _enc_cursor(list(rest[i][0])))
     more = len(items) < len(rest)
     nxt = _enc_cursor(list(rest[len(items) - 1][0])) if more else None
     return {"items": items, "page": _page(nxt, len(keyed), cut)}
@@ -558,7 +603,7 @@ def model_validate(ctx, a: Validate):
 class ScheduleRows(A):
     kind: Literal["door", "wall"]
     limit: int = Field(100, ge=1, le=1000, description="최대 개수. 응답 크기 상한에 걸리면 이보다 적게 돌려주고 page.truncated 로 알린다")
-    cursor: str | None = Field(None, description="이전 응답의 page.next_cursor")
+    cursor: str | None = Field(None, max_length=2048, description="이전 응답의 page.next_cursor")
 
 
 @command("schedule.rows", kind="query", risk="read", group="schedule", summary="문·벽 일람표 행(페이지)",
@@ -570,9 +615,24 @@ def schedule_rows(ctx, a: ScheduleRows):
     after = _dec_cursor(a.cursor, "schedule")
     start = 0 if after is None else bisect.bisect_right(rows, tuple(after), key=lambda r: Q.schedule_key(a.kind, r))
     cols = list(Q.ROW_COLUMNS[a.kind])
-    items, cut = _fit([list(r) for r in rows[start:start + a.limit]], base=cols)
-    nxt = _enc_cursor(list(Q.schedule_key(a.kind, items[-1]))) if start + len(items) < len(rows) else None
-    return {"columns": cols, "items": items, "page": _page(nxt, len(rows), cut)}
+    window, clipped = [], []
+    for k, r in enumerate(rows[start:start + a.limit]):
+        row_out = list(r)
+        for ci, v in enumerate(row_out):
+            if isinstance(v, str):
+                row_out[ci], was = limits.clip_text(v)   # 옛 로그의 긴 속성값(방화등급 등)이 한 행을 터뜨리지 않게
+                if was:
+                    clipped.append([k, cols[ci]])
+        window.append(row_out)
+    keys = [list(Q.schedule_key(a.kind, r)) for r in rows[start:start + a.limit]]   # 커서는 잘리기 전 원래 키
+    items, cut = _fit(window, base={"columns": cols, "clipped": clipped}, cursor_of=lambda i: _enc_cursor(keys[i]))
+    clipped = [c for c in clipped if c[0] < len(items)]
+    nxt = _enc_cursor(keys[len(items) - 1]) if start + len(items) < len(rows) else None
+    out = {"columns": cols, "items": items, "page": _page(nxt, len(rows), cut or bool(clipped))}
+    if clipped:
+        out["clipped"] = [{"row": r, "column": c} for r, c in clipped]
+        ctx.warn(f"길이 상한({limits.STR_MAX}자)을 넘는 옛 속성값 {len(clipped)}개는 앞 {limits.STR_MAX}자만 보인다(clipped 의 row 는 이 쪽 안의 번호)")
+    return out
 
 
 class ScheduleKind(A):
@@ -587,7 +647,7 @@ def schedule_summary(ctx, a: ScheduleKind):
 
 # ================================================================ 이력
 class HistoryArgs(A):
-    target: str | None = Field(None, description="되돌릴/다시할 트랜잭션. 생략하면 스택 맨 위 (로그에는 확정값이 남는다)")
+    target: str | None = Field(None, max_length=32, description="되돌릴/다시할 트랜잭션. 생략하면 스택 맨 위 (로그에는 확정값이 남는다)")
 
 
 def _history(ctx, a, undo: bool):
@@ -605,8 +665,12 @@ def _history(ctx, a, undo: bool):
         effects = [e for _, _, _, _, inv in entries for e in _inv(json.loads(inv))]
     for e in effects:
         ctx.emit(e)
-    ops, cut = _fit([e[2] for e in entries], base={"txn": txn, "effects": len(effects), "ops_total": len(entries), "truncated": False})
-    return {"txn": txn, "ops": ops, "ops_total": len(entries), "effects": len(effects), "truncated": cut}
+    # 같은 커맨드 이름을 건수 만큼 되풀이하지 않고 커맨드별 건수로 요약한다. 커맨드 종류는 레지스트리 크기로 묶이므로 응답이 커지지 않고
+    # (그래서 잘림도 없다), ops_total 은 항목 수의 정확한 총합이다.
+    counts: dict[str, int] = {}
+    for e in entries:
+        counts[e[2]] = counts.get(e[2], 0) + 1
+    return {"txn": txn, "ops": [{"op": k, "count": n} for k, n in counts.items()], "ops_total": len(entries), "effects": len(effects)}
 
 
 def _inv(effs):
@@ -628,7 +692,7 @@ def history_redo(ctx, a: HistoryArgs):
 
 class HistoryList(A):
     limit: int = Field(20, ge=1, le=500, description="최대 개수. 응답 크기 상한에 걸리면 이보다 적게 돌려주고 page.truncated 로 알린다")
-    cursor: str | None = Field(None, description="이전 응답의 page.next_cursor (그보다 오래된 항목을 돌려준다)")
+    cursor: str | None = Field(None, max_length=2048, description="이전 응답의 page.next_cursor (그보다 오래된 항목을 돌려준다)")
 
 
 @command("history.list", kind="query", risk="read", group="history", summary="최근 로그 항목",
@@ -639,22 +703,30 @@ def history_list(ctx, a: HistoryList):
         "SELECT seq, txn_id, actor, base_rev, op, args FROM op_log WHERE seq < ? ORDER BY seq DESC LIMIT ?",
         (before if before is not None else 2**62, a.limit + 1)).fetchall()   # 한 건 더 읽어 다음 쪽이 있는지 안다
     more_in_limit = len(rows) > a.limit
-    window = [{"seq": s, "txn": t, "actor": ac, "base_rev": b, "op": o, "args": json.loads(g)}
-              for s, t, ac, b, o, g in rows[:a.limit]]
-    items, cut = _fit(window, base={"undo_depth": 0, "redo_depth": 0})
+    window, clipped_rows = [], []
+    for s_, t, ac, b, o, g in rows[:a.limit]:
+        it, n = limits.clip_deep({"seq": s_, "txn": t, "actor": ac, "base_rev": b, "op": o, "args": json.loads(g)})
+        if n:   # 상한이 생기기 전의 옛 로그에 긴 값이 있으면 앞 255자만 보이고 이 항목에 표시한다
+            it = {**it, "clipped": n}
+            clipped_rows.append(s_)
+        window.append(it)
+    depths = {"undo_depth": len(ctx.eng.undo_stack), "redo_depth": len(ctx.eng.redo_stack)}
+    items, cut = _fit(window, base=depths, cursor_of=lambda i: _enc_cursor(window[i]["seq"]))
     more = more_in_limit or cut
-    return {"items": items, "undo_depth": len(ctx.eng.undo_stack), "redo_depth": len(ctx.eng.redo_stack),
-            "page": _page(_enc_cursor(items[-1]["seq"]) if more and items else None, ctx.eng.rev, cut)}
+    if any(it.get("clipped") for it in items):
+        ctx.warn(f"길이 상한({limits.STR_MAX}자)을 넘는 옛 값은 앞 {limits.STR_MAX}자만 보인다(항목의 clipped = 자른 값의 수)")
+    return {"items": items, **depths,
+            "page": _page(_enc_cursor(items[-1]["seq"]) if more and items else None, ctx.eng.rev, cut or any(it.get("clipped") for it in items))}
 
 
 class HistoryAffected(A):
     rev: int | None = Field(None, ge=1, description="변경 응답의 rev. 그 변경(트랜잭션)이 만들거나 바꾸거나 지운 요소를 돌려준다. 생략하면 현재 리비전")
     limit: int = Field(100, ge=1, le=1000, description="최대 개수. 응답 크기 상한에 걸리면 이보다 적게 돌려주고 page.truncated 로 알린다")
-    cursor: str | None = Field(None, description="이전 응답의 page.next_cursor")
+    cursor: str | None = Field(None, max_length=2048, description="이전 응답의 page.next_cursor")
 
 
 @command("history.affected", kind="query", risk="read", group="history",
-         summary="변경 하나(rev)가 만들거나 바꾸거나 지운 요소 id 목록, 페이지. 변경 응답의 affected 가 잘렸을 때 나머지를 얻는다",
+         summary="변경 하나(rev)가 만들거나 바꾸거나 지운 요소 id 목록, 페이지(항목의 seq = 그 요소를 처음 건드린 명령의 로그 번호). 변경 응답이 잘렸을 때 나머지를 얻는다",
          args=HistoryAffected, idempotent=True, examples=[{}, {"rev": 3, "limit": 2}])
 def history_affected(ctx, a: HistoryAffected):
     rev = a.rev if a.rev is not None else ctx.eng.rev
@@ -662,16 +734,24 @@ def history_affected(ctx, a: HistoryAffected):
     if row is None:
         raise DobimError("NOT_FOUND", f"로그에 없는 리비전이다: {rev}", path="/rev")
     from dobim_core.engine import affected_of, invert   # 지연 import: 레지스트리 로드가 엔진에 의존하지 않게
-    forward = [e for *_, inv in ctx.eng.txn_entries(row[0]) for e in invert(json.loads(inv))]   # 실행 때의 효과 순서 그대로
-    aff = affected_of(forward)
-    keyed = [((ci, eid), {"id": eid, "change": c}) for ci, c in enumerate(("created", "modified", "deleted")) for eid in aff[c]]
+    per_entry = [(e[0], invert(json.loads(e[4]))) for e in ctx.eng.txn_entries(row[0])]   # (seq, 실행 때의 효과 순서 그대로)
+    aff = affected_of([x for _, effs in per_entry for x in effs])
+    first: dict[str, int] = {}   # 요소 id -> 그 요소를 처음 건드린 로그 항목(명령)의 seq. 변경 응답 results 의 seq 와 같은 번호다
+    for seq, effs in per_entry:
+        for x in effs:
+            for eid in ((x[2], x[3]) if x[0] == "rel" else (x[1],)):
+                first.setdefault(eid, seq)
+    # 순서: (변경 종류, 처음 건드린 seq, id). 배치가 만든 요소가 명령 순서대로 나온다.
+    keyed = sorted(((ci, first[eid], eid), {"id": eid, "change": c, "seq": first[eid]})
+                   for ci, c in enumerate(("created", "modified", "deleted")) for eid in aff[c])
     after = _dec_cursor(a.cursor, "affected")
     rest = keyed if after is None else [t for t in keyed if t[0] > tuple(after)]
-    items, cut = _fit([it for _, it in rest[:a.limit]])
+    counts = {c: len(aff[c]) for c in ("created", "modified", "deleted")}
+    items, cut = _fit([it for _, it in rest[:a.limit]], base={"rev": rev, "txn": row[0], "counts": counts},
+                      cursor_of=lambda i: _enc_cursor(list(rest[i][0])))
     more = len(items) < len(rest)
     nxt = _enc_cursor(list(rest[len(items) - 1][0])) if more else None
-    return {"rev": rev, "txn": row[0], "counts": {c: len(aff[c]) for c in ("created", "modified", "deleted")},
-            "items": items, "page": _page(nxt, len(keyed), cut)}
+    return {"rev": rev, "txn": row[0], "counts": counts, "items": items, "page": _page(nxt, len(keyed), cut)}
 
 
 # ================================================================ 입출력 (파괴적)
@@ -680,7 +760,7 @@ _FORBIDDEN_SUFFIX = (".dobim", ".dobim-wal", ".dobim-shm", ".dobim-journal", ".t
 
 
 class IfcExport(A):
-    path: str = Field(description="작업 폴더 안의 .ifc 경로. 기존 파일은 덮어쓰며, 덮어쓰기 전에 자동 스냅숏을 남긴다")
+    path: str = Field(max_length=260, description="작업 폴더 안의 .ifc 경로. 기존 파일은 덮어쓰며, 덮어쓰기 전에 자동 스냅숏을 남긴다")
 
 
 def _target(ctx, raw: str):
@@ -724,28 +804,38 @@ def _snapshots(p, ws):
     return sorted(out)
 
 
+def _cleanup(path) -> None:
+    """임시·반쯤 만든 파일 정리. 최선으로만 한다: 다른 프로세스가 잡고 있어 지우지 못해도 원래 오류를 가리지 않는다."""
+    try:
+        path.unlink(missing_ok=True)
+    except OSError:
+        pass
+
+
 def _snapshot_existing(p, ws):
     """덮어쓰기 전에 기존 파일을 .dobim-snapshots/<이름>.<번호> 로 복사한다. 번호는 결정적으로 증가한다.
     대상을 다른 프로그램이 공유 없이 열고 있으면 복사가 PermissionError(WinError 32)로 실패한다:
-    FILE_LOCKED 로 바꾸고 반쯤 복사된 파일을 지운다."""
+    원인별 오류로 바꾸고(_io_error) 반쯤 복사된 파일을 지운다."""
     import shutil
     d = _snap_dir(p, ws)
     if not p.exists():
         return None
-    d.mkdir(exist_ok=True)
-    n = max([k for k, _ in _snapshots(p, ws)], default=0) + 1
-    dst = d / f"{p.name}.{n}"
+    n = 0
     try:
+        d.mkdir(exist_ok=True)
+        n = max([k for k, _ in _snapshots(p, ws)], default=0) + 1
+        dst = d / f"{p.name}.{n}"
         shutil.copy2(p, dst)
     except OSError as ex:
-        dst.unlink(missing_ok=True)
-        raise _locked(p) from ex
+        if n:
+            _cleanup(d / f"{p.name}.{n}")
+        raise _io_error(p, ex) from ex
     return f"{SNAP_DIR}/{dst.name}"
 
 
 def _drop_snapshot(p, snap, ws) -> None:
     if snap:
-        (_snap_dir(p, ws) / snap.rsplit("/", 1)[-1]).unlink(missing_ok=True)
+        _cleanup(_snap_dir(p, ws) / snap.rsplit("/", 1)[-1])
 
 
 def _locked(p) -> DobimError:
@@ -753,17 +843,47 @@ def _locked(p) -> DobimError:
                       hint="파일을 연 프로그램을 닫고 미리보기부터 다시 호출하세요")
 
 
+# 윈도 오류 번호: 공유 위반(32)과 잠금 위반(33)이 잠금이다. 디스크 가득(112)과 핸들 디스크 가득(39)은 공간 부족이다.
+_WIN_LOCKED = {32, 33}
+_WIN_FULL = {39, 112}
+
+
+def _io_error(p, ex: OSError) -> DobimError:
+    """OSError 를 원인별 오류로 나눈다. 디스크 가득을 FILE_LOCKED(파일을 닫으라는 안내)로 보고하면 사용자가 엉뚱한 곳을 찾는다.
+      - 잠금(공유 위반·잠금 위반, 또는 유닉스의 EBUSY·ETXTBSY) -> FILE_LOCKED
+      - 접근 거부(WinError 5, errno 13): 윈도는 '열려 있는 파일 위로 이름 바꾸기'와 '다른 프로세스가 잡은 .tmp 열기'를 접근 거부로 알린다.
+        읽기 전용 속성이 붙은 파일이면 PATH_DENIED, 아니면 잠금이다(FILE_LOCKED)
+      - 디스크·할당량 부족 -> DISK_FULL, 없는 경로 -> NOT_FOUND, 나머지 -> IO_ERROR(오류 번호를 메시지에 남긴다)"""
+    import errno
+    import os
+    win, en = getattr(ex, "winerror", None), ex.errno
+    if win in _WIN_LOCKED or en in (errno.EBUSY, getattr(errno, "ETXTBSY", -1)):
+        return _locked(p)
+    if win in _WIN_FULL or en in (errno.ENOSPC, getattr(errno, "EDQUOT", -1)):
+        return DobimError("DISK_FULL", f"디스크 공간이 모자라 쓰지 못했다: {p.name}", path="/path",
+                          hint="공간을 확보한 뒤 미리보기부터 다시 호출하세요")
+    if isinstance(ex, PermissionError) or win == 5 or en == errno.EACCES:
+        if p.exists() and not os.access(p, os.W_OK):
+            return DobimError("PATH_DENIED", f"읽기 전용이라 바꿀 수 없다: {p.name}", path="/path")
+        return _locked(p)
+    if isinstance(ex, (FileNotFoundError, NotADirectoryError)):
+        return DobimError("NOT_FOUND", f"경로를 찾을 수 없다: {p.name}", path="/path")
+    return DobimError("IO_ERROR", f"파일 입출력에 실패했다: {p.name} (오류 {win if win is not None else en})", path="/path")
+
+
 def _replace(p, write):
-    """임시 파일에 쓴 뒤 교체한다. 대상이 열려 있으면 FILE_LOCKED. 어느 단계에서 실패해도 .tmp 를 남기지 않는다."""
+    """임시 파일에 쓴 뒤 교체한다. 실패 원인은 _io_error 로 나눈다. 어느 단계에서 실패해도 .tmp 를 남기지 않는다(다른 프로세스가
+    .tmp 를 잡고 있어 지우지 못하는 경우만 남는다: 그때도 원래 오류를 낸다)."""
     tmp = p.with_name(p.name + ".tmp")
     try:
-        write(tmp)
+        tmp.open("wb").close()   # 먼저 직접 열어 본다: 이전 실패의 .tmp 를 다른 프로세스가 잡고 있거나 디스크가 가득 차면 여기서 OSError 로 분류된다
+        write(tmp)               # (IFC 라이브러리는 열기 실패를 OSError 가 아닌 예외로 알린다)
         tmp.replace(p)
     except OSError as ex:
-        tmp.unlink(missing_ok=True)
-        raise _locked(p) from ex
+        _cleanup(tmp)
+        raise _io_error(p, ex) from ex
     except BaseException:
-        tmp.unlink(missing_ok=True)
+        _cleanup(tmp)
         raise
 
 
@@ -782,16 +902,16 @@ def ifc_export(ctx, a: IfcExport):
     snap = _snapshot_existing(p, ctx.eng.workspace)
     try:
         _replace(p, lambda tmp: ctx.eng.ifc.write(str(tmp)))
-    except DobimError:
+    except BaseException:   # DobimError 만이 아니다: ifc.write 가 라이브러리 예외로 실패해도 스냅숏이 쌓이지 않게
         _drop_snapshot(p, snap, ctx.eng.workspace)   # 쓰지 못했으면 방금 만든 스냅숏은 필요 없다(재시도마다 쌓이지 않게)
         raise
     return {"path": p.name, "bytes": p.stat().st_size, "rev": ctx.eng.rev, "snapshot": snap}
 
 
 class SnapshotList(A):
-    path: str = Field(description="작업 폴더 안의 .ifc 경로")
+    path: str = Field(max_length=260, description="작업 폴더 안의 .ifc 경로")
     limit: int = Field(100, ge=1, le=1000, description="최대 개수. 응답 크기 상한에 걸리면 이보다 적게 돌려주고 page.truncated 로 알린다")
-    cursor: str | None = Field(None, description="이전 응답의 page.next_cursor")
+    cursor: str | None = Field(None, max_length=2048, description="이전 응답의 page.next_cursor")
 
 
 @command("ifc.snapshots", kind="query", risk="read", group="io", summary="IFC 내보내기 덮어쓰기 전 스냅숏 목록, 페이지",
@@ -807,7 +927,7 @@ def ifc_snapshots(ctx, a: SnapshotList):
 
 
 class IfcRestore(A):
-    path: str = Field(description="되돌릴 .ifc 파일 경로")
+    path: str = Field(max_length=260, description="되돌릴 .ifc 파일 경로")
     snapshot: int = Field(description="ifc.snapshots 가 알려 준 번호", ge=1)
 
 
@@ -831,7 +951,7 @@ def ifc_restore(ctx, a: IfcRestore):
     snap = _snapshot_existing(p, ctx.eng.workspace)
     try:
         _replace(p, lambda tmp: shutil.copyfile(src, tmp))
-    except DobimError:
+    except BaseException:
         _drop_snapshot(p, snap, ctx.eng.workspace)
         raise
     return {"path": p.name, "restored_from": a.snapshot, "bytes": p.stat().st_size, "snapshot": snap}

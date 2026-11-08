@@ -27,6 +27,7 @@ from dobim_core import dispatch, limits, mcp_server  # noqa: E402
 
 TARGET_TOKENS = 8000
 ENCODINGS = ("cl100k_base", "o200k_base")
+T_REQUIRED = ["GUID", "영문", "실제 한국어", "무작위 한글", "한자", "이모지", "제어문자", "숫자-기호 교대", "문자-숫자 교대"]
 N_WALL, N_DOOR, N_MOVE = 500, 250, 60
 
 
@@ -131,7 +132,7 @@ class Wire:
         return r.content[0].text, r.structured_content
 
 
-async def measure(caller, encs, m: dict, korean: bool) -> list:
+async def measure(caller, encs, m: dict, lang: str) -> list:
     rows = []
     proj = m["project"]
     for label, tool, cmd, args in plans(m):
@@ -153,7 +154,7 @@ async def measure(caller, encs, m: dict, korean: bool) -> list:
             cursor = env["page"]["next_cursor"]
             if not cursor:
                 break
-        rows.append({"what": label, "lang": "한글" if korean else "영문", "pages_to_read_all": pages, "truncated_pages": trunc,
+        rows.append({"what": label, "lang": lang, "pages_to_read_all": pages, "truncated_pages": trunc,
                      "items_total": total_items, "worst": worst})
     # 큰 변경: 응답이 상한 안에 들고 affected.counts 가 정확한지
     for label, a in mutation_plans(m)[:2]:
@@ -161,7 +162,7 @@ async def measure(caller, encs, m: dict, korean: bool) -> list:
         assert sc["ok"], (label, sc.get("error"))
         t = tokens(encs, text, sc)
         aff = sc["affected"]
-        rows.append({"what": label, "lang": "한글" if korean else "영문", "kind": "mutation",
+        rows.append({"what": label, "lang": lang, "kind": "mutation",
                      "worst": {"bytes_text_plus_structured": len(text.encode()) + len(json.dumps(sc, ensure_ascii=False, separators=(',', ':')).encode()),
                                "text_bytes": len(text.encode()), "tokens": t},
                      "affected_counts": aff["counts"], "affected_shown": {k: len(aff[k]) for k in ("created", "modified", "deleted")},
@@ -181,9 +182,9 @@ async def measure(caller, encs, m: dict, korean: bool) -> list:
         rows[-1]["history_affected_unique"] = len(set(got))
         rows[-1]["history_affected_matches_counts"] = len(got) == want == len(set(got))
     text, sc = await caller.call("dobim_execute", {"command": "history.undo", "args": {}, "project": proj})   # 마지막 배치(수정 400)를 되돌림
-    rows.append({"what": "history.undo(배치 400)", "lang": "한글" if korean else "영문", "kind": "mutation",
+    rows.append({"what": "history.undo(배치 400)", "lang": lang, "kind": "mutation",
                  "worst": {"text_bytes": len(text.encode()), "tokens": tokens(encs, text, sc)}, "ok": sc["ok"],
-                 "ops_total": sc["result"].get("ops_total"), "ops_shown": len(sc["result"].get("ops", [])), "truncated": sc["result"].get("truncated")})
+                 "ops_total": sc["result"].get("ops_total"), "ops": sc["result"].get("ops")})
     return rows
 
 
@@ -194,21 +195,31 @@ async def run(out: str, inproc: bool, cap: int | None) -> int:
     encs = {n: tiktoken.get_encoding(n) for n in ENCODINGS}
     work = Path(tempfile.mkdtemp(prefix="dobim-size-"))
     rows = []
+    models = []
     for korean in (False, True):
-        m = build(work, korean)
+        models.append(("한글" if korean else "영문", build(work, korean)))
+    import token_campaign as T   # 문자 종류별 적대 모델: 이름 64자·속성값 255자를 종류별로 채운다(합격 기준의 일곱 종류 + 교대 패턴)
+    rnd = random.Random(21)
+    for cname, gen in T.classes(rnd).items():
+        if cname in T.REQUIRED or cname in ("숫자-기호 교대", "문자-숫자 교대"):
+            cm = T.build(work, cname, gen, rnd, n_wall=420, n_door=150, n_pset=40)
+            cm["s"].close()
+            models.append((cname, {"project": cm["s"].path.name, "level": cm["level"], "walls": cm["walls"], "random": rnd}))
+    for lang, m in models:
         if inproc:
             c = InProc(work)
-            rows += await measure(c, encs, m, korean)
+            rows += await measure(c, encs, m, lang)
             await c.close()
         else:
             async with Wire(work) as c:
-                rows += await measure(c, encs, m, korean)
+                rows += await measure(c, encs, m, lang)
     worst = max(max(r["worst"]["tokens"].values()) for r in rows)
     res = {"method": "tiktoken 대용 측정(Claude 토크나이저로는 재지 못했다). 한 응답 = text + structuredContent(두 벌), 두 토크나이저 모두 8,000 이하여야 통과",
            "transport": "in-process dispatch" if inproc else "stdio MCP 서버 + 공식 SDK 클라이언트",
            "tiktoken": tiktoken.__version__, "encodings": list(ENCODINGS), "python": platform.python_version(),
-           "model": {"walls": N_WALL, "doors": N_DOOR, "random_guid": True, "names": ["영문", "한글 64자"]},
-           "cap": {"RESPONSE_CAP_BYTES": limits.RESPONSE_CAP_BYTES, "ENVELOPE_RESERVE_BYTES": limits.ENVELOPE_RESERVE_BYTES},
+           "model": {"walls": N_WALL, "doors": N_DOOR, "random_guid": True,
+                     "names": ["영문", "한글 64자"] + ["문자 종류별 이름 64자·값 255자: " + ", ".join(T_REQUIRED)]},
+           "cap": {"RESPONSE_CAP_BYTES": limits.RESPONSE_CAP_BYTES, "RESPONSE_CAP_TOKENS": limits.RESPONSE_CAP_TOKENS},
            "target_tokens": TARGET_TOKENS, "worst_tokens_any": worst, "rows": rows,
            "pass": worst <= TARGET_TOKENS and all(r.get("history_affected_matches_counts", True) for r in rows)}
     Path(out).parent.mkdir(parents=True, exist_ok=True)

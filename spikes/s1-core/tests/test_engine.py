@@ -78,7 +78,8 @@ def test_배치는_원자적이다_마지막이_실패하면_전부_되돌린다
     r = base.batch([{"command": "wall.move", "args": {"id": F.W1, "dx": 100}},
                     {"command": "wall.move", "args": {"id": F.W2, "dx": 100}}])
     assert r["ok"]                                            # 성공한 배치는 하나의 트랜잭션: 한 번에 되돌려진다
-    assert base.run("history.undo")["result"]["ops"] == ["wall.move", "wall.move"]
+    u = base.run("history.undo")["result"]
+    assert u["ops"] == [{"op": "wall.move", "count": 2}] and u["ops_total"] == 2
     assert eng.state_hash() == before["state"]
 
 
