@@ -377,10 +377,12 @@ class IdArg(A):
 
 
 def _delete_one(ctx, eid):
+    ctx.attach(eid)   # 외래 부속(타입·수량 세트·분류·스타일 등)을 지우기 전에 효과로 남긴다: 실행 취소가 되살린다
     for pset, props in sorted(ctx.psets(eid).items()):   # IFC 안의 삽입 순서에 기대지 않는다(로그 결정성)
         for prop in sorted(props):
             ctx.set_prop(eid, pset, prop, None)
-    ctx.set_material(eid, None)
+    if not ctx.complex_material(eid):   # 층 구성 같은 복합 재료는 이름 하나로 되살릴 수 없어 부속 스냅숏이 맡는다
+        ctx.set_material(eid, None)
     for kind in ("joins", "on_level", "hosts"):
         for dst in ctx.rels_out(kind, eid):
             ctx.rel(kind, eid, dst, False)
@@ -398,6 +400,10 @@ def element_delete(ctx, a: IdArg):
         if ctx.rels_in("on_level", a.id):
             raise DobimError("CONSTRAINT", "벽이 있는 레벨은 지울 수 없다", path="/id")
     elif r["kind"] == "wall":
+        fv = ctx.foreign_voids(a.id)
+        if fv:   # 다른 도구가 이 벽에 뚫은 개구부는 벽과 함께 사라진다: 개구부는 형상을 가진 제품이라 실행 취소로 되살리지 않는다
+            ctx.warn(f"이 벽을 뚫는 외래 개구부 {len(fv)}개가 벽과 함께 지워진다(실행 취소로 되살아나지 않는다): {', '.join(fv[:3])}"
+                     + (" 외" if len(fv) > 3 else ""))
         for d in ctx.rels_out("hosts", a.id):
             ctx.authored(d, what="호스팅된 문의 삭제")
             _delete_one(ctx, d)

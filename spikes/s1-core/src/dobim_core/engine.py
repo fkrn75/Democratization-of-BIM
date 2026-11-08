@@ -9,6 +9,7 @@
     ["rel",  kind, src, dst, old(0|1), new(0|1)]
     ["pset", id, pset, prop, old|null, new|null]
     ["mat",  id, old_name|null, new_name|null]
+    ["att",  id, old_blob|null, new_blob|null]    외래 부속 스냅숏(S2): 지우기 직전에 old 를 적고, 실행 취소가 new 로 되살린다
 """
 from __future__ import annotations
 
@@ -28,7 +29,7 @@ import ifcopenshell.guid
 from dobim_core import queries as Q
 from dobim_core.errors import DobimError, internal_error
 from dobim_core.graph import Graph, RefGraph
-from dobim_core.ifc_model import Closure, IfcModel
+from dobim_core.ifc_model import IfcModel
 from dobim_core.registry import Command
 
 SCHEMA_VERSION = "1"
@@ -46,13 +47,14 @@ CREATE TABLE op_log (
 CREATE INDEX op_log_txn ON op_log (txn_id);
 CREATE TABLE foreign_base (id INTEGER PRIMARY KEY CHECK (id = 1), schema TEXT NOT NULL, size INTEGER NOT NULL,
   sha256 TEXT NOT NULL, data BLOB NOT NULL);
+CREATE TABLE import_spec (id TEXT PRIMARY KEY, spec_hash TEXT NOT NULL);
 """
 
 
 # ---------------------------------------------------------------- 효과
 def invert_effect(e: list) -> list:
     t = e[0]
-    if t == "el" or t == "mat":
+    if t == "el" or t == "mat" or t == "att":
         return [t, e[1], e[3], e[2]]
     return [t, e[1], e[2], e[3], e[5], e[4]]
 
@@ -203,6 +205,12 @@ class Ctx:
     def material(self, eid):
         return self.eng.ifc.get_material(eid)
 
+    def complex_material(self, eid) -> bool:
+        return self.eng.has_base and self.eng.ifc.has_complex_material(eid)
+
+    def foreign_voids(self, eid) -> list:
+        return self.eng.ifc.foreign_voids(eid) if self.eng.has_base else []
+
     def new_id(self, kind: str) -> str:
         """결정적 GlobalId. 같은 프로젝트에서 같은 순번이면 같은 값이 나온다."""
         self._n += 1
@@ -240,6 +248,14 @@ class Ctx:
             return False
         self.emit(["mat", eid, old, name])
         return True
+
+    def attach(self, eid: str) -> None:
+        """지울 요소의 외래 부속을 스냅숏 효과로 남긴다(외래 기반 프로젝트만). 없으면 아무것도 하지 않는다."""
+        if not self.eng.has_base:
+            return
+        blob = self.eng.ifc.capture_attachments(eid)
+        if blob:
+            self.emit(["att", eid, blob, None])
 
     def warn(self, msg: str) -> None:
         self.warnings.append(msg)
@@ -326,7 +342,8 @@ class Engine:
             raise
 
     def _seed_import(self, data: bytes, plan) -> None:
-        """생성 트랜잭션 안에서 외래 기반 원본과 분류 결과를 적는다. 가져오기는 로그 항목이 아니다: 프로젝트의 시작 상태(rev 0)다."""
+        """생성 트랜잭션 안에서 외래 기반 원본과 분류 결과를 적는다. 가져오기는 로그 항목이 아니다: 프로젝트의 시작 상태(rev 0)다.
+        element.projection_hash 는 가져오는 순간의 클로저 해시이고 이후 바뀌지 않는다(변조 판정은 가져오는 순간에만 한다)."""
         c = self.conn
         c.execute("INSERT INTO foreign_base (id, schema, size, sha256, data) VALUES (1,?,?,?,?)",
                   (plan.schema, len(data), hashlib.sha256(data).hexdigest(), zlib.compress(data, 6)))
@@ -334,6 +351,9 @@ class Engine:
                       [(r["id"], r["kind"], r["ifc_class"], r["origin"], r["family_id"], canon(r["params"]), r.get("projection_hash"))
                        for r in plan.rows])
         c.executemany("INSERT INTO relation (kind, src, dst) VALUES (?,?,?)", plan.rels)
+        # 저작 요소의 가져올 때 투영 명세 해시: 명세가 그대로면 첫 투영에서 들어온 엔티티를 그대로 둔다(스타일 등 외래 부속 보존)
+        c.executemany("INSERT INTO import_spec (id, spec_hash) VALUES (?,?)",
+                      [(r["id"], r["spec_hash"]) for r in plan.rows if r.get("spec_hash")])
 
     def _create_schema(self, guid, seed=None):
         c = self.conn
@@ -372,9 +392,12 @@ class Engine:
                 self.st.apply_rel(kind, src, dst, True)
             log = c.execute("SELECT seq, txn_id, op, inverse FROM op_log ORDER BY seq").fetchall()
             base = None
+            self._import_spec: dict[str, str] = {}
             if c.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='foreign_base'").fetchone():
                 row = c.execute("SELECT data FROM foreign_base WHERE id=1").fetchone()
                 base = zlib.decompress(row[0]) if row else None
+                if c.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='import_spec'").fetchone():
+                    self._import_spec = dict(c.execute("SELECT id, spec_hash FROM import_spec"))
             c.execute("COMMIT")
         except Exception:
             if c.in_transaction:
@@ -460,8 +483,9 @@ class Engine:
                     self._sql(f"요소 {eid}", "DELETE FROM element WHERE id=?", (eid,))
                 else:
                     self._sql(f"요소 {eid}",
-                              "INSERT OR REPLACE INTO element (id, kind, ifc_class, origin, family_id, params) "
-                              "VALUES (?,?,?,?,?,?)",
+                              "INSERT INTO element (id, kind, ifc_class, origin, family_id, params) VALUES (?,?,?,?,?,?) "
+                              "ON CONFLICT(id) DO UPDATE SET kind=excluded.kind, ifc_class=excluded.ifc_class, origin=excluded.origin, "
+                              "family_id=excluded.family_id, params=excluded.params",   # projection_hash 는 건드리지 않는다
                               (eid, new["kind"], new["ifc_class"], new["origin"], new["family_id"], canon(new["params"])))
         elif t == "rel":
             _, kind, src, dst, _, new = e
@@ -487,6 +511,14 @@ class Engine:
                 self._taint(f"재료 {e[1]}", ex)
                 raise
             p.add(("mat", e[1]))
+        elif t == "att":
+            # new 가 있으면 되살리고(실행 취소), 없으면(지우기 쪽) 할 일이 없다: 부속은 요소 제거 때 함께 사라지고 old 가 로그에 남는다
+            if e[3] is not None:
+                try:
+                    self.ifc.restore_attachments(e[1], e[3])
+                except BaseException as ex:
+                    self._taint(f"부속 {e[1]}", ex)
+                    raise
         else:
             raise DobimError("INTERNAL", f"알 수 없는 효과: {t}")
 
@@ -679,6 +711,12 @@ class Engine:
                 spec = self.g.q(Q.ifc_spec, eid)
                 stamp = self.g.nodes[(Q.ifc_spec, eid)].changed
                 if self._proj_stamp.get(eid) != stamp:
+                    # 가져온 뒤 이 세션에서 한 번도 투영하지 않았고 명세가 가져올 때와 같으면, 들어온 엔티티가 이미 그 투영이다(가져오기가
+                    # 클로저 해시로 확인했다). 다시 투영하면 외부 도구가 붙인 스타일·개구부 신원처럼 의도 밖의 부분이 사라지므로 그대로 둔다.
+                    if (self.ifc.base_mode and eid not in self._proj_stamp and eid in self.ifc.base_ents
+                            and self._import_spec.get(eid) == digest(spec)):
+                        self._proj_stamp[eid] = stamp
+                        continue
                     try:
                         self.ifc.project(eid, spec)
                     except BaseException as ex:
@@ -691,20 +729,7 @@ class Engine:
                         raise
                     self._proj_stamp[eid] = stamp
                     n += 1
-                    if self.ifc.base_mode:
-                        self._record_projection_hash(eid)
         return n
-
-    def _record_projection_hash(self, eid: str) -> None:
-        """외래 기반 프로젝트에서 투영한 저작 요소의 클로저 해시를 element.projection_hash 에 남긴다(외부 변조 감지 기준).
-        최선으로만 한다: 트랜잭션 중이거나 잠겨 있으면 건너뛴다(다음 투영 때 다시 쓴다). 로그에 오르는 상태가 아니다."""
-        if self.conn.in_transaction:
-            return
-        h, _ = Closure(self.ifc.f, self.ifc.infra).digest(self.ifc.ents[eid])
-        try:
-            self.conn.execute("UPDATE element SET projection_hash=? WHERE id=?", (h, eid))
-        except sqlite3.OperationalError:
-            pass
 
     # ------------------------------------------------------------ 해시 (정규화된 의미 해시)
     def state_dump(self) -> dict:

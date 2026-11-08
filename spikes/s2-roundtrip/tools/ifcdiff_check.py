@@ -18,6 +18,7 @@ import argparse
 import collections
 import json
 import os
+import re
 import subprocess
 import sys
 import tempfile
@@ -25,6 +26,16 @@ import time
 from pathlib import Path
 
 REL = "attributes geometry type property container aggregate classification"
+_ID_KEY = re.compile(r"^root\['[^']*'\]\['id'\]$")
+
+
+def _id_only(entry) -> bool:
+    """ifcdiff 는 속성셋의 STEP 번호(id)가 달라져도 properties_changed 로 센다(지웠다 되돌려 속성셋이 새로 만들어진 경우 등).
+    변경 내용이 전부 그런 번호 차이뿐인가. 번호는 의미가 아니므로 엄격 보강(strict)이 내용 차이를 따로 잡는다."""
+    if not isinstance(entry, dict) or set(entry) != {"properties_changed"}:
+        return False
+    pc = entry["properties_changed"]
+    return isinstance(pc, dict) and set(pc) == {"values_changed"} and all(_ID_KEY.match(k) for k in pc["values_changed"])
 
 
 def run_ifcdiff(old: str, new: str, python: str | None = None, ids: bool = False) -> dict:
@@ -45,7 +56,8 @@ def run_ifcdiff(old: str, new: str, python: str | None = None, ids: bool = False
                          capture_output=True, text=True, stdin=subprocess.DEVNULL).stdout.split()
     res = {"tool": "ifcdiff", "ifcdiff_version": ver[0] if ver else None, "ifcopenshell_version": ver[1] if len(ver) > 1 else None,
            "relationships": REL.split(), "added": len(d.get("added", [])), "deleted": len(d.get("deleted", [])),
-           "changed": len(d.get("changed", {})), "changed_kinds": dict(sorted(kinds.items())), "elapsed_s": round(dt, 2)}
+           "changed": len(d.get("changed", {})), "changed_kinds": dict(sorted(kinds.items())), "elapsed_s": round(dt, 2),
+           "id_only_changed": sum(1 for v in d.get("changed", {}).values() if _id_only(v))}
     res["total"] = res["added"] + res["deleted"] + res["changed"]
     if ids:
         res["ids"] = {"added": sorted(d.get("added", [])), "deleted": sorted(d.get("deleted", [])), "changed": sorted(d.get("changed", {}))}
@@ -76,6 +88,12 @@ def strict_diff(old: str, new: str, ids: bool = False) -> dict:
     if ids:
         res["ids"] = {"added": sorted(pn.keys() - po.keys()), "deleted": sorted(po.keys() - pn.keys()), "changed": changed}
     return res
+
+
+def id_only_summary(old: str, new: str) -> dict:
+    """ifcdiff 가 센 변경 요소 수와, 그중 속성셋 번호(id)만 다른 것의 수."""
+    r = run_ifcdiff(old, new)
+    return {"changed": r["changed"], "id_only": r["id_only_changed"], "content": r["changed"] - r["id_only_changed"]}
 
 
 def check(old, new, *, python=None, ids=False, strict=True) -> dict:

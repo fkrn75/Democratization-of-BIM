@@ -6,6 +6,9 @@
 - 후보의 의도를 새 IFC 모델에 다시 투영해, 요소 단위 투영 클로저 해시(ifc_model.Closure)를 들어온 요소의 해시와 비교한다.
   같으면 authored(의도가 형상의 정본), 다르면 detached(들어온 형상을 그대로 동결, 마지막 의도는 낡은 사본으로 남는다).
 - 후보가 아니면 foreign(IFC 가 형상의 정본, 속성만 편집).
+- 길이 단위가 밀리미터가 아니면(의도의 값은 mm 다) 후보 전체를 detached 로 둔다: 단위는 프로젝트 수준의 변경이라 요소 하나하나의 클로저에
+  나타나지 않기 때문이다. 분리된 레벨이 있으면 그 위의 저작 요소가 레벨 배치를 따라 움직인다는 경고를 더한다.
+- 뼈대(Site/Building)는 구조·이름으로 알아보고 위경도·주소 같은 비형상 속성은 보지 않는다. 뼈대의 형상이 바뀌었으면 경고한다(ifc_model.skeleton_check).
 
 이 모듈은 파일을 읽어 계획(ImportPlan)을 만들 뿐 프로젝트를 만들지 않는다. 엔진이 계획을 SQLite 에 적는다.
 """
@@ -18,13 +21,15 @@ import uuid
 from dataclasses import dataclass, field
 
 import ifcopenshell.util.element as ue
+import ifcopenshell.util.unit as uunit
 
 from dobim_core import queries as Q
 from dobim_core.errors import DobimError
 from dobim_core.graph import Graph
-from dobim_core.ifc_model import (INTENT_PSET, Closure, IfcModel, closure_diff, detect_skeleton, open_ifc_bytes)
+from dobim_core.ifc_model import (INTENT_PSET, Closure, IfcModel, closure_diff, open_ifc_bytes, skeleton_check)
 
 MAX_IMPORT_BYTES = 256 * 1024 * 1024
+MAX_MM = 1e9   # 의도 숫자의 상한(1000 km). 이보다 큰 값은 제곱하는 계산이 넘치므로 해석하지 않고 외래로 둔다
 KIND_OF = {"IfcBuildingStorey": "level", "IfcWall": "wall", "IfcDoor": "door"}
 FAMILY = {"level": "level.basic", "wall": "wall.basic", "door": "door.single"}
 _ID = re.compile(r"^[0-9A-Za-z_$]{22}$")
@@ -34,7 +39,10 @@ NAME_MAX = 255
 @dataclass
 class ImportPlan:
     schema: str
-    rows: list[dict] = field(default_factory=list)       # {id, kind, ifc_class, origin, family_id, params, projection_hash}
+    # {id, kind, ifc_class, origin, family_id, params, projection_hash, spec_hash}
+    # projection_hash = 가져오는 순간 들어온 요소의 클로저 해시(불변, 조회용). 변조 판정은 가져오는 순간 한 번뿐이다: 이후 외부 파일이 바뀌면
+    # 다시 가져와야 알 수 있다. spec_hash = 가져오는 순간 저작 요소의 투영 명세 해시(명세가 그대로면 첫 투영에서 들어온 엔티티를 그대로 둔다).
+    rows: list[dict] = field(default_factory=list)
     rels: list[tuple] = field(default_factory=list)      # (kind, src, dst)
     warnings: list[str] = field(default_factory=list)
     detached: list[dict] = field(default_factory=list)   # {id, reasons}
@@ -53,6 +61,8 @@ def _num(v, *, pos=False, nonneg=False):
     if isinstance(v, bool) or not isinstance(v, (int, float)) or not math.isfinite(v):
         raise ValueError("유한한 숫자가 아니다")
     v = float(v)
+    if abs(v) > MAX_MM:
+        raise ValueError("값이 범위(±1e9)를 벗어났다")
     if pos and not v > 0:
         raise ValueError("0 보다 커야 한다")
     if nonneg and v < 0:
@@ -129,7 +139,7 @@ def _name_of(p) -> str:
 
 # ---------------------------------------------------------------- 계획
 def plan_import(data: bytes) -> ImportPlan:
-    from dobim_core.engine import State   # 지연 import: 엔진이 이 모듈을 가져온다
+    from dobim_core.engine import State, digest   # 지연 import: 엔진이 이 모듈을 가져온다
 
     if len(data) > MAX_IMPORT_BYTES:
         raise DobimError("IMPORT_INVALID", f"파일이 너무 크다(상한 {MAX_IMPORT_BYTES // 2**20}MB)", path="/source")
@@ -142,7 +152,9 @@ def plan_import(data: bytes) -> ImportPlan:
         raise DobimError("UNSUPPORTED_SCHEMA", f"IFC4 만 가져올 수 있다(이 파일: {schema})", path="/source",
                          hint="IFC2x3·IFC4X3 은 S2 범위 밖이다: IFC4 로 다시 내보내세요")
     plan = ImportPlan(schema=schema)
-    sk = detect_skeleton(f)
+    sk, sk_warning = skeleton_check(f)
+    if sk_warning:
+        plan.warnings.append(sk_warning)
     infra = {sk[0].GlobalId, sk[1].GlobalId} if sk else set()
     plan.skeleton = bool(sk)
     prods = [p for p in f.by_type("IfcProduct") if p.GlobalId not in infra]
@@ -168,7 +180,7 @@ def plan_import(data: bytes) -> ImportPlan:
             continue
         try:
             cand[p.GlobalId] = _parse_intent(kind, text)
-        except (ValueError, TypeError, KeyError) as ex:
+        except (ValueError, TypeError, KeyError, ArithmeticError) as ex:   # 넘침(OverflowError)도 해석 실패다
             plan.warnings.append(f"{p.GlobalId}: DoBIM_Intent 를 해석할 수 없어 외래로 둔다({str(ex)[:80]})")
     # 2) 가리키는 대상이 있는 것만 남긴다(고정점)
     changed = True
@@ -224,6 +236,24 @@ def plan_import(data: bytes) -> ImportPlan:
             plan.detached.append({"id": g, "reasons": reasons})
             plan.warnings.append(f"{g}: 들어온 형상이 의도의 투영과 다르다({', '.join(reasons[:4])}) → 분리됨(동결)")
         rows[g]["projection_hash"] = h_hash
+        if rows[g]["origin"] == "authored":   # 가져온 뒤 명세가 이 값 그대로면 첫 투영에서 들어온 엔티티를 그대로 둔다(engine.flush_ifc)
+            rows[g]["spec_hash"] = digest(graph.q(Q.ifc_spec, g))
+    # 길이 단위: 의도의 값은 mm 다. 단위 표기만 바뀐 파일은 요소 클로저가 같아 보이므로 후보 전체를 분리한다
+    if rows:
+        try:
+            scale = uunit.calculate_unit_scale(f)
+        except Exception:
+            scale = None
+        if scale is None or abs(scale - 0.001) > 1e-9:
+            n = 0
+            for g, r in rows.items():
+                if r["origin"] == "authored":
+                    r["origin"] = "detached"
+                    r.pop("spec_hash", None)
+                    plan.detached.append({"id": g, "reasons": ["길이 단위"]})
+                    n += 1
+            if n:
+                plan.warnings.append(f"길이 단위가 밀리미터가 아니다: 의도의 값(mm)을 해석할 수 없어 의도가 있는 요소 {n}개를 모두 분리했다(동결)")
 
     # 4) 외래 요소
     owned: set[str] = set()   # 저작 문의 개구부는 문 클로저에 속한다: 요소 행을 만들지 않는다
@@ -249,6 +279,12 @@ def plan_import(data: bytes) -> ImportPlan:
         c = ue.get_container(p, should_get_direct=True)
         if c is not None and c.GlobalId in rows and c.is_a("IfcBuildingStorey"):
             rels.add(("on_level", g, c.GlobalId))
+    # 분리된 레벨: 그 위의 저작 요소는 분리되지 않았지만 배치가 레벨 배치를 따르므로 레벨 고도 변경이 절대 위치에 그대로 반영된다
+    for lv in [d["id"] for d in plan.detached if rows[d["id"]]["kind"] == "level"]:
+        above = [g for k, g, dst in rels if k == "on_level" and dst == lv and rows[g]["origin"] == "authored"]
+        if above:
+            plan.warnings.append(f"{lv}: 분리된 레벨 위에 저작 요소 {len(above)}개가 있다. 이 요소들은 레벨 배치를 따르므로 "
+                                 "레벨의 고도 변경이 절대 위치에 반영된다(의도의 고도는 낡은 값이다)")
     plan.rows = [{"id": g, **r} for g, r in sorted(rows.items())]
     plan.rels = sorted(rels)
     return plan

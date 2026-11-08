@@ -171,6 +171,7 @@ def ifdiff(old: Path, new: Path, ids: bool = False) -> dict:
                                     | set(d["strict"]["ids"]["changed"]) | set(d["strict"]["ids"]["added"]) | set(d["strict"]["ids"]["deleted"]))
     return {**out, "ifcdiff_total": d["ifcdiff"]["total"], "ifcdiff_added": d["ifcdiff"]["added"], "ifcdiff_deleted": d["ifcdiff"]["deleted"],
             "ifcdiff_changed": d["ifcdiff"]["changed"], "ifcdiff_changed_kinds": d["ifcdiff"]["changed_kinds"],
+            "ifcdiff_id_only_changed": d["ifcdiff"]["id_only_changed"],
             "ifcdiff_version": d["ifcdiff"]["ifcdiff_version"], "strict_total": d["strict"]["total"],
             "strict_products_changed": d["strict"]["products_changed"], "strict_relationships_changed":
                 d["strict"]["relationships_added"] + d["strict"]["relationships_removed"], "differences": d["differences"]}
