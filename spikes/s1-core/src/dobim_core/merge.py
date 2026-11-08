@@ -20,11 +20,12 @@
 """
 from __future__ import annotations
 
-import copy
 import hashlib
 import json
+import os
+import re
 import sqlite3
-from math import sqrt
+from math import isfinite, sqrt
 from pathlib import Path
 from typing import Any
 
@@ -32,7 +33,8 @@ from dobim_core import queries as Q
 from dobim_core.errors import DobimError
 from dobim_core.graph import RefGraph
 
-MAX_ROUNDS = 8            # 의미 충돌 해결 반복 상한(되돌린 뒤 새 위반이 생기는 연쇄)
+DUP_PAIRS_MAX_GROUP = 40  # 같은 자리 벽 중복: 이 수까지 쌍(n^2/2)으로 보고, 더 큰 묶음은 벽마다 하나씩(n)으로 보고한다(겹친 벽 1200개가 쌍 72만 개가 되는 것을 막는다)
+DUP_PAIRS_MAX_GROUP = 40  # 같은 자리 벽 중복: 이 수까지는 쌍(n^2/2)으로 보고하고, 더 큰 묶음은 벽마다 하나씩(n)으로 보고한다(겹친 벽 1200개가 쌍 72만 개가 되는 것을 막는다)
 OPS_SHOWN = 4             # 충돌 하나에 보여 주는 양쪽 op 수
 FIELDS_SHOWN = 8
 KEY_MAX = 120             # 충돌 키 길이 상한(커서 128자 안에 들어가게)
@@ -57,6 +59,119 @@ def _ckey(key: str) -> str:
     return key if len(key) <= KEY_MAX else key[:KEY_MAX - 14] + "~" + hashlib.sha1(key.encode("utf-8")).hexdigest()[:12]
 
 
+# ---------------------------------------------------------------- 불변식 (commands.py 의 입력 검사와 같은 규칙. 같은지는 시험이 대조한다)
+ID_RE = re.compile(r"^[0-9A-Za-z_$]{22}$")
+PROP_RE = re.compile(r"^[A-Za-z][A-Za-z0-9_]{0,63}$")
+KIND_CLASS = {"level": "IfcBuildingStorey", "wall": "IfcWall", "door": "IfcDoor"}
+REL_KINDS = ("on_level", "joins", "hosts")
+PARAM_KEYS = {"level": ("name", "elevation"), "wall": ("name", "axis", "thickness", "height"),
+              "door": ("name", "width", "height", "sill", "offset")}
+RESERVED_PSET = "DoBIM_Intent"   # 투영이 소유한 예약 속성셋: pset.set/pset.delete 가 거부하므로 로그에 있을 수 없다
+NAME_MAX = 64
+
+
+def _num(v) -> bool:
+    if type(v) is int:
+        return -(2**63) <= v < 2**63
+    return type(v) is float and isfinite(v)
+
+
+def _text_ok(v, lo=0, hi=None) -> bool:
+    return isinstance(v, str) and len(v) >= lo and (hi is None or len(v) <= hi) and "\x00" not in v
+
+
+def _id_ok(v) -> bool:
+    return isinstance(v, str) and ID_RE.match(v) is not None
+
+
+def row_error(r) -> str | None:
+    """요소 행이 커맨드가 만들 수 있는 모양인가(종류·IFC 클래스·파라미터 이름과 값). 아니면 이유."""
+    if not isinstance(r, dict) or set(r) != {"kind", "ifc_class", "origin", "family_id", "params"}:
+        return "요소 행의 모양이 다르다"
+    kind = r["kind"]
+    if kind not in KIND_CLASS or r["ifc_class"] != KIND_CLASS[kind]:
+        return f"알 수 없는 요소 종류·IFC 클래스: {str(kind)[:20]}"
+    if not _text_ok(r["origin"], 0, 64) or not (r["family_id"] is None or _text_ok(r["family_id"], 0, 64)):
+        return "origin·family_id 가 올바르지 않다"
+    p = r["params"]
+    if not isinstance(p, dict) or set(p) != set(PARAM_KEYS[kind]):
+        return f"{kind} 의 파라미터 이름이 다르다"
+    for k, v in p.items():
+        if k == "name":
+            ok = _text_ok(v, 1, NAME_MAX)
+        elif k == "axis":
+            ok = (isinstance(v, list) and len(v) == 4 and all(_num(x) for x in v)
+                  and (v[2] - v[0]) ** 2 + (v[3] - v[1]) ** 2 >= 1.0)   # 벽 길이 1mm 이상(wall.create 의 규칙)
+        elif k in ("thickness", "height", "width"):
+            ok = _num(v) and v > 0
+        elif k == "sill":
+            ok = _num(v) and v >= 0
+        else:   # elevation, offset
+            ok = _num(v)
+        if not ok:
+            return f"{kind}.{k} 값이 올바르지 않다"
+    return None
+
+
+def prop_error(pset, prop, value=None) -> str | None:
+    """속성셋 이름·속성 이름·값(None = 없음)이 pset.set 이 받는 모양인가."""
+    if not isinstance(pset, str) or not PROP_RE.match(pset):
+        return "속성셋 이름이 올바르지 않다"
+    if pset == RESERVED_PSET:
+        return f"{RESERVED_PSET} 는 투영이 소유한 예약 속성셋이다"
+    if not isinstance(prop, str) or not PROP_RE.match(prop) or prop == "id":
+        return "속성 이름이 올바르지 않다"
+    if value is not None and not (type(value) is bool or _num(value) or _text_ok(value)):
+        return "속성 값이 올바르지 않다"
+    return None
+
+
+def effect_error(e) -> str | None:
+    """로그 효과 하나의 모양과 값. 병합이 상대 파일을 믿지 않고 먼저 거르는 검사다(커맨드 검증을 우회한 효과를 막는다)."""
+    if not isinstance(e, list) or not e:
+        return "효과가 목록이 아니다"
+    t = e[0]
+    if t == "el":
+        if len(e) != 4 or not _id_ok(e[1]) or (e[2] is None and e[3] is None):
+            return "el 효과의 모양이 다르다"
+        for r in (e[2], e[3]):
+            if r is not None and (m := row_error(r)):
+                return m
+        return None
+    if t == "rel":
+        if len(e) != 6 or e[1] not in REL_KINDS or not _id_ok(e[2]) or not _id_ok(e[3]) \
+                or any(type(x) is not int or x not in (0, 1) for x in (e[4], e[5])):
+            return "rel 효과의 모양이 다르다(관계 종류·id·0/1)"
+        return None
+    if t == "pset":
+        if len(e) != 6 or not _id_ok(e[1]):
+            return "pset 효과의 모양이 다르다"
+        return prop_error(e[2], e[3], e[4]) or prop_error(e[2], e[3], e[5])
+    if t == "mat":
+        if len(e) != 4 or not _id_ok(e[1]) or any(x is not None and not _text_ok(x, 1, NAME_MAX) for x in (e[2], e[3])):
+            return "mat 효과의 모양이 다르다"
+        return None
+    return f"알 수 없는 효과: {str(t)[:20]}"
+
+
+def rows_error(rows: list[tuple]) -> str | None:
+    """로그 전체가 엔진이 쓰는 모양인가: seq 는 1부터 이어지고, 인자는 JSON 객체, 역효과는 올바른 효과 목록."""
+    for i, r in enumerate(rows):
+        if len(r) != 7 or type(r[0]) is not int or r[0] != i + 1 or type(r[3]) is not int \
+                or not all(isinstance(x, str) for x in (r[1], r[2], r[4], r[5], r[6])):
+            return f"로그 항목 {i + 1} 의 열이 올바르지 않다"
+        try:
+            args, inv = json.loads(r[5]), json.loads(r[6])
+        except ValueError:
+            return f"로그 항목 {i + 1} 의 JSON 이 깨졌다"
+        if not isinstance(args, dict) or not isinstance(inv, list):
+            return f"로그 항목 {i + 1} 의 인자·역효과 모양이 다르다"
+        for e in inv:
+            if m := effect_error(e):
+                return f"로그 항목 {i + 1}: {m}"
+    return None
+
+
 # ---------------------------------------------------------------- 로그 읽기
 LOG_SQL = "SELECT seq, txn_id, actor, base_rev, op, args, inverse FROM op_log ORDER BY seq"
 
@@ -65,16 +180,39 @@ def read_log(conn: sqlite3.Connection) -> tuple[str, list[tuple]]:
     meta = dict(conn.execute("SELECT key, value FROM meta"))
     if meta.get("schema_version") != "1":
         raise DobimError("USAGE", "지원하지 않는 프로젝트 형식이다")
+    if not isinstance(meta.get("project_uuid"), str):
+        raise DobimError("IO_ERROR", "상대 프로젝트에 project_uuid 가 없다", path="/other")
     return meta["project_uuid"], conn.execute(LOG_SQL).fetchall()
 
 
 def open_other(path: str | Path) -> sqlite3.Connection:
-    """상대 프로젝트를 읽기 전용으로 연다. 다른 프로세스가 쓰는 중이어도 WAL 이라 읽을 수 있다."""
-    uri = Path(path).resolve().as_uri() + "?mode=ro"
+    """상대 프로젝트를 읽기 전용으로 연다. 다른 프로세스가 쓰는 중이어도 WAL 이라 읽을 수 있다.
+    WAL 사이드카(-wal, -shm)가 하나도 없으면 아무도 열고 있지 않다는 뜻이므로 immutable=1 로 연다: 읽기 전용 연결도 -shm 을 만들려
+    해서 상대 폴더에 사이드카가 생기고 남는 일을 막는다. 사이드카가 있으면(쓰는 중이거나 비정상 종료) WAL 내용을 읽어야 하므로 mode=ro 로 열고,
+    우리가 새로 만든 사이드카만 닫은 뒤 지운다(close_other)."""
+    p = Path(path).resolve()
+    sidecars = [str(p) + "-wal", str(p) + "-shm"]
+    existed = [os.path.exists(x) for x in sidecars]
+    uri = p.as_uri() + ("?mode=ro" if any(existed) else "?mode=ro&immutable=1")
     try:
-        return sqlite3.connect(uri, uri=True, timeout=5.0)
+        conn = sqlite3.connect(uri, uri=True, timeout=5.0)
     except sqlite3.Error as ex:
         raise DobimError("IO_ERROR", f"상대 프로젝트를 열 수 없다: {type(ex).__name__}", path="/other") from ex
+    _CREATED[id(conn)] = [x for x, was in zip(sidecars, existed) if not was]
+    return conn
+
+
+_CREATED: dict[int, list[str]] = {}   # 연결 -> 이 연결을 열 때 없던 사이드카 경로
+
+
+def close_other(conn: sqlite3.Connection) -> None:
+    created = _CREATED.pop(id(conn), [])
+    conn.close()
+    for x in created:   # 우리가 만든 사이드카만. 그 사이 다른 프로세스가 열었으면 지워지지 않거나(Windows) 그쪽 몫이므로 실패해도 넘어간다
+        try:
+            os.remove(x)
+        except OSError:
+            pass
 
 
 def load_other(path: str | Path) -> tuple[str, list[tuple]]:
@@ -82,14 +220,18 @@ def load_other(path: str | Path) -> tuple[str, list[tuple]]:
     try:
         conn.execute("BEGIN")
         try:
-            return read_log(conn)
+            uuid_, rows = read_log(conn)
         finally:
             conn.execute("COMMIT")
     except sqlite3.Error as ex:
         raise DobimError("IO_ERROR", f"상대 프로젝트의 로그를 읽을 수 없다: {type(ex).__name__}", path="/other",
                          hint="프로젝트 파일(.dobim)이 맞는지, 다른 프로그램이 잠그고 있지 않은지 확인하세요") from ex
     finally:
-        conn.close()
+        close_other(conn)
+    if (m := rows_error(rows)) is not None:
+        raise DobimError("IO_ERROR", f"상대 프로젝트의 로그가 올바르지 않다: {m}", path="/other",
+                         hint="프로젝트 파일이 손상됐거나 손으로 고친 것일 수 있습니다. 병합하지 않았습니다")
+    return uuid_, rows
 
 
 def fork_count(a: list[tuple], b: list[tuple]) -> int:
@@ -306,9 +448,17 @@ def violations(view: View) -> list[dict]:
             groups.setdefault((lv, tuple(sorted((a, b)))), []).append(w)
     for k in _order(groups):
         ws = groups[k]
+        axis = [list(k[1][0]), list(k[1][1])]
+        if len(ws) > DUP_PAIRS_MAX_GROUP:
+            # 겹친 벽이 아주 많으면 쌍(n^2/2)이 메모리를 먹는다(1200개 -> 72만 쌍). 이 묶음은 벽마다 하나씩(n)으로 보고한다.
+            # "병합이 새로 만든 위반" 판정도 같은 단위로 한다: 어느 쪽에도 이미 겹쳐 있던 벽이면 새 위반이 아니다.
+            for w in ws:
+                out.append(_v("DUPLICATE_WALL", (w,), "같은 레벨의 같은 자리에 벽이 겹쳐 있다(겹친 벽이 많아 벽별로 보고)",
+                              {"axis": axis, "group_size": len(ws)}, disc="many"))
+            continue
         for i, w1 in enumerate(ws):
             for w2 in ws[i + 1:]:
-                out.append(_v("DUPLICATE_WALL", (w1, w2), "같은 레벨의 같은 자리에 벽이 겹쳐 있다", {"axis": [list(k[1][0]), list(k[1][1])]}))
+                out.append(_v("DUPLICATE_WALL", (w1, w2), "같은 레벨의 같은 자리에 벽이 겹쳐 있다", {"axis": axis}))
     # 4) 레벨 이름 중복 (level.create 의 규칙)
     names: dict[str, list] = {}
     for lv in view.ids("level"):
@@ -357,6 +507,20 @@ def violations(view: View) -> list[dict]:
 NO_FORCE = object()
 
 
+def _rounds(n_resolve: int) -> int:
+    """의미 충돌 해결 반복 횟수. 되돌리는 바퀴는 해결 키 수(n_resolve)를 넘을 수 없고 그 뒤 한 바퀴는 반드시 되돌림 없이 끝나므로
+    n_resolve + 1 이면 충분하다(+2 는 여유). 상한 때문에 최종 재검사가 빠지는 일이 없다. 변이 시험이 이 값을 8 로 낮춰 검사의 이빨을 확인한다."""
+    return n_resolve + 2
+
+
+def check_batch_position(ctx) -> None:
+    """merge.apply 는 배치(script --atomic)의 첫 변경이어야 한다: 앞 커맨드가 이미 상태를 바꿨다면(seq 가 head+1 보다 크다)
+    로그만 접어서는 지금 상태를 알 수 없다. 뒤에 다른 커맨드가 오는 것은 괜찮다. 병합 둘을 한 배치에 넣는 것도 같은 이유로 거절한다."""
+    if ctx.seq != ctx.eng.head + 1:
+        raise DobimError("USAGE", "merge.apply 는 배치에서 다른 변경 뒤에 올 수 없다(앞 커맨드가 바꾼 상태를 로그로 접을 수 없다)",
+                         hint="merge.apply 를 먼저 단독으로 실행하거나 배치의 맨 앞에 두세요(배치에 병합은 한 번만)")
+
+
 def _force(u, vb, vo, vt, touch_o, touch_t):
     """양쪽이 서로 다르게 바꾼 단위를 자동으로 정할 수 있는가. 보수적 정책: 절대 정하지 않는다(항상 NO_FORCE → 충돌).
     변이 시험이 이 자리를 "마지막 쓴 쪽이 이김" 같은 조용한 덮어쓰기로 바꿔 검사의 이빨을 확인한다."""
@@ -401,6 +565,12 @@ class Plan:
         self.theirs: dict = {}
         self.base: dict = {}
         self.stats: dict = {}
+        self.base_kind = "fork"             # 3-way 의 기준: "fork"(공통 접두) | "prior_merge"(앞선 병합이 들여온 상대/우리 로그 접두)
+        self.base_rev = 0                   # prior_merge 일 때 기준이 된 접두 길이
+        self.new_ours = 0                   # 기준 이후 우리 쪽 새 항목 수(관계 판정용)
+        self.new_theirs = 0
+        self.other_fp = ""                  # 상대 로그 전체의 지문(merge.apply 가 로그에 기록)
+        self.renamed: dict = {}             # take=both 로 새 id 를 받은 상대 요소 {원래 id: 새 id}
 
     @property
     def clean(self) -> bool:
@@ -410,19 +580,168 @@ class Plan:
         return digest(sorted(self.merged.items())) if self.clean else None
 
 
-def build_plan(ours_rows: list[tuple], theirs_rows: list[tuple], resolve: list[dict] | None = None) -> Plan:
+def live_txns(rows: list[tuple]) -> set:
+    """로그를 끝까지 읽었을 때 취소되지 않고 살아 있는 트랜잭션들(Engine._note_entry 와 같은 규칙)."""
+    undo: list = []
+    redo: list = []
+    for r in rows:
+        txn, op = r[1], r[4]
+        if op == "history.undo":
+            if undo:
+                redo.append(undo.pop())
+        elif op == "history.redo":
+            if redo:
+                undo.append(redo.pop())
+        else:
+            if not undo or undo[-1] != txn:
+                undo.append(txn)
+            redo.clear()
+    return set(undo)
+
+
+def _merge_records(rows: list[tuple], start: int):
+    """rows[start:] 의 살아 있는 merge.apply 항목: (위치, 합친 상대 로그 길이 k, 그 접두의 지문). 지문은 merge.apply 가 기록한다."""
+    live = live_txns(rows)
+    out = []
+    for i in range(start, len(rows)):
+        r = rows[i]
+        if r[4] != "merge.apply" or r[1] not in live:
+            continue
+        try:
+            a = json.loads(r[5])
+        except ValueError:
+            continue
+        k, fp = a.get("other_rev"), a.get("other_fp")
+        if type(k) is int and isinstance(fp, str):
+            out.append((i, k, fp))
+    return sorted(out, key=lambda x: -x[1])
+
+
+def prior_base(ours_rows: list[tuple], theirs_rows: list[tuple], n: int):
+    """앞선 병합이 있었으면 공통 조상을 그 병합이 들여온 접두까지 끌어올린다(같은 상대를 다시 병합할 때 거짓 충돌을 막는다).
+    - 우리가 상대(지금과 같은 로그)를 합친 기록이면 기준 = 상대 로그의 앞 k 항목: 우리는 그 시점까지의 상대 변경을 이미 갖고 있다.
+    - 상대가 우리 로그를 합친 기록이면 기준 = 우리 로그의 앞 k 항목.
+    기록의 지문(합친 접두의 해시)이 지금 로그의 접두와 같아야 같은 상대로 본다. 취소된 병합은 쓰지 않는다(다시 들여와야 하므로).
+    양쪽이 서로를 합친 뒤 갈라진 경우(교차 병합): 한쪽이 다른 쪽의 후손이면 후손을 쓰고, 아니면 보수적으로 공통 접두(n)를 쓴다.
+    반환: None | {rows, kind, rev, new_ours, new_theirs}."""
+    a = b = None
+    for i, k, fp in _merge_records(ours_rows, n):
+        if n < k <= len(theirs_rows) and fingerprint(theirs_rows[:k]) == fp:
+            a = (i, k)
+            break
+    for j, k, fp in _merge_records(theirs_rows, n):
+        if n < k <= len(ours_rows) and fingerprint(ours_rows[:k]) == fp:
+            b = (j, k)
+            break
+    pick = None
+    if a and b:
+        if b[0] < a[1]:       # 상대의 병합 항목이 우리가 합친 상대 접두 안에 있다: a 가 b 의 후손
+            pick = "a"
+        elif a[0] < b[1]:     # 우리의 병합 항목이 상대가 합친 우리 접두 안에 있다: b 가 a 의 후손
+            pick = "b"
+    elif a:
+        pick = "a"
+    elif b:
+        pick = "b"
+    if pick == "a":
+        return {"rows": theirs_rows[:a[1]], "kind": "prior_merge", "rev": a[1],
+                "new_ours": len(ours_rows) - (a[0] + 1), "new_theirs": len(theirs_rows) - a[1]}
+    if pick == "b":
+        return {"rows": ours_rows[:b[1]], "kind": "prior_merge", "rev": b[1],
+                "new_ours": len(ours_rows) - b[1], "new_theirs": len(theirs_rows) - (b[0] + 1)}
+    return None
+
+
+# 병합 결과·상대 쪽에 있을 수 없는 구조 위반(커맨드는 항상 지킨다). 이게 보이면 파일이 손으로 고쳐졌거나 손상된 것이다
+INTEGRITY_RULES = ("HOST_DELETED", "JOIN_TARGET_DELETED", "LEVEL_DELETED", "REL_DANGLING", "ORPHAN_UNIT", "HOST_MISSING", "LEVEL_MISSING")
+
+
+def units_error(units: dict) -> str | None:
+    """단위 사전이 커맨드가 만들 수 있는 모양인가: 요소 행(파라미터 완전성 포함), 속성(예약 속성셋 금지), 재료, 관계 종류."""
+    for e, r in rows_of(units).items():
+        if m := row_error(r):
+            return f"{e}: {m}"
+    for u, v in units.items():
+        if u[0] == "pset" and (m := prop_error(u[2], u[3], json.loads(v))):
+            return f"{u[1]} {u[2]}.{u[3]}: {m}"
+        if u[0] == "mat" and not _text_ok(json.loads(v), 1, NAME_MAX):
+            return f"{u[1]} 재료 이름이 올바르지 않다"
+        if u[0] == "rel" and (u[1] not in REL_KINDS or not _id_ok(u[2]) or not _id_ok(u[3])):
+            return f"관계 {str(u[1])[:20]} 이 올바르지 않다"
+    return None
+
+
+B64 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz_$"
+
+
+def renamed_id(project_uuid: str, eid: str, created_seq: int) -> str:
+    """ID_COLLISION 에서 take=both 로 상대 요소를 살릴 때 쓰는 새 id: (프로젝트, 원래 id, 상대가 그 요소를 만든 seq) 의 결정적 함수.
+    ifcopenshell 없이 IFC GlobalId(22자, 128비트 압축)와 같은 모양으로 만든다. 같은 입력이면 항상 같아서 병합을 다시 해도 같은 id 다."""
+    n = int.from_bytes(hashlib.sha256(f"merge-rename:{project_uuid}:{eid}:{created_seq}".encode("utf-8")).digest()[:16], "big")
+    out = []
+    for _ in range(22):
+        out.append(B64[n % 64])
+        n //= 64
+    return "".join(reversed(out))
+
+
+def _rename_unit(u: tuple, m: dict) -> tuple:
+    if u[0] == "rel":
+        return (u[0], u[1], m.get(u[2], u[2]), m.get(u[3], u[3]))
+    return (u[0], m.get(u[1], u[1])) + tuple(u[2:])
+
+
+def _created_seq(rows: list[tuple], eid: str) -> int:
+    """rows 중 요소 eid 를 처음 만든(없던 것이 생긴) 로그 항목의 seq."""
+    from dobim_core.engine import invert
+    for r in rows:
+        for e in invert(json.loads(r[6])):
+            if e[0] == "el" and e[1] == eid and e[2] is None:
+                return r[0]
+    return 0
+
+
+def id_collisions(base: dict, ours: dict, theirs: dict) -> list[str]:
+    """양쪽이 조상에 없던 같은 id 의 요소를 만들었고 내용이 다른 id 들(정렬)."""
+    cand = {u[1] for u in ours if u[0] == "el" and u[2] == "@" and u not in base} & \
+           {u[1] for u in theirs if u[0] == "el" and u[2] == "@" and u not in base}
+    diff = set()
+    for u in set(ours) | set(theirs):
+        if ours.get(u) != theirs.get(u):
+            diff.update(e for e in elems_of(u) if e in cand)
+    return _order(diff)
+
+
+def build_plan(ours_rows: list[tuple], theirs_rows: list[tuple], resolve: list[dict] | None = None, project_uuid: str = "") -> Plan:
     """두 로그에서 병합 계획을 만든다. 순수 함수: 파일·시각·난수를 보지 않는다."""
     res = {}
     for r in resolve or []:
         res[r["key"]] = r["take"]
     n = fork_count(ours_rows, theirs_rows)
-    base = fold(ours_rows[:n])
+    fork_units = fold(ours_rows[:n])
+    pb = prior_base(ours_rows, theirs_rows, n)
+    base = fork_units if pb is None else fold(pb["rows"])
     to, tt = {}, {}
-    ours = fold(ours_rows[n:], dict(base), to)
-    theirs = fold(theirs_rows[n:], dict(base), tt)
+    ours = fold(ours_rows[n:], dict(fork_units), to)
+    theirs = fold(theirs_rows[n:], dict(fork_units), tt)
+    # take=both: 같은 id 를 서로 다르게 만든 충돌에서 상대 요소를 새 id 로 옮겨 둘 다 살린다(우리 쪽 요소는 그대로).
+    # 상대 쪽 단위(요소·관계·속성·재료)의 id 를 모두 새 id 로 바꾼 뒤 보통의 3-way 를 하므로 충돌이 사라진다.
+    renamed: dict[str, str] = {}
+    puid = project_uuid
+    for e in id_collisions(base, ours, theirs):
+        if res.get(f"ID_COLLISION:{e}") == "both":
+            renamed[e] = renamed_id(puid, e, _created_seq(theirs_rows[n:], e))
+    if renamed:
+        theirs = {_rename_unit(u, renamed): v for u, v in theirs.items()}
+        tt = {_rename_unit(u, renamed): w for u, w in tt.items()}
     plan = Plan()
+    plan.renamed = renamed
     plan.fork, plan.ours_rev, plan.other_rev = n, len(ours_rows), len(theirs_rows)
     plan.base, plan.ours, plan.theirs = base, ours, theirs
+    plan.new_ours, plan.new_theirs = len(ours_rows) - n, len(theirs_rows) - n
+    plan.other_fp = fingerprint(theirs_rows)
+    if pb is not None:
+        plan.base_kind, plan.base_rev, plan.new_ours, plan.new_theirs = pb["kind"], pb["rev"], pb["new_ours"], pb["new_theirs"]
 
     # ---- 1) 단위별 3-way
     merged: dict = {}
@@ -464,7 +783,8 @@ def build_plan(ours_rows: list[tuple], theirs_rows: list[tuple], resolve: list[d
         if eb and eo != et:
             deleter = "ours" if not eo else "theirs"
             other = theirs if deleter == "ours" else ours   # 지우지 않은 쪽
-            mods = [u for u in changed(other, e) if u != ("el", e, "@")]
+            # 지우지 않은 쪽이 속성·재료·관계를 "지운" 변경은 요소 삭제와 같은 방향이라 수정으로 세지 않는다(값이 남아 있는 변경만 수정)
+            mods = [u for u in changed(other, e) if u != ("el", e, "@") and other.get(u) is not None]
             if mods:
                 fam = list(by_elem[e])
                 groups.append({"type": "DELETE_MODIFY", "key": f"DELETE_MODIFY:{e}", "elements": [e], "units": fam,
@@ -503,19 +823,30 @@ def build_plan(ours_rows: list[tuple], theirs_rows: list[tuple], resolve: list[d
                 merged[u] = v
 
     used = set()
+    for e in _order(renamed):
+        used.add(f"ID_COLLISION:{e}")
+        plan.resolved.append(f"ID_COLLISION:{e}")
     pending_unit = []
     for g in groups:
         t = res.get(g["key"])
         if t is None:
             pending_unit.append(g)
             continue
+        if t == "both":
+            raise DobimError("USAGE", f'take="both" 는 ID_COLLISION 충돌에만 쓸 수 있다: {g["key"]}', path="/resolve",
+                             hint="ID_COLLISION 이 아닌 충돌은 ours 또는 theirs 를 고르세요")
         take(g["units"], ours if t == "ours" else theirs)
         used.add(g["key"])
         plan.resolved.append(g["key"])
 
     # ---- 2) 의미 검사 (재생성). 병합이 새로 만든 위반만 충돌이다
+    v_theirs = violations(View(theirs))
+    broken = [v for v in v_theirs if v["rule"] in INTEGRITY_RULES]
+    if broken:
+        raise DobimError("IO_ERROR", f"상대 프로젝트의 상태가 일관되지 않다({broken[0]['rule']}: {broken[0]['reason']})", path="/other",
+                         hint="커맨드로는 만들 수 없는 상태입니다. 프로젝트 파일이 손상됐거나 손으로 고친 것일 수 있습니다. 병합하지 않았습니다")
     vo_keys = {vkey(v) for v in violations(View(ours))}
-    vt_keys = {vkey(v) for v in violations(View(theirs))}
+    vt_keys = {vkey(v) for v in v_theirs}
 
     def side_only(u, side):
         other = theirs if side is ours else ours
@@ -548,7 +879,11 @@ def build_plan(ours_rows: list[tuple], theirs_rows: list[tuple], resolve: list[d
     # 단위 충돌이 남아 있으면 의미 검사를 하지 않는다: 임시 병합 상태는 어느 쪽이 "우리"냐에 따라 달라 보고가 방향에 기대게 된다.
     # 단위 충돌을 해결한 뒤(미리보기를 resolve 와 함께 다시 읽어) 의미 충돌을 본다.
     plan.semantic_checked = not pending_unit
-    for _ in range(MAX_ROUNDS if plan.semantic_checked else 0):
+    # 반복 상한은 두지 않는다. 수렴 논증: 한 바퀴가 값을 되돌리면 그 바퀴에서 쓴 해결 키 하나가 applied_sem 에 들어가고
+    # (k not in applied_sem 조건), 한 키는 한 번만 쓰이므로 되돌리는 바퀴는 len(res) 번을 넘을 수 없다.
+    # 그 다음 바퀴는 반드시 되돌림 없이 끝나므로 마지막 바퀴가 항상 "최종 재검사"가 된다(상한 소진으로 검사가 빠지는 일이 없다).
+    # 반복 횟수 = 되돌린 횟수 + 1 이라 동시에 선언 한도(resolve ≤ 200건) 안에서 유한하다.
+    for _round in range(_rounds(len(res)) if plan.semantic_checked else 0):
         new = [v for v in violations(View(merged)) if vkey(v) not in vo_keys and vkey(v) not in vt_keys]
         unresolved_sem = []
         reverted = False
@@ -571,6 +906,9 @@ def build_plan(ours_rows: list[tuple], theirs_rows: list[tuple], resolve: list[d
             unresolved_sem.append({"v": v, "key": k, "ours_units": ou, "theirs_units": tu})
         if not reverted:
             break
+    else:   # 도달할 수 없다(위 수렴 논증). 도달하면 마지막 재검사 없이 깨끗하다고 판정하게 되므로 조용히 넘기지 않는다
+        if plan.semantic_checked:
+            raise DobimError("INTERNAL", "의미 충돌 해결이 수렴하지 않았다")
     open_keys = {r["key"] for r in unresolved_sem}
     # 아무 충돌과도 맞지 않은 해결 지시는 무시한다(충돌은 키가 맞아야만 풀리므로 데이터를 덮을 수 없다). 이미 합쳐진 뒤 같은 지시로 다시
     # 실행해도 변경 없음이 되게 하려는 것이고, 호출한 쪽에는 경고로 알린다.
@@ -593,7 +931,7 @@ def build_plan(ours_rows: list[tuple], theirs_rows: list[tuple], resolve: list[d
                     "theirs": {"change": "deleted" if g["type"] == "DELETE_MODIFY" and g.get("deleter") == "theirs" else
                                ("created" if g["type"] == "ID_COLLISION" else "modified"),
                                "fields": sorted({_label(u) for u in ch_t if u[0] != "rel"})[:FIELDS_SHOWN], "ops": to_, "ops_more": tm},
-                    "take": ["ours", "theirs"]}
+                    "take": ["ours", "theirs"] + (["both"] if g["type"] == "ID_COLLISION" else [])}
         else:
             u = us[0]
             oo, om = _ops(to, us)
@@ -616,6 +954,9 @@ def build_plan(ours_rows: list[tuple], theirs_rows: list[tuple], resolve: list[d
                           "take": takes})
     conflicts.sort(key=lambda c: c["key"])
     plan.conflicts = conflicts
+    if not conflicts and (m := units_error(merged)) is not None:   # 커맨드와 같은 불변식: 결과가 규칙을 어기면 합치지 않는다
+        raise DobimError("CONSTRAINT", f"병합 결과가 커맨드 불변식을 어긴다: {m}", path="/other",
+                         hint="상대 프로젝트의 로그가 손으로 고쳐졌을 수 있습니다. 병합하지 않았습니다")
     plan.stats = {
         "ours_changed_units": sum(1 for u in set(base) | set(ours) if ours.get(u) != base.get(u)),
         "theirs_changed_units": sum(1 for u in set(base) | set(theirs) if theirs.get(u) != base.get(u)),

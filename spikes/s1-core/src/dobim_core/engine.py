@@ -157,6 +157,7 @@ class Ctx:
         self.effects: list = []
         self.warnings: list[str] = []
         self._n = 0
+        self._issued: set[str] = set()   # 이번 실행이 내준 id(아직 효과로 내보내기 전인 것도 겹치지 않게)
 
     # ---- 읽기
     @property
@@ -186,10 +187,18 @@ class Ctx:
         return self.eng.ifc.get_material(eid)
 
     def new_id(self, kind: str) -> str:
-        """결정적 GlobalId. 같은 프로젝트에서 같은 순번이면 같은 값이 나온다."""
-        self._n += 1
-        u = uuid.uuid5(uuid.UUID(self.eng.project_guid_uuid), f"{kind}:{self.seq}:{self._n}")
-        return ifcopenshell.guid.compress(u.hex)
+        """결정적 GlobalId. 같은 프로젝트에서 같은 순번이면 같은 값이 나온다.
+        이미 있는 요소의 id 나 이번 실행이 이미 내준 id 와 겹치면 순번(n)을 올려 다음 후보를 쓴다(결정적 탐색).
+        충돌이 없는 평소에는 첫 후보를 그대로 쓰므로 기존 id(골든 해시)는 바뀌지 않는다. 병합이 상대의 자동 id 요소를 들여온 뒤에도
+        우리 다음 자동 id 가 그와 겹쳐 계속 CONSTRAINT 가 나는 일을 막는다. 탐색 결과는 현재 상태에만 의존하므로 재생에 영향이 없다
+        (재생은 로그에 적힌 id 를 쓰고 new_id 를 부르지 않는다)."""
+        base = uuid.UUID(self.eng.project_guid_uuid)
+        while True:
+            self._n += 1
+            gid = ifcopenshell.guid.compress(uuid.uuid5(base, f"{kind}:{self.seq}:{self._n}").hex)
+            if gid not in self.eng.st.el and gid not in self._issued:
+                self._issued.add(gid)
+                return gid
 
     # ---- 쓰기 (효과)
     def emit(self, eff: list) -> None:

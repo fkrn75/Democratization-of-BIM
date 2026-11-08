@@ -757,7 +757,8 @@ def history_affected(ctx, a: HistoryAffected):
 # ================================================================ 병합 (S8)
 class Resolution(A):
     key: str = Field(min_length=1, max_length=128, description="merge.preview 가 알려 준 충돌 키(items[].key) 그대로")
-    take: Literal["ours", "theirs"] = Field(description="ours = 이 프로젝트 쪽, theirs = other 프로젝트 쪽. 의미 충돌은 반대쪽이 기여한 변경을 조상 값으로 되돌린다")
+    take: Literal["ours", "theirs", "both"] = Field(description="ours = 이 프로젝트 쪽, theirs = other 프로젝트 쪽. 의미 충돌은 반대쪽이 기여한 변경을 조상 값으로 되돌린다. "
+                                                              "both = ID_COLLISION 에만: 우리 요소는 그대로 두고 상대 요소를 새 id 로 옮겨 둘 다 살린다(새 id 는 결정적)")
 
 
 class MergeBase(A):
@@ -775,6 +776,11 @@ class MergeBase(A):
         return v
 
 
+class MergeApply(MergeBase):
+    other_fp: str | None = Field(None, max_length=64, description="기록 전용: 합친 상대 로그의 지문(생략). 값을 주어도 실행 때 실제 지문으로 덮어쓴다. "
+                                                                  "같은 상대를 다시 병합할 때 앞선 병합을 공통 조상으로 쓰는 데 읽는다")
+
+
 def _merge_plan(ctx, a: MergeBase):
     import os
     eng = ctx.eng
@@ -788,7 +794,7 @@ def _merge_plan(ctx, a: MergeBase):
         raise DobimError("REV_CONFLICT", f"상대 리비전이 어긋났다: 기대 {a.other_rev}, 현재 {len(theirs)}", path="/other_rev",
                          details={"expected": a.other_rev, "actual": len(theirs)})
     ours = eng.conn.execute(merge.LOG_SQL).fetchall()
-    return merge.build_plan(ours, theirs, [{"key": r.key, "take": r.take} for r in a.resolve])
+    return merge.build_plan(ours, theirs, [{"key": r.key, "take": r.take} for r in a.resolve], eng.project_guid_uuid)
 
 
 class MergePreview(MergeBase):
@@ -809,9 +815,10 @@ def merge_preview(ctx, a: MergePreview):
     by_type: dict[str, int] = {}
     for c in p.conflicts:
         by_type[c["type"]] = by_type.get(c["type"], 0) + 1
-    ne, nt = p.stats["ours_entries"], p.stats["theirs_entries"]
+    ne, nt = p.new_ours, p.new_theirs   # 기준(공통 접두 또는 앞선 병합) 이후 새 항목 수
     relation = "same" if ne == 0 and nt == 0 else ("ours_behind" if ne == 0 else ("ours_ahead" if nt == 0 else "diverged"))
-    base = {"fork_rev": p.fork, "ours_rev": p.ours_rev, "other_rev": p.other_rev, "relation": relation, "stats": p.stats,
+    base = {"fork_rev": p.fork, "base": {"kind": p.base_kind, "rev": p.base_rev or p.fork},
+            "ours_rev": p.ours_rev, "other_rev": p.other_rev, "relation": relation, "stats": p.stats,
             "conflict_count": len(p.conflicts), "by_type": by_type, "plan_digest": p.digest(), "resolved": len(p.resolved),
             "semantic_checked": p.semantic_checked}
     items, cut = _fit(window, base=base, cursor_of=lambda i: _enc_cursor(window[i]["key"]),
@@ -826,8 +833,9 @@ def merge_preview(ctx, a: MergePreview):
 
 @command("merge.apply", kind="mutation", risk="write", group="merge",
          summary="다른 프로젝트 파일의 변경을 이 프로젝트에 합친다(3-way, 필드 단위). 충돌이 하나라도 남으면 합치지 않는다. 결과는 로그 항목 하나라 history.undo 로 되돌린다",
-         args=MergeBase, since="0.1", examples=[{"other": "other.dobim"}])
-def merge_apply(ctx, a: MergeBase):
+         args=MergeApply, since="0.1", examples=[{"other": "other.dobim"}])
+def merge_apply(ctx, a: MergeApply):
+    merge.check_batch_position(ctx)
     p = _merge_plan(ctx, a)
     if not p.clean:
         raise merge.conflict_error(p)
@@ -836,7 +844,8 @@ def merge_apply(ctx, a: MergeBase):
         raise DobimError("INTERNAL", "로그를 접은 상태가 엔진 상태와 다르다")
     if p.unused:
         ctx.warn(f"충돌과 맞지 않는 해결 지시 {len(p.unused)}건은 무시했다(이미 합쳐졌거나 키가 틀림): {p.unused[0]}")
-    a.other_rev = p.other_rev   # 로그에 실제로 합친 상대 리비전을 남긴다
+    a.other_rev = p.other_rev   # 로그에 실제로 합친 상대 리비전과 그 접두의 지문을 남긴다(다음 병합의 공통 조상 계산이 읽는다)
+    a.other_fp = p.other_fp
     cnt = merge.emit_plan(ctx, p)
     return {"fork_rev": p.fork, "ours_rev": p.ours_rev, "other_rev": p.other_rev, "changes": cnt,
             "resolved": {"count": len(p.resolved), "keys": p.resolved[:5]}, "plan_digest": p.digest()}
