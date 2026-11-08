@@ -1,0 +1,28 @@
+{
+  "package": "납품",
+  "profile": "조달청 v2.1 실시설계 + 국토부 시행지침(설계자·발주자 편)",
+  "summary": {
+    "pass": 1,
+    "conditional": {
+      "enabled": false
+    },
+    "total": 1
+  },
+  "checks": [
+    {
+      "id": "KR-CODE-18",
+      "title": "납품 폴더 구성(조달청 5.5.3)",
+      "mode": "code",
+      "severity": "필수",
+      "requirements": [
+        "REQ-008",
+        "REQ-009"
+      ],
+      "status": "pass",
+      "applicable": 3,
+      "failed": 0,
+      "examples": [],
+      "note": ""
+    }
+  ]
+}

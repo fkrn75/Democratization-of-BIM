@@ -3,13 +3,19 @@
   "sha256": "8790a1e193e82b8e7e7f337ec2633cd40f2120590317a1443503a25b079e2e80",
   "schema": "IFC4",
   "profile": "조달청 v2.1 실시설계 + 국토부 시행지침(설계자·발주자 편)",
+  "energy_mode": false,
   "deliverable_mode": false,
   "name_checked_as": "Building-Architecture.ifc",
+  "unreadable_schema": false,
   "summary": {
     "pass": 14,
-    "fail": 15,
-    "na": 6,
+    "fail": 13,
+    "na": 5,
     "warn": 1,
+    "conditional": {
+      "enabled": false,
+      "na": 3
+    },
     "total": 36
   },
   "checks": [
@@ -83,15 +89,15 @@
       "examples": [
         {
           "class": "IfcSpace",
-          "name": "living room",
-          "global_id": "0xY$LvXaDEswJDk_VU74C_",
-          "reason": "The entity has no classification"
+          "name": "entry hall",
+          "global_id": "18QhMtUIXBvQktPHXXxs7H",
+          "reason": "System: The entity has no classification"
         },
         {
           "class": "IfcSpace",
-          "name": "entry hall",
-          "global_id": "18QhMtUIXBvQktPHXXxs7H",
-          "reason": "The entity has no classification"
+          "name": "living room",
+          "global_id": "0xY$LvXaDEswJDk_VU74C_",
+          "reason": "System: The entity has no classification"
         }
       ],
       "note": ""
@@ -111,21 +117,21 @@
       "examples": [
         {
           "class": "IfcBuildingElementProxy",
-          "name": "sand bedding",
-          "global_id": "3_4VN63S96DfWiJjgG8j1C",
-          "reason": "The entity has no classification"
+          "name": "geo-reference",
+          "global_id": "3Fit2Fad92zf2f6aWdJtF5",
+          "reason": "System: The entity has no classification"
         },
         {
           "class": "IfcBuildingElementProxy",
           "name": "origin",
           "global_id": "2F44QMqSH3TOkM$SZoqCBe",
-          "reason": "The entity has no classification"
+          "reason": "System: The entity has no classification"
         },
         {
           "class": "IfcBuildingElementProxy",
-          "name": "geo-reference",
-          "global_id": "3Fit2Fad92zf2f6aWdJtF5",
-          "reason": "The entity has no classification"
+          "name": "sand bedding",
+          "global_id": "3_4VN63S96DfWiJjgG8j1C",
+          "reason": "System: The entity has no classification"
         }
       ],
       "note": ""
@@ -153,42 +159,12 @@
       "requirements": [
         "REQ-030"
       ],
-      "status": "fail",
-      "applicable": 8,
-      "failed": 7,
-      "examples": [
-        {
-          "class": "IfcWall",
-          "name": "house - outer wall - house right front",
-          "global_id": "1AQAupaRP1txwK1AGiN61V",
-          "reason": "The required property set does not exist"
-        },
-        {
-          "class": "IfcWall",
-          "name": "house - outer wall - house right back",
-          "global_id": "3wdauVJT5Fx9drrREiDqA$",
-          "reason": "The required property set does not exist"
-        },
-        {
-          "class": "IfcWall",
-          "name": "house - outer wall - house left",
-          "global_id": "0OfZwWc8j9QP5uX8xPTxDH",
-          "reason": "The required property set does not exist"
-        },
-        {
-          "class": "IfcWall",
-          "name": "plumbing wall",
-          "global_id": "0Q5LjisRjDwhFSOc_WQjlF",
-          "reason": "The required property set does not exist"
-        },
-        {
-          "class": "IfcRoof",
-          "name": "house - roof",
-          "global_id": "2iPwJwpPDCSgMheXwk9cBT",
-          "reason": "The required property set does not exist"
-        }
-      ],
-      "note": ""
+      "status": "na",
+      "applicable": 0,
+      "failed": 0,
+      "examples": [],
+      "conditional_off": true,
+      "note": "조건부 규칙: 에너지 검토(환경 시뮬레이션) 수행 시에만 적용. --energy 로 켬"
     },
     {
       "id": "KR-IDS-09",
@@ -198,24 +174,18 @@
       "requirements": [
         "REQ-031"
       ],
-      "status": "fail",
-      "applicable": 1,
-      "failed": 1,
-      "examples": [
-        {
-          "class": "IfcSlab",
-          "name": "floor",
-          "global_id": "3zR0BOEcLADRKln4HYporH",
-          "reason": "The property set does not contain the required property"
-        }
-      ],
-      "note": ""
+      "status": "na",
+      "applicable": 0,
+      "failed": 0,
+      "examples": [],
+      "conditional_off": true,
+      "note": "조건부 규칙: 에너지 검토(환경 시뮬레이션) 수행 시에만 적용. --energy 로 켬"
     },
     {
       "id": "KR-IDS-10",
       "title": "외기에 면한 5종 부위에는 열관류율이 있어야 함",
       "mode": "ids",
-      "severity": "권고",
+      "severity": "조건부",
       "requirements": [
         "REQ-032"
       ],
@@ -223,7 +193,8 @@
       "applicable": 0,
       "failed": 0,
       "examples": [],
-      "note": "적용 대상 객체 없음"
+      "conditional_off": true,
+      "note": "조건부 규칙: 에너지 검토(환경 시뮬레이션) 수행 시에만 적용. --energy 로 켬"
     },
     {
       "id": "KR-IDS-11",
@@ -241,25 +212,13 @@
           "class": "IfcSite",
           "name": "environment - site",
           "global_id": "23sFQGRy90RxVbRHD9iSE2",
-          "reason": "The attribute value \"None\" is empty"
+          "reason": "RefLatitude: The attribute value \"None\" is empty; RefLongitude: The attribute value \"None\" is empty"
         },
         {
           "class": "IfcSite",
           "name": "house - site",
           "global_id": "1Pbuu0tu59NfhrTsztVBK1",
-          "reason": "The attribute value \"None\" is empty"
-        },
-        {
-          "class": "IfcSite",
-          "name": "environment - site",
-          "global_id": "23sFQGRy90RxVbRHD9iSE2",
-          "reason": "The attribute value \"None\" is empty"
-        },
-        {
-          "class": "IfcSite",
-          "name": "house - site",
-          "global_id": "1Pbuu0tu59NfhrTsztVBK1",
-          "reason": "The attribute value \"None\" is empty"
+          "reason": "RefLatitude: The attribute value \"None\" is empty; RefLongitude: The attribute value \"None\" is empty"
         }
       ],
       "note": ""
@@ -280,13 +239,13 @@
           "class": "IfcSite",
           "name": "environment - site",
           "global_id": "23sFQGRy90RxVbRHD9iSE2",
-          "reason": "The attribute value \"None\" is empty"
+          "reason": "SiteAddress: The attribute value \"None\" is empty"
         },
         {
           "class": "IfcSite",
           "name": "house - site",
           "global_id": "1Pbuu0tu59NfhrTsztVBK1",
-          "reason": "The attribute value \"None\" is empty"
+          "reason": "SiteAddress: The attribute value \"None\" is empty"
         }
       ],
       "note": ""
@@ -321,7 +280,7 @@
           "class": "IfcBuilding",
           "name": "Single-family house",
           "global_id": "0c$N1CTon2BB2Sp89385G8",
-          "reason": "The required property set does not exist"
+          "reason": "Pset_BuildingCommon.OccupancyType: The required property set does not exist"
         }
       ],
       "note": ""
@@ -342,7 +301,7 @@
           "class": "IfcBuilding",
           "name": "Single-family house",
           "global_id": "0c$N1CTon2BB2Sp89385G8",
-          "reason": "The required property set does not exist"
+          "reason": "Pset_BuildingCommon.NumberOfStoreys: The required property set does not exist"
         }
       ],
       "note": ""
@@ -363,7 +322,7 @@
           "class": "IfcBuilding",
           "name": "Single-family house",
           "global_id": "0c$N1CTon2BB2Sp89385G8",
-          "reason": "The required property set does not exist"
+          "reason": "Qto_BuildingBaseQuantities.GrossFloorArea: The required property set does not exist"
         }
       ],
       "note": ""
@@ -384,7 +343,7 @@
           "class": "IfcBuilding",
           "name": "Single-family house",
           "global_id": "0c$N1CTon2BB2Sp89385G8",
-          "reason": "The required property set does not exist"
+          "reason": "Qto_BuildingBaseQuantities.FootprintArea: The required property set does not exist"
         }
       ],
       "note": ""
@@ -405,20 +364,20 @@
           "class": "IfcSite",
           "name": "environment - site",
           "global_id": "23sFQGRy90RxVbRHD9iSE2",
-          "reason": "The required property set does not exist"
+          "reason": "Qto_SiteBaseQuantities.GrossArea: The required property set does not exist"
         },
         {
           "class": "IfcSite",
           "name": "house - site",
           "global_id": "1Pbuu0tu59NfhrTsztVBK1",
-          "reason": "The required property set does not exist"
+          "reason": "Qto_SiteBaseQuantities.GrossArea: The required property set does not exist"
         }
       ],
       "note": ""
     },
     {
       "id": "KR-CODE-01",
-      "title": "제출 IFC 는 2x3 이상(조달청 5.2.1(2), 5.5.2(1)). IFC2X2 이하는 이 도구가 못 열어 도달하지 못한다.",
+      "title": "제출 IFC 는 2x3 이상(조달청 5.2.1(2), 5.5.2(1)). IFC2X2 이하는 실행기가 헤더에서 먼저 걸러 같은 판정을 쓴다.",
       "mode": "code",
       "severity": "필수",
       "requirements": [
@@ -448,7 +407,7 @@
     },
     {
       "id": "KR-CODE-03",
-      "title": "BIM 데이터 파일명은 영문·한글·숫자·'-'·'_' 만(시행지침 설계자편 3.1(3), 발주자편 4.x).",
+      "title": "BIM 데이터 파일명은 영문·한글·숫자·'-'·'_' 만(시행지침 설계자편 3.1(3)(가), 발주자편 3.6.3·부속서1 5.3 나).",
       "mode": "code",
       "severity": "필수",
       "requirements": [
@@ -603,7 +562,7 @@
     },
     {
       "id": "KR-CODE-10",
-      "title": "공간객체끼리 겹치지 않음(조달청 5.2.2(3)바, 5.3(4)가).",
+      "title": "같은 층의 공간객체끼리 겹치지 않음(조달청 5.2.2(3)바, 5.3(4)가).",
       "mode": "code",
       "severity": "필수",
       "requirements": [
@@ -613,7 +572,7 @@
       "applicable": 1,
       "failed": 0,
       "examples": [],
-      "note": "AABB 근사"
+      "note": "AABB 근사, 같은 층끼리만"
     },
     {
       "id": "KR-CODE-11",
@@ -631,9 +590,9 @@
     },
     {
       "id": "KR-CODE-12",
-      "title": "좌표계 선언(시행지침 설계자편 2.3.2(1)(나): GRS80 TM / 기본지침: 통상 UTM52 계열).",
+      "title": "좌표계 선언 권고(시행지침 설계자편 2.3.2(1)(나): GRS80 TM / 기본지침: 통상 UTM52 계열).",
       "mode": "code",
-      "severity": "필수",
+      "severity": "권고",
       "requirements": [
         "REQ-041",
         "REQ-051"

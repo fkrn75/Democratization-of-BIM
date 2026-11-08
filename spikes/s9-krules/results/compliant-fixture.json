@@ -1,13 +1,19 @@
 {
   "file": "00_본관_BA.ifc",
-  "sha256": "cbc37415b7440d45a8b0cb589da87e7e537eb7380c4ae1d2cc54b2e1e985bfc8",
+  "sha256": null,
   "schema": "IFC4",
   "profile": "조달청 v2.1 실시설계 + 국토부 시행지침(설계자·발주자 편)",
+  "energy_mode": true,
   "deliverable_mode": true,
   "name_checked_as": "00_본관_BA.ifc",
+  "unreadable_schema": false,
   "summary": {
-    "pass": 35,
+    "pass": 32,
     "na": 1,
+    "conditional": {
+      "enabled": true,
+      "pass": 3
+    },
     "total": 36
   },
   "checks": [
@@ -34,10 +40,10 @@
         "REQ-010"
       ],
       "status": "pass",
-      "applicable": 2,
+      "applicable": 4,
       "failed": 0,
       "examples": [],
-      "note": "대상 2개"
+      "note": "대상 4개"
     },
     {
       "id": "KR-IDS-03",
@@ -48,7 +54,7 @@
         "REQ-014"
       ],
       "status": "pass",
-      "applicable": 2,
+      "applicable": 4,
       "failed": 0,
       "examples": [],
       "note": ""
@@ -62,7 +68,7 @@
         "REQ-015"
       ],
       "status": "pass",
-      "applicable": 2,
+      "applicable": 4,
       "failed": 0,
       "examples": [],
       "note": ""
@@ -76,7 +82,7 @@
         "REQ-017"
       ],
       "status": "pass",
-      "applicable": 2,
+      "applicable": 4,
       "failed": 0,
       "examples": [],
       "note": ""
@@ -123,7 +129,8 @@
       "applicable": 4,
       "failed": 0,
       "examples": [],
-      "note": ""
+      "note": "",
+      "tolerated": 0
     },
     {
       "id": "KR-IDS-09",
@@ -137,13 +144,14 @@
       "applicable": 4,
       "failed": 0,
       "examples": [],
-      "note": ""
+      "note": "",
+      "tolerated": 0
     },
     {
       "id": "KR-IDS-10",
       "title": "외기에 면한 5종 부위에는 열관류율이 있어야 함",
       "mode": "ids",
-      "severity": "권고",
+      "severity": "조건부",
       "requirements": [
         "REQ-032"
       ],
@@ -151,7 +159,8 @@
       "applicable": 4,
       "failed": 0,
       "examples": [],
-      "note": ""
+      "note": "",
+      "tolerated": 0
     },
     {
       "id": "KR-IDS-11",
@@ -267,7 +276,7 @@
     },
     {
       "id": "KR-CODE-01",
-      "title": "제출 IFC 는 2x3 이상(조달청 5.2.1(2), 5.5.2(1)). IFC2X2 이하는 이 도구가 못 열어 도달하지 못한다.",
+      "title": "제출 IFC 는 2x3 이상(조달청 5.2.1(2), 5.5.2(1)). IFC2X2 이하는 실행기가 헤더에서 먼저 걸러 같은 판정을 쓴다.",
       "mode": "code",
       "severity": "필수",
       "requirements": [
@@ -297,7 +306,7 @@
     },
     {
       "id": "KR-CODE-03",
-      "title": "BIM 데이터 파일명은 영문·한글·숫자·'-'·'_' 만(시행지침 설계자편 3.1(3), 발주자편 4.x).",
+      "title": "BIM 데이터 파일명은 영문·한글·숫자·'-'·'_' 만(시행지침 설계자편 3.1(3)(가), 발주자편 3.6.3·부속서1 5.3 나).",
       "mode": "code",
       "severity": "필수",
       "requirements": [
@@ -346,7 +355,7 @@
         "REQ-011"
       ],
       "status": "pass",
-      "applicable": 6,
+      "applicable": 8,
       "failed": 0,
       "examples": [],
       "note": ""
@@ -374,7 +383,7 @@
         "REQ-016"
       ],
       "status": "pass",
-      "applicable": 2,
+      "applicable": 4,
       "failed": 0,
       "examples": [],
       "note": ""
@@ -388,24 +397,24 @@
         "REQ-017"
       ],
       "status": "pass",
-      "applicable": 2,
+      "applicable": 4,
       "failed": 0,
       "examples": [],
       "note": ""
     },
     {
       "id": "KR-CODE-10",
-      "title": "공간객체끼리 겹치지 않음(조달청 5.2.2(3)바, 5.3(4)가).",
+      "title": "같은 층의 공간객체끼리 겹치지 않음(조달청 5.2.2(3)바, 5.3(4)가).",
       "mode": "code",
       "severity": "필수",
       "requirements": [
         "REQ-018"
       ],
       "status": "pass",
-      "applicable": 1,
+      "applicable": 2,
       "failed": 0,
       "examples": [],
-      "note": "AABB 근사"
+      "note": "AABB 근사, 같은 층끼리만"
     },
     {
       "id": "KR-CODE-11",
@@ -423,9 +432,9 @@
     },
     {
       "id": "KR-CODE-12",
-      "title": "좌표계 선언(시행지침 설계자편 2.3.2(1)(나): GRS80 TM / 기본지침: 통상 UTM52 계열).",
+      "title": "좌표계 선언 권고(시행지침 설계자편 2.3.2(1)(나): GRS80 TM / 기본지침: 통상 UTM52 계열).",
       "mode": "code",
-      "severity": "필수",
+      "severity": "권고",
       "requirements": [
         "REQ-041",
         "REQ-051"
@@ -490,7 +499,7 @@
       "applicable": 1,
       "failed": 0,
       "examples": [],
-      "note": "11618 바이트"
+      "note": "13012 바이트"
     },
     {
       "id": "KR-CODE-17",
@@ -501,7 +510,7 @@
         "REQ-044"
       ],
       "status": "pass",
-      "applicable": 53,
+      "applicable": 55,
       "failed": 0,
       "examples": [],
       "note": ""
