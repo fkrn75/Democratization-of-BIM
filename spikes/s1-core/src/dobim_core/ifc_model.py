@@ -31,6 +31,7 @@ import ifcopenshell.util.element as ue
 import ifcopenshell.validate
 
 from dobim_core.errors import DobimError
+from dobim_core.family import ifcproj as fp
 
 def check_value(value) -> None:
     """IFC 에 안전하게 저장할 수 없는 속성 값을 쓰기 전에 거른다(NaN, inf, int64 초과, NUL, 홑서로게이트)."""
@@ -81,6 +82,12 @@ class IfcModel:
         self.openings: dict[str, Any] = {}      # 문 id -> 개구부 엔티티 (투영 소유)
         self.container_of: dict[str, str] = {}  # 요소 id -> 현재 담긴 층 id (투영 상태)
         self._mats: dict[str, Any] = {}         # 재료 이름 -> 엔티티
+        # 패밀리 투영 상태(S4): 요소 종류, 타입별 IfcRelDefinesByType, 인스턴스의 타입, 평면 문맥(필요할 때만 만든다)
+        self.kinds: dict[str, str] = {}
+        self.typerels: dict[str, Any] = {}
+        self.type_of: dict[str, str] = {}
+        self.type_maps: dict[str, bool] = {}
+        self.plan_ctx: Any = None
         # 복원까지 실패해 IFC 쪽이 로그와 어긋났을 수 있으면 그 이유가 들어간다. 엔진이 이 표시를 보고 로그에서
         # 투영을 다시 만든다(만들지 못하면 쓰기를 거부한다). 예외를 삼키고 넘어가는 일은 없어야 한다.
         self.tainted: str | None = None
@@ -130,9 +137,10 @@ class IfcModel:
             ue.remove_deep2(f, o)
 
     # ------------------------------------------------------------ 신원 (즉시)
-    def create_identity(self, eid: str, kind: str) -> None:
+    def create_identity(self, eid: str, kind: str, ifc_class: str | None = None) -> None:
         f = self.f
-        e = api_root.create_entity(f, ifc_class=IFC_CLASS[kind])
+        e = api_root.create_entity(f, ifc_class=IFC_CLASS.get(kind) or ifc_class)
+        self.kinds[eid] = kind
         e.GlobalId = eid
         if kind == "level":
             api_aggregate.assign_object(f, products=[e], relating_object=self.building)
@@ -143,14 +151,20 @@ class IfcModel:
         f = self.f
         e = self.ents[eid]
         self._unproject_door(eid)
+        kind = self.kinds.get(eid)
+        if kind == "finst":
+            fp.unproject_inst(self, eid)
+        elif kind == "ftype":
+            fp.unproject_type(self, eid)
         api_root.remove_product(f, product=e)   # 실패하면 ents 가 그대로라 상태가 설명 가능하다(순서: 지운 뒤에 목록에서 뺀다)
         self.ents.pop(eid)
+        self.kinds.pop(eid, None)
         self.container_of.pop(eid, None)
 
     # ------------------------------------------------------------ 속성셋·재료 (정본)
     def get_psets(self, eid: str) -> dict:
         out = {}
-        for name, props in ue.get_psets(self.ents[eid], psets_only=True).items():
+        for name, props in ue.get_psets(self.ents[eid], psets_only=True, should_inherit=False).items():
             if name == INTENT_PSET:
                 continue
             out[name] = {k: v for k, v in props.items() if k != "id"}
@@ -166,7 +180,7 @@ class IfcModel:
         check_value(value)
         f = self.f
         e = self.ents[eid]
-        cur = ue.get_pset(e, pset)
+        cur = ue.get_pset(e, pset, should_inherit=False)   # 인스턴스가 타입의 속성셋을 물려받아 보이므로 끈다(타입 것을 고치면 안 된다)
         if cur is None:
             if value is None:
                 return
@@ -196,7 +210,7 @@ class IfcModel:
         self._drop_empty_pset(e, pset, ps)   # 성공 경로: 실패하면 호출자(엔진)가 실패로 다룬다
 
     def _drop_empty_pset(self, e, pset: str, ps) -> None:
-        remain = ue.get_pset(e, pset)
+        remain = ue.get_pset(e, pset, should_inherit=False)
         if remain is not None and not [k for k in remain if k != "id"]:
             api_pset.remove_pset(self.f, product=e, pset=ps)
 
@@ -226,11 +240,12 @@ class IfcModel:
     # ------------------------------------------------------------ 투영 (늦게)
     def project(self, eid: str, spec: dict) -> None:
         kind = spec["kind"]
-        {"level": self._project_level, "wall": self._project_wall, "door": self._project_door}[kind](eid, spec)
+        {"level": self._project_level, "wall": self._project_wall, "door": self._project_door,
+         "ftype": lambda i, sp: fp.project_type(self, i, sp), "finst": lambda i, sp: fp.project_inst(self, i, sp)}[kind](eid, spec)
         # 의도를 IFC 에도 복제한다. 정본은 의도 저장소이고 이 속성셋은 매번 덮어쓴다.
         e = self.ents[eid]
         text = json.dumps(spec["intent"], sort_keys=True, separators=(",", ":"))
-        cur = ue.get_pset(e, INTENT_PSET)
+        cur = ue.get_pset(e, INTENT_PSET, should_inherit=False)
         if cur is None or cur.get("Intent") != text:
             self.set_prop(eid, INTENT_PSET, "Intent", text)
 
@@ -260,6 +275,12 @@ class IfcModel:
         self._contain(eid, spec["level"])
         self._place(e, self.ents[spec["level"]].ObjectPlacement, (x, y, 0.0), (c, sn, 0.0))
         self._set_body(e, self._solid(spec["footprint"], spec["height"]))
+
+    def derived_guid_for(self, label: str) -> str:
+        return derived_guid(self.project_guid, label)
+
+    def unproject_opening(self, eid):
+        self._unproject_door(eid)
 
     def _unproject_door(self, eid):
         op = self.openings.get(eid)
@@ -313,7 +334,7 @@ class IfcModel:
             return v
 
         def ent(e):
-            if e.is_a("IfcProduct"):
+            if e.is_a("IfcProduct") or e.is_a("IfcTypeObject"):
                 return {"ref": e.GlobalId}
             k = e.id()   # 0 이면 파일에 독립 번호가 없는 값 래퍼(IfcLabel 등)다. 캐시하면 값이 섞인다
             if k and k in memo:
@@ -333,7 +354,7 @@ class IfcModel:
 
         f = self.f
         prods = []
-        for e in f.by_type("IfcProduct"):
+        for e in list(f.by_type("IfcProduct")) + list(f.by_type("IfcTypeObject")):
             info = e.get_info(include_identifier=False, recursive=False)
             d = {"t": info.pop("type")}
             for name, v in info.items():
@@ -357,7 +378,7 @@ class IfcModel:
         """IFC 에 복제된 의도 (일관성 시험용)."""
         out = {}
         for eid, e in self.ents.items():
-            p = ue.get_pset(e, INTENT_PSET)
+            p = ue.get_pset(e, INTENT_PSET, should_inherit=False)
             if p is not None:
                 out[eid] = p.get("Intent")
         return out

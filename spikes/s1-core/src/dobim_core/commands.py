@@ -378,7 +378,7 @@ def _delete_one(ctx, eid):
         for prop in sorted(props):
             ctx.set_prop(eid, pset, prop, None)
     ctx.set_material(eid, None)
-    for kind in ("joins", "on_level", "hosts"):
+    for kind in ("joins", "on_level", "hosts", "of_type"):
         for dst in ctx.rels_out(kind, eid):
             ctx.rel(kind, eid, dst, False)
         for src in ctx.rels_in(kind, eid):
@@ -394,6 +394,9 @@ def element_delete(ctx, a: IdArg):
     if r["kind"] == "level":
         if ctx.rels_in("on_level", a.id):
             raise DobimError("CONSTRAINT", "벽이 있는 레벨은 지울 수 없다", path="/id")
+    elif r["kind"] == "ftype":
+        if ctx.rels_in("of_type", a.id):
+            raise DobimError("CONSTRAINT", "인스턴스가 있는 패밀리 타입은 지울 수 없다", path="/id", hint="인스턴스를 먼저 지우세요")
     elif r["kind"] == "wall":
         for d in ctx.rels_out("hosts", a.id):
             _delete_one(ctx, d)
@@ -475,12 +478,15 @@ class ElementGet(A):
          args=ElementGet, idempotent=True, examples=[{"id": F.W1}])
 def element_get(ctx, a: ElementGet):
     r = ctx.row(a.id)
-    rel_all = [(k, x) for k in ("on_level", "joins", "hosts") for x in ctx.rels_out(k, a.id) + [f"<-{x}" for x in ctx.rels_in(k, a.id)]]
+    rel_all = [(k, x) for k in ("on_level", "joins", "hosts", "of_type") for x in ctx.rels_out(k, a.id) + [f"<-{x}" for x in ctx.rels_in(k, a.id)]]
     relations: dict = {}
     for k, x in rel_all[:RELATIONS_SHOWN]:
         relations.setdefault(k, []).append(x)
+    params = r["params"]
+    if r["kind"] == "ftype":   # 레시피 전문(수 KB)은 응답 상한을 넘기므로 요약만 보인다. 전문은 family.preview/validate 로 읽는다
+        params = {**params, "recipe": {"id": r["family_id"], "bytes": len(json.dumps(params["recipe"], ensure_ascii=False))}}
     out = {"id": a.id, "kind": r["kind"], "ifc_class": r["ifc_class"], "origin": r["origin"],
-           "family_id": r["family_id"], "params": r["params"], "material": ctx.material(a.id),
+           "family_id": r["family_id"], "params": params, "material": ctx.material(a.id),
            "relations": relations, "relations_total": len(rel_all)}
     if r["kind"] == "wall":
         start, end, status = ctx.g.q(Q.wall_trim, a.id)
@@ -520,7 +526,7 @@ def element_get(ctx, a: ElementGet):
 
 
 class ElementQuery(A):
-    kind: Literal["level", "wall", "door"] | None = None
+    kind: Literal["level", "wall", "door", "ftype", "finst"] | None = None
     level: Id | None = None
     name_contains: str | None = Field(None, max_length=64)
     limit: int = Field(100, ge=1, le=1000, description="최대 개수. 응답 크기 상한에 걸리면 이보다 적게 돌려주고 page.truncated 로 알린다")
@@ -561,7 +567,7 @@ def relation_list(ctx, a: RelationList):
     # 전순서 키 (관계 종류 번호, 방향 0=나가는 1=들어오는, 상대 id). 키셋 커서는 마지막으로 읽은 항목의 키를 담는다:
     # 읽는 동안 앞쪽 관계가 생기거나 사라져도 빠짐·중복이 없고, 커서가 가리키던 관계가 사라져도 그 키 뒤에서 이어간다.
     keyed = []
-    for ki, k in enumerate(("on_level", "joins", "hosts")):
+    for ki, k in enumerate(("on_level", "joins", "hosts", "of_type")):
         keyed += [((ki, 0, d), {"kind": k, "src": a.id, "dst": d}) for d in ctx.rels_out(k, a.id)]
         keyed += [((ki, 1, s), {"kind": k, "src": s, "dst": a.id}) for s in ctx.rels_in(k, a.id)]
     keyed.sort(key=lambda t: t[0])
@@ -690,6 +696,9 @@ def history_redo(ctx, a: HistoryArgs):
     return _history(ctx, a, False)
 
 
+HISTORY_ARG_BYTES = 1500
+
+
 class HistoryList(A):
     limit: int = Field(20, ge=1, le=500, description="최대 개수. 응답 크기 상한에 걸리면 이보다 적게 돌려주고 page.truncated 로 알린다")
     cursor: str | None = Field(None, max_length=2048, description="이전 응답의 page.next_cursor (그보다 오래된 항목을 돌려준다)")
@@ -705,7 +714,10 @@ def history_list(ctx, a: HistoryList):
     more_in_limit = len(rows) > a.limit
     window, clipped_rows = [], []
     for s_, t, ac, b, o, g in rows[:a.limit]:
-        it, n = limits.clip_deep({"seq": s_, "txn": t, "actor": ac, "base_rev": b, "op": o, "args": json.loads(g)})
+        args_ = json.loads(g)
+        if len(g) > HISTORY_ARG_BYTES:   # 레시피 전문처럼 큰 인자는 응답 상한을 지키려고 크기만 보인다(전문은 요소 행에 있다)
+            args_ = {"omitted_bytes": len(g.encode("utf-8"))}
+        it, n = limits.clip_deep({"seq": s_, "txn": t, "actor": ac, "base_rev": b, "op": o, "args": args_})
         if n:   # 상한이 생기기 전의 옛 로그에 긴 값이 있으면 앞 255자만 보이고 이 항목에 표시한다
             it = {**it, "clipped": n}
             clipped_rows.append(s_)
@@ -1080,3 +1092,7 @@ def ifc_restore(ctx, a: IfcRestore):
         _drop_snapshot(p, snap, ctx.eng.workspace)
         raise
     return {"path": p.name, "restored_from": a.snapshot, "bytes": p.stat().st_size, "snapshot": snap}
+
+
+# S4 패밀리 커맨드: 이 모듈의 정의가 모두 끝난 뒤에 등록한다
+from dobim_core import commands_family  # noqa: E402,F401

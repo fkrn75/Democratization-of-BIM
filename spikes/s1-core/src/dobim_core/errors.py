@@ -5,6 +5,7 @@ from __future__ import annotations
 # 오류 코드 → 종료 코드. 표에 없는 코드를 쓰면 생성 시점에 실패한다.
 EXIT_CODES: dict[str, int] = {
     "CONSTRAINT": 1,
+    "FAMILY_INVALID": 1,    # 패밀리 레시피·값이 검증을 통과하지 못했다(S4). details.issues 에 경로·이유·힌트가 있다
     "NOTHING_TO_UNDO": 1,
     "NOTHING_TO_REDO": 1,
     "FILE_EXISTS": 1,

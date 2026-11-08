@@ -9,6 +9,8 @@ from __future__ import annotations
 import zlib
 from math import sqrt
 
+from dobim_core.family import spec as FS
+
 JOIN_MAX_EXT = 1000.0   # 조인 지점이 벽 끝에서 이 거리 안일 때만 조인이 성립
 MIN_TRIMMED = 1.0       # 조인 후 벽 길이 하한. 미달이면 조인을 무시하고 경고 상태로 둔다
 PARALLEL_EPS = 1e-9
@@ -143,6 +145,21 @@ def door_status(g, d):
     return "ok" if start <= p["offset"] - half and p["offset"] + half <= end else "outside_trimmed_host"
 
 
+# ---------------------------------------------------------------- 패밀리 인스턴스 (S4)
+def finst_type(g, e):
+    return rel_out(g, "of_type", e)[0]
+
+
+def finst_host(g, e):
+    r = rel_in(g, "hosts", e)
+    return r[0] if r else None
+
+
+def finst_level(g, e):
+    h = g.q(finst_host, e)
+    return g.q(wall_level, h) if h else rel_out(g, "on_level", e)[0]
+
+
 # ---------------------------------------------------------------- 일람표 (T0)
 def _pset_val(g, e, pset, prop):
     return psets(g, e).get(pset, {}).get(prop)
@@ -240,7 +257,11 @@ def intent_of(g, e):
     """DoBIM_Intent 에 복제할 의도. 파라미터와 의도 소유 관계만 담는다."""
     row = el(g, e)
     out = {"kind": row["kind"], "params": row["params"], "family_id": row["family_id"]}
-    if row["kind"] == "wall":
+    if row["kind"] == "finst":
+        out["type"] = g.q(finst_type, e)
+        h = g.q(finst_host, e)
+        out["host" if h else "level"] = h or g.q(finst_level, e)
+    elif row["kind"] == "wall":
         out["level"] = g.q(wall_level, e)
         out["joins"] = list(g.q(wall_joins, e))
     elif row["kind"] == "door":
@@ -259,6 +280,16 @@ def ifc_spec(g, e):
     intent = g.q(intent_of, e)
     if kind == "level":
         return {"kind": kind, "name": p["name"], "elevation": p["elevation"], "intent": intent}
+    if kind == "ftype":
+        return {**FS.ftype_spec(p), "intent": intent}
+    if kind == "finst":
+        tid = g.q(finst_type, e)
+        h = g.q(finst_host, e)
+        host = None
+        if h:
+            wp = el(g, h)["params"]
+            host = {"host_thickness": wp["thickness"], "host_height": wp["height"]}
+        return {**FS.finst_spec(el(g, tid)["params"], p, tid, h, g.q(finst_level, e), host), "intent": intent}
     if kind == "wall":
         x, y, c, s, _ = g.q(wall_frame, e)
         return {"kind": kind, "name": p["name"], "level": g.q(wall_level, e), "origin": (x, y), "xdir": (c, s),

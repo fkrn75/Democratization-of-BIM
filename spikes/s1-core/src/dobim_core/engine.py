@@ -185,6 +185,10 @@ class Ctx:
     def material(self, eid):
         return self.eng.ifc.get_material(eid)
 
+    def det_id(self, label: str) -> str:
+        """라벨에서 결정적으로 얻는 GlobalId(같은 프로젝트·같은 라벨이면 같은 값). 내용 주소 id 에 쓴다."""
+        return ifcopenshell.guid.compress(uuid.uuid5(uuid.UUID(self.eng.project_guid_uuid), label).hex)
+
     def new_id(self, kind: str) -> str:
         """결정적 GlobalId. 같은 프로젝트에서 같은 순번이면 같은 값이 나온다."""
         self._n += 1
@@ -344,7 +348,7 @@ class Engine:
                 elif e[0] == "mat":
                     mats[e[1]] = e[3]
         for eid in sorted(self.st.el):
-            self.ifc.create_identity(eid, self.st.el[eid]["kind"])
+            self.ifc.create_identity(eid, self.st.el[eid]["kind"], self.st.el[eid]["ifc_class"])
         for (eid, pset, prop), v in sorted(psets.items(), key=lambda kv: kv[0]):
             if v is not None and eid in self.ifc.ents:
                 self.ifc.set_prop(eid, pset, prop, v)
@@ -380,7 +384,7 @@ class Engine:
             p.add(("el", eid))
             try:   # IFC 쪽이 실패하면 메모리 상태도 되돌리고, IFC 는 어떤 상태인지 모르니 오염으로 표시한다
                 if old is None:
-                    self.ifc.create_identity(eid, new["kind"])
+                    self.ifc.create_identity(eid, new["kind"], new["ifc_class"])
                 elif new is None:
                     self.ifc.remove_identity(eid)
                     self._proj_stamp.pop(eid, None)
@@ -609,7 +613,7 @@ class Engine:
         self.sync()
         self._touch_pending()
         n = 0
-        for kind in ("level", "wall", "door"):
+        for kind in ("level", "wall", "door", "ftype", "finst"):   # 타입이 인스턴스보다 먼저(인스턴스가 타입의 표현 지도를 가리킨다)
             for eid in sorted(self.st.by_kind.get(kind, ())):
                 spec = self.g.q(Q.ifc_spec, eid)
                 stamp = self.g.nodes[(Q.ifc_spec, eid)].changed
