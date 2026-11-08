@@ -1,0 +1,63 @@
+{
+  "schema": "dobim.family/1",
+  "id": "column.round",
+  "version": 1,
+  "name": "원형 기둥(주두 선택)",
+  "description": "자립형 원형 기둥. 지름(타입)과 높이(인스턴스)를 받고, 선택적으로 2단 원판 주두(capital) 확대부를 기둥 머리에 얹는다.",
+  "ifc": {
+    "class": "IfcColumn",
+    "type_class": "IfcColumnType",
+    "predefined": "COLUMN"
+  },
+  "params": {
+    "dia": {"kind": "type", "default": 400, "min": 200, "max": 1000, "description": "기둥 지름"},
+    "has_capital": {"kind": "type", "type": "bool", "default": true, "description": "주두 확대부 사용 여부"},
+    "cap_h": {"kind": "type", "default": 200, "min": 100, "max": 400, "description": "주두 전체 높이(2단)"},
+    "cap_ext": {"kind": "type", "default": 100, "min": 20, "max": 300, "description": "주두 상단이 기둥 지름보다 반경 방향으로 더 나가는 길이"},
+    "load_bearing": {"kind": "type", "type": "bool", "default": true},
+    "height": {"kind": "instance", "default": 3000, "min": 2000, "max": 12000, "description": "기둥 전체 높이(주두 포함)"}
+  },
+  "derived": {
+    "shaft_top": "(height - cap_h) if has_capital else height",
+    "cap_mid": "height - cap_h/2",
+    "cap_r1": "dia/2 + cap_ext/2",
+    "cap_r2": "dia/2 + cap_ext"
+  },
+  "constraints": [
+    {"expr": "height >= 4*cap_h", "message": "기둥 높이가 주두 높이의 4배 미만이다"}
+  ],
+  "solids": [
+    {
+      "id": "shaft", "op": "extrude", "plane": "xy",
+      "profile": {"shape": "circle", "center": [0, 0], "r": "dia/2"},
+      "range": [0, "shaft_top"]
+    },
+    {
+      "id": "cap_lower", "op": "extrude", "plane": "xy", "when": "has_capital",
+      "profile": {"shape": "circle", "center": [0, 0], "r": "cap_r1"},
+      "range": ["height - cap_h", "cap_mid"]
+    },
+    {
+      "id": "cap_upper", "op": "extrude", "plane": "xy", "when": "has_capital",
+      "profile": {"shape": "circle", "center": [0, 0], "r": "cap_r2"},
+      "range": ["cap_mid", "height"]
+    }
+  ],
+  "plan_symbol": {
+    "default": [
+      {"type": "circle", "center": [0, 0], "radius": "dia/2", "style": "cut"},
+      {"type": "line", "from": ["-dia/2", 0], "to": ["dia/2", 0]},
+      {"type": "line", "from": [0, "-dia/2"], "to": [0, "dia/2"]},
+      {"type": "circle", "center": [0, 0], "radius": "cap_r2", "when": "has_capital", "style": "hidden"}
+    ]
+  },
+  "psets": {
+    "Pset_ColumnCommon": {
+      "on": "type",
+      "props": {
+        "LoadBearing": {"expr": "load_bearing"},
+        "IsExternal": false
+      }
+    }
+  }
+}

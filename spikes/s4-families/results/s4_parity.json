@@ -16,13 +16,10 @@
     "dobim_render"
   ],
   "describe_parity_all_commands": true,
-  "search_parity": false,
+  "search_parity": true,
   "risk_gating_enforced": true,
-  "mismatches": [
-    "ex-family_validate-1: 봉투 False, 종료코드 True, 해시 True\n  CLI={\"ok\": true, \"rev\": 0, \"result\": {\"ok\": true, \"family\": \"column.section\", \"level\": \"full\", \"checks\": {\"schema\": \"pass\", \"references\": \"pass\", \"values\": \"pass\", \"geometry\": \"pass\", \"ifc_schema\": \"pass\", \"psets_standard\": \"pass\", \"ifc_projection\": \"pass\", \"geometry_shape\": \"pass\", \"psets_values\": \"pass\"}, \"total_errors\": 0, \"errors\": [], \"warnings\": [], \"stats\": {\"samples\": 26, \"ifc_validate_errors\"\n  MCP={\"ok\": true, \"rev\": 0, \"result\": {\"ok\": true, \"family\": \"column.section\", \"level\": \"full\", \"checks\": {\"schema\": \"pass\", \"references\": \"pass\", \"values\": \"pass\", \"geometry\": \"pass\", \"ifc_schema\": \"pass\", \"psets_standard\": \"pass\", \"ifc_projection\": \"pass\", \"geometry_shape\": \"pass\", \"psets_values\": \"pass\"}, \"total_errors\": 0, \"errors\": [], \"warnings\": [], \"stats\": {\"samples\": 26, \"ifc_validate_errors\"",
-    "commands.search 불일치"
-  ],
-  "parity_C_percent": 98.8,
+  "mismatches": [],
+  "parity_C_percent": 100.0,
   "results": [
     {
       "label": "ex-commands_describe-0",
@@ -187,7 +184,7 @@
     {
       "label": "ex-family_validate-1",
       "command": "family.validate",
-      "same_envelope": false,
+      "same_envelope": true,
       "exit_code": 0,
       "exit_code_matches_envelope": true,
       "ok": true,
@@ -1003,5 +1000,5 @@
     "derived": "47c215bb6ea9e93fa7fea940dc539192b7acd9d63483cc19a000e1ff7ed7bac8",
     "ifc": "9386029c481e74cf4a359465db9d07e7048d340730032e43829bb747e26baf7b"
   },
-  "pass": false
+  "pass": true
 }

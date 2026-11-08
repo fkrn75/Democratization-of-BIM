@@ -1,0 +1,126 @@
+{
+  "schema": "dobim.family/1",
+  "id": "window.fixed_vent",
+  "version": 1,
+  "name": "고정창+하부 환기창",
+  "description": "벽에 호스팅되는 조합 창. 상부는 고정 유리, 하부는 여닫이 환기창. 가로대(트랜섬)로 나누고 하부 비율은 vent_ratio.",
+  "ifc": {
+    "class": "IfcWindow",
+    "type_class": "IfcWindowType",
+    "predefined": "WINDOW",
+    "type_attrs": {
+      "PartitioningType": "DOUBLE_PANEL_HORIZONTAL",
+      "ParameterTakesPrecedence": false
+    },
+    "attrs": {
+      "OverallWidth": {"expr": "width"},
+      "OverallHeight": {"expr": "height"}
+    }
+  },
+  "host": {
+    "kinds": ["wall"],
+    "cut": {"x": ["left", "right"], "z": ["z0", "z1"]}
+  },
+  "params": {
+    "width": {"kind": "type", "default": 1200, "min": 600, "max": 3000, "description": "창 전체 폭"},
+    "height": {"kind": "type", "default": 1500, "min": 1000, "max": 2400, "description": "창 전체 높이"},
+    "frame_w": {"kind": "type", "default": 60, "min": 30, "max": 80, "description": "외부틀·가로대 단면 폭"},
+    "sash_w": {"kind": "type", "default": 40, "min": 30, "max": 50, "description": "환기창 문틀 폭"},
+    "glass_t": {"kind": "type", "default": 24, "min": 6, "max": 40, "description": "유리 두께"},
+    "vent_ratio": {"kind": "type", "unit": "none", "default": 0.4, "min": 0.3, "max": 0.6, "description": "개구 높이 중 하부 환기창이 차지하는 비율"},
+    "u_value": {"kind": "type", "unit": "none", "default": 1.6, "min": 0.5, "max": 5.0, "description": "열관류율 W/m2K"},
+    "is_external": {"kind": "type", "type": "bool", "default": true},
+    "sill": {"kind": "instance", "default": 900, "min": 0, "max": 1500, "description": "바닥에서 창 하단까지"},
+    "swing": {"kind": "instance", "type": "enum", "values": ["L", "R"], "default": "L", "description": "환기창 경첩 위치(L=왼쪽)"}
+  },
+  "derived": {
+    "z0": "sill",
+    "z1": "sill + height",
+    "inner_w": "width - 2*frame_w",
+    "inner_h": "height - 2*frame_w",
+    "open_h": "inner_h - frame_w",
+    "vent_h": "open_h*vent_ratio",
+    "fixed_h": "open_h - vent_h",
+    "vz0": "z0 + frame_w",
+    "vz1": "z0 + frame_w + vent_h",
+    "frame_d": "min(host_thickness, 150)",
+    "sash_d": "glass_t + 16",
+    "hinge_x": "(left + frame_w) if swing == 'L' else (right - frame_w)",
+    "far_x": "(right - frame_w) if swing == 'L' else (left + frame_w)",
+    "glass_ratio": "inner_w*open_h/(width*height)"
+  },
+  "refs": {
+    "left": {"axis": "x", "at": "-width/2"},
+    "right": {"axis": "x", "at": "width/2"}
+  },
+  "constraints": [
+    {"expr": "vent_h >= 2*sash_w + 100", "message": "환기창 높이가 틀 두 개와 유리 100mm 를 담기에 모자란다(vent_ratio 를 키우세요)"},
+    {"expr": "fixed_h >= 200", "message": "상부 고정창 높이가 200mm 미만이다"},
+    {"expr": "inner_w >= 2*sash_w + 100", "message": "환기창 폭이 모자란다"},
+    {"expr": "host_thickness >= sash_d + 10", "message": "벽이 환기창 두께보다 얇다"}
+  ],
+  "solids": [
+    {
+      "id": "frame", "op": "extrude", "plane": "xz",
+      "profile": {"shape": "rect", "u": ["left", "right"], "v": ["z0", "z1"]},
+      "range": ["-frame_d/2", "frame_d/2"]
+    },
+    {
+      "id": "frame_hole", "op": "extrude", "plane": "xz", "role": "void", "cuts": ["frame"],
+      "profile": {"shape": "rect", "u": ["left + frame_w", "right - frame_w"], "v": ["vz0", "z1 - frame_w"]},
+      "range": ["-frame_d", "frame_d"]
+    },
+    {
+      "id": "transom", "op": "extrude", "plane": "xz",
+      "profile": {"shape": "rect", "u": ["left + frame_w", "right - frame_w"], "v": ["vz1", "vz1 + frame_w"]},
+      "range": ["-frame_d/2", "frame_d/2"]
+    },
+    {
+      "id": "fixed_glass", "op": "extrude", "plane": "xz",
+      "profile": {"shape": "rect", "u": ["left + frame_w", "right - frame_w"], "v": ["vz1 + frame_w", "z1 - frame_w"]},
+      "range": ["-glass_t/2", "glass_t/2"]
+    },
+    {
+      "id": "sash", "op": "extrude", "plane": "xz",
+      "profile": {"shape": "rect", "u": ["left + frame_w", "right - frame_w"], "v": ["vz0", "vz1"]},
+      "range": ["-sash_d/2", "sash_d/2"]
+    },
+    {
+      "id": "sash_hole", "op": "extrude", "plane": "xz", "role": "void", "cuts": ["sash"],
+      "profile": {"shape": "rect", "u": ["left + frame_w + sash_w", "right - frame_w - sash_w"], "v": ["vz0 + sash_w", "vz1 - sash_w"]},
+      "range": ["-sash_d", "sash_d"]
+    },
+    {
+      "id": "vent_glass", "op": "extrude", "plane": "xz",
+      "profile": {"shape": "rect", "u": ["left + frame_w + sash_w", "right - frame_w - sash_w"], "v": ["vz0 + sash_w", "vz1 - sash_w"]},
+      "range": ["-glass_t/2", "glass_t/2"]
+    }
+  ],
+  "plan_symbol": {
+    "default": [
+      {"type": "rect", "u": ["left", "right"], "v": ["-host_thickness/2", "host_thickness/2"], "style": "cut"},
+      {"type": "line", "from": ["left", 0], "to": ["right", 0]},
+      {"type": "polyline", "points": [["far_x", "-host_thickness/2"], ["hinge_x", 0], ["far_x", "host_thickness/2"]], "closed": false, "style": "hidden"}
+    ],
+    "1:200": [
+      {"type": "rect", "u": ["left", "right"], "v": ["-host_thickness/2", "host_thickness/2"], "style": "cut"}
+    ]
+  },
+  "psets": {
+    "Pset_WindowCommon": {
+      "on": "type",
+      "props": {
+        "IsExternal": {"expr": "is_external"},
+        "ThermalTransmittance": {"expr": "u_value"},
+        "GlazingAreaFraction": {"expr": "round(glass_ratio, 3)"}
+      }
+    },
+    "DoBIM_WindowParams": {
+      "on": "instance",
+      "props": {
+        "SillHeight": {"expr": "sill"},
+        "VentSwing": {"expr": "swing"}
+      }
+    }
+  }
+}
