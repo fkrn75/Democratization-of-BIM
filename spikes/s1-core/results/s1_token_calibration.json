@@ -1,0 +1,187 @@
+{
+ "method": "tiktoken 대용 측정(Claude 토크나이저로는 재지 못했다). 한 응답 = text + structuredContent(두 벌). 추정은 모든 문자 종류에서 실측 이상이어야 한다",
+ "tiktoken": "0.14.0",
+ "python": "3.12.2",
+ "limits": {
+  "RESPONSE_CAP_BYTES": 6000,
+  "RESPONSE_CAP_TOKENS": 3950,
+  "STR_MAX": 255,
+  "weights": {
+   "ascii_char": 0.62,
+   "ascii_run": 0.4,
+   "ctrl_extra": 2.0,
+   "quote_extra": 0.15,
+   "non_ascii": "UTF-8 바이트 수",
+   "str_quotes": 2.5,
+   "dict_entry": 3.0,
+   "list_entry": 1.5,
+   "container": 2.0
+  }
+ },
+ "micro_worst_actual_over_est_by_class": {
+  "GUID": {
+   "ratio": 0.975,
+   "n": 8
+  },
+  "영문": {
+   "ratio": 0.484,
+   "n": 8
+  },
+  "실제 한국어": {
+   "ratio": 0.571,
+   "n": 8
+  },
+  "무작위 한글": {
+   "ratio": 0.981,
+   "n": 8
+  },
+  "한자": {
+   "ratio": 0.906,
+   "n": 8
+  },
+  "이모지": {
+   "ratio": 0.754,
+   "n": 8
+  },
+  "제어문자": {
+   "ratio": 0.986,
+   "n": 22
+  },
+  "ASCII 기호": {
+   "ratio": 0.975,
+   "n": 8
+  },
+  "따옴표 역슬래시": {
+   "ratio": 0.851,
+   "n": 255
+  },
+  "문자-숫자 교대": {
+   "ratio": 0.979,
+   "n": 255
+  },
+  "숫자-기호 교대": {
+   "ratio": 0.979,
+   "n": 255
+  },
+  "무작위 소수(좌표)": {
+   "ratio": 0.985,
+   "n": 22
+  },
+  "무작위 BMP": {
+   "ratio": 0.981,
+   "n": 8
+  },
+  "무작위 비BMP": {
+   "ratio": 0.994,
+   "n": 22
+  }
+ },
+ "micro_pass": true,
+ "campaign_by_class": {
+  "GUID": {
+   "worst_tokens": 5974,
+   "worst_what": "schedule.rowswall",
+   "worst_bytes": 5114,
+   "max_actual_over_est": 0.773,
+   "responses": 122
+  },
+  "영문": {
+   "worst_tokens": 5700,
+   "worst_what": "redo",
+   "worst_bytes": 5114,
+   "max_actual_over_est": 0.739,
+   "responses": 117
+  },
+  "실제 한국어": {
+   "worst_tokens": 5700,
+   "worst_what": "redo",
+   "worst_bytes": 5114,
+   "max_actual_over_est": 0.739,
+   "responses": 226
+  },
+  "무작위 한글": {
+   "worst_tokens": 6300,
+   "worst_what": "history.list",
+   "worst_bytes": 5114,
+   "max_actual_over_est": 0.818,
+   "responses": 262
+  },
+  "한자": {
+   "worst_tokens": 5864,
+   "worst_what": "schedule.rowsdoor",
+   "worst_bytes": 5114,
+   "max_actual_over_est": 0.766,
+   "responses": 266
+  },
+  "이모지": {
+   "worst_tokens": 5700,
+   "worst_what": "redo",
+   "worst_bytes": 5114,
+   "max_actual_over_est": 0.739,
+   "responses": 363
+  },
+  "제어문자": {
+   "worst_tokens": 6146,
+   "worst_what": "schedule.rowsdoor",
+   "worst_bytes": 5964,
+   "max_actual_over_est": 0.847,
+   "responses": 298
+  },
+  "ASCII 기호": {
+   "worst_tokens": 5946,
+   "worst_what": "schedule.rowsdoor",
+   "worst_bytes": 5114,
+   "max_actual_over_est": 0.765,
+   "responses": 124
+  },
+  "따옴표 역슬래시": {
+   "worst_tokens": 6038,
+   "worst_what": "schedule.rowsdoor",
+   "worst_bytes": 5915,
+   "max_actual_over_est": 0.786,
+   "responses": 141
+  },
+  "문자-숫자 교대": {
+   "worst_tokens": 6746,
+   "worst_what": "schedule.rowswall",
+   "worst_bytes": 5114,
+   "max_actual_over_est": 0.889,
+   "responses": 131
+  },
+  "숫자-기호 교대": {
+   "worst_tokens": 6666,
+   "worst_what": "schedule.rowswall",
+   "worst_bytes": 5114,
+   "max_actual_over_est": 0.887,
+   "responses": 132
+  },
+  "무작위 소수(좌표)": {
+   "worst_tokens": 5972,
+   "worst_what": "schedule.rowswall",
+   "worst_bytes": 5332,
+   "max_actual_over_est": 0.771,
+   "responses": 103
+  },
+  "무작위 BMP": {
+   "worst_tokens": 6238,
+   "worst_what": "history.list",
+   "worst_bytes": 5114,
+   "max_actual_over_est": 0.815,
+   "responses": 264
+  },
+  "무작위 비BMP": {
+   "worst_tokens": 6948,
+   "worst_what": "element.query",
+   "worst_bytes": 5114,
+   "max_actual_over_est": 0.894,
+   "responses": 357
+  }
+ },
+ "campaign_worst_tokens_any": 6948,
+ "campaign_max_actual_over_est": 0.894,
+ "campaign_worst_bytes_any": 5964,
+ "violations": [],
+ "target_tokens": 8000,
+ "elapsed_sec": 84.8,
+ "pass": true
+}

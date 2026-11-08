@@ -607,7 +607,7 @@ def m_old_byte_cap():
 @contextmanager
 def m_mutation_uncapped():
     """E 회귀: 변경 응답(results·affected)에 상한이 없다."""
-    def fit_mutation(results, affected, rev, dry_run, warnings=(), must_keep=None, how=None):
+    def fit_mutation(results, affected, rev, dry_run, warnings=(), must_keep=None, how=None, extra_bytes=0, extra_tokens=0.0):
         out = dict(affected)
         out["counts"] = {k: len(affected[k]) for k in ("created", "modified", "deleted")}
         out["truncated"] = False
@@ -622,8 +622,8 @@ def m_mutation_counts_shown():
     """E 회귀: affected.counts 가 정확한 건수가 아니라 잘리고 남은 길이다."""
     orig = limits.fit_mutation
 
-    def fit_mutation(results, affected, rev, dry_run, warnings=(), must_keep=None, how=None):
-        shown, out, page, warns = orig(results, affected, rev, dry_run, warnings, must_keep, how)
+    def fit_mutation(results, affected, rev, dry_run, warnings=(), must_keep=None, how=None, extra_bytes=0, extra_tokens=0.0):
+        shown, out, page, warns = orig(results, affected, rev, dry_run, warnings, must_keep, how, extra_bytes, extra_tokens)
         out["counts"] = {k: len(out[k]) for k in ("created", "modified", "deleted")}
         return shown, out, page, warns
 
@@ -739,17 +739,19 @@ def m_failures_droppable():
 
 @contextmanager
 def m_script_uncapped():
-    """[7] 비원자 script 가 항목마다 봉투 한 벌을 그대로 싣고 상한이 없다(옛 구현)."""
+    """[7] 비원자 script 의 응답에 크기 상한이 없다(옛 구현). 응답 모양(index 등)은 현재 것을 그대로 두고 상한만 푼다 -
+    모양이 달라져 시험이 KeyError 로 죽으면 '상한 없음'이 아니라 '모양이 다름'을 잡은 것이라 변이가 낡은 것이다."""
+    orig = dispatch.run_script
+
+    def fit_mutation(results, affected, rev, dry_run, warnings=(), must_keep=None, how=None, extra_bytes=0, extra_tokens=0.0):
+        out = dict(affected)
+        out["counts"] = {k: len(affected[k]) for k in ("created", "modified", "deleted")}
+        out["truncated"] = False
+        return results, out, None, list(warnings)
+
     def run_script(env, items, *, project, dry_run=False):
-        results, rev, code = [], None, 0
-        for item in items:
-            r = dispatch.run(env, item.get("command") or item.get("name") or "", item.get("args"), project=project, dry_run=dry_run)
-            results.append(r)
-            rev = r.get("rev", rev)
-            code = code or (0 if r["ok"] else 1)
-            if not r["ok"]:
-                break
-        return dispatch.ok_env(rev, results) if code == 0 else {"ok": False, "rev": rev, "error": results[-1]["error"], "result": results}
+        with mock.patch.object(limits, "fit_mutation", fit_mutation):
+            return orig(env, items, project=project, dry_run=dry_run)
 
     with mock.patch.object(dispatch, "run_script", run_script):
         yield

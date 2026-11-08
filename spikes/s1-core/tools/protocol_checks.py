@@ -143,7 +143,7 @@ def check_batch_results(work: Path) -> list[str]:
         v.append("results 항목에 seq 가 없다")
     noop_idx = {4, 6, 103}   # 끼워 넣은 변경 없는 명령의 index (벽 i=3, 4, 100 뒤)
     for x in res:
-        if (x["index"] in noop_idx) != (x["seq"] is None):
+        if (x.get("index") in noop_idx) != (x.get("seq", False) is None):
             v.append(f"변경 없는 명령의 seq 표시가 틀렸다: {x}")
             break
     # 이어받기: 만들어진 벽 전체가 명령 순서대로 나오고 seq 가 results 와 맞는다
@@ -155,7 +155,7 @@ def check_batch_results(work: Path) -> list[str]:
             break
         if _size(q) > limits.RESPONSE_CAP_BYTES:
             v.append("history.affected 응답이 상한을 넘는다")
-        got += [(i["change"], i["id"], i["seq"]) for i in q["result"]["items"]]
+        got += [(i.get("change"), i.get("id"), i.get("seq")) for i in q["result"]["items"]]
         cursor = q["page"]["next_cursor"]
         if not cursor:
             break
@@ -164,7 +164,7 @@ def check_batch_results(work: Path) -> list[str]:
         v.append(f"history.affected 로 이어받은 생성 id 가 명령 순서의 전체와 다르다({len(created)}건)")
     seq_of = dict(created)
     for x in res:
-        if "axis" not in x and x.get("id") in seq_of and seq_of[x["id"]] != x["seq"]:   # axis 가 있는 것은 wall.move 의 결과
+        if "axis" not in x and x.get("id") in seq_of and seq_of[x["id"]] != x.get("seq"):   # axis 가 있는 것은 wall.move 의 결과
             v.append(f"results 의 seq 와 history.affected 의 seq 가 다르다: {x}")
             break
     # 실패한 배치는 results 가 없다(원자적): 오류 봉투
@@ -255,6 +255,11 @@ def check_script_cap(work: Path) -> list[str]:
 
 
 # ---------------------------------------------------------------- 8. 큰 단건
+# 입력 문자열 길이 상한의 기대값. 코어 상수(limits.STR_MAX)를 따라가지 않는다: 변이가 상수를 키워도 시험이 수십억 자 문자열을 만들지 않게,
+# 그리고 상한이 이 값에서 벗어나면 아래 검사가 잡도록.
+EXPECT_STR_MAX = 255
+
+
 def check_big_single(work: Path) -> list[str]:
     """입력 문자열 길이 상한(SCHEMA_INVALID), 속성이 많은 element.get 의 쪽 나누기, 관계가 많은 element.get 의 상한,
     옛 로그의 긴 값(재오픈·재생·조회)이 깨지지 않고 잘림이 표시되는지."""
@@ -262,13 +267,13 @@ def check_big_single(work: Path) -> list[str]:
     s = _sess(work, "big")
     for n, a in F.SCRIPT:
         s.run(n, a)
-    big = "가" * (limits.STR_MAX + 1)
+    big = "가" * (EXPECT_STR_MAX + 1)
     for name, args in (("pset.set", {"id": F.W1, "pset": "Pset_Big", "prop": "Note", "value": big}),
                        ("commands.search", {"query": "x" * 300}), ("commands.describe", {"name": "w" * 70})):
         r = s.run(name, args)
         if r["ok"] or r["error"]["code"] != "SCHEMA_INVALID":
             v.append(f"{name} 입력 길이 상한이 SCHEMA_INVALID 가 아니다: {r.get('error', {}).get('code', 'ok')}")
-    if not s.run("pset.set", {"id": F.W1, "pset": "Pset_Big", "prop": "Note", "value": "가" * limits.STR_MAX})["ok"]:
+    if not s.run("pset.set", {"id": F.W1, "pset": "Pset_Big", "prop": "Note", "value": "가" * EXPECT_STR_MAX})["ok"]:
         v.append("상한 길이(255자) 값이 거부됐다")
     r = s.run("x" * 40000)
     if _size(r) > limits.RESPONSE_CAP_BYTES:
@@ -276,7 +281,7 @@ def check_big_single(work: Path) -> list[str]:
     # 속성이 아주 많은 요소: 쪽으로 나눠 읽고 truncated 가 정직하다
     wall = F.W2
     for i in range(80):
-        assert s.run("pset.set", {"id": wall, "pset": f"Pset_{i:03d}", "prop": "P", "value": "\x01" * limits.STR_MAX})["ok"]
+        assert s.run("pset.set", {"id": wall, "pset": f"Pset_{i:03d}", "prop": "P", "value": "\x01" * EXPECT_STR_MAX})["ok"]
     seen, cursor, pages, flags = {}, None, 0, []
     while True:
         r = s.run("element.get", dict({"id": wall, "limit": 1000}, **({"cursor": cursor} if cursor else {})))
@@ -297,7 +302,7 @@ def check_big_single(work: Path) -> list[str]:
         v.append(f"속성이 많은 element.get 이 쪽으로 나뉘지 않았다(쪽 {pages})")
     if any(t and c is False for t, c in flags[:-1]) or not all(t for t, _ in flags[:-1]):
         v.append(f"element.get 의 truncated/next_cursor 표시가 이상하다: {flags[:4]}")
-    if len(seen) != 80 or any(len(x) != limits.STR_MAX for x in seen.values()):
+    if len(seen) != 80 or any(len(x) != EXPECT_STR_MAX for x in seen.values()):
         v.append(f"element.get 쪽 이어받기로 속성 80개를 다 얻지 못했다: {len(seen)}개")
     # 관계가 많은 레벨
     big_lv = _sess(work, "bigrel")
@@ -322,7 +327,13 @@ def check_big_single(work: Path) -> list[str]:
     except Exception as ex:   # noqa: BLE001
         if getattr(ex, "code", "") != "SCHEMA_INVALID":
             v.append(f"새 입력의 긴 값이 SCHEMA_INVALID 가 아니다: {type(ex).__name__}")
-    s.eng.mutate([(cmd, dispatch.parse_args(cmd, args, replay=True))])
+    try:
+        replay_args = dispatch.parse_args(cmd, args, replay=True)
+    except Exception as ex:   # noqa: BLE001
+        v.append(f"재생용 파싱(replay=True)이 옛 긴 값을 거부했다(옛 로그를 못 연다): {type(ex).__name__}")
+        s.close()
+        return v
+    s.eng.mutate([(cmd, replay_args)])
     for name, a2 in (("history.list", {"limit": 5}), ("element.get", {"id": F.D1}), ("schedule.rows", {"kind": "door", "limit": 5})):
         r = s.run(name, a2)
         if not r["ok"]:
@@ -379,8 +390,12 @@ def check_io_errors(work: Path) -> list[str]:
              ("장치 오류(EIO)", OSError(errno.EIO, "I/O error"), "IO_ERROR"),
              ("경로 없음(ENOENT)", FileNotFoundError(errno.ENOENT, "no such file"), "NOT_FOUND")]
     for label, exc, want in cases:
-        with failing(exc):
-            r = _confirmed(s, "ifc.export", {"path": "o.ifc"})
+        try:
+            with failing(exc):
+                r = _confirmed(s, "ifc.export", {"path": "o.ifc"})
+        except BaseException as ex:   # 예상 밖 예외가 봉투로 바뀌지 않고 새어 나왔다
+            v.append(f"{label}: 봉투 없는 예외가 샜다: {type(ex).__name__}")
+            continue
         code = None if r["ok"] else r["error"]["code"]
         if code != want:
             v.append(f"{label} 가 {want} 가 아니라 {code} 로 보고됐다")

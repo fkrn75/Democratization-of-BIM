@@ -24,7 +24,18 @@ def near(a, b, tol=1e-9):
     return a is not None and b is not None and abs(a - b) <= tol
 
 
+class _NoRow(Exception):
+    """일정표에 기대한 행이 없다(증분 갱신이 변경을 반영하지 못한 것). 시험 도구의 StopIteration 이 새는 것을 막는다."""
+
+
 def check_golden(work: Path) -> list[str]:
+    try:
+        return _check_golden(work)
+    except _NoRow as ex:
+        return [f"일정표에 기대한 행이 없다: {ex}"]
+
+
+def _check_golden(work: Path) -> list[str]:
     from dobim_core import queries as Q
     v = []
     work = Path(work)
@@ -37,7 +48,10 @@ def check_golden(work: Path) -> list[str]:
             v.append(f"{name}: 기대 {want!r}, 실제 {got!r}")
 
     def sched(s, kind, eid):
-        return next(r for r in s.eng.g.q(Q.schedule_sorted, kind) if r[0] == eid)
+        for r in s.eng.g.q(Q.schedule_sorted, kind):
+            if r[0] == eid:
+                return r
+        raise _NoRow(f"{kind} {eid}")
 
     # ---- 1. 기준 프로젝트 (fixture.SCRIPT)
     # W1 (0,0)-(6000,0), W2 (6000,0)-(6000,4000), W3 (6000,4000)-(0,4000), 두께 200, 높이 3000. W1-W2 조인.
@@ -469,8 +483,14 @@ def check_envelope_and_nulls(work: Path) -> list[str]:
     eng = s.eng
     # ---- (1) 조회 경로의 비 DobimError
     eng.ifc.ents.pop(F.W3)                                   # 조회 중 KeyError 를 일으키는 상태
-    r = s.run("element.get", {"id": F.W3})
-    if r["ok"] or r["error"]["code"] != "INTERNAL":
+    try:
+        r = s.run("element.get", {"id": F.W3})
+    except BaseException as ex:
+        r = None
+        v.append(f"조회 중 KeyError 가 봉투 없는 예외로 샜다: {type(ex).__name__}")
+    if r is None:
+        pass
+    elif r["ok"] or r["error"]["code"] != "INTERNAL":
         v.append(f"조회 중 KeyError 가 INTERNAL 봉투가 아님: {r}")
     elif F.W3 in r["error"]["message"] or "Traceback" in r["error"]["message"] or "\\" in r["error"]["message"]:
         v.append(f"INTERNAL 메시지에 내부 값이나 스택이 들어 있다: {r['error']['message']}")
@@ -762,9 +782,14 @@ def check_keyset_paging(work: Path) -> list[str]:
 
             def after(its, s=s, mut=mut, first_page=first_page):
                 first_page.extend(its)
-                mut(s, its)
+                if len(its) >= 2:
+                    mut(s, its)
             keys, pages = _paged(s, "schedule.rows", base, lambda r: r[0], after_first=after)
             end_keys, _ = _paged(s, "schedule.rows", dict(base, limit=1000), lambda r: r[0])
+            if len(first_page) < 2:   # 첫 쪽이 비었다: 변경을 못 했으니 이어받기 검사는 의미가 없다(일정표가 틀렸다는 위반으로 센다)
+                v.append(f"{label}/{kind}: 첫 쪽이 비었거나 너무 짧다({len(first_page)}행)")
+                s.close()
+                continue
             moved = moved_of(first_page) if moved_of else None
             cnt = {k: keys.count(k) for k in set(keys)}
             if pages < 3:

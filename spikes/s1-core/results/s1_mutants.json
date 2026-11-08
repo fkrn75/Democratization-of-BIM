@@ -15,6 +15,20 @@
       203
     ]
   },
+  "note": "변이 60개를 접두사(M0~M6) 7조각으로 나눠 병렬로 돌린 결과를 합쳤다. 조각마다 대조군(변이 없음)을 따로 돌렸고 모두 통과해야 한다.",
+  "shards": 7,
+  "control_no_mutation": {
+    "passes_all_checks": true,
+    "per_shard": [
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true
+    ]
+  },
   "mutants": [
     {
       "detected": true,
@@ -25,15 +39,14 @@
       ],
       "without_golden": {
         "detected": true,
-        "by": "inject_grid",
+        "by": "protocol",
         "evidence": [
-          "undo_elem_delete/add_pset/once/k1: undo 뒤 라이브 != 디스크",
-          "undo_elem_delete/add_pset/persist/k1: undo 뒤 라이브 != 디스크"
+          "[큰 단건] 옛 긴 값이 있는 로그의 재생·재오픈 검사 실패: ['증분 그래프 != 기준 그래프(캐시 없음)', '전체 재생: derived 해시가 다르다']"
         ]
       },
       "mutant": "M01 관계 입력 무효화 누락",
       "family": "증분 무효화 누락",
-      "sec": 45.7
+      "sec": 65.7
     },
     {
       "detected": true,
@@ -44,33 +57,34 @@
       ],
       "without_golden": {
         "detected": true,
-        "by": "differential",
+        "by": "protocol",
         "evidence": [
-          "증분 그래프 != 기준 그래프(캐시 없음)",
-          "전체 재생: derived 해시가 다르다"
+          "[큰 단건] 옛 긴 값을 잘랐는데 schedule.rows 의 page.truncated 가 False 다(거짓 보고)",
+          "[큰 단건] 옛 긴 값을 잘랐는데 schedule.rows 에 경고가 없다"
         ]
       },
       "mutant": "M02 속성셋 입력 무효화 누락",
       "family": "증분 무효화 누락",
-      "sec": 45.2
+      "sec": 65.1
     },
     {
       "detected": true,
-      "by": "exception",
+      "by": "golden",
       "evidence": [
-        "RuntimeError: generator raised StopIteration"
+        "일정표에 기대한 행이 없다: wall 1000000000000000000001",
+        "삭제 뒤 실패한 쓰기가 해시를 바꿈"
       ],
       "without_golden": {
         "detected": true,
-        "by": "inject_grid",
+        "by": "protocol",
         "evidence": [
-          "undo_wall_create/create_entity/once/k1: undo 뒤 라이브 != 디스크",
-          "undo_elem_delete/edit_pset/once/k1: undo 뒤 라이브 != 디스크"
+          "[큰 단건] 옛 긴 값을 잘랐는데 schedule.rows 의 page.truncated 가 False 다(거짓 보고)",
+          "[큰 단건] 옛 긴 값을 잘랐는데 schedule.rows 에 경고가 없다"
         ]
       },
       "mutant": "M03 조기 차단 과다(변경을 전파하지 않음)",
       "family": "증분 무효화 누락",
-      "sec": 22.3
+      "sec": 61.4
     },
     {
       "detected": true,
@@ -81,32 +95,33 @@
       ],
       "without_golden": {
         "detected": true,
-        "by": "differential",
+        "by": "protocol",
         "evidence": [
-          "증분 그래프 != 기준 그래프(캐시 없음)",
-          "전체 재생: derived 해시가 다르다"
+          "[큰 단건] 옛 긴 값이 있는 로그의 재생·재오픈 검사 실패: ['증분 그래프 != 기준 그래프(캐시 없음)', '전체 재생: derived 해시가 다르다']"
         ]
       },
       "mutant": "M04 의존성 기록 없이 읽기(untracked read)",
       "family": "증분 무효화 누락",
-      "sec": 45.1
+      "sec": 65.0
     },
     {
       "detected": true,
-      "by": "exception",
+      "by": "protocol",
       "evidence": [
-        "IndexError: tuple index out of range"
+        "[토큰 캠페인] GUID/undo(삭제): 실패 {'code': 'INTERNAL', 'message': '내부 오류(IndexError). 서버의 stderr 에 트레이스백이 있다', 'path': None, 'retryable': False, 'hint': None, 'details': {}}",
+        "[토큰 캠페인] 영문/undo(삭제): 실패 {'code': 'INTERNAL', 'message': '내부 오류(IndexError). 서버의 stderr 에 트레이스백이 있다', 'path': None, 'retryable': False, 'hint': None, 'details': {}}"
       ],
       "without_golden": {
         "detected": true,
-        "by": "exception",
+        "by": "protocol",
         "evidence": [
-          "IndexError: tuple index out of range"
+          "[토큰 캠페인] GUID/undo(삭제): 실패 {'code': 'INTERNAL', 'message': '내부 오류(IndexError). 서버의 stderr 에 트레이스백이 있다', 'path': None, 'retryable': False, 'hint': None, 'details': {}}",
+          "[토큰 캠페인] 영문/undo(삭제): 실패 {'code': 'INTERNAL', 'message': '내부 오류(IndexError). 서버의 stderr 에 트레이스백이 있다', 'path': None, 'retryable': False, 'hint': None, 'details': {}}"
         ]
       },
       "mutant": "M05 undo 역연산 오류: 관계 방향 미반전",
       "family": "undo 역연산 오류",
-      "sec": 66.8
+      "sec": 102.1
     },
     {
       "detected": true,
@@ -117,53 +132,53 @@
       ],
       "without_golden": {
         "detected": true,
-        "by": "inject_grid",
+        "by": "protocol",
         "evidence": [
-          "set_typechange/edit_pset/once/k1: 차등 검사 실패: ['전체 재생: state 해시가 다르다']",
-          "set_typechange/edit_pset/persist/k1: 차등 검사 실패: ['전체 재생: state 해시가 다르다']"
+          "[큰 단건] 옛 긴 값이 있는 로그의 재생·재오픈 검사 실패: ['새로 열기: state 해시가 다르다', '새로 열기: derived 해시가 다르다']",
+          "[큰 단건] 재오픈한 엔진이 옛 긴 값을 그대로 갖고 있지 않다"
         ]
       },
       "mutant": "M06 undo 역연산 오류: 속성셋 이전 값 유실",
       "family": "undo 역연산 오류",
-      "sec": 41.4
+      "sec": 63.4
     },
     {
       "detected": true,
       "by": "golden",
       "evidence": [
         "history.affected 이어받기가 생성 id 전체와 다르다(받은 600, 중복 0)",
-        "큰 배치의 undo 응답이 틀렸다: {'txn': 't2', 'ops_total': 599, 'effects': 1198, 'truncated': True}"
+        "큰 배치의 undo 응답이 틀렸다: {'txn': 't2', 'ops_total': 599, 'effects': 1198}"
       ],
       "without_golden": {
         "detected": true,
-        "by": "undo",
+        "by": "protocol",
         "evidence": [
-          "undo 뒤 해시(상태·파생값·IFC)가 깊이 108 의 기록과 다르다",
-          "분기 단계 undo 뒤 해시가 기대 이력과 다르다 (깊이 108)"
+          "[배치 results 잘림] history.affected 로 이어받은 생성 id 가 명령 순서의 전체와 다르다(299건)",
+          "[undo/redo ops 요약] undo 의 ops 가 커맨드별 건수 요약이 아니다: {'txn': 't2', 'ops': [{'op': 'wall.create', 'count': 2}, {'op': 'wall.move', 'count': 2}], 'ops_total': 4, 'effects': 6}"
         ]
       },
       "mutant": "M07 undo 가 배치 첫 항목을 건너뜀",
       "family": "undo 역연산 오류",
-      "sec": 56.4
+      "sec": 65.1
     },
     {
       "detected": true,
       "by": "inject_grid",
       "evidence": [
-        "undo_elem_delete/assign_material/once/k1: undo 뒤 라이브 != 디스크",
-        "undo_elem_delete/assign_material/persist/k1: undo 뒤 라이브 != 디스크"
+        "elem_delete_wall/INSERT INTO op_log/once/k1: 라이브 state 해시 != 디스크",
+        "elem_delete_wall/INSERT INTO op_log/once/k1: 라이브 ifc 해시 != 디스크"
       ],
       "without_golden": {
         "detected": true,
         "by": "inject_grid",
         "evidence": [
-          "undo_elem_delete/assign_material/once/k1: undo 뒤 라이브 != 디스크",
-          "undo_elem_delete/assign_material/persist/k1: undo 뒤 라이브 != 디스크"
+          "elem_delete_wall/INSERT INTO op_log/once/k1: 라이브 state 해시 != 디스크",
+          "elem_delete_wall/INSERT INTO op_log/once/k1: 라이브 ifc 해시 != 디스크"
         ]
       },
       "mutant": "M08 요소 삭제가 속성셋 복원 정보를 안 남김",
       "family": "undo 역연산 오류",
-      "sec": 70.3
+      "sec": 212.5
     },
     {
       "detected": true,
@@ -173,15 +188,15 @@
       ],
       "without_golden": {
         "detected": true,
-        "by": "differential",
+        "by": "protocol",
         "evidence": [
-          "전체 재생: state 해시가 다르다",
-          "전체 재생: derived 해시가 다르다"
+          "[토큰 캠페인] GUID/배치 400: 실패 {'code': 'CONSTRAINT', 'message': '이미 있는 id 다: 1RHALCWwXIHx2w8Osciwmz', 'path': '/id', 'retryable': False, 'hint': None, 'details': {}}",
+          "[토큰 캠페인] 영문/배치 400: 실패 {'code': 'CONSTRAINT', 'message': '이미 있는 id 다: 1RHALCWwXIHx2w8Osciwmz', 'path': '/id', 'retryable': False, 'hint': None, 'details': {}}"
         ]
       },
       "mutant": "M09 실패 시 롤백 누락",
       "family": "원자성 오류",
-      "sec": 48.5
+      "sec": 62.0
     },
     {
       "detected": true,
@@ -198,7 +213,7 @@
       },
       "mutant": "M10 expected_rev 검사 생략",
       "family": "rev 검사 생략",
-      "sec": 176.7
+      "sec": 330.6
     },
     {
       "detected": true,
@@ -217,7 +232,7 @@
       },
       "mutant": "M11 쓰기 전 따라잡기 생략",
       "family": "동시성 오류",
-      "sec": 45.9
+      "sec": 103.9
     },
     {
       "detected": true,
@@ -236,7 +251,7 @@
       },
       "mutant": "M12 IFC 투영이 변경을 무시(증분 투영 오류)",
       "family": "증분 무효화 누락",
-      "sec": 46.3
+      "sec": 124.2
     },
     {
       "detected": true,
@@ -250,7 +265,7 @@
       },
       "mutant": "M13 속성 값 타입 고착(D1 회귀)",
       "family": "값 손상",
-      "sec": 102.8
+      "sec": 198.1
     },
     {
       "detected": true,
@@ -264,7 +279,7 @@
       },
       "mutant": "M14 [검수자] 벽 순면적의 문 면적을 width*width 로",
       "family": "질의 의미 오류",
-      "sec": 105.2
+      "sec": 175.2
     },
     {
       "detected": true,
@@ -278,7 +293,7 @@
       },
       "mutant": "M15 [검수자] door_status 경계 <= 를 < 로",
       "family": "질의 의미 오류",
-      "sec": 95.8
+      "sec": 170.7
     },
     {
       "detected": true,
@@ -292,7 +307,7 @@
       },
       "mutant": "M16 [검수자] Ctx.set_prop 타입 검사 제거",
       "family": "값 손상",
-      "sec": 71.9
+      "sec": 166.0
     },
     {
       "detected": true,
@@ -310,7 +325,7 @@
       },
       "mutant": "M17 새 변경이 redo 가지를 버리지 않음",
       "family": "undo/redo 오류",
-      "sec": 74.6
+      "sec": 205.9
     },
     {
       "detected": true,
@@ -327,7 +342,7 @@
       },
       "mutant": "M18 삭제 효과가 속성셋 삽입 순서에 의존(10k 시드 424242가 찾은 실제 결함)",
       "family": "비결정",
-      "sec": 52.4
+      "sec": 166.6
     },
     {
       "detected": true,
@@ -340,7 +355,7 @@
       },
       "mutant": "M19 MIN_TRIMMED 정확 경계(1.0)가 퇴화로 판정됨",
       "family": "경계 오류",
-      "sec": 72.7
+      "sec": 140.1
     },
     {
       "detected": true,
@@ -353,7 +368,7 @@
       },
       "mutant": "M20 JOIN_MAX_EXT 정확 경계(1000)가 무시됨",
       "family": "경계 오류",
-      "sec": 73.0
+      "sec": 179.8
     },
     {
       "detected": true,
@@ -366,7 +381,7 @@
       },
       "mutant": "M21 조인 시작/끝 배정의 중간 동률을 끝 쪽으로",
       "family": "경계 오류",
-      "sec": 72.7
+      "sec": 177.6
     },
     {
       "detected": true,
@@ -385,7 +400,7 @@
       },
       "mutant": "M22 [N1] 속성 쓰기가 지운 뒤 실패해도 복원 안 함",
       "family": "값 손상",
-      "sec": 32.4
+      "sec": 101.2
     },
     {
       "detected": true,
@@ -395,11 +410,16 @@
         "저장 불가 값 inf 이 SCHEMA_INVALID 로 거부되지 않음: INTERNAL"
       ],
       "without_golden": {
-        "detected": false
+        "detected": true,
+        "by": "protocol",
+        "evidence": [
+          "[큰 단건] pset.set 입력 길이 상한이 SCHEMA_INVALID 가 아니다: ok",
+          "[큰 단건] 새 입력의 40,000자 값이 거부되지 않았다"
+        ]
       },
       "mutant": "M23 [N4] 속성 값 검증 없음(NaN/inf/int64 초과/NUL/서로게이트)",
       "family": "값 손상",
-      "sec": 73.8
+      "sec": 71.0
     },
     {
       "detected": true,
@@ -413,7 +433,7 @@
       },
       "mutant": "M24 [N7] pset.set 의 value=null 이 속성 삭제(SDK 가 NaN 을 null 로 보내면 조용히 삭제)",
       "family": "값 손상",
-      "sec": 73.2
+      "sec": 188.8
     },
     {
       "detected": true,
@@ -432,7 +452,7 @@
       },
       "mutant": "M25 [N8] 복원 실패를 삼키고 오염 표시도 안 함",
       "family": "값 손상",
-      "sec": 32.9
+      "sec": 101.5
     },
     {
       "detected": true,
@@ -451,7 +471,7 @@
       },
       "mutant": "M26 [N8] 오염 표시만 하고 복구·거부는 안 함",
       "family": "값 손상",
-      "sec": 18.7
+      "sec": 74.8
     },
     {
       "detected": true,
@@ -465,7 +485,7 @@
       },
       "mutant": "M27 [N9] 속성 이름 id 허용(쓰기 ok, 조회에 안 보임)",
       "family": "값 손상",
-      "sec": 73.2
+      "sec": 171.2
     },
     {
       "detected": true,
@@ -484,7 +504,7 @@
       },
       "mutant": "M28 [D1] 요소(el) 분기가 IFC 호출 실패를 오염으로 표시하지 않음",
       "family": "값 손상",
-      "sec": 51.2
+      "sec": 176.3
     },
     {
       "detected": true,
@@ -502,7 +522,7 @@
       },
       "mutant": "M29 [D1] 재료(mat) 분기가 IFC 호출 실패를 오염으로 표시하지 않음",
       "family": "값 손상",
-      "sec": 34.2
+      "sec": 97.1
     },
     {
       "detected": true,
@@ -521,7 +541,7 @@
       },
       "mutant": "M30 [D1] 투영(flush) 실패를 오염으로 표시하지 않음",
       "family": "값 손상",
-      "sec": 52.2
+      "sec": 192.1
     },
     {
       "detected": true,
@@ -535,25 +555,25 @@
       },
       "mutant": "M31 [D1] remove_identity 가 목록에서 먼저 빼고 IFC 를 지움",
       "family": "값 손상",
-      "sec": 77.5
+      "sec": 178.5
     },
     {
       "detected": true,
-      "by": "exception",
+      "by": "golden",
       "evidence": [
-        "KeyError: '1000000000000000000003'"
+        "조회 중 KeyError 가 봉투 없는 예외로 샜다: KeyError",
+        "run: 봉투 없는 예외 RuntimeError"
       ],
       "without_golden": {
         "detected": true,
-        "by": "inject_grid",
+        "by": "protocol",
         "evidence": [
-          "flush_new_door/edit_pset/once/k1: 봉투 없는 예외: RuntimeError",
-          "flush_new_door/add_pset/once/k1: 봉투 없는 예외: RuntimeError"
+          "[파일 입출력 오류] 라이브러리 예외: 봉투 없는 예외가 샜다: RuntimeError"
         ]
       },
       "mutant": "M32 [4차] 예상 밖 예외가 INTERNAL 봉투로 바뀌지 않음",
       "family": "프로토콜",
-      "sec": 23.3
+      "sec": 65.2
     },
     {
       "detected": true,
@@ -567,7 +587,7 @@
       },
       "mutant": "M33 [N10] wall.set/door.set 의 명시적 null 허용(NaN 필드만 조용히 무시)",
       "family": "값 손상",
-      "sec": 73.9
+      "sec": 201.7
     },
     {
       "detected": true,
@@ -581,7 +601,7 @@
       },
       "mutant": "M34 [S11] 잠긴 파일의 스냅숏 복사 PermissionError 가 FILE_LOCKED 로 안 바뀜",
       "family": "프로토콜",
-      "sec": 74.9
+      "sec": 180.4
     },
     {
       "detected": true,
@@ -591,11 +611,16 @@
         "element.query: truncated 표시가 이상하다 [False]…[False]"
       ],
       "without_golden": {
-        "detected": false
+        "detected": true,
+        "by": "protocol",
+        "evidence": [
+          "[배치 results 잘림] 잘린 배치의 page 가 틀렸다: None",
+          "[비원자 script] 성공한 script 의 잘림 표시가 틀렸다: None"
+        ]
       },
       "mutant": "M35 [S11] 목록 응답 크기 상한 없음",
       "family": "프로토콜",
-      "sec": 74.2
+      "sec": 55.4
     },
     {
       "detected": true,
@@ -605,11 +630,16 @@
         "element.query: truncated 표시가 이상하다 [False]…[False]"
       ],
       "without_golden": {
-        "detected": false
+        "detected": true,
+        "by": "protocol",
+        "evidence": [
+          "[배치 results 잘림] history.affected 로 이어받은 생성 id 가 명령 순서의 전체와 다르다(79건)",
+          "[큰 단건] 속성이 많은 element.get 이 쪽으로 나뉘지 않았다(쪽 1)"
+        ]
       },
       "mutant": "M36 [S11] 상한에서 조용히 자름(truncated·next_cursor 없음)",
       "family": "프로토콜",
-      "sec": 73.0
+      "sec": 43.9
     },
     {
       "detected": true,
@@ -619,11 +649,16 @@
         "커서로 쓴 행(마지막 읽은 행) 삭제/wall: 시작·끝에 모두 있는 0008 가 0번 나왔다"
       ],
       "without_golden": {
-        "detected": false
+        "detected": true,
+        "by": "protocol",
+        "evidence": [
+          "[큰 단건] 옛 긴 값이 있는 schedule.rows 응답이 120615바이트로 상한을 넘는다",
+          "[큰 단건] 옛 긴 값을 잘랐는데 schedule.rows 에 경고가 없다"
+        ]
       },
       "mutant": "M37 [A] 일람표·관계 목록 커서가 오프셋(읽는 동안 행이 바뀌면 빠짐·중복)",
       "family": "프로토콜",
-      "sec": 74.3
+      "sec": 60.5
     },
     {
       "detected": true,
@@ -637,59 +672,415 @@
       },
       "mutant": "M38 [C] 커서 모양 검사 없음(위조 커서가 INTERNAL·무한 빈 쪽)",
       "family": "프로토콜",
-      "sec": 75.0
+      "sec": 170.4
     },
     {
       "detected": true,
       "by": "golden",
       "evidence": [
-        "큰 배치의 undo 응답이 틀렸다: {'txn': 't2', 'ops_total': 600, 'effects': 1200, 'truncated': False}",
-        "영문 element.query: 최악 12222토큰 > 8000 {'cl100k_base': 12222, 'o200k_base': 11924}"
+        "영문 element.query: 최악 12822토큰 > 8000 {'cl100k_base': 12822, 'o200k_base': 12506}",
+        "영문 schedule.rows 벽: 최악 14322토큰 > 8000 {'cl100k_base': 14322, 'o200k_base': 14170}"
       ],
       "without_golden": {
-        "detected": false
+        "detected": true,
+        "by": "protocol",
+        "evidence": [
+          "[비원자 script] 중간 실패 script 의 page 가 틀렸다: None",
+          "[비원자 script] 생략한 항목과 이어 읽는 방법을 알리는 경고가 없다"
+        ]
       },
       "mutant": "M39 [D] 상한이 옛 12,000바이트(바이트/3 추정 근거, 실측 토큰 초과)",
       "family": "프로토콜",
-      "sec": 76.6
+      "sec": 55.8
     },
     {
       "detected": true,
       "by": "golden",
       "evidence": [
-        "큰 배치 응답이 상한을 넘는다: 36255 > 6000",
+        "큰 배치 응답이 상한을 넘는다: 51639 > 6000",
         "affected 의 앞부분·정확한 건수·truncated 가 틀렸다: {'created': 600, 'modified': 1, 'deleted': 0} truncated=False 앞부분 600"
       ],
       "without_golden": {
-        "detected": false
+        "detected": true,
+        "by": "protocol",
+        "evidence": [
+          "[경고 상한] 변경 없는 배치 1000건(실행) 응답이 122118바이트로 상한 6000 을 넘는다",
+          "[경고 상한] 같은 경고가 한 줄로 묶이지 않았다(실행): ['wall.move: 변경 없음', 'wall.move: 변경 없음', 'wall.move: 변경 없음']"
+        ]
       },
       "mutant": "M40 [E] 변경 응답 상한 없음(배치 600건이 36KB)",
       "family": "프로토콜",
-      "sec": 82.4
+      "sec": 67.9
     },
     {
       "detected": true,
       "by": "golden",
       "evidence": [
-        "affected 의 앞부분·정확한 건수·truncated 가 틀렸다: {'created': 98, 'modified': 0, 'deleted': 0} truncated=True 앞부분 98",
+        "affected 의 앞부분·정확한 건수·truncated 가 틀렸다: {'created': 97, 'modified': 0, 'deleted': 0} truncated=True 앞부분 97",
         "dry_run 큰 배치 응답이 상한 안에 들지 않거나 건수가 틀렸다"
       ],
       "without_golden": {
-        "detected": false
+        "detected": true,
+        "by": "protocol",
+        "evidence": [
+          "[비원자 script] script 의 합친 affected 건수가 틀렸다: {'created': 95, 'modified': 0, 'deleted': 0}",
+          "[비원자 script] 실패 전에 커밋된 100건이 affected 에 없다: {'created': 90, 'modified': 0, 'deleted': 0}"
+        ]
       },
       "mutant": "M41 [E] affected.counts 가 잘린 길이(정확한 건수 아님)",
       "family": "프로토콜",
-      "sec": 75.0
+      "sec": 66.5
+    },
+    {
+      "detected": true,
+      "by": "protocol",
+      "evidence": [
+        "[공유 가변 객체] empty_affected() 가 호출마다 새 객체를 돌려주지 않는다"
+      ],
+      "without_golden": {
+        "detected": true,
+        "by": "protocol",
+        "evidence": [
+          "[공유 가변 객체] empty_affected() 가 호출마다 새 객체를 돌려주지 않는다"
+        ]
+      },
+      "mutant": "M42 [6차-1] 빈 affected 가 공유 가변 객체",
+      "family": "프로토콜",
+      "sec": 102.6
+    },
+    {
+      "detected": true,
+      "by": "protocol",
+      "evidence": [
+        "[경고 상한] 변경 없는 배치 1000건(실행) 응답이 28685바이트로 상한 6000 을 넘는다",
+        "[경고 상한] 같은 경고가 한 줄로 묶이지 않았다(실행): ['wall.move: 변경 없음', 'wall.move: 변경 없음', 'wall.move: 변경 없음']"
+      ],
+      "without_golden": {
+        "detected": true,
+        "by": "protocol",
+        "evidence": [
+          "[경고 상한] 변경 없는 배치 1000건(실행) 응답이 28685바이트로 상한 6000 을 넘는다",
+          "[경고 상한] 같은 경고가 한 줄로 묶이지 않았다(실행): ['wall.move: 변경 없음', 'wall.move: 변경 없음', 'wall.move: 변경 없음']"
+        ]
+      },
+      "mutant": "M43 [6차-2] 경고를 묶지도 자르지도 않음(변경 없는 배치 1,000건)",
+      "family": "프로토콜",
+      "sec": 101.6
+    },
+    {
+      "detected": true,
+      "by": "protocol",
+      "evidence": [
+        "[토큰 캠페인] 무작위 한글/element.query: 8140토큰 > 8000 {'cl100k_base': 8140, 'o200k_base': 7090} (5402B)",
+        "[토큰 캠페인] 무작위 한글/element.query: 8102토큰 > 8000 {'cl100k_base': 8102, 'o200k_base': 7192} (5402B)"
+      ],
+      "without_golden": {
+        "detected": true,
+        "by": "protocol",
+        "evidence": [
+          "[토큰 캠페인] 무작위 한글/element.query: 8140토큰 > 8000 {'cl100k_base': 8140, 'o200k_base': 7090} (5402B)",
+          "[토큰 캠페인] 무작위 한글/element.query: 8102토큰 > 8000 {'cl100k_base': 8102, 'o200k_base': 7192} (5402B)"
+        ]
+      },
+      "mutant": "M44 [6차-3] 상한 판정이 커서·뼈대를 실제 크기로 재지 않고 예비 900바이트로 어림",
+      "family": "프로토콜",
+      "sec": 91.2
+    },
+    {
+      "detected": true,
+      "by": "protocol",
+      "evidence": [
+        "[토큰 캠페인] 무작위 한글/element.query: 8948토큰 > 8000 {'cl100k_base': 8948, 'o200k_base': 7780} (5910B)",
+        "[토큰 캠페인] 무작위 한글/element.query: 8876토큰 > 8000 {'cl100k_base': 8876, 'o200k_base': 7908} (5910B)"
+      ],
+      "without_golden": {
+        "detected": true,
+        "by": "protocol",
+        "evidence": [
+          "[토큰 캠페인] 무작위 한글/element.query: 8948토큰 > 8000 {'cl100k_base': 8948, 'o200k_base': 7780} (5910B)",
+          "[토큰 캠페인] 무작위 한글/element.query: 8876토큰 > 8000 {'cl100k_base': 8876, 'o200k_base': 7908} (5910B)"
+        ]
+      },
+      "mutant": "M45 [6차-4] 토큰 추정 없음(바이트 상한만): 무작위 한글·이모지가 8,000토큰 초과",
+      "family": "프로토콜",
+      "sec": 107.8
+    },
+    {
+      "detected": true,
+      "by": "protocol",
+      "evidence": [
+        "[토큰 캠페인] 무작위 한글/element.query: 8948토큰 > 8000 {'cl100k_base': 8948, 'o200k_base': 7780} (5910B)",
+        "[토큰 캠페인] 무작위 한글/element.query: 8876토큰 > 8000 {'cl100k_base': 8876, 'o200k_base': 7908} (5910B)"
+      ],
+      "without_golden": {
+        "detected": true,
+        "by": "protocol",
+        "evidence": [
+          "[토큰 캠페인] 무작위 한글/element.query: 8948토큰 > 8000 {'cl100k_base': 8948, 'o200k_base': 7780} (5910B)",
+          "[토큰 캠페인] 무작위 한글/element.query: 8876토큰 > 8000 {'cl100k_base': 8876, 'o200k_base': 7908} (5910B)"
+        ]
+      },
+      "mutant": "M46 [6차-4] 비 ASCII 문자를 ASCII 가중치로 셈",
+      "family": "프로토콜",
+      "sec": 111.7
+    },
+    {
+      "detected": true,
+      "by": "protocol",
+      "evidence": [
+        "[배치 results 잘림] results 항목에 명령 번호(index)가 없거나 어긋난다: [None, None, None, None, None, None]",
+        "[배치 results 잘림] results 항목에 seq 가 없다"
+      ],
+      "without_golden": {
+        "detected": true,
+        "by": "protocol",
+        "evidence": [
+          "[배치 results 잘림] results 항목에 명령 번호(index)가 없거나 어긋난다: [None, None, None, None, None, None]",
+          "[배치 results 잘림] results 항목에 seq 가 없다"
+        ]
+      },
+      "mutant": "M47 [6차-5] 배치 results 에 명령 번호·seq 없음",
+      "family": "프로토콜",
+      "sec": 102.9
+    },
+    {
+      "detected": true,
+      "by": "protocol",
+      "evidence": [
+        "[배치 results 잘림] results 의 seq 와 history.affected 의 seq 가 다르다: {'index': 0, 'seq': 2, 'id': '1000000000000000000001'}"
+      ],
+      "without_golden": {
+        "detected": true,
+        "by": "protocol",
+        "evidence": [
+          "[배치 results 잘림] results 의 seq 와 history.affected 의 seq 가 다르다: {'index': 0, 'seq': 2, 'id': '1000000000000000000001'}"
+        ]
+      },
+      "mutant": "M48 [6차-5] history.affected 항목에 seq 없음",
+      "family": "프로토콜",
+      "sec": 100.0
+    },
+    {
+      "detected": true,
+      "by": "golden",
+      "evidence": [
+        "큰 배치의 undo 응답이 틀렸다: {'txn': 't2', 'ops_total': 600, 'effects': 1200}"
+      ],
+      "without_golden": {
+        "detected": true,
+        "by": "protocol",
+        "evidence": [
+          "[undo/redo ops 요약] undo 의 ops 가 커맨드별 건수 요약이 아니다: {'txn': 't2', 'ops': ['wall.create', 'wall.create', 'wall.create', 'wall.move', 'wall.move'], 'ops_total': 5, 'effects': 8}",
+          "[undo/redo ops 요약] redo 의 ops 가 커맨드별 건수 요약이 아니다: {'txn': 't2', 'ops': ['wall.create', 'wall.create', 'wall.create', 'wall.move', 'wall.move'], 'ops_total': 5, 'effects': 8}"
+        ]
+      },
+      "mutant": "M49 [6차-6] undo/redo ops 가 커맨드 이름을 건수만큼 되풀이",
+      "family": "프로토콜",
+      "sec": 64.0
+    },
+    {
+      "detected": true,
+      "by": "protocol",
+      "evidence": [
+        "[비원자 script] 중간 실패 항목이 응답에서 사라졌다: []"
+      ],
+      "without_golden": {
+        "detected": true,
+        "by": "protocol",
+        "evidence": [
+          "[비원자 script] 중간 실패 항목이 응답에서 사라졌다: []"
+        ]
+      },
+      "mutant": "M50 [6차-7] 응답을 줄일 때 실패 결과가 잘려 사라짐",
+      "family": "프로토콜",
+      "sec": 103.2
+    },
+    {
+      "detected": true,
+      "by": "protocol",
+      "evidence": [
+        "[비원자 script] 성공한 script 150건: ok=True 16539바이트(상한 6000)",
+        "[비원자 script] 성공한 script 의 잘림 표시가 틀렸다: None"
+      ],
+      "without_golden": {
+        "detected": true,
+        "by": "protocol",
+        "evidence": [
+          "[비원자 script] 성공한 script 150건: ok=True 16539바이트(상한 6000)",
+          "[비원자 script] 성공한 script 의 잘림 표시가 틀렸다: None"
+        ]
+      },
+      "mutant": "M51 [6차-7] 비원자 script 응답에 상한이 없음(옛 구현)",
+      "family": "프로토콜",
+      "sec": 101.1
+    },
+    {
+      "detected": true,
+      "by": "protocol",
+      "evidence": [
+        "[큰 단건] pset.set 입력 길이 상한이 SCHEMA_INVALID 가 아니다: ok",
+        "[큰 단건] 새 입력의 40,000자 값이 거부되지 않았다"
+      ],
+      "without_golden": {
+        "detected": true,
+        "by": "protocol",
+        "evidence": [
+          "[큰 단건] pset.set 입력 길이 상한이 SCHEMA_INVALID 가 아니다: ok",
+          "[큰 단건] 새 입력의 40,000자 값이 거부되지 않았다"
+        ]
+      },
+      "mutant": "M52 [6차-8] 속성 문자열 입력 길이 상한 없음",
+      "family": "프로토콜",
+      "sec": 102.1
+    },
+    {
+      "detected": true,
+      "by": "protocol",
+      "evidence": [
+        "[큰 단건] 관계가 많은 element.get 이 잘리고도 정직하게 표시하지 않았다: 보임 300, 총 300, 크기 8941, page {'next_cursor': None, 'total': 0, 'truncated': False}",
+        "[큰 단건] 잘린 관계를 이어 읽는 방법(relation.list)을 알리는 경고가 없다"
+      ],
+      "without_golden": {
+        "detected": true,
+        "by": "protocol",
+        "evidence": [
+          "[큰 단건] 관계가 많은 element.get 이 잘리고도 정직하게 표시하지 않았다: 보임 300, 총 300, 크기 8941, page {'next_cursor': None, 'total': 0, 'truncated': False}",
+          "[큰 단건] 잘린 관계를 이어 읽는 방법(relation.list)을 알리는 경고가 없다"
+        ]
+      },
+      "mutant": "M53 [6차-8] element.get 관계 수 상한 없음",
+      "family": "프로토콜",
+      "sec": 100.5
+    },
+    {
+      "detected": true,
+      "by": "protocol",
+      "evidence": [
+        "[큰 단건] 옛 긴 값이 있는 history.list 응답이 120506바이트로 상한을 넘는다",
+        "[큰 단건] 옛 긴 값을 잘랐는데 history.list 에 경고가 없다"
+      ],
+      "without_golden": {
+        "detected": true,
+        "by": "protocol",
+        "evidence": [
+          "[큰 단건] 옛 긴 값이 있는 history.list 응답이 120506바이트로 상한을 넘는다",
+          "[큰 단건] 옛 긴 값을 잘랐는데 history.list 에 경고가 없다"
+        ]
+      },
+      "mutant": "M54 [6차-8] 옛 로그의 긴 값을 자르지도 표시하지도 않음",
+      "family": "프로토콜",
+      "sec": 107.7
+    },
+    {
+      "detected": true,
+      "by": "protocol",
+      "evidence": [
+        "[큰 단건] 재생용 파싱(replay=True)이 옛 긴 값을 거부했다(옛 로그를 못 연다): DobimError"
+      ],
+      "without_golden": {
+        "detected": true,
+        "by": "protocol",
+        "evidence": [
+          "[큰 단건] 재생용 파싱(replay=True)이 옛 긴 값을 거부했다(옛 로그를 못 연다): DobimError"
+        ]
+      },
+      "mutant": "M55 [6차-8] 재생에도 길이 상한을 걸어 옛 로그가 깨짐",
+      "family": "프로토콜",
+      "sec": 111.3
+    },
+    {
+      "detected": true,
+      "by": "inject_grid",
+      "evidence": [
+        "undo_wall_create/INSERT OR REPLACE INTO element/once/k1: 감사 중 예외: IndexError: tuple index out of range",
+        "undo_wall_create/INSERT OR REPLACE INTO element/persist/k1: 감사 중 예외: IndexError: tuple index out of range"
+      ],
+      "without_golden": {
+        "detected": true,
+        "by": "inject_grid",
+        "evidence": [
+          "undo_wall_create/INSERT OR REPLACE INTO element/once/k1: 감사 중 예외: IndexError: tuple index out of range",
+          "undo_wall_create/INSERT OR REPLACE INTO element/persist/k1: 감사 중 예외: IndexError: tuple index out of range"
+        ]
+      },
+      "mutant": "M56 [6차-9] effect SQL 쓰기 실패를 오염으로 표시하지 않음",
+      "family": "값 손상",
+      "sec": 181.0
+    },
+    {
+      "detected": true,
+      "by": "golden",
+      "evidence": [
+        "읽기 공유: 실패했는데 스냅숏이 늘었다"
+      ],
+      "without_golden": {
+        "detected": true,
+        "by": "protocol",
+        "evidence": [
+          "[파일 입출력 오류] 라이브러리 예외 뒤에 스냅숏이 쌓였다: 1개(기준 0)",
+          "[파일 입출력 오류] 디스크 가득(ENOSPC) 뒤에 스냅숏이 쌓였다: 2개(기준 0)"
+        ]
+      },
+      "mutant": "M57 [6차-10] 내보내기 실패 뒤 스냅숏을 지우지 않음",
+      "family": "프로토콜",
+      "sec": 64.2
+    },
+    {
+      "detected": true,
+      "by": "protocol",
+      "evidence": [
+        "[파일 입출력 오류] .tmp 를 다른 프로세스가 잡았을 때 INTERNAL 로 보고됐다(FILE_LOCKED 여야 한다)"
+      ],
+      "without_golden": {
+        "detected": true,
+        "by": "protocol",
+        "evidence": [
+          "[파일 입출력 오류] .tmp 를 다른 프로세스가 잡았을 때 INTERNAL 로 보고됐다(FILE_LOCKED 여야 한다)"
+        ]
+      },
+      "mutant": "M58 [6차-10] 실패 뒤 .tmp 정리 실패가 INTERNAL 로 샘",
+      "family": "프로토콜",
+      "sec": 97.6
+    },
+    {
+      "detected": true,
+      "by": "protocol",
+      "evidence": [
+        "[파일 입출력 오류] 디스크 가득(ENOSPC) 가 DISK_FULL 가 아니라 FILE_LOCKED 로 보고됐다",
+        "[파일 입출력 오류] 장치 오류(EIO) 가 IO_ERROR 가 아니라 FILE_LOCKED 로 보고됐다"
+      ],
+      "without_golden": {
+        "detected": true,
+        "by": "protocol",
+        "evidence": [
+          "[파일 입출력 오류] 디스크 가득(ENOSPC) 가 DISK_FULL 가 아니라 FILE_LOCKED 로 보고됐다",
+          "[파일 입출력 오류] 장치 오류(EIO) 가 IO_ERROR 가 아니라 FILE_LOCKED 로 보고됐다"
+        ]
+      },
+      "mutant": "M59 [6차-10] OSError 전반을 FILE_LOCKED 로 보고",
+      "family": "프로토콜",
+      "sec": 97.0
+    },
+    {
+      "detected": true,
+      "by": "protocol",
+      "evidence": [
+        "[파일 입출력 오류] .tmp 를 다른 프로세스가 잡았을 때 INTERNAL 로 보고됐다(FILE_LOCKED 여야 한다)"
+      ],
+      "without_golden": {
+        "detected": true,
+        "by": "protocol",
+        "evidence": [
+          "[파일 입출력 오류] .tmp 를 다른 프로세스가 잡았을 때 INTERNAL 로 보고됐다(FILE_LOCKED 여야 한다)"
+        ]
+      },
+      "mutant": "M60 [6차-10] .tmp 를 먼저 열어 보지 않아 잠긴 .tmp 가 INTERNAL 로 샘",
+      "family": "프로토콜",
+      "sec": 103.3
     }
   ],
-  "control_no_mutation": {
-    "passes_all_checks": true,
-    "detail": {
-      "detected": false
-    }
-  },
-  "detected": 41,
-  "detected_without_golden": 21,
+  "detected": 60,
+  "detected_without_golden": 47,
   "missed_without_golden": [
     "M13 속성 값 타입 고착(D1 회귀)",
     "M14 [검수자] 벽 순면적의 문 면적을 width*width 로",
@@ -698,21 +1089,30 @@
     "M19 MIN_TRIMMED 정확 경계(1.0)가 퇴화로 판정됨",
     "M20 JOIN_MAX_EXT 정확 경계(1000)가 무시됨",
     "M21 조인 시작/끝 배정의 중간 동률을 끝 쪽으로",
-    "M23 [N4] 속성 값 검증 없음(NaN/inf/int64 초과/NUL/서로게이트)",
     "M24 [N7] pset.set 의 value=null 이 속성 삭제(SDK 가 NaN 을 null 로 보내면 조용히 삭제)",
     "M27 [N9] 속성 이름 id 허용(쓰기 ok, 조회에 안 보임)",
     "M31 [D1] remove_identity 가 목록에서 먼저 빼고 IFC 를 지움",
     "M33 [N10] wall.set/door.set 의 명시적 null 허용(NaN 필드만 조용히 무시)",
     "M34 [S11] 잠긴 파일의 스냅숏 복사 PermissionError 가 FILE_LOCKED 로 안 바뀜",
-    "M35 [S11] 목록 응답 크기 상한 없음",
-    "M36 [S11] 상한에서 조용히 자름(truncated·next_cursor 없음)",
-    "M37 [A] 일람표·관계 목록 커서가 오프셋(읽는 동안 행이 바뀌면 빠짐·중복)",
-    "M38 [C] 커서 모양 검사 없음(위조 커서가 INTERNAL·무한 빈 쪽)",
-    "M39 [D] 상한이 옛 12,000바이트(바이트/3 추정 근거, 실측 토큰 초과)",
-    "M40 [E] 변경 응답 상한 없음(배치 600건이 36KB)",
-    "M41 [E] affected.counts 가 잘린 길이(정확한 건수 아님)"
+    "M38 [C] 커서 모양 검사 없음(위조 커서가 INTERNAL·무한 빈 쪽)"
   ],
-  "total": 41,
+  "total": 60,
+  "detected_by": {
+    "golden": 36,
+    "protocol": 17,
+    "inject_grid": 4,
+    "concurrency": 1,
+    "undo": 1,
+    "differential": 1
+  },
+  "detected_by_without_golden": {
+    "protocol": 34,
+    "inject_grid": 10,
+    "concurrency": 1,
+    "null": 13,
+    "undo": 1,
+    "differential": 1
+  },
   "all_detected": true,
-  "elapsed_sec": 2762.3
+  "elapsed_sec_max_shard": 1962.6
 }
