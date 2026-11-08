@@ -1,0 +1,61 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "dobim-render"
+version = "0.0.1"
+description = "Democratization of BIM CPU 진단 렌더 스파이크 S10 (버릴 코드). 코어와 분리된 선택 패키지"
+requires-python = ">=3.12,<3.13"
+license = { text = "MPL-2.0" }
+# 렌더는 IFC 파일만 입력으로 받는다. dobim-core 에 의존하지 않는다(역도 마찬가지).
+dependencies = [
+  "numpy>=2",                   # BSD-3
+  "ifcopenshell==0.9.0.post1",  # LGPL-3.0 (삼각형 추출 전용, mesh.py 에서만 import)
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8", "import-linter>=2"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src", "tools", "../s1-core/src", "../s1-core/tools"]
+markers = [
+  "docker: Docker 데몬과 이미지 빌드가 필요한 시험(네트워크 사용). 기본 실행에서 제외하려면 -m 'not docker'",
+  "slow: 서브프로세스·장시간 시험",
+]
+addopts = "-q"
+
+# ---- 계층 경계 (architecture.md 15.9): dobim-app -> dobim-core. 렌더(선택)와 코어는 서로 모른다.
+# 이 설정은 코어(../s1-core/src)와 렌더(src)를 함께 본다: PYTHONPATH=../s1-core/src:src lint-imports
+[tool.importlinter]
+root_packages = ["dobim_core", "dobim_render"]
+include_external_packages = true
+
+[[tool.importlinter.contracts]]
+name = "코어와 렌더는 서로 독립이다 (선택 패키지가 코어를 부풀리지 않고, 코어가 렌더를 끌어오지 않는다)"
+type = "independence"
+modules = ["dobim_core", "dobim_render"]
+
+[[tool.importlinter.contracts]]
+name = "코어는 GUI·GPU·렌더 라이브러리에 의존하지 않는다"
+type = "forbidden"
+source_modules = ["dobim_core"]
+forbidden_modules = ["tkinter", "PyQt5", "PyQt6", "PySide2", "PySide6", "wx", "bpy", "matplotlib", "pyglet", "OpenGL",
+                     "vtk", "pyrender", "wgpu", "moderngl", "vispy", "open3d", "pygame", "glfw", "numpy", "PIL"]
+
+[[tool.importlinter.contracts]]
+name = "렌더는 GUI·GPU 라이브러리와 코어 프로토콜 계층에 의존하지 않는다"
+type = "forbidden"
+source_modules = ["dobim_render"]
+forbidden_modules = ["tkinter", "PyQt5", "PyQt6", "PySide2", "PySide6", "wx", "bpy", "matplotlib", "pyglet", "OpenGL",
+                     "vtk", "pyrender", "wgpu", "moderngl", "vispy", "open3d", "pygame", "glfw", "mcp", "pydantic"]
+
+[[tool.importlinter.contracts]]
+name = "ifcopenshell 은 렌더의 mesh 모듈만 import 한다 (래스터라이저·PNG 는 IFC 를 모른다)"
+type = "forbidden"
+source_modules = ["dobim_render.raster", "dobim_render.png"]
+forbidden_modules = ["ifcopenshell", "dobim_render.mesh"]
