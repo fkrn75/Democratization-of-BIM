@@ -22,6 +22,11 @@ RESERVED_NAMES = {"host_thickness", "host_height", "true", "false", "min", "max"
 HOST_NAMES = ("host_thickness", "host_height")
 
 
+MAX_DEPTH = 24            # JSON 중첩 깊이 상한(정상 레시피는 8 안팎)
+MAX_NODES = 40_000        # JSON 값 개수 상한(64KB 안에서는 이를 넘을 수 없다)
+NUM_LIMIT = 1e15          # 숫자 리터럴 크기 상한(expr 의 정수 결과 상한과 같다)
+
+
 # ---------------------------------------------------------------- 구조화된 오류
 @dataclass
 class Issue:
@@ -44,6 +49,41 @@ class FamilyError(Exception):
     def __init__(self, issues: list[Issue] | Issue):
         self.issues = [issues] if isinstance(issues, Issue) else list(issues)
         super().__init__("; ".join(f"{i.path}: {i.message}" for i in self.issues[:3]))
+
+
+def check_json_value(data) -> None:
+    """레시피로 들어온 JSON 값의 숫자·깊이·크기를 반복문으로 검사한다(재귀 없음: 깊은 중첩에도 RecursionError 가 나지 않는다).
+    NaN/Infinity(파이썬 json 은 읽어 준다), 10**400 같은 거대 정수, 5000 단계 중첩을 구조화 오류로 거절한다."""
+    stack = [(data, 1, ())]
+    nodes = 0
+    while stack:
+        v, depth, where = stack.pop()
+        nodes += 1
+        if nodes > MAX_NODES:
+            raise FamilyError(Issue("E_LIMIT", "", f"JSON 값이 {MAX_NODES}개를 넘는다", "레시피를 줄이세요(repeat 와 파생값을 쓰세요)"))
+        if isinstance(v, bool) or v is None or isinstance(v, str):
+            continue
+        if isinstance(v, float):
+            if v != v or v in (float("inf"), float("-inf")):
+                raise FamilyError(Issue("E_SCHEMA", ptr(*where), "NaN/Infinity 는 허용하지 않는다(유한한 수만)",
+                                        "JSON 에는 NaN/Infinity 가 없다. 값을 숫자로 바꾸세요"))
+            if abs(v) > NUM_LIMIT:
+                raise FamilyError(Issue("E_LIMIT", ptr(*where), f"숫자가 ±{NUM_LIMIT:g} 를 넘는다", "단위(mm)를 확인하세요"))
+        elif isinstance(v, int):
+            if abs(v) > NUM_LIMIT:
+                raise FamilyError(Issue("E_LIMIT", ptr(*where), f"정수가 ±{NUM_LIMIT:g} 를 넘는다", "단위(mm)를 확인하세요"))
+        elif isinstance(v, dict):
+            if depth > MAX_DEPTH:
+                raise FamilyError(Issue("E_LIMIT", ptr(*where), f"JSON 중첩이 {MAX_DEPTH} 단계를 넘는다"))
+            for k, x in v.items():
+                stack.append((x, depth + 1, where + (k,)))
+        elif isinstance(v, (list, tuple)):
+            if depth > MAX_DEPTH:
+                raise FamilyError(Issue("E_LIMIT", ptr(*where), f"JSON 중첩이 {MAX_DEPTH} 단계를 넘는다"))
+            for i, x in enumerate(v):
+                stack.append((x, depth + 1, where + (i,)))
+        else:
+            raise FamilyError(Issue("E_SCHEMA", ptr(*where), f"JSON 으로 표현할 수 없는 값이다({type(v).__name__})"))
 
 
 def ptr(*parts) -> str:
@@ -362,9 +402,10 @@ def parse_recipe(data: dict) -> Recipe:
     """딕셔너리를 Recipe 로 바꾼다. 실패하면 FamilyError(E_SCHEMA...)."""
     if not isinstance(data, dict):
         raise FamilyError(Issue("E_SCHEMA", "", "레시피는 JSON 객체여야 한다"))
+    check_json_value(data)
     try:
         size = len(json.dumps(data, ensure_ascii=False))
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, RecursionError):
         raise FamilyError(Issue("E_SCHEMA", "", "레시피를 JSON 으로 직렬화할 수 없다")) from None
     if size > MAX_RECIPE_BYTES:
         raise FamilyError(Issue("E_LIMIT", "", f"레시피가 {MAX_RECIPE_BYTES // 1024}KB 를 넘는다({size}자)",
@@ -375,13 +416,28 @@ def parse_recipe(data: dict) -> Recipe:
         raise FamilyError(pydantic_issues(ex)) from None
 
 
+class _NonFinite(ValueError):
+    pass
+
+
+def _reject_constant(name: str):
+    raise _NonFinite(name)
+
+
 def load_json_text(text: str) -> dict:
-    """JSON 텍스트를 읽는다. 오류는 위치(줄·열)가 있는 구조화 오류로 낸다."""
+    """JSON 텍스트를 읽는다. 오류는 위치(줄·열)가 있는 구조화 오류로 낸다. NaN/Infinity 는 JSON 이 아니므로 거절한다."""
     try:
-        data = json.loads(text)
+        data = json.loads(text, parse_constant=_reject_constant)
     except json.JSONDecodeError as ex:
         raise FamilyError(Issue("E_JSON", "", f"JSON 구문 오류: {ex.msg} ({ex.lineno}줄 {ex.colno}열)",
                                 "주석·후행 쉼표·작은따옴표 키는 JSON 에서 허용되지 않는다")) from None
+    except _NonFinite as ex:
+        raise FamilyError(Issue("E_JSON", "", f"{ex} 는 JSON 이 아니다(NaN/Infinity 는 허용하지 않는다)", "유한한 숫자를 쓰세요")) from None
+    except RecursionError:
+        raise FamilyError(Issue("E_LIMIT", "", f"JSON 중첩이 너무 깊다(최대 {MAX_DEPTH} 단계)")) from None
+    except ValueError as ex:   # 4300자리를 넘는 정수 등 파이썬 정수 변환 상한
+        raise FamilyError(Issue("E_JSON", "", f"JSON 값을 읽을 수 없다: {str(ex)[:120]}")) from None
     if not isinstance(data, dict):
         raise FamilyError(Issue("E_JSON", "", "최상위가 JSON 객체여야 한다"))
+    check_json_value(data)
     return data

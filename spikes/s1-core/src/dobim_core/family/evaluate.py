@@ -21,7 +21,7 @@ from typing import Any
 
 from dobim_core.family import expr as E
 from dobim_core.family.recipe import (HOST_NAMES, RESERVED_NAMES, Extrude, ExprVal, FamilyError, Issue, Param, Recipe,
-                                      Sweep, parse_recipe, ptr)
+                                      Sweep, check_json_value, parse_recipe, ptr)
 
 MAX_REPEAT = 50
 MAX_ITEMS = 400
@@ -308,6 +308,7 @@ _LOAD_MAX = 256
 
 def load_recipe(data: dict) -> tuple[Recipe, Plan]:
     """구조 검사 + 정적 분석. 실패하면 FamilyError. 같은 레시피는 캐시에서 돌려준다."""
+    check_json_value(data)   # NaN/Infinity·거대 정수·깊은 중첩은 digest(canon)·구조 검사 전에 구조화 오류로 거절한다
     key = digest(data)
     hit = _LOAD_CACHE.get(key)
     if hit is not None:
@@ -337,6 +338,8 @@ def coerce_param(name: str, p: Param, v: Any, path: str) -> Any:
             raise _bad("E_PARAM_TYPE", path, f"{name}: 숫자가 필요하다(받은 값: {v!r})")
         if isinstance(v, float) and not math.isfinite(v):
             raise _bad("E_PARAM_TYPE", path, f"{name}: 유한한 수여야 한다")
+        if abs(v) > 1e15:
+            raise _bad("E_PARAM_RANGE", path, f"{name}: 값이 ±1e15 를 넘는다", "단위(mm)를 확인하세요")
         if t == "int" and v != int(v):
             raise _bad("E_PARAM_TYPE", path, f"{name}: 정수가 필요하다(받은 값: {v!r})")
         if p.min is not None and v < p.min or p.max is not None and v > p.max:

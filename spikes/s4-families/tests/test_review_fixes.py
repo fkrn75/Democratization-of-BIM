@@ -110,3 +110,110 @@ def test_family_validate_가_평가_캐시_슬롯을_소모하지_않는다(sess
     r = copy.deepcopy(load_lib("door.single"))
     r["id"] = "door.after"
     ok(sess.run("family.register", {"recipe": r}))
+
+
+# ---------------------------------------------------------------- 5. NaN/Infinity·거대 정수·깊은 중첩은 구조화 오류
+def test_json_텍스트의_NaN_Infinity는_E_JSON(tmp_path):
+    from dobim_core.family.recipe import FamilyError, load_json_text
+    for tok in ("NaN", "Infinity", "-Infinity"):
+        with pytest.raises(FamilyError) as ei:
+            load_json_text('{"a": %s}' % tok)
+        assert ei.value.issues[0].code == "E_JSON"
+
+
+@pytest.mark.parametrize("mut", [
+    lambda r: r["params"]["width"].update(default=float("nan")),
+    lambda r: r["derived"].update(leaf_w=float("inf")),
+    lambda r: r["params"]["width"].update(max=float("inf")),
+    lambda r: r["params"]["width"].update(min=float("-inf")),
+    lambda r: r["params"]["width"].update(max=10 ** 400),
+])
+def test_inline_레시피의_비정상_숫자는_FAMILY_INVALID(sess, door, mut):
+    mut(door)
+    r = sess.run("family.register", {"recipe": door})
+    assert not r["ok"] and r["error"]["code"] == "FAMILY_INVALID", r
+    assert r["error"]["details"]["issues"][0]["code"] in ("E_SCHEMA", "E_LIMIT")
+    v = ok(sess.run("family.validate", {"recipe": door, "level": "static"}))
+    assert not v["ok"] and v["checks"]["schema"] == "fail" and v["errors"][0]["code"] in ("E_SCHEMA", "E_LIMIT")
+    assert sess.eng.rev == 10
+
+
+def test_파일_레시피의_NaN과_깊은_중첩은_INTERNAL이_아니다(sess, tmp_path):
+    (tmp_path / "nan.json").write_text('{"schema": "dobim.family/1", "x": NaN}', encoding="utf-8")
+    (tmp_path / "deep.json").write_text("[" * 5000 + "]" * 5000, encoding="utf-8")
+    (tmp_path / "deep2.json").write_text('{"a":' * 5000 + "1" + "}" * 5000, encoding="utf-8")
+    (tmp_path / "big.json").write_text('{"x": 1' + "0" * 5000 + "}", encoding="utf-8")   # 파이썬 정수 변환 상한(4300자리) 초과
+    for name in ("nan.json", "deep.json", "deep2.json", "big.json"):
+        for cmd in ("family.register", "family.validate"):
+            r = sess.run(cmd, {"path": name})
+            code = r["error"]["code"] if not r["ok"] else r["result"]["errors"][0]["code"]
+            assert code != "INTERNAL" and (r["ok"] is True or r["error"]["code"] == "FAMILY_INVALID"), (name, cmd, r)
+            assert not r["ok"] or r["result"]["ok"] is False
+
+
+def test_인라인_깊은_중첩도_구조화_오류(sess, door):
+    node = door
+    for _ in range(3000):
+        node["x"] = {}
+        node = node["x"]
+    r = sess.run("family.register", {"recipe": door})
+    assert r["error"]["code"] == "FAMILY_INVALID" and r["error"]["details"]["issues"][0]["code"] == "E_LIMIT"
+
+
+def test_거대_매개변수_값은_범위_오류(sess):
+    r = sess.run("family.place", {"family": "door.single", "type_values": {"width": 10 ** 18}, "host": F.W3, "offset": 3000})
+    assert r["error"]["code"] == "FAMILY_INVALID" and r["error"]["details"]["issues"][0]["code"] == "E_PARAM_RANGE"
+
+
+# ---------------------------------------------------------------- 6. 같은 id 의 여러 레시피
+def _variant(door, version, name):
+    r = copy.deepcopy(door)
+    r["id"] = "door.multi"
+    r["version"] = version
+    r["name"] = name
+    return r
+
+
+def test_같은_id_여러_version이면_가장_높은_version으로_배치하고_등록때_경고(sess, door):
+    ok(sess.run("family.register", {"recipe": _variant(door, 2, "v2 문")}))
+    r1 = sess.run("family.register", {"recipe": _variant(door, 1, "v1 문")})
+    assert ok(r1)["created"] and any("door.multi" in w and "version" in w for w in r1["warnings"])
+    p = ok(sess.run("family.place", {"family": "door.multi", "host": F.W3, "offset": 1500}))
+    assert sess.eng.st.el[p["type"]]["params"]["recipe"]["version"] == 2
+    # 같은 레시피를 다시 올리면(created=False) 경고 없이 같은 타입
+    again = sess.run("family.register", {"recipe": _variant(door, 2, "v2 문")})
+    assert ok(again)["created"] is False and not any("door.multi" in w for w in again["warnings"])
+
+
+def test_같은_id_같은_version인데_내용이_다르면_배치를_거절(sess, door):
+    ok(sess.run("family.register", {"recipe": _variant(door, 3, "A")}))
+    ok(sess.run("family.register", {"recipe": _variant(door, 3, "B")}))
+    r = sess.run("family.place", {"family": "door.multi", "host": F.W3, "offset": 1500})
+    assert r["error"]["code"] == "CONSTRAINT" and "모호" in r["error"]["message"] and r["error"]["hint"]
+    # 타입 id 로는 지정할 수 있다
+    t = [i for i in sess.eng.st.by_kind["ftype"] if sess.eng.st.el[i]["params"]["recipe"]["name"] == "A"][0]
+    ok(sess.run("family.place", {"type": t, "host": F.W3, "offset": 1500}))
+
+
+def test_라이브러리와_같은_id의_다른_내용을_올리면_경고(sess, door):
+    door["name"] = "내 문"
+    r = sess.run("family.register", {"recipe": door})
+    assert ok(r)["created"] and any("기본 라이브러리" in w for w in r["warnings"])
+    clean = sess.run("family.register", {"family": "window.fixed"})
+    assert ok(clean)["created"] and not any("기본 라이브러리" in w for w in clean["warnings"])
+
+
+# ---------------------------------------------------------------- 7. 예시·죽은 코드
+def test_family_set_예시가_성공한다(sess):
+    from dobim_core import registry
+    cmds = registry.load()
+    for name in ("family.place", "family.set"):          # 패리티 하네스와 같은 순서(이름순)로 예시를 실행
+        for ex in cmds[name].examples:
+            r = sess.run(name, ex)
+            assert r["ok"], (name, ex, r)
+    assert ok(sess.run("model.validate", {}))["errors"] == 0
+
+
+def test_죽은_코드_정리():
+    from dobim_core import commands_family
+    assert not hasattr(commands_family, "_check_values_keys")

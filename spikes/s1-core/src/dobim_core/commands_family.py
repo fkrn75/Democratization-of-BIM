@@ -19,7 +19,7 @@ from dobim_core.commands import A, Id, Name, Num, PropValue, command
 from dobim_core.errors import DobimError
 from dobim_core.family import evaluate as FE
 from dobim_core.family import spec as FS
-from dobim_core.family.recipe import ID_RE, FamilyError, load_json_text
+from dobim_core.family.recipe import ID_RE, FamilyError, check_json_value, load_json_text
 from dobim_core.paths import resolve_in_workspace
 
 FamilyId = Annotated[str, Field(pattern=ID_RE, max_length=64, description="레시피 id (예: door.single)")]
@@ -53,7 +53,11 @@ class Source(A):
 def _load_source(workspace, a: Source) -> dict:
     from dobim_core.family import library
     if a.recipe is not None:
-        return json.loads(json.dumps(a.recipe))   # 호출자의 객체와 요소 행이 같은 사본을 공유하지 않게 한다
+        try:
+            check_json_value(a.recipe)   # NaN/Infinity·거대 정수·깊은 중첩은 직렬화 전에 거절(RecursionError/ValueError → INTERNAL 방지)
+            return json.loads(json.dumps(a.recipe))
+        except FamilyError as ex:
+            raise _fam_error(ex, "레시피") from None   # 호출자의 객체와 요소 행이 같은 사본을 공유하지 않게 한다
     if a.path is not None:
         p = resolve_in_workspace(workspace, a.path, must_exist=True)
         if p.stat().st_size > MAX_RECIPE_FILE:
@@ -131,21 +135,24 @@ def _clip_issue(i: dict) -> dict:
 def _recipe_of(ctx, family_id: str) -> dict:
     """프로젝트에 올라온 타입에서, 없으면 기본 라이브러리에서 레시피를 찾는다."""
     from dobim_core.family import library
+    found: dict[str, dict] = {}   # recipe_hash → 레시피(같은 id 의 서로 다른 레시피를 모은다)
     for tid in sorted(ctx.st.by_kind.get("ftype", ())):
         row = ctx.st.el[tid]
         if row["family_id"] == family_id:
-            return row["params"]["recipe"]
+            found.setdefault(row["params"]["recipe_hash"], row["params"]["recipe"])
+    if found:
+        top = max(r["version"] for r in found.values())
+        best = [r for r in found.values() if r["version"] == top]
+        if len(best) > 1:   # 같은 id·같은 version 인데 내용이 다른 레시피가 둘 이상: 어느 쪽인지 정할 수 없다
+            raise DobimError("CONSTRAINT", f"레시피 id {family_id} 가 version {top} 으로 {len(best)}가지 내용이 올라와 있어 모호하다",
+                             path="/family", hint="family.register 가 돌려준 타입 id 를 type 으로 지정하거나, 레시피 version 을 올려 다시 등록하세요",
+                             details={"family": family_id, "version": top, "variants": len(best)})
+        return best[0]   # 같은 id 의 여러 version 이 공존하면 가장 높은 version 을 쓴다
     data = library.load(family_id)
     if data is None:
         raise DobimError("NOT_FOUND", f"패밀리를 찾을 수 없다: {family_id}", path="/family",
                          hint="family.list 로 라이브러리를 보거나 family.register 로 레시피를 먼저 올리세요")
     return data
-
-
-def _check_values_keys(vals: dict, what: str) -> None:
-    for k, v in vals.items():
-        if isinstance(v, float) and v != v:
-            raise DobimError("SCHEMA_INVALID", f"{what}.{k}: NaN 은 허용하지 않는다", path=f"/{what}/{k}")
 
 
 def _make_type(ctx, tid: str, recipe: dict, r, plan, tv: dict, name: str | None) -> None:
@@ -160,6 +167,20 @@ def _make_type(ctx, tid: str, recipe: dict, r, plan, tv: dict, name: str | None)
     for pset, props in sorted(ev["psets"]["type"].items()):
         for prop, v in sorted(props.items()):
             ctx.set_prop(tid, pset, prop, v)
+
+
+def _warn_same_id(ctx, r, rhash: str) -> None:
+    """같은 id 의 다른 레시피(내용 또는 version 이 다름)가 이미 있는데 새로 올리면 경고한다(family 로 배치할 때 어느 것이 선택되는지 알린다)."""
+    from dobim_core.family import library
+    others = {row["params"]["recipe_hash"]: row["params"]["recipe"]["version"]
+              for tid in ctx.st.by_kind.get("ftype", ()) if (row := ctx.st.el[tid])["family_id"] == r.id
+              and row["params"]["recipe_hash"] != rhash}
+    if others:
+        ctx.warn(f"레시피 id {r.id} 로 다른 내용의 레시피(version {sorted(set(others.values()))})가 이미 올라와 있다. "
+                 f"family 로 배치하면 가장 높은 version({max([r.version, *others.values()])})이 선택되고, 같은 version 이면 모호해 거절된다. "
+                 "id 를 바꾸거나 version 을 올리세요")
+    elif r.id in library.ids() and rhash != FS.recipe_hash_of(library.load(r.id)):
+        ctx.warn(f"기본 라이브러리의 {r.id} 와 같은 id 지만 내용이 다른 레시피다. family 로 배치하면 이 프로젝트에 올린 쪽이 우선한다")
 
 
 class FamilyRegister(Source):
@@ -186,6 +207,7 @@ def family_register(ctx, a: FamilyRegister):
         if explicit or ctx.st.el[tid]["kind"] != "ftype":
             raise DobimError("CONSTRAINT", f"이미 있는 id 다: {tid}", path="/id")
         return {"id": tid, "family": r.id, "created": False}
+    _warn_same_id(ctx, r, rhash)
     _make_type(ctx, tid, data, r, plan, tv, a.name)
     return {"id": tid, "family": r.id, "created": True}
 
@@ -302,10 +324,13 @@ def _inst_params(a_name, tid, values, ev, hosted, offset, position, rotation, el
     return p
 
 
+EXAMPLE_FINST = "0" * 21 + "1"   # IFC GlobalId 첫 글자는 0~3 만 유효하다; family.place 예시가 만들고 family.set 예시가 고치는 인스턴스 id(예시는 이름순으로 한 프로젝트에서 실행된다)
+
+
 @command("family.place", kind="mutation", risk="write", group="family",
          summary="패밀리 인스턴스를 배치한다(호스팅/자립)",
          args=FamilyPlace, since="0.2",
-         examples=[{"family": "door.single", "values": {"swing": "R"}, "host": C.F.W3, "offset": 1500},
+         examples=[{"id": EXAMPLE_FINST, "family": "door.single", "values": {"swing": "R"}, "host": C.F.W3, "offset": 1500},
                    {"family": "column.section", "type_values": {"section": "round"}, "level": C.F.LV1, "position": [1000, 1000]}])
 def family_place(ctx, a: FamilyPlace):
     C._fresh_id(ctx, a, "finst")
@@ -373,7 +398,8 @@ class FamilySet(A):
 
 @command("family.set", kind="mutation", risk="write", group="family",
          summary="패밀리 인스턴스를 수정한다",
-         args=FamilySet, since="0.2", examples=[{"id": C.F.D1, "name": "X"}])
+         args=FamilySet, since="0.2",
+         examples=[{"id": EXAMPLE_FINST, "name": "현관문", "values": {"swing": "L"}, "offset": 2500}])
 def family_set(ctx, a: FamilySet):
     r_ = ctx.row(a.id, "finst")
     p = dict(r_["params"])
