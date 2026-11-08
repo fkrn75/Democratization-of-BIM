@@ -1,0 +1,47 @@
+{
+  "all_authored": true,
+  "authored_delete_ok": true,
+  "authored_edit_ok": true,
+  "cross_process_equal": true,
+  "delete_diff": {
+    "added": 0,
+    "deleted": 1
+  },
+  "derived_hash_equal": true,
+  "detached_total": 0,
+  "diff_first_vs_second_export": {
+    "differences": 0,
+    "ifcdiff_added": 0,
+    "ifcdiff_changed": 0,
+    "ifcdiff_changed_kinds": {},
+    "ifcdiff_deleted": 0,
+    "ifcdiff_total": 0,
+    "ifcdiff_version": "0.9.0",
+    "strict_products_changed": 0,
+    "strict_relationships_changed": 0,
+    "strict_total": 0
+  },
+  "elapsed_s": 8.1,
+  "elements": {
+    "authored": 7,
+    "detached": 0,
+    "foreign": 0
+  },
+  "hash_changes_on_edit": true,
+  "ifc_hash_equal": true,
+  "intent_consistency_bad": [],
+  "meta": {
+    "ifcdiff": "0.9.0",
+    "ifcdiff_ifcopenshell": "0.9.0.post1",
+    "ifcopenshell_core": "0.9.0.post1",
+    "platform": "Windows 11",
+    "pydantic": "2.14.3",
+    "python": "3.12.2"
+  },
+  "reopen_equal": true,
+  "skeleton": true,
+  "state_hash_equal": true,
+  "undo_delete_restores_hash": true,
+  "undo_restores_hash": true,
+  "validate_errors": 0
+}
