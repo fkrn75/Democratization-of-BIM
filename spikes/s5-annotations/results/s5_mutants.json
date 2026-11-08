@@ -1,5 +1,5 @@
 {
- "caught": 11,
+ "caught": 15,
  "clean_failures_per_seed": [
   0,
   0,
@@ -12,17 +12,27 @@
   {
    "caught": true,
    "how": {
+    "counts": {
+     "ok_match": 15,
+     "orphan_expected": 3,
+     "orphans_core": 3,
+     "reason_target_deleted": 3,
+     "silent_alive": 1,
+     "succ_followed": 0,
+     "total": 19
+    },
     "first_bad": [
-     "('1XdLrvmB1R5h8zyymcyFmA', ('dim', 'ok', 0.0), ('dim', 'ok', 5056.603999999999))"
+     "('37Foe7uwnLphXaAmpWmC9p', 'silent_alive', ('ok', 13582.58559930693), ('orphan', 'successor_deleted'))"
     ],
-    "kind": "split changed dim values",
-    "step": 0
+    "kind": "oracle",
+    "label": "after",
+    "step": 140
    },
    "mutant": "M1_분할_이력_무시",
-   "sec": 27.0,
+   "sec": 13.7,
    "seed_steps": [
-    122,
-    191
+    121,
+    141
    ]
   },
   {
@@ -36,14 +46,14 @@
      "value_error": 1
     },
     "first_bad": [
-     "('1Ck6sZnNnOwRposE12CdNa', 'value_error', ('ok', 2370.5), ('ok', 2570.5))"
+     "('1Ck6sZnNnOwRposE12CdNa', 'value_error', ('ok', 41.96540337948136), ('ok', 2.2737367544323206e-13))"
     ],
     "kind": "oracle",
     "label": "after",
     "step": 13
    },
    "mutant": "M2_의존_기록_누락(축선 직접 읽기)",
-   "sec": 0.1,
+   "sec": 0.6,
    "seed_steps": [
     121,
     14
@@ -53,21 +63,21 @@
    "caught": true,
    "how": {
     "counts": {
-     "ok_match": 2,
+     "ok_match": 3,
      "orphans_core": 0,
-     "silent_alive": 3,
+     "silent_alive": 2,
      "succ_followed": 0,
      "total": 5
     },
     "first_bad": [
-     "('1Ck6sZnNnOwRposE12CdNa', 'silent_alive', ('ok', 2570.5), ('orphan', 'target_deleted'))"
+     "('1Ck6sZnNnOwRposE12CdNa', 'silent_alive', ('ok', 2.2737367544323206e-13), ('orphan', 'target_deleted'))"
     ],
     "kind": "oracle",
     "label": "after",
     "step": 19
    },
    "mutant": "M3_삭제된_대상의_옛_값_유지",
-   "sec": 0.2,
+   "sec": 0.5,
    "seed_steps": [
     121,
     20
@@ -77,154 +87,164 @@
    "caught": true,
    "how": {
     "counts": {
-     "ok_match": 8,
-     "orphan_expected": 7,
-     "orphans_core": 7,
-     "reason_target_deleted": 7,
-     "succ_followed": 0,
-     "total": 16,
-     "value_error": 1
-    },
-    "first_bad": [
-     "('3zsj7lhx5JTOoIdvmNac25', 'value_error', ('ok', 9310.378110726582), ('ok', 10191.203287153792))"
-    ],
-    "kind": "oracle",
-    "label": "after",
-    "step": 116
-   },
-   "mutant": "M4_문틀_시작_끝_뒤바뀜",
-   "sec": 2.7,
-   "seed_steps": [
-    121,
-    117
-   ]
-  },
-  {
-   "caught": true,
-   "how": {
-    "counts": {
-     "ok_match": 2,
-     "orphans_core": 0,
-     "succ_followed": 0,
-     "total": 3,
-     "value_error": 1
-    },
-    "first_bad": [
-     "('1Ck6sZnNnOwRposE12CdNa', 'value_error', ('ok', 2470.5), ('ok', 2370.5))"
-    ],
-    "kind": "oracle",
-    "label": "after",
-    "step": 12
-   },
-   "mutant": "M5_면_왼쪽_오른쪽_뒤바뀜",
-   "sec": 0.1,
-   "seed_steps": [
-    121,
-    13
-   ]
-  },
-  {
-   "caught": true,
-   "how": {
-    "counts": {
-     "ambiguous_skipped": 1,
-     "ok_match": 6,
-     "orphan_expected": 7,
-     "orphans_core": 7,
-     "reason_target_deleted": 7,
-     "succ_followed": 0,
-     "total": 15,
-     "value_error": 1
-    },
-    "first_bad": [
-     "('0Y4jwb$TTUwv$rV3C$cXhu', 'value_error', ('ok', 'W-100004 -'), ('ok', 'W-100004 EI30'))"
-    ],
-    "kind": "oracle",
-    "label": "after",
-    "step": 62
-   },
-   "mutant": "M6_태그_속성셋_의존_누락",
-   "sec": 0.9,
-   "seed_steps": [
-    121,
-    63
-   ]
-  },
-  {
-   "caught": true,
-   "how": {
-    "counts": {
-     "ok_match": 7,
+     "ok_match": 17,
      "orphan_expected": 2,
      "orphans_core": 2,
      "reason_target_deleted": 2,
-     "silent_alive": 1,
      "succ_followed": 0,
-     "total": 10
+     "total": 20,
+     "value_error": 1
     },
     "first_bad": [
-     "('1XdLrvmB1R5h8zyymcyFmA', 'silent_alive', ('ok', 0.0), ('orphan', 'successor_deleted'))"
+     "('2nwnEIqGnM$v12YQyv$d22', 'value_error', ('ok', 4453.470382468491), ('ok', 5268.722581293019))"
     ],
     "kind": "oracle",
     "label": "after",
-    "step": 208
+    "step": 156
    },
-   "mutant": "M7_후계_삭제시_자기_끝으로_대체",
-   "sec": 28.2,
+   "mutant": "M4_문틀_시작_끝_뒤바뀜",
+   "sec": 76.6,
    "seed_steps": [
     122,
-    209
-   ]
-  },
-  {
-   "caught": true,
-   "how": {
-    "first_bad": [
-     "('1RmPkTkRzTV9BQcohr$uUq', ('dim', 'ok', 8595.48374429485), ('dim', 'ok', 7898.189549075944))"
-    ],
-    "kind": "split changed dim values",
-    "step": 0
-   },
-   "mutant": "M8_succ_변경_미통지",
-   "sec": 21.4,
-   "seed_steps": [
-    122,
-    65
+    157
    ]
   },
   {
    "caught": true,
    "how": {
     "counts": {
-     "dangling_view": 1,
-     "ok_match": 7,
-     "orphan_expected": 8,
-     "orphans_core": 8,
-     "reason_target_deleted": 8,
+     "ok_match": 17,
+     "orphan_expected": 2,
+     "orphans_core": 2,
+     "reason_target_deleted": 2,
      "succ_followed": 0,
-     "total": 15
+     "total": 20,
+     "value_error": 1
     },
     "first_bad": [
-     "('3KAwKrw$rQL86C3C6xUClp', 'dangling_view')"
+     "('20rMmp6sjG8vy42PkjZjCe', 'value_error', ('ok', 3575.0), ('ok', 3425.0))"
     ],
     "kind": "oracle",
     "label": "after",
-    "step": 108
+    "step": 156
    },
-   "mutant": "M9_뷰_삭제시_주석_연쇄삭제_없음",
-   "sec": 2.4,
+   "mutant": "M5_면_왼쪽_오른쪽_뒤바뀜",
+   "sec": 16.9,
    "seed_steps": [
     121,
-    109
+    157
    ]
   },
   {
    "caught": true,
    "how": {
     "counts": {
-     "ok_match": 2,
+     "flag_direction_changed": 3,
+     "ok_match": 9,
+     "orphan_expected": 1,
+     "orphans_core": 1,
+     "reason_target_deleted": 1,
+     "succ_followed": 1,
+     "total": 11,
+     "value_error": 1
+    },
+    "first_bad": [
+     "('1KxLYbuwbOquIg$eQkep0R', 'value_error', ('ok', '-'), ('ok', 'EI30'))"
+    ],
+    "kind": "oracle",
+    "label": "after",
+    "step": 98
+   },
+   "mutant": "M6_태그_속성셋_의존_누락",
+   "sec": 359.7,
+   "seed_steps": [
+    126,
+    99
+   ]
+  },
+  {
+   "caught": true,
+   "how": {
+    "counts": {
+     "ok_match": 16,
+     "orphan_expected": 1,
+     "orphans_core": 1,
+     "reason_target_deleted": 1,
+     "silent_alive": 1,
+     "succ_followed": 0,
+     "total": 18
+    },
+    "first_bad": [
+     "('0ISTNEN4DRxO2TwXYVqdvd', 'silent_alive', ('ok', 5004.150698469621), ('orphan', 'successor_deleted'))"
+    ],
+    "kind": "oracle",
+    "label": "after",
+    "step": 174
+   },
+   "mutant": "M7_후계_삭제시_자기_끝으로_대체",
+   "sec": 20.6,
+   "seed_steps": [
+    121,
+    175
+   ]
+  },
+  {
+   "caught": true,
+   "how": {
+    "counts": {
+     "ok_match": 4,
      "orphans_core": 0,
-     "silent_alive": 3,
+     "succ_followed": 4,
+     "total": 5,
+     "value_error": 1
+    },
+    "first_bad": [
+     "('2ZMJKUXAnQoOlwpoiHlbla', 'value_error', ('ok', 0.0), ('ok', 2100.0))"
+    ],
+    "kind": "oracle",
+    "label": "after",
+    "step": 30
+   },
+   "mutant": "M8_succ_변경_미통지",
+   "sec": 132.2,
+   "seed_steps": [
+    123,
+    31
+   ]
+  },
+  {
+   "caught": true,
+   "how": {
+    "counts": {
+     "dangling_view": 4,
+     "ok_match": 3,
+     "orphan_expected": 2,
+     "orphans_core": 2,
+     "reason_target_deleted": 2,
+     "succ_followed": 0,
+     "total": 5
+    },
+    "first_bad": [
+     "('0siW87j1jTBw91yxrAdcZy', 'dangling_view')"
+    ],
+    "kind": "oracle",
+    "label": "after",
+    "step": 24
+   },
+   "mutant": "M9_뷰_삭제시_주석_연쇄삭제_없음",
+   "sec": 0.7,
+   "seed_steps": [
+    121,
+    25
+   ]
+  },
+  {
+   "caught": true,
+   "how": {
+    "counts": {
+     "ok_match": 3,
+     "orphans_core": 0,
+     "silent_alive": 2,
      "succ_followed": 0,
      "total": 5
     },
@@ -236,7 +256,7 @@
     "step": 19
    },
    "mutant": "M10_고아를_0값으로_표시",
-   "sec": 0.2,
+   "sec": 0.5,
    "seed_steps": [
     121,
     20
@@ -246,18 +266,103 @@
    "caught": true,
    "how": {
     "first_bad": [
-     "('door', '2000000000000012100002')"
+     "('door', '2000000000000012100012')"
     ],
     "kind": "split moved geometry",
     "step": 0
    },
    "mutant": "M11_분할이_문_오프셋을_옮기지_않음",
-   "sec": 15.7,
+   "sec": 54.1,
    "seed_steps": [
     121,
     300
    ]
+  },
+  {
+   "caught": true,
+   "how": {
+    "err": "RuntimeError: Instance #7102 not found",
+    "first_bad": [],
+    "kind": "ifc_flush_error",
+    "label": "undo",
+    "step": 296
+   },
+   "mutant": "M12_벽_삭제시_개구부_투영상태_정리_누락",
+   "sec": 53.1,
+   "seed_steps": [
+    121,
+    297
+   ]
+  },
+  {
+   "caught": true,
+   "how": {
+    "first_bad": [
+     "1000000000000012150001"
+    ],
+    "kind": "succ 이력 id 재사용을 wall.create 가 받아들임",
+    "step": 0
+   },
+   "mutant": "M13_succ_이력_id_재사용_허용",
+   "sec": 65.6,
+   "seed_steps": [
+    121,
+    300
+   ]
+  },
+  {
+   "caught": true,
+   "how": {
+    "counts": {
+     "flag_mismatch": 1,
+     "ok_match": 17,
+     "orphan_expected": 1,
+     "orphans_core": 1,
+     "reason_target_deleted": 1,
+     "succ_followed": 0,
+     "total": 18
+    },
+    "first_bad": [
+     "('3bQyVtiADMzRJuaJFFHNms', 'flag_mismatch', (), ('direction_changed:b',))"
+    ],
+    "kind": "oracle",
+    "label": "after",
+    "step": 194
+   },
+   "mutant": "M14_방향_지문_경고_없음",
+   "sec": 25.0,
+   "seed_steps": [
+    121,
+    195
+   ]
+  },
+  {
+   "caught": true,
+   "how": {
+    "counts": {
+     "false_orphan": 4,
+     "flag_direction_changed": 7,
+     "ok_match": 33,
+     "orphan_expected": 1,
+     "orphans_core": 5,
+     "reason_target_deleted": 1,
+     "succ_followed": 5,
+     "total": 38
+    },
+    "first_bad": [
+     "('1W5cYtL3fNIveDJv4gV$0M', 'false_orphan', ('orphan', 'successor_deleted'), ('ok', 13197.424755479267))"
+    ],
+    "kind": "oracle",
+    "label": "after",
+    "step": 256
+   },
+   "mutant": "M15_사슬_중간_삭제를_고아로_처리",
+   "sec": 254.7,
+   "seed_steps": [
+    124,
+    257
+   ]
   }
  ],
- "total": 11
+ "total": 15
 }

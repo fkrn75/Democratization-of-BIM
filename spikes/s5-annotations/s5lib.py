@@ -508,6 +508,7 @@ class Fuzz:
         self.undo_every, self.annot_every = undo_check_every, annot_every
         self.ifc_ref_every = ifc_ref_every
         self._fp_seen: set = set()
+        self._fp_last: dict = {}
         self.planned: set[str] = set()
         self.stats = Counter()
         self.failures: list = []
@@ -760,10 +761,14 @@ class Fuzz:
                 continue
             p = row["params"]
             key = (aid, p["a"], p["b"])
+            last = self._fp_last.get(aid)                       # 직전 검사 때의 참조. 다시 묶은 쪽만 지문을 새로 잡으므로 그대로 둔 쪽은 건너뛴다
+            self._fp_last[aid] = (p["a"], p["b"])
             if key in self._fp_seen:
                 continue
             self._fp_seen.add(key)
             for side in ("a", "b"):
+                if last is not None and last[0 if side == "a" else 1] == p[side]:
+                    continue
                 kind, rest = p[side].split(":", 1)
                 eid, role = rest.split("#", 1)
                 uses = AN.uses_direction(kind, role)
