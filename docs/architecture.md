@@ -203,7 +203,7 @@ Bonsai의 벡터 HLR이 이미 있으므로 **벡터 출력 자체는 차별점�
 
 주석: 치수는 의미 참조 2개 + 배치 오프셋, 태그는 대상 요소 + 표시 필드 + 위치. 값은 항상 파생이다. 대상이 삭제되면 고아 주석으로 표시하고 조용히 지우지 않는다.
 
-주석의 참조 체계(S5, ADR-0012): 참조는 `종류:요소 id#역할` 문자열이다(예: `wall:AbC…#trim.end`, `door:…#jamb.start`, `level:…#elevation`). 역할은 위상 인덱스가 아니라 의미 이름이고(벽: `axis.start/end`, `trim.start/end`, `axis`, `face.left/right`, `base/top`, 문: `center`, `jamb.start/end`, `sill/head`, 레벨: `elevation`), 해석 결과는 점·직선·높이 중 하나다. 요소 id 만으로 모자라는 경우의 규칙은 두 가지다. 벽 분할은 관계 `succ`(원래 벽 -> 끝 쪽을 이어받은 벽)를 남기고 끝 역할을 이 사슬 끝까지 따라가게 하며, 이어받은 벽이 사라지면 자기 끝으로 대체하지 않고 고아로 둔다. 문 이동·폭 변경·조인 변경·벽 이동은 id 와 역할이 그대로이고 기하만 따라간다. 치수·태그는 의도 요소(`dim`, `tag`)이고 IFC 로 투영하지 않는다(IFC 해시 불변). 값은 저장하지 않는 그래프 질의(`ref_resolve`, `dim_value`, `tag_text`, `annot_draw`)이고, 뷰를 지우면 그 뷰의 주석도 같은 트랜잭션에서 지워진다(응답에 나열, undo 로 복귀).
+주석의 참조 체계(S5, ADR-0012): 참조는 `종류:요소 id#역할` 문자열이다(예: `wall:AbC…#trim.end`, `door:…#jamb.start`, `level:…#elevation`). 역할은 위상 인덱스가 아니라 의미 이름이고(벽: `axis.start/end`(분할 뒤에도 원래 끝), `own.end`·`own.trim.end`(이 벽 자신의 끝), `trim.start/end`, `axis`, `face.left/right`, `base/top`, 문: `center`, `jamb.start/end`, `sill/head`, 레벨: `elevation`), 해석 결과는 점·직선·높이 중 하나다. 요소 id 만으로 모자라는 경우의 규칙은 두 가지다. 벽 분할은 관계 `succ`(원래 벽 -> 끝 쪽을 이어받은 벽)를 남기고 끝 역할을 이 사슬 끝까지 따라가게 하며, 사슬 끝 벽이 사라지면 자기 끝으로 대체하지 않고 고아로 둔다. 분할 이력에 쓰인 id 는 다시 쓰지 않아 이력이 순환하지 않는다. 방향에 의존하는 참조는 만들 때의 벽 방향을 지문으로 저장해 반전되면 `direction_changed` 경고를 낸다. 문 이동·폭 변경·조인 변경·벽 이동은 id 와 역할이 그대로이고 기하만 따라간다. 치수·태그는 의도 요소(`dim`, `tag`)이고 IFC 로 투영하지 않는다(IFC 해시 불변). 값은 저장하지 않는 그래프 질의(`ref_resolve`, `dim_value`, `tag_text`, `annot_draw`)이고, 뷰를 지우면 그 뷰의 주석도 같은 트랜잭션에서 지워진다(응답에 나열, undo 로 복귀).
 
 ## 8. 렌더링
 
