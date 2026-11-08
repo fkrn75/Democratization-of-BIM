@@ -19,6 +19,7 @@ import secrets
 import sqlite3
 import time
 import uuid
+import zlib
 from pathlib import Path
 from typing import Any
 
@@ -27,7 +28,7 @@ import ifcopenshell.guid
 from dobim_core import queries as Q
 from dobim_core.errors import DobimError, internal_error
 from dobim_core.graph import Graph, RefGraph
-from dobim_core.ifc_model import IfcModel
+from dobim_core.ifc_model import Closure, IfcModel
 from dobim_core.registry import Command
 
 SCHEMA_VERSION = "1"
@@ -43,6 +44,8 @@ CREATE TABLE op_log (
   seq INTEGER PRIMARY KEY, txn_id TEXT NOT NULL, actor TEXT NOT NULL, base_rev INTEGER NOT NULL,
   ts TEXT NOT NULL, op TEXT NOT NULL, args TEXT NOT NULL, inverse TEXT NOT NULL);
 CREATE INDEX op_log_txn ON op_log (txn_id);
+CREATE TABLE foreign_base (id INTEGER PRIMARY KEY CHECK (id = 1), schema TEXT NOT NULL, size INTEGER NOT NULL,
+  sha256 TEXT NOT NULL, data BLOB NOT NULL);
 """
 
 
@@ -87,8 +90,13 @@ class State:
         self.bucket: dict[tuple, list] = {}
         self.count: dict[str, int] = {}
         self.by_kind: dict[str, set] = {}
+        self.origins: dict[str, int] = {}   # authored / foreign / detached 별 요소 수
 
     def apply_el(self, eid, old, new):
+        if old is not None:
+            self.origins[old["origin"]] -= 1
+        if new is not None:
+            self.origins[new["origin"]] = self.origins.get(new["origin"], 0) + 1
         if old is None:
             kind = new["kind"]
             bisect.insort(self.bucket.setdefault((kind, Q.bucket_of(eid)), []), eid)
@@ -172,6 +180,16 @@ class Ctx:
         if r is None or (kind is not None and r["kind"] != kind):
             raise DobimError("NOT_FOUND", f"{kind or '요소'} 를 찾을 수 없다: {eid}", path="/id")
         return r
+
+    def authored(self, eid: str, kind: str | None = None, *, what: str = "형상") -> dict:
+        """저작 요소만 돌려준다. 외래(foreign)·분리됨(detached) 요소의 형상·배치·재료·삭제는 거절한다(ADR-0005): IFC 가 형상의 정본이고
+        코어는 그 형상을 다시 쓰지 않는다. 속성(pset.set/delete)만 편집할 수 있다."""
+        r = self.eng.st.el.get(eid)
+        if r is not None and r["origin"] != "authored":
+            why = "분리됨(외부 도구가 형상을 바꿔 동결됐다)" if r["origin"] == "detached" else "외래 요소(IFC 가 정본이다)"
+            raise DobimError("ELEMENT_FROZEN", f"{why}라 {what}을 바꿀 수 없다: {eid}", path="/id",
+                             hint="속성은 pset.set / pset.delete 로 편집할 수 있다. 형상은 원본 도구에서 고쳐 다시 가져오세요")
+        return self.row(eid, kind)
 
     def rels_out(self, kind, src) -> list:
         return list(self.eng.st.out.get((kind, src), ()))
@@ -264,7 +282,7 @@ def affected_of(effects: list) -> dict:
 
 class Engine:
     def __init__(self, path: str | Path, actor: str = "py", *, create: bool = False, guid: str | None = None,
-                 busy_ms: int = 5000, synchronous: str = "NORMAL", eager_t0: bool = True):
+                 busy_ms: int = 5000, synchronous: str = "NORMAL", eager_t0: bool = True, seed=None):
         self.path = str(path)
         self.actor = actor
         self.eager_t0 = eager_t0
@@ -274,10 +292,14 @@ class Engine:
         self.conn = sqlite3.connect(self.path, isolation_level=None, timeout=busy_ms / 1000.0)
         self.conn.execute(f"PRAGMA busy_timeout={int(busy_ms)}")
         self.conn.execute("PRAGMA foreign_keys=OFF")
-        if create:
-            self._create_schema(guid)
-        self.conn.execute(f"PRAGMA synchronous={synchronous}")
-        self._load()
+        try:
+            if create:
+                self._create_schema(guid, seed)
+            self.conn.execute(f"PRAGMA synchronous={synchronous}")
+            self._load()
+        except BaseException:
+            self.conn.close()   # 만들다 실패한 연결을 쥐고 있으면 호출자가 파일을 치우지 못한다(윈도)
+            raise
 
     # ------------------------------------------------------------ 생성·열기
     @classmethod
@@ -287,7 +309,33 @@ class Engine:
             raise DobimError("FILE_EXISTS", f"이미 있는 파일이다: {p.name}", path="/path")
         return cls(p, actor, create=True, guid=guid, **kw)
 
-    def _create_schema(self, guid):
+    @classmethod
+    def create_imported(cls, path, data: bytes, plan, actor="py", guid=None, **kw) -> "Engine":
+        """외래 IFC(data)를 기반으로 새 프로젝트를 만든다. plan 은 foreign.plan_import 의 분류 결과다."""
+        p = Path(path)
+        if p.exists():
+            raise DobimError("FILE_EXISTS", f"이미 있는 파일이다: {p.name}", path="/path")
+        try:
+            return cls(p, actor, create=True, guid=guid, seed=(data, plan), **kw)
+        except BaseException:
+            for suffix in ("", "-wal", "-shm", "-journal"):   # 반쯤 만든 프로젝트 파일을 남기지 않는다
+                try:
+                    Path(str(p) + suffix).unlink(missing_ok=True)
+                except OSError:
+                    pass
+            raise
+
+    def _seed_import(self, data: bytes, plan) -> None:
+        """생성 트랜잭션 안에서 외래 기반 원본과 분류 결과를 적는다. 가져오기는 로그 항목이 아니다: 프로젝트의 시작 상태(rev 0)다."""
+        c = self.conn
+        c.execute("INSERT INTO foreign_base (id, schema, size, sha256, data) VALUES (1,?,?,?,?)",
+                  (plan.schema, len(data), hashlib.sha256(data).hexdigest(), zlib.compress(data, 6)))
+        c.executemany("INSERT INTO element (id, kind, ifc_class, origin, family_id, params, projection_hash) VALUES (?,?,?,?,?,?,?)",
+                      [(r["id"], r["kind"], r["ifc_class"], r["origin"], r["family_id"], canon(r["params"]), r.get("projection_hash"))
+                       for r in plan.rows])
+        c.executemany("INSERT INTO relation (kind, src, dst) VALUES (?,?,?)", plan.rels)
+
+    def _create_schema(self, guid, seed=None):
         c = self.conn
         c.execute("PRAGMA journal_mode=WAL")
         c.execute("BEGIN IMMEDIATE")
@@ -298,6 +346,12 @@ class Engine:
         c.executemany("INSERT INTO meta VALUES (?,?)", [
             ("schema_version", SCHEMA_VERSION), ("project_uuid", str(u)),
             ("confirm_secret", secrets.token_hex(16))])
+        if seed is not None:
+            try:
+                self._seed_import(*seed)
+            except BaseException:
+                c.execute("ROLLBACK")
+                raise
         c.execute("COMMIT")
 
     def _load(self):
@@ -317,6 +371,10 @@ class Engine:
             for kind, src, dst in c.execute("SELECT kind, src, dst FROM relation"):
                 self.st.apply_rel(kind, src, dst, True)
             log = c.execute("SELECT seq, txn_id, op, inverse FROM op_log ORDER BY seq").fetchall()
+            base = None
+            if c.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='foreign_base'").fetchone():
+                row = c.execute("SELECT data FROM foreign_base WHERE id=1").fetchone()
+                base = zlib.decompress(row[0]) if row else None
             c.execute("COMMIT")
         except Exception:
             if c.in_transaction:
@@ -327,7 +385,8 @@ class Engine:
         self.redo_stack: list[str] = []
         for seq, txn, op, _ in log:
             self._note_entry(op, txn)
-        self.ifc = IfcModel(self.project_guid_uuid)
+        self.has_base = base is not None
+        self.ifc = IfcModel(self.project_guid_uuid, base)
         self._rebuild_ifc(log)
         self._proj_stamp: dict[str, int] = {}
         self._pending: set = set()
@@ -343,13 +402,17 @@ class Engine:
                     psets[(e[1], e[2], e[3])] = e[5]
                 elif e[0] == "mat":
                     mats[e[1]] = e[3]
+        base = self.ifc.base_mode
         for eid in sorted(self.st.el):
             self.ifc.create_identity(eid, self.st.el[eid]["kind"])
+        if base:
+            self.ifc.prune()
         for (eid, pset, prop), v in sorted(psets.items(), key=lambda kv: kv[0]):
-            if v is not None and eid in self.ifc.ents:
+            # 외래 기반에는 가져온 속성이 이미 있으므로 삭제(None)도 적용한다. 빈 파일에서 시작하는 일반 프로젝트는 건너뛴다
+            if (v is not None or base) and eid in self.ifc.ents:
                 self.ifc.set_prop(eid, pset, prop, v)
         for eid, name in sorted(mats.items()):
-            if name is not None and eid in self.ifc.ents:
+            if (name is not None or base) and eid in self.ifc.ents:
                 self.ifc.set_material(eid, name)
 
     def close(self):
@@ -611,6 +674,8 @@ class Engine:
         n = 0
         for kind in ("level", "wall", "door"):
             for eid in sorted(self.st.by_kind.get(kind, ())):
+                if self.st.el[eid]["origin"] != "authored":
+                    continue   # 외래·분리 요소의 형상은 IFC 가 정본이다: 투영하지 않는다(동결)
                 spec = self.g.q(Q.ifc_spec, eid)
                 stamp = self.g.nodes[(Q.ifc_spec, eid)].changed
                 if self._proj_stamp.get(eid) != stamp:
@@ -626,7 +691,20 @@ class Engine:
                         raise
                     self._proj_stamp[eid] = stamp
                     n += 1
+                    if self.ifc.base_mode:
+                        self._record_projection_hash(eid)
         return n
+
+    def _record_projection_hash(self, eid: str) -> None:
+        """외래 기반 프로젝트에서 투영한 저작 요소의 클로저 해시를 element.projection_hash 에 남긴다(외부 변조 감지 기준).
+        최선으로만 한다: 트랜잭션 중이거나 잠겨 있으면 건너뛴다(다음 투영 때 다시 쓴다). 로그에 오르는 상태가 아니다."""
+        if self.conn.in_transaction:
+            return
+        h, _ = Closure(self.ifc.f, self.ifc.infra).digest(self.ifc.ents[eid])
+        try:
+            self.conn.execute("UPDATE element SET projection_hash=? WHERE id=?", (h, eid))
+        except sqlite3.OperationalError:
+            pass
 
     # ------------------------------------------------------------ 해시 (정규화된 의미 해시)
     def state_dump(self) -> dict:
@@ -662,7 +740,15 @@ class Engine:
         bad = []
         texts = self.ifc.intent_texts()
         for eid in sorted(self.st.el):
+            if self.st.el[eid]["origin"] == "foreign":
+                continue   # 의도가 없는 요소다
             want = canon(self.g.q(Q.intent_of, eid))
-            if texts.get(eid) != want:
+            got = texts.get(eid)
+            if self.has_base:   # 외부 도구가 쓴 의도 텍스트는 모양이 달라도 뜻이 같으면 일치로 본다
+                try:
+                    got = canon(json.loads(got))
+                except (TypeError, ValueError):
+                    pass
+            if got != want:
                 bad.append(eid)
         return bad

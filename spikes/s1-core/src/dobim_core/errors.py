@@ -14,6 +14,9 @@ EXIT_CODES: dict[str, int] = {
     "NO_PROJECT": 2,
     "USAGE": 2,
     "UNSUPPORTED": 2,
+    "UNSUPPORTED_SCHEMA": 2,  # 가져오기는 IFC4 만 받는다(IFC2x3·IFC4X3 은 범위 밖, S2)
+    "IMPORT_INVALID": 1,      # 읽을 수 없거나 가져올 수 없는 IFC(손상·GlobalId 중복·형식 위반)
+    "ELEMENT_FROZEN": 1,      # 외래(foreign)·분리됨(detached) 요소의 형상·배치·삭제는 거절한다(ADR-0005). 속성 편집만 허용
     "UNKNOWN_COMMAND": 2,
     "SCHEMA_INVALID": 2,
     "REV_CONFLICT": 4,

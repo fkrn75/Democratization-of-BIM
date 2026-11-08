@@ -182,7 +182,10 @@ async def run_parity(work: Path | None = None) -> dict:
     for name, args in F.SCRIPT:
         assert s.run(name, args)["ok"]
     base_hashes = s.eng.hashes()
+    s.eng.ifc.write(str(work / "import-example.ifc"))   # ifc.import 예시의 입력(기준 프로젝트를 내보낸 IFC): 양쪽 작업 폴더에 같은 파일을 둔다
     s.close()
+    for w in (wa, wb):
+        shutil.copy(work / "import-example.ifc", w / "import-example.ifc")
     cli = CliSide(wa)
     results, mismatches = [], []
     cmds = registry.load()
