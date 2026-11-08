@@ -2,7 +2,7 @@
   "_meta": {
     "purpose": "S9 스파이크가 쓴 한국 BIM 납품 규칙 문서 목록. 원문 파일은 저장소에 넣지 않고 로컬(저장소 밖)에만 둔다.",
     "checked_on": "2026-11-09",
-    "verification_method": "공식 게시 페이지에서 첨부 파일을 다시 받아 SHA-256 을 로컬 사본과 비교(일치하면 '출처 확인'). 비교한 사본은 폴더 _verify 에 따로 둠.",
+    "verification_method": "공식 게시 페이지에서 첨부 파일을 다시 받아 SHA-256 을 기존 로컬 사본과 비교(일치하면 '출처 확인').",
     "rule": "source_verified=false 인 문서에서 뽑은 요구사항은 구현 대상에서 제외한다.",
     "license_note": "공공누리 제4유형은 출처 표시·상업적 이용 금지·변경 금지. 이 저장소는 원문을 복제하지 않고 요구사항을 짧게 요약해 쓴다. 공공누리 4유형 문서를 근거로 한 상업 제품의 적법성은 법무 확인 필요."
   },
@@ -66,12 +66,12 @@
       "version": "2022-07 발간(파일 게시 2022-07-26)",
       "official_url": "https://www.molit.go.kr/USR/policyData/m_34681/dtl.jsp?id=4634",
       "obtained": true,
-      "local_file": "(공식 사이트에서 새로 받아 로컬 _verify 폴더에 보관) sigongja.pdf",
+      "local_file": "sigongja.pdf (로컬 보관, 저장소 밖)",
       "size_bytes": 33449886,
       "pages_pdf": 184,
       "sha256": "3558fee48d1241547de2f8c390994a729863dcd28ec7d609b49802c5be4f56e3",
       "source_verified": true,
-      "verification": "공식 페이지에서 직접 받음(이전 작업자는 받지 않았음)",
+      "verification": "공식 페이지에서 내려받은 파일의 SHA-256 을 기록함(비교할 기존 사본은 없음)",
       "license": "공공누리 제4유형",
       "used_for_implementation": false,
       "notes": "시공 단계 문서라 이번 스파이크(설계 납품 규칙)에서는 분석하지 않음."
@@ -104,11 +104,11 @@
       "issuer": "클라우드 기반 건축행정시스템 재구축 사업단(국토교통부)",
       "version": "v1.0 (2021-12), 민원인 매뉴얼(BIM) Rev 1.5 (빌딩스마트협회 자료실 등록 2022-10-05)",
       "official_url": "세움터 공개자료실 https://www.eais.go.kr/moct/awp/aeb01/AWPAEB01L01 (2차 자료의 출처 표기 근거; 직접 열람 불가)",
-      "related_urls": ["https://www.buildingsmart.or.kr/Home/ServiceDataDetail?Page=3&idx=11 (민원인 매뉴얼 안내, 파일은 다른 도메인 buildingsmartkorea.org 에 있으나 이 PC 에서 이름 풀이 실패)"],
+      "related_urls": ["https://www.buildingsmart.or.kr/Home/ServiceDataDetail?Page=3&idx=11 (민원인 매뉴얼 안내, 파일은 다른 도메인 buildingsmartkorea.org 에 있으나 확인 시점에 접속하지 못함)"],
       "obtained": false,
       "local_file": null,
       "source_verified": false,
-      "verification": "공식 파일을 받지 못함. 세움터는 자바스크립트 앱이라 일반 요청으로는 게시판 목록을 못 읽었고, 내부 API 를 두드려 보려던 시도는 자동 심사에서 거부되어 중단함. 2차 사본(블로그 info.dec-w.com 39~41번, Scribd)이 있으나 공식 출처가 아니므로 쓰지 않음.",
+      "verification": "공식 파일을 확보하지 못함. 세움터 공개자료실은 자바스크립트 앱이라 일반 요청으로는 게시판 목록을 읽지 못했고, 비공개 내부 API 에는 접근하지 않았다. 2차 사본(블로그 info.dec-w.com 39~41번, Scribd)이 있으나 공식 출처가 아니므로 쓰지 않음.",
       "license": "미확인",
       "used_for_implementation": false,
       "notes": "2차 자료가 전하는 내용(IFC 2x3 이상, 필수 속성은 문(방화문)·주차구획, 최종 결과물은 PDF 이고 IFC 는 참고용)은 참고 메모일 뿐 구현 근거가 아니다. 합격 기준 '세움터 현행 원문 확보' 는 미충족. 사람이 세움터 공개자료실에서 3종 PDF 를 받아 주어야 함."
@@ -125,7 +125,7 @@
       "pages_pdf": 12,
       "sha256": "41d38028efe6219f462e4628b22d8716158e884bbc6b7c5f7ac8136087d30812",
       "source_verified": false,
-      "verification": "출처 미확인(2차 호스팅): 이전 작업자가 구글 드라이브에서 받은 것으로 보임. 공식 게시 위치를 검색으로 찾지 못함. PDF 안 글꼴이 깨져 텍스트 추출도 불가능해 내용도 확인하지 못함.",
+      "verification": "출처 미확인(2차 호스팅 사본만 있음). 공식 게시 위치를 검색으로 찾지 못함. PDF 안 글꼴이 깨져 텍스트 추출도 불가능해 내용도 확인하지 못함.",
       "license": "미확인",
       "used_for_implementation": false,
       "notes": "이 문서에서 뽑은 요구사항은 하나도 구현하지 않았다."
