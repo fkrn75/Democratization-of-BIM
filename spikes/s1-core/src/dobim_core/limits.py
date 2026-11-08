@@ -156,40 +156,83 @@ MAX_DETAIL_ERRORS = 5       # SCHEMA_INVALID 의 details.errors 에 싣는 항�
 DETAIL_PATH_CHARS = 120     # details.errors[].path 의 길이(클라이언트가 보낸 키가 그대로 들어오므로 자른다)
 DETAIL_MSG_CHARS = 160      # details.errors[].msg 의 길이
 _KEEP_WHOLE = frozenset({"confirm_token", "code"})   # 잘라서는 안 되는 값(자르면 쓸 수 없게 된다)
+TOKEN_MAX_CHARS = 128       # 서버가 만드는 확인 토큰의 길이 상한(실제는 "<만료 초>.<24자>" 약 35자, dispatch._token 이 assert 로 고정한다)
+_ELLIPSIS = "…"
 
 
 def clip_chars(s: str, n: int) -> str:
     """n 문자를 넘으면 앞부분 n-1 문자 + '…' 로 줄인다(사용자 유래 문자열을 오류에 넣을 때)."""
-    return s if len(s) <= n else s[:n - 1] + "…"
+    if len(s) <= n:
+        return s
+    return s[:n - 1] + "…" if n > 0 else ""
 
 
-def _clip_tree(x: Any, n: int, key: str | None = None) -> Any:
+def _clip_tree(x: Any, n: int, items: int, keys: int, depth: int, cut: list, key: str | None = None) -> Any:
+    """details 같은 중첩 값을 줄인다: 문자열은 n 자, 리스트는 items 개, dict 는 keys 개(키 문자열도 n 자), 중첩은 depth 단계까지.
+    줄인 것이 하나라도 있으면 cut 에 True 를 넣는다(호출자가 details.truncated 로 알린다). 숫자·불리언·None 은 그대로 둔다."""
     if isinstance(x, str):
-        return x if key in _KEEP_WHOLE else clip_chars(x, n)
-    if isinstance(x, dict):
-        return {k: _clip_tree(v, n, k) for k, v in x.items()}
-    if isinstance(x, list):
-        return [_clip_tree(v, n, key) for v in x]
+        if key in _KEEP_WHOLE and len(x) <= TOKEN_MAX_CHARS:
+            return x
+        y = clip_chars(x, n)
+        if y is not x:
+            cut.append(True)
+        return y
+    if isinstance(x, (dict, list)):
+        if depth <= 0:
+            cut.append(True)
+            return _ELLIPSIS
+        if isinstance(x, dict):
+            if len(x) > keys:
+                cut.append(True)
+            return {clip_chars(str(k), n): _clip_tree(v, n, items, keys, depth - 1, cut, k) for k, v in list(x.items())[:keys]}
+        if len(x) > items:
+            cut.append(True)
+        return [_clip_tree(v, n, items, keys, depth - 1, cut, key) for v in x[:items]]
     return x
+
+
+# (문자열 길이, 리스트 길이, dict 키 수, 중첩 깊이, 위·아래 최상위 문자열 길이) 를 단계적으로 조인다
+_FIT_STAGES = ((200, 50, 50, 6, 400), (120, 20, 20, 4, 300), (80, 8, 8, 3, 200), (48, 3, 3, 2, 120), (24, 1, 1, 1, 64))
+_FALLBACK_TOP = (200, 120, 64, 24, 0)   # 최후 폴백: details 를 비우고 message·path·hint 만 이만큼으로 줄인다
 
 
 def fit_error(err: dict, max_bytes: int = RESPONSE_CAP_BYTES, max_tokens: float = RESPONSE_CAP_TOKENS) -> dict:
     """오류(error 필드)를 상한 안으로 줄인다. 성공 응답과 같은 상한(실제 직렬화 바이트와 추정 토큰)을 쓴다.
-    이미 들어맞으면 그대로 돌려준다. 아니면 문자열 길이 한도를 단계적으로 줄이고 details.errors 의 항목을 덜어낸다
-    (덜어내면 details.truncated=true, 총 개수는 details.total 에 남는다). code·retryable·confirm_token 은 건드리지 않는다."""
+    이미 들어맞으면 그대로 돌려준다. 아니면 단계적으로 줄인다: 문자열 길이, 리스트 길이, dict 키 수, 중첩 깊이를 함께 낮추고
+    (줄였으면 details.truncated=true; SCHEMA_INVALID 의 errors 는 총 개수를 details.total 에 남긴다),
+    그래도 넘으면 최후 폴백으로 details 를 {"truncated": true}(짧은 confirm_token 만 남김)로 비우고 message·path·hint 도 자른다.
+    결과는 항상 상한 이내이며 마지막에 검사한다. code·retryable 은 건드리지 않고, 서버가 만든 짧은 confirm_token 도 자르지 않는다."""
     def fits(e: dict) -> bool:
         env = {"ok": False, "error": e, "rev": _BIG}   # 봉투 뼈대(rev 는 가장 긴 정수로 어림)
         return jsize(env) <= max_bytes and est_tokens(env) <= max_tokens
+
+    def top(e: dict, n: int) -> dict:
+        return {k: (clip_chars(v, n) if k in ("message", "path", "hint") and isinstance(v, str) else v) for k, v in e.items()}
+
     if fits(err):
         return err
-    e = err
-    for chars, keep in ((200, MAX_DETAIL_ERRORS), (120, 3), (80, 2), (48, 1), (24, 0)):
-        e = _clip_tree(err, chars)
-        d = e.get("details")
-        if isinstance(d, dict) and isinstance(d.get("errors"), list) and len(d["errors"]) > keep:
-            e["details"] = {**d, "errors": d["errors"][:keep], "truncated": True}
+    d0 = err.get("details")
+    # 자를 수 없는 값(확인 토큰)이 상한을 넘게 길면 잘린 토큰은 쓸 수 없고 오해만 부르므로, 단계적으로 줄이지 않고 바로 폴백으로 간다
+    unusable = isinstance(d0, dict) and any(k in _KEEP_WHOLE and isinstance(v, str) and len(v) > TOKEN_MAX_CHARS for k, v in d0.items())
+    for chars, items, keys, depth, top_n in (() if unusable else _FIT_STAGES):
+        cut: list = []
+        e = top(err, top_n)
+        if isinstance(d0, (dict, list)):
+            d = _clip_tree(d0, chars, items, keys, depth, cut)
+            if cut and isinstance(d, dict):
+                d = {**d, "truncated": True}
+            e["details"] = d
         if fits(e):
-            break
+            return e
+    # 최후 폴백: details 를 비운다(서버가 만든 짧은 confirm_token 은 이것 없이는 쓸 수 없으므로 남긴다)
+    keep = {k: v for k, v in (d0.items() if isinstance(d0, dict) else ()) if k in _KEEP_WHOLE and isinstance(v, str) and len(v) <= TOKEN_MAX_CHARS}
+    for top_n in _FALLBACK_TOP:
+        e = top(err, top_n)
+        e["details"] = {"truncated": True, **keep}
+        if fits(e):
+            return e
+    e = {**top(err, 0), "details": {"truncated": True}}
+    assert fits(e), "상한이 오류 봉투의 최소 뼈대보다 작다"   # 호출자가 상한을 잘못 준 경우만 걸린다
     return e
 
 

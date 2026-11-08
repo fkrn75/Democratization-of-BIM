@@ -126,7 +126,7 @@ def test_1_분류표_접근_거부는_증거에_따라_갈린다(tmp_path, monke
     p.write_bytes(b"x")
     ex = PermissionError(errno.EACCES, "x")
     for state, code in (("denied", "PATH_DENIED"), ("busy", "FILE_LOCKED"), ("ok", "FILE_LOCKED")):
-        monkeypatch.setattr(commands, "_access_state", lambda *_a, s=state: s)
+        monkeypatch.setattr(commands, "_access_state", lambda *_a, s=state, **_k: s)
         e = commands._io_error(p, ex)
         assert e.code == code and (e.to_dict()["retryable"] is (code == "FILE_LOCKED"))
     monkeypatch.undo()

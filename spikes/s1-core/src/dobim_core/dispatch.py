@@ -142,7 +142,10 @@ def get_command(name: str) -> registry.Command:
 def _token(eng, name: str, args_json: str, rev: int, exp: int) -> str:
     msg = f"{name}|{args_json}|{rev}|{exp}".encode()
     mac = hmac.new(eng.confirm_secret.encode(), msg, hashlib.sha256).hexdigest()[:24]
-    return f"{exp}.{mac}"
+    tok = f"{exp}.{mac}"
+    # 토큰은 오류 봉투에서 잘리지 않으므로(limits.fit_error) 길이가 고정이어야 한다: "<만료 초>.<24자>" 는 35자 안팎이다
+    assert len(tok) <= limits.TOKEN_MAX_CHARS, "확인 토큰이 상한보다 길다"
+    return tok
 
 
 def _check_token(eng, name, args_json, rev, token: str) -> None:
@@ -273,7 +276,11 @@ def run_script(env: Env, items: list, *, project: str | None, dry_run: bool = Fa
     entries, parts, warns, rev, failure, aff_cut = [], [], [], None, None, False
     for i, item in enumerate(items):
         if isinstance(item, dict):
-            r = run(env, item.get("command") or item.get("name") or "", item.get("args"), project=project, dry_run=dry_run)
+            cname = item.get("command") or item.get("name") or ""
+            if not isinstance(cname, str):   # run_batch 와 같은 사전 검사: 문자열이 아니면 difflib 가 TypeError 로 터져 INTERNAL 이 된다
+                r = err_env(DobimError("SCHEMA_INVALID", "command 는 문자열이어야 한다", path=f"/{i}/command", hint=SCHEMA_HINT))
+            else:
+                r = run(env, cname, item.get("args"), project=project, dry_run=dry_run)
         else:
             r = err_env(DobimError("SCHEMA_INVALID", "스크립트 항목은 {command, args} 객체여야 한다", path=f"/{i}"))
         rev = r.get("rev", rev)
