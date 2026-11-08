@@ -1,0 +1,155 @@
+{
+ "baseline_pass": true,
+ "caught": 10,
+ "mutants": 10,
+ "results": {
+  "M10_semantic_not_introduced": {
+   "categories": [
+    "기대"
+   ],
+   "caught": true,
+   "description": "병합이 새로 만든 위반만이 아니라 부모가 가진 위반도 충돌로 보고",
+   "examples": [
+    "[기대] s21_parent_violation_not_merge_fault A<-B: 깨끗하게 합쳐져야 한다(충돌 ['DUPLICATE_WALL'], 적용 MERGE_CONFLICT)",
+    "[기대] s21_parent_violation_not_merge_fault B<-A: 깨끗하게 합쳐져야 한다(충돌 ['DUPLICATE_WALL'], 적용 MERGE_CONFLICT)"
+   ],
+   "failure_count": 2
+  },
+  "M1_set_order": {
+   "categories": [
+    "결정성"
+   ],
+   "caught": true,
+   "description": "정렬 대신 집합 순회 순서에 의존(PYTHONHASHSEED 에 따라 효과 순서가 달라진다)",
+   "examples": [
+    "[결정성] s01_independent B<-A: 실행 0 과 실행 1 의 결과가 다르다",
+    "[결정성] s05_host_deleted_vs_door_placed A<-B: 실행 0 과 실행 1 의 결과가 다르다",
+    "[결정성] s05_host_deleted_vs_door_placed B<-A: 실행 0 과 실행 1 의 결과가 다르다"
+   ],
+   "failure_count": 20
+  },
+  "M2_time_order": {
+   "categories": [
+    "결정성",
+    "정확성"
+   ],
+   "caught": true,
+   "description": "시각 기반 정렬(실행 시각에 따라 효과 순서가 달라진다)",
+   "examples": [
+    "[결정성] s01_independent B<-A: 실행 0 과 실행 1 의 결과가 다르다",
+    "[결정성] s04_delete_vs_modify A<-B: 실행 0 과 실행 2 의 결과가 다르다",
+    "[결정성] s04_delete_vs_modify B<-A: 실행 0 과 실행 2 의 결과가 다르다"
+   ],
+   "failure_count": 14
+  },
+  "M3_last_writer_wins": {
+   "categories": [
+    "기대",
+    "대칭",
+    "정확성"
+   ],
+   "caught": true,
+   "description": "같은 필드 충돌을 로그 번호가 큰 쪽이 이기게 조용히 해결",
+   "examples": [
+    "[대칭] s03_same_field: 계획 지문이 방향에 따라 다르다",
+    "[대칭] s03_same_field None: 방향에 따라 결과 해시(상태/파생/IFC)가 다르다",
+    "[기대] s03_same_field A<-B: 충돌 유형 [] != 기대 ['SAME_FIELD']"
+   ],
+   "failure_count": 27
+  },
+  "M4_ours_wins": {
+   "categories": [
+    "기대",
+    "대칭",
+    "정확성"
+   ],
+   "caught": true,
+   "description": "같은 필드 충돌을 항상 우리 쪽이 이기게 조용히 해결(방향 비대칭)",
+   "examples": [
+    "[대칭] s03_same_field: 계획 지문이 방향에 따라 다르다",
+    "[대칭] s03_same_field None: 방향에 따라 결과 해시(상태/파생/IFC)가 다르다",
+    "[기대] s03_same_field A<-B: 충돌 유형 [] != 기대 ['SAME_FIELD']"
+   ],
+   "failure_count": 27
+  },
+  "M5_delete_modify_silent": {
+   "categories": [
+    "기대",
+    "대칭",
+    "사후",
+    "정확성"
+   ],
+   "caught": true,
+   "description": "삭제 대 수정 충돌 보고를 지워 조용히 덮음",
+   "examples": [
+    "[정확성] s04_delete_vs_modify: 실행이 예외로 끝났다 TypeError: 'NoneType' object is not subscriptable",
+    "[대칭] s06_cascade_delete_vs_modify None: 한 방향만 합쳐진다",
+    "[기대] s06_cascade_delete_vs_modify A<-B: 충돌 유형 [] != 기대 ['DELETE_MODIFY']"
+   ],
+   "failure_count": 14
+  },
+  "M6_no_semantic": {
+   "categories": [
+    "기대",
+    "정확성"
+   ],
+   "caught": true,
+   "description": "의미 충돌 검사 생략",
+   "examples": [
+    "[기대] s05_host_deleted_vs_door_placed A<-B: 충돌 유형 [] != 기대 ['HOST_DELETED']",
+    "[기대] s05_host_deleted_vs_door_placed A<-B: 충돌 거부가 상태를 건드렸거나 오류 코드가 다르다 {'code': 'INTERNAL', 'details': None, 'ok': False, 'state_untouched': True}",
+    "[정확성] s05_host_deleted_vs_door_placed A<-B spec: 해결 지시를 줘도 합쳐지지 않는다 {'code': 'INTERNAL', 'details': {}, 'ok': False}"
+   ],
+   "failure_count": 48
+  },
+  "M7_fold_skips_history": {
+   "categories": [
+    "기대",
+    "사후",
+    "정확성"
+   ],
+   "caught": true,
+   "description": "실행 취소·다시 실행 항목을 접을 때 무시",
+   "examples": [
+    "[사후] s01_independent A<-B: ['apply_after_undo_same', 'reopen_same']",
+    "[사후] s01_independent B<-A: ['apply_after_undo_same', 'reopen_same']",
+    "[사후] s02_same_wall_different_fields A<-B: ['apply_after_undo_same', 'reopen_same']"
+   ],
+   "failure_count": 50
+  },
+  "M8_fork_zero": {
+   "categories": [
+    "기대",
+    "정확성"
+   ],
+   "caught": true,
+   "description": "공통 조상을 빈 프로젝트로 잘못 잡음",
+   "examples": [
+    "[기대] s01_independent A<-B: 깨끗하게 합쳐져야 한다(충돌 ['ID_COLLISION', 'ID_COLLISION', 'ID_COLLISION', 'ID_COLLISION'], 적용 MERGE_CONFLICT)",
+    "[기대] s01_independent B<-A: 깨끗하게 합쳐져야 한다(충돌 ['ID_COLLISION', 'ID_COLLISION', 'ID_COLLISION', 'ID_COLLISION'], 적용 MERGE_CONFLICT)",
+    "[기대] s02_same_wall_different_fields A<-B: 깨끗하게 합쳐져야 한다(충돌 ['ID_COLLISION'], 적용 MERGE_CONFLICT)"
+   ],
+   "failure_count": 85
+  },
+  "M9_fork_ours_len": {
+   "categories": [
+    "기대",
+    "대칭",
+    "사후",
+    "정확성"
+   ],
+   "caught": true,
+   "description": "공통 조상을 우리 로그 끝으로 잘못 잡음",
+   "examples": [
+    "[대칭] s01_independent: 계획 지문이 방향에 따라 다르다",
+    "[대칭] s01_independent None: 한 방향만 합쳐진다",
+    "[정확성] s01_independent A<-B: 도메인 사실 위반 ['B 의 이름', 'B 의 문 폭', 'B 의 재료']"
+   ],
+   "failure_count": 123
+  },
+  "baseline": {
+   "failures": 0,
+   "pass": true
+  }
+ }
+}
