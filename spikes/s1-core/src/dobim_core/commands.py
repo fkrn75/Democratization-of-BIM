@@ -18,7 +18,7 @@ from pydantic import (AfterValidator, BaseModel, BeforeValidator, ConfigDict, Fi
                       ValidationInfo, field_validator, model_validator)
 
 from dobim_core import fixture as F
-from dobim_core import limits
+from dobim_core import limits, merge
 from dobim_core import queries as Q
 from dobim_core import registry
 from dobim_core.errors import DobimError
@@ -752,6 +752,94 @@ def history_affected(ctx, a: HistoryAffected):
     more = len(items) < len(rest)
     nxt = _enc_cursor(list(rest[len(items) - 1][0])) if more else None
     return {"rev": rev, "txn": row[0], "counts": counts, "items": items, "page": _page(nxt, len(keyed), cut)}
+
+
+# ================================================================ 병합 (S8)
+class Resolution(A):
+    key: str = Field(min_length=1, max_length=128, description="merge.preview 가 알려 준 충돌 키(items[].key) 그대로")
+    take: Literal["ours", "theirs"] = Field(description="ours = 이 프로젝트 쪽, theirs = other 프로젝트 쪽. 의미 충돌은 반대쪽이 기여한 변경을 조상 값으로 되돌린다")
+
+
+class MergeBase(A):
+    other: str = Field(max_length=260, description="작업 폴더 안의 상대 프로젝트(.dobim). 같은 조상에서 갈라진 복사본이어야 한다. 읽기 전용으로 열며 바꾸지 않는다")
+    other_rev: int | None = Field(None, ge=0, description="상대 로그 길이를 이 값으로 고정한다(미리보기 때의 값). 다르면 REV_CONFLICT. 생략하면 현재 값을 쓰고 기록한다")
+    resolve: list[Resolution] = Field(default_factory=list, max_length=200,
+                                      description="명시적 해결 지시. 충돌은 자동으로 해결하지 않는다: 여기 없는 충돌이 하나라도 남으면 합치지 않는다")
+
+    @field_validator("resolve")
+    @classmethod
+    def _unique_keys(cls, v):
+        keys = [r.key for r in v]
+        if len(keys) != len(set(keys)):
+            raise ValueError("같은 충돌 키를 두 번 해결할 수 없다")
+        return v
+
+
+def _merge_plan(ctx, a: MergeBase):
+    import os
+    eng = ctx.eng
+    other = resolve_in_workspace(eng.workspace, a.other, must_exist=True)
+    if os.path.normcase(os.path.realpath(other)) == os.path.normcase(os.path.realpath(eng.path)):
+        raise DobimError("CONSTRAINT", "자기 자신과는 병합할 수 없다", path="/other")
+    their_uuid, theirs = merge.load_other(other)
+    if their_uuid != eng.project_guid_uuid:
+        raise DobimError("CONSTRAINT", "같은 프로젝트에서 갈라진 파일이 아니다(project_uuid 가 다르다)", path="/other")
+    if a.other_rev is not None and a.other_rev != len(theirs):
+        raise DobimError("REV_CONFLICT", f"상대 리비전이 어긋났다: 기대 {a.other_rev}, 현재 {len(theirs)}", path="/other_rev",
+                         details={"expected": a.other_rev, "actual": len(theirs)})
+    ours = eng.conn.execute(merge.LOG_SQL).fetchall()
+    return merge.build_plan(ours, theirs, [{"key": r.key, "take": r.take} for r in a.resolve])
+
+
+class MergePreview(MergeBase):
+    limit: int = Field(20, ge=1, le=200, description="충돌 항목 최대 개수. 응답 크기 상한에 걸리면 이보다 적게 돌려주고 page.truncated 로 알린다")
+    cursor: str | None = Field(None, max_length=2048, description="이전 응답의 page.next_cursor")
+
+
+@command("merge.preview", kind="query", risk="read", group="merge",
+         summary="다른 프로젝트 파일과의 병합을 미리 본다: 공통 조상, 충돌(같은 필드·삭제 대 수정·id 충돌·의미 충돌)을 키·양쪽 op 와 함께 보고. 아무것도 바꾸지 않는다",
+         args=MergePreview, idempotent=True, examples=[{"other": "other.dobim", "limit": 5}])
+def merge_preview(ctx, a: MergePreview):
+    p = _merge_plan(ctx, a)
+    if p.unused:
+        ctx.warn(f"충돌과 맞지 않는 해결 지시 {len(p.unused)}건은 무시했다(이미 합쳐졌거나 키가 틀림): {p.unused[0]}")
+    after = _dec_cursor(a.cursor, "name")
+    start = 0 if after is None else next((i for i, c in enumerate(p.conflicts) if c["key"] > after), len(p.conflicts))
+    window = [limits.clip_deep(c)[0] for c in p.conflicts[start:start + a.limit]]
+    by_type: dict[str, int] = {}
+    for c in p.conflicts:
+        by_type[c["type"]] = by_type.get(c["type"], 0) + 1
+    ne, nt = p.stats["ours_entries"], p.stats["theirs_entries"]
+    relation = "same" if ne == 0 and nt == 0 else ("ours_behind" if ne == 0 else ("ours_ahead" if nt == 0 else "diverged"))
+    base = {"fork_rev": p.fork, "ours_rev": p.ours_rev, "other_rev": p.other_rev, "relation": relation, "stats": p.stats,
+            "conflict_count": len(p.conflicts), "by_type": by_type, "plan_digest": p.digest(), "resolved": len(p.resolved),
+            "semantic_checked": p.semantic_checked}
+    items, cut = _fit(window, base=base, cursor_of=lambda i: _enc_cursor(window[i]["key"]),
+                      extra_bytes=800, extra_tokens=500.0)   # 아래 경고 세 가지(해결 키 무시·의미 검사 보류·잘림)가 붙을 몫
+    nxt = _enc_cursor(items[-1]["key"]) if start + len(items) < len(p.conflicts) and items else None
+    if not p.semantic_checked:
+        ctx.warn("필드·요소 충돌이 남아 있어 의미 충돌(호스트 삭제, 문 범위, 중복 등)은 아직 검사하지 않았다: resolve 로 해결한 뒤 다시 미리보세요")
+    if cut:
+        ctx.warn(f"충돌 {len(p.conflicts)}건 중 일부만 보인다: page.next_cursor 를 cursor 로 넘겨 이어 읽으세요")
+    return {**base, "items": items, "page": _page(nxt, len(p.conflicts), cut)}
+
+
+@command("merge.apply", kind="mutation", risk="write", group="merge",
+         summary="다른 프로젝트 파일의 변경을 이 프로젝트에 합친다(3-way, 필드 단위). 충돌이 하나라도 남으면 합치지 않는다. 결과는 로그 항목 하나라 history.undo 로 되돌린다",
+         args=MergeBase, since="0.1", examples=[{"other": "other.dobim"}])
+def merge_apply(ctx, a: MergeBase):
+    p = _merge_plan(ctx, a)
+    if not p.clean:
+        raise merge.conflict_error(p)
+    # 로그를 접은 우리 쪽 상태가 엔진의 실제 상태와 같아야 한다(다르면 효과의 old 가 어긋난다)
+    if merge.rows_of(p.ours) != ctx.st.el or sorted(u[1:] for u in p.ours if u[0] == "rel") != ctx.st.relations():
+        raise DobimError("INTERNAL", "로그를 접은 상태가 엔진 상태와 다르다")
+    if p.unused:
+        ctx.warn(f"충돌과 맞지 않는 해결 지시 {len(p.unused)}건은 무시했다(이미 합쳐졌거나 키가 틀림): {p.unused[0]}")
+    a.other_rev = p.other_rev   # 로그에 실제로 합친 상대 리비전을 남긴다
+    cnt = merge.emit_plan(ctx, p)
+    return {"fork_rev": p.fork, "ours_rev": p.ours_rev, "other_rev": p.other_rev, "changes": cnt,
+            "resolved": {"count": len(p.resolved), "keys": p.resolved[:5]}, "plan_digest": p.digest()}
 
 
 # ================================================================ 입출력 (파괴적)
