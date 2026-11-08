@@ -365,6 +365,242 @@ def test_변이_없으면_같은_시드가_통과한다(tmp_path):
         f.close()
 
 
+# ---------------------------------------------------------------- 독립 검수 반영: IFC 투영·succ 순환·사슬·방향 경고·거대 값·SVG
+def _ifc_equals_reopened(s) -> bool:
+    """상주 엔진의 IFC 해시가 파일을 새로 연 엔진의 것과 같은가(투영 상태가 낡았는지 본다)."""
+    from dobim_core.engine import Engine
+    ref = Engine(s.path, "ref")
+    try:
+        return ref.ifc_hash() == s.eng.ifc_hash()
+    finally:
+        ref.close()
+
+
+def _must(s, name, args=None):
+    r = s.run(name, args or {})
+    assert r["ok"], (name, r.get("error"))
+    return r
+
+
+def test_분할로_문이_새_벽에_옮겨진_뒤_투영하고_undo_redo_해도_투영이_터지지_않고_새로_연_엔진과_같다(pv):
+    s = pv
+    h0 = _must(s, "model.hash")["result"]["ifc"]
+    _must(s, "wall.split", {"id": F.W3, "at": 2000.0})                 # 문 D2 가 끝 쪽 새 벽으로 옮겨진다
+    assert _must(s, "model.hash")["result"]["ifc"] != h0 and _ifc_equals_reopened(s)    # 투영 완료(개구부가 새 벽에 뚫린다)
+    _must(s, "history.undo")                                           # 새 벽이 지워지면서 그 벽의 개구부도 사라진다
+    assert _must(s, "model.hash")["result"]["ifc"] == h0 and _ifc_equals_reopened(s)
+    _must(s, "history.redo")
+    assert _ifc_equals_reopened(s)
+    # 투영 없이 undo 한 뒤 redo: 문의 스펙이 되돌아와도 투영 스탬프가 같아 건너뛰면 개구부가 영영 안 만들어진다
+    _must(s, "history.undo")
+    _must(s, "history.redo")
+    assert _ifc_equals_reopened(s) and s.eng.ifc.openings.keys() == {F.D1, F.D2}
+    # 문 수정을 사이에 끼운 두 번 undo
+    _must(s, "door.set", {"id": F.D2, "width": 900.0})
+    _must(s, "model.hash")
+    _must(s, "history.undo")
+    _must(s, "history.undo")
+    assert _must(s, "model.hash")["result"]["ifc"] == h0 and _ifc_equals_reopened(s)
+    assert _must(s, "model.validate", {"express_rules": True})["result"]["errors"] == 0
+
+
+def test_분할_이력에_쓰인_id_는_다시_못_쓴다_succ_순환이_생기지_않는다(pv):
+    s = pv
+    X = "X" * 22
+    d = dim(s, R("wall", F.W1, "axis.start"), R("wall", F.W1, "axis.end"))
+    _must(s, "wall.split", {"id": F.W1, "at": 3000.0, "new_id": X})
+    _must(s, "element.delete", {"id": X})
+    h = s.eng.state_hash()
+    for args in ({"id": F.W1, "at": 2000.0, "new_id": X},):
+        r = s.run("wall.split", args)
+        assert not r["ok"] and r["error"]["code"] == "CONSTRAINT" and "/new_id" == r["error"]["path"]
+    r = s.run("wall.create", {"id": X, "level": F.LV1, "axis": [0, 0, 1000, 0]})        # 생성 커맨드도 같다: 지워진 벽 id 가 엉뚱한 새 벽으로 부활하지 않는다
+    assert not r["ok"] and r["error"]["code"] == "CONSTRAINT"
+    assert s.eng.state_hash() == h
+    assert state(s, d)[1:] == ("orphan", (("b", "successor_deleted"),))                 # 판정은 그대로(조용히 부활하지 않는다)
+    for c in ("annot.check", "annot.list", "model.hash"):
+        assert s.run(c)["ok"], c
+    # undo 로 분할 이력이 사라지면 같은 id 를 다시 쓸 수 있다
+    _must(s, "history.undo")
+    _must(s, "history.undo")
+    assert _must(s, "wall.split", {"id": F.W1, "at": 2000.0, "new_id": X})["ok"]
+
+
+def test_손상된_로그의_succ_순환도_질의가_터지지_않고_고아로_알린다(pv):
+    s = pv
+    d = dim(s, R("wall", F.W1, "axis.start"), R("wall", F.W1, "axis.end"))
+    n = _must(s, "wall.split", {"id": F.W1, "at": 3000.0})["result"]["new"]
+    s.eng._apply_effect(["rel", "succ", n, F.W1, 0, 1], persist=False)               # W1 -> n -> W1 (정상 흐름에서는 만들 수 없다: 방어선 시험)
+    s.eng._touch_pending()
+    assert state(s, d)[1:] == ("orphan", (("b", "bad_ref"),))
+    for c in ("annot.check", "annot.list"):
+        assert s.run(c)["ok"], c
+    assert L.Fuzz.succ_cycles(type("X", (), {"eng": s.eng})()) == 2                   # 불변식 검사 도구는 순환을 센다(시작점 둘)
+    r = s.run("wall.split", {"id": F.W1, "at": 2500.0})                              # 마지막 안전망: 순환이 있으면 더 얽지 않고 거절
+    assert not r["ok"] and r["error"]["code"] == "CONSTRAINT" and "순환" in r["error"]["message"]
+    s.eng._apply_effect(["rel", "succ", n, F.W1, 1, 0], persist=False)               # 주입한 순환을 되돌리면 불변식 검사가 0 을 낸다
+    s.eng._touch_pending()
+    assert L.Fuzz.succ_cycles(type("X", (), {"eng": s.eng})()) == 0
+
+
+def test_사슬_중간_벽만_지우면_사슬_끝이_살아_있는_한_값이_나온다(pv):
+    s = pv
+    d = dim(s, R("wall", F.W1, "axis.start"), R("wall", F.W1, "axis.end"))
+    n = _must(s, "wall.split", {"id": F.W1, "at": 2000.0})["result"]["new"]
+    n2 = _must(s, "wall.split", {"id": n, "at": 3500.0})["result"]["new"]
+    assert state(s, d)[2] == 6000.0
+    _must(s, "element.delete", {"id": n})                                           # 가운데만 삭제: 끝 벽 n2 는 살아 있다
+    assert state(s, d)[1:] == ("ok", 6000.0)
+    assert s.eng.g.q(AN.ref_resolve, R("wall", F.W1, "trim.end")) == ("pt", 6000.0, 0.0)
+    _must(s, "element.delete", {"id": n2})                                          # 끝 벽까지 지우면 고아
+    assert state(s, d)[1:] == ("orphan", (("b", "successor_deleted"),))
+    _must(s, "history.undo")
+    assert state(s, d)[1:] == ("ok", 6000.0)
+
+
+def test_분할_뒤_자기_끝_참조_own_end_는_조각_길이를_재고_axis_end_는_원래_길이를_잰다(pv):
+    s = pv
+    chain = dim(s, R("wall", F.W1, "axis.start"), R("wall", F.W1, "axis.end"))
+    own = dim(s, R("wall", F.W1, "axis.start"), R("wall", F.W1, "own.end"), offset=900.0)
+    own_trim = dim(s, R("wall", F.W1, "trim.start"), R("wall", F.W1, "own.trim.end"), offset=-700.0)
+    tag = s.run("annot.tag.create", {"view": F.V1, "target": F.W1, "fields": ["name", "length"]})["result"]["id"]
+    assert [state(s, x)[2] for x in (chain, own)] == [6000.0, 6000.0] and state(s, own_trim)[2] == 6000.0
+    _must(s, "wall.split", {"id": F.W1, "at": 3000.0})
+    assert state(s, chain)[2] == 6000.0                                               # 원래 끝(분할 이력을 따라간다)
+    assert state(s, own)[2] == 3000.0 and state(s, own_trim)[2] == 3000.0            # 이 벽 자신의 끝
+    assert state(s, tag)[2].endswith(" 3000")                                         # 태그 length 와 같은 기준
+    assert s.eng.g.q(AN.ref_resolve, R("wall", F.W1, "own.end")) == ("pt", 3000.0, 0.0)
+    bad = s.run("annot.dim.create", {"view": F.V1, "a": R("wall", F.W1, "own.start"), "b": R("wall", F.W1, "own.end")})
+    assert not bad["ok"] and bad["error"]["code"] == "CONSTRAINT"                    # 없는 역할은 거절
+
+
+def test_축선_반전은_값을_바꾸지만_direction_changed_로_알리고_재결합으로_확인하며_undo_로_사라진다(pv):
+    s = pv
+    d = dim(s, R("wall", F.W1, "axis.start"), R("wall", F.W3, "axis.start"))
+    assert state(s, d)[2] == pytest.approx(7211.1025509, abs=1e-6) and s.eng.st.el[d]["params"]["dirs"] == {"a": [1.0, 0.0], "b": [-1.0, 0.0]}   # W3 은 서쪽으로 향한다
+    ac = _must(s, "annot.check")["result"]
+    assert ac["warnings"] == {} and ac["items"] == []
+    _must(s, "wall.set", {"id": F.W3, "axis": [0.0, 4000.0, 6000.0, 4000.0]})
+    assert state(s, d)[1:] == ("ok", 4000.0)                                          # 값은 조용히 따라가 바뀐다
+    ac = _must(s, "annot.check")["result"]
+    assert ac["warnings"] == {"direction_changed": 1} and ac["problems"] == 0         # 고아·무효가 아니라 경고
+    assert [i["id"] for i in ac["items"]] == [d] and ac["items"][0]["warnings"] == ["direction_changed:b"]
+    assert _must(s, "annot.list", {"kind": "dim"})["result"]["items"][0]["warnings"] == ["direction_changed:b"]
+    assert s.eng.derived_hash() == s.eng.derived_hash(reference=True)                 # 경고도 증분 == 전체
+    # 같은 참조를 다시 묶으면 지문이 새로 잡힌다(사람이 확인했다는 뜻)
+    _must(s, "annot.rebind", {"id": d, "b": R("wall", F.W3, "axis.start")})
+    assert _must(s, "annot.check")["result"]["warnings"] == {}
+    _must(s, "history.undo")
+    assert _must(s, "annot.check")["result"]["warnings"] == {"direction_changed": 1}
+    _must(s, "history.undo")                                                          # 반전 취소
+    assert _must(s, "annot.check")["result"]["warnings"] == {} and state(s, d)[2] == pytest.approx(7211.1025509, abs=1e-6)
+    # 방향과 무관한 참조(선·높이)와 문틀은 호스트 벽 방향을 본다
+    line = dim(s, R("wall", F.W1, "axis"), R("wall", F.W3, "axis"))
+    jamb = dim(s, R("door", F.D2, "jamb.start"), R("door", F.D2, "jamb.end"))
+    assert s.eng.st.el[line]["params"]["dirs"] == {"a": None, "b": None} and s.eng.st.el[jamb]["params"]["dirs"]["a"] == [-1.0, 0.0]
+    _must(s, "wall.set", {"id": F.W3, "axis": [0.0, 4000.0, 6000.0, 4000.0]})         # D2 의 호스트 반전
+    w = _must(s, "annot.check")["result"]
+    assert w["warnings"] == {"direction_changed": 3} and {i["id"] for i in w["items"]} == {d, jamb}      # d 의 b, jamb 의 a·b
+    assert line not in {i["id"] for i in w["items"]}
+
+
+def test_분할_뒤_끝_참조는_사슬_끝_벽의_방향도_본다(pv):
+    s = pv
+    d = dim(s, R("wall", F.W1, "axis.start"), R("wall", F.W1, "axis.end"))
+    n = _must(s, "wall.split", {"id": F.W1, "at": 3000.0})["result"]["new"]
+    assert _must(s, "annot.check")["result"]["warnings"] == {}
+    _must(s, "wall.set", {"id": n, "axis": [6000.0, 0.0, 3000.0, 0.0]})                # 후계만 반전: 원래 끝 참조가 가리키는 점이 달라진다
+    ac = _must(s, "annot.check")["result"]
+    assert ac["warnings"] == {"direction_changed": 1} and ac["items"][0]["id"] == d
+
+
+def test_너무_큰_값은_구조화된_무효로_나오고_목록_해시가_터지지_않는다(pv):
+    s = pv
+    d = dim(s, R("wall", F.W1, "axis.start"), R("wall", F.W1, "axis.end"))
+    t = s.run("annot.tag.create", {"view": F.V1, "target": F.W1, "fields": ["name", "length"]})["result"]["id"]
+    r = s.run("wall.set", {"id": F.W1, "axis": [0.0, 0.0, 1e200, 0.0]})
+    assert r["ok"], r
+    assert state(s, d)[1:] == ("invalid", "non_finite") and state(s, t)[1:] == ("invalid", "non_finite")
+    # model.hash 는 부르지 않는다: 이 크기의 좌표는 주석이 없어도 S1 코어의 파생 해시(면적 등)가 넘쳐 터진다(S1 의 별도 한계, 보고서에 기록)
+    for c in ("annot.list", "annot.check"):
+        res = s.run(c)
+        assert res["ok"], (c, res.get("error"))
+    from dobim_core.engine import _Inputs
+    from dobim_core.graph import RefGraph
+    assert AN.annot_bundle(s.eng.g) == AN.annot_bundle(RefGraph(_Inputs(s.eng)))
+    ac = _must(s, "annot.check")["result"]
+    assert ac["invalid"] == {"non_finite": 2} and {i["id"] for i in ac["items"]} == {d, t}
+    assert {i["why"] for i in _must(s, "annot.list", {"status": "invalid"})["result"]["items"]} == {"non_finite"}
+    new = s.run("annot.dim.create", {"view": F.V1, "a": R("wall", F.W1, "axis.start"), "b": R("wall", F.W1, "axis.end")})
+    assert not new["ok"] and new["error"]["code"] == "CONSTRAINT"                       # 만들 때도 거절
+    _must(s, "history.undo")
+    assert state(s, d)[1] == "ok" and state(s, t)[1] == "ok"
+
+
+def test_SVG_는_제어문자가_들어간_글에도_XML_로_읽힌다(pv, tmp_path):
+    import xml.etree.ElementTree as ET
+    s = pv
+    _must(s, "wall.set", {"id": F.W1, "name": "A\x01B\x0bC&<"})
+    _must(s, "annot.tag.create", {"view": F.V1, "target": F.W1, "fields": ["name"]})
+    _must(s, "view.set", {"id": F.V1, "name": "V\x01x\x1f"})
+    for name in ("c.svg",):
+        r = s.run("view.export", {"id": F.V1, "path": name})
+        tok = r["error"]["details"]["confirm_token"]
+        assert s.run("view.export", {"id": F.V1, "path": name}, confirm=tok)["ok"]
+        root = ET.parse(Path(s.eng.workspace) / name).getroot()
+        text = "".join(root.itertext())
+        assert "\x01" not in text and "A�B�C&<" in text
+
+
+
+# ---------------------------------------------------------------- 검수 반영 결함의 음성 대조(직접 시나리오: 임의 편집열이 늦게 잡는 변이를 즉시 잡는다)
+def _scenario_ifc_undo(s):
+    _must(s, "model.hash")
+    _must(s, "wall.split", {"id": F.W3, "at": 2000.0})
+    _must(s, "model.hash")
+    _must(s, "history.undo")
+    _must(s, "model.hash")
+
+
+def _scenario_reuse(s):
+    X = "X" * 22
+    _must(s, "wall.split", {"id": F.W1, "at": 3000.0, "new_id": X})
+    _must(s, "element.delete", {"id": X})
+    assert not s.run("wall.split", {"id": F.W1, "at": 2000.0, "new_id": X})["ok"]      # 거절돼야 한다(받아들이면 succ 순환)
+    _must(s, "annot.check")
+
+
+def _scenario_flags(s):
+    d = dim(s, R("wall", F.W1, "axis.start"), R("wall", F.W3, "axis.start"))
+    _must(s, "wall.set", {"id": F.W3, "axis": [0.0, 4000.0, 6000.0, 4000.0]})
+    assert _must(s, "annot.check")["result"]["warnings"] == {"direction_changed": 1}, d
+
+
+def _scenario_middle(s):
+    d = dim(s, R("wall", F.W1, "axis.start"), R("wall", F.W1, "axis.end"))
+    n = _must(s, "wall.split", {"id": F.W1, "at": 2000.0})["result"]["new"]
+    _must(s, "wall.split", {"id": n, "at": 3500.0})
+    _must(s, "element.delete", {"id": n})
+    assert state(s, d)[1] == "ok"
+
+
+@pytest.mark.parametrize("name,scenario", [("M12_벽_삭제시_개구부_투영상태_정리_누락", _scenario_ifc_undo), ("M13_succ_이력_id_재사용_허용", _scenario_reuse),
+                                            ("M14_방향_지문_경고_없음", _scenario_flags), ("M15_사슬_중간_삭제를_고아로_처리", _scenario_middle)])
+def test_음성_대조_검수가_찾은_결함을_되살리면_직접_시나리오가_실패한다(name, scenario, pv):
+    scenario(pv)                       # 변이 없이는 통과
+    with L.mutation(name):
+        import kit
+        s2 = kit.Session(pv.path.parent / "mut.dobim")
+        try:
+            for n_, a_ in F.SCRIPT:
+                assert s2.run(n_, a_)["ok"]
+            assert s2.run("view.create", {"id": F.V1, "name": "1F", "type": "plan", "level": F.LV1})["ok"]
+            with pytest.raises((AssertionError, Exception)):
+                scenario(s2)
+        finally:
+            s2.close()
+
+
 # ---------------------------------------------------------------- 레지스트리·순수성·응답 크기
 def test_주석_모듈은_순수하다_시각_난수_파일_libm_없음():
     tree = ast.parse((ROOT / "src" / "dobim_core" / "annot.py").read_text(encoding="utf-8"))
@@ -377,7 +613,7 @@ def test_주석_모듈은_순수하다_시각_난수_파일_libm_없음():
             if (node.module or "").split(".")[0] not in allowed:
                 bad.append(node.module)
             if node.module == "math":
-                bad += [a.name for a in node.names if a.name != "sqrt"]
+                bad += [a.name for a in node.names if a.name not in ("sqrt", "isfinite")]
         elif isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id in ("open", "print", "input", "exec", "eval"):
             bad.append(node.func.id)
     assert not bad, bad

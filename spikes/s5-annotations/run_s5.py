@@ -3,7 +3,7 @@
 
     python run_s5.py scenarios   RA-01 에 주석 71개를 두고 편집 시나리오 E1~E8 (results/s5_scenarios.json, out/*.svg)
     python run_s5.py fuzz        임의 편집열 시드 여러 개 (results/s5_fuzz.json)
-    python run_s5.py mutants     변이 11종(음성 대조) (results/s5_mutants.json)
+    python run_s5.py mutants     변이 15종(음성 대조) (results/s5_mutants.json)
     python run_s5.py all
 """
 from __future__ import annotations
@@ -28,7 +28,7 @@ def dump(name, obj):
 
 def unexpected(c: dict) -> int:
     """합격 기준의 '고아': 대상이 살아 있는데 끊긴 것 + 이유가 틀린 것 + 대상이 없는데 값이 나오는 것 + 그 밖의 불일치 + 뷰 없는 주석."""
-    return sum(c.get(k, 0) for k in ("false_orphan", "reason_mismatch", "silent_alive", "other_mismatch", "dangling_view"))
+    return sum(c.get(k, 0) for k in ("false_orphan", "reason_mismatch", "silent_alive", "other_mismatch", "dangling_view", "flag_mismatch"))
 
 
 def step(h, label, steps, notes=""):
@@ -146,6 +146,27 @@ def scenarios():
     r6 = add(step(h, "E6 2F 남쪽 외벽 축선 방향 반전(wall.set axis)", [("wall.set", {"id": ids["ext-2F"][0], "axis": [12000.0, 0.0, 0.0, 0.0]})],
                   "참조는 끊기지 않고 오라클과도 일치하지만, 역할 이름(시작·끝·왼쪽·오른쪽)이 가리키는 물리적 위치는 뒤바뀐다(한계)"))
     r6["dims_whose_value_changed"] = len([d for d in L.stable_diff(pre, L.snapshot(eng)) if eng.st.el[d[0]]["kind"] == "dim"])
+    ac6 = h.run("annot.check", {"limit": 1000})["result"]
+    r6["direction_warnings"] = ac6["warnings"].get("direction_changed", 0)                    # 값이 조용히 바뀌지 않고 경고로 알려진다
+    r6["warned_items_listed"] = len([i for i in ac6["items"] if i.get("warnings")])
+    h.run("history.undo", {})
+    r6["undo_clears_warnings"] = h.run("annot.check", {"limit": 1000})["result"]["warnings"].get("direction_changed", 0) == 0
+    h.run("history.redo", {})
+
+    # ---- E6b: 분할 뒤 자기 끝 참조(own.end)와 원래 끝 참조(axis.end)의 값 차이
+    wsrc = ids["ext-2F"][2]
+    dpair = [h.run("annot.dim.create", {"view": views["plan-2F"], "a": R("wall", wsrc, "axis.start"), "b": R("wall", wsrc, b_role), "offset": 600.0})["result"]["id"]
+             for b_role in ("axis.end", "own.end")]
+    ax = eng.st.el[wsrc]["params"]["axis"]
+    full = ((ax[2] - ax[0]) ** 2 + (ax[3] - ax[1]) ** 2) ** 0.5
+    nsplit = h.run("wall.split", {"id": wsrc, "at": round(full / 2, 3), "new_id": L._i("1", 90003)})
+    vals = [L.snapshot(eng)[d][2] for d in dpair]
+    add({"label": "E6b 벽 분할 뒤 axis.end(원래 끝)는 전체 길이, own.end(자기 끝)는 조각 길이", "split_ok": nsplit["ok"], "full_length": full,
+         "dim_axis_end": vals[0], "dim_own_end": vals[1], "axis_end_unchanged": abs(vals[0] - full) < 1e-6, "own_end_is_half": abs(vals[1] - full / 2) < 1e-3,
+         "unexpected_orphans": unexpected(h.check()["counts"])})
+    h.run("history.undo", {})
+    h.run("annot.delete", {"id": dpair[0]})
+    h.run("annot.delete", {"id": dpair[1]})
 
     # ---- E7: 뷰 삭제 연쇄
     n_before = len(L.annot_ids(eng))
@@ -173,6 +194,50 @@ def scenarios():
                      "dim_groups": text.count('class="dim"'), "tag_groups": text.count('class="tag"'), "orphan_groups": text.count('class="orphan"'),
                      "has_korean_text": any("가" <= ch <= "힣" for ch in text)}
     out["export"] = svgs
+    # ---- E9: 분할로 문이 옮겨진 뒤 IFC 투영(model.hash) -> undo -> model.hash (검수가 찾은 INTERNAL 결함의 직접 재현) + 이력 id 재사용 거절
+    h.run("model.hash", {})
+    nw = {"ok": False, "result": {"doors_moved": []}}
+    split_args = None
+    for d_ in sorted(eng.st.by_kind.get("door", ())):                  # 문이 끝 쪽 조각으로 옮겨지는 분할을 찾는다
+        hw = eng.st.inn[("hosts", d_)][0]
+        dp = eng.st.el[d_]["params"]
+        for gap in (100.0, 300.0, 600.0):
+            at_ = round(dp["offset"] - dp["width"] / 2 - gap, 3)
+            nw = h.run("wall.split", {"id": hw, "at": at_, "new_id": L._i("1", 90004)})
+            if nw["ok"]:
+                split_args = (hw, at_)
+                break
+        if nw["ok"] and nw["result"]["doors_moved"]:
+            break
+        if nw["ok"]:
+            h.run("history.undo", {})
+            nw = {"ok": False, "result": {"doors_moved": []}}
+    ok_flush1 = h.run("model.hash", {})["ok"]
+    moved = nw["ok"] and bool(nw["result"]["doors_moved"])
+    ua = h.run("history.undo", {})
+    ok_flush2 = h.run("model.hash", {})
+    from dobim_core.engine import Engine
+    ref = Engine(sess.path, "ifc-ref")
+    same = ref.ifc_hash() == eng.ifc_hash()
+    ref.close()
+    h.run("history.redo", {})
+    ok_flush3 = h.run("model.hash", {})["ok"]
+    ref = Engine(sess.path, "ifc-ref")
+    same2 = ref.ifc_hash() == eng.ifc_hash()
+    ref.close()
+    h.run("history.undo", {})
+    # 이력 id 재사용: 분할 -> 후계 삭제 -> 같은 id 로 다시 분할(예전에는 succ(X->X) 순환으로 annot.check·model.hash 가 INTERNAL)
+    h.run("wall.split", {"id": split_args[0], "at": split_args[1], "new_id": L._i("1", 90005)})
+    h.run("element.delete", {"id": L._i("1", 90005)})
+    reuse = h.run("wall.split", {"id": split_args[0], "at": split_args[1], "new_id": L._i("1", 90005)})
+    after_reuse = [h.run(c, {})["ok"] for c in ("annot.check", "annot.list", "model.hash")]
+    recreate = h.run("wall.create", {"id": L._i("1", 90005), "level": eng.st.out[("on_level", split_args[0])][0], "axis": [0.0, 0.0, 1000.0, 0.0]})
+    add({"label": "E9 분할(문 이동) → IFC 투영 → undo → 투영 → redo → 투영", "door_moved_to_new_wall": moved, "flush_after_split": ok_flush1,
+         "undo_ok": ua["ok"], "flush_after_undo": ok_flush2["ok"], "ifc_equals_reopened_after_undo": same, "flush_after_redo": ok_flush3,
+         "ifc_equals_reopened_after_redo": same2, "reused_succ_id_rejected": (not reuse["ok"]) and reuse["error"]["code"] == "CONSTRAINT",
+         "recreate_with_history_id_rejected": (not recreate["ok"]) and recreate["error"]["code"] == "CONSTRAINT",
+         "annot_check_list_hash_ok_after_reuse_attempt": all(after_reuse),
+         "succ_cycle_free": L.Fuzz.succ_cycles(type("X", (), {"eng": eng})()) == 0})
     # 요약
     sc = [s for s in out["scenarios"] if "unexpected_orphans" in s]
     out["summary"] = {"annotations": len(made), "scenarios": len(out["scenarios"]),

@@ -24,6 +24,7 @@ for p in (CORE / "src", CORE / "tools", S3):
         sys.path.insert(0, str(p))
 
 import kit  # noqa: E402
+from dobim_core.engine import Engine  # noqa: E402
 import s3lib  # noqa: E402
 from dobim_core import annot as AN  # noqa: E402
 from dobim_core import drawing as D  # noqa: E402
@@ -109,16 +110,17 @@ class Oracle:
         if row is None:
             return ("orphan", "target_deleted")
         if kind == "wall":
-            if role in ("axis.end", "trim.end"):
-                x = eid
+            if role in ("own.end", "own.trim.end"):          # 자기 끝: 분할 이력을 따라가지 않는다
+                role = "axis.end" if role == "own.end" else "trim.end"
+            elif role in ("axis.end", "trim.end"):
+                x = eid                                      # 이력을 사슬 끝까지 따라간다(중간에 지워진 벽이 있어도 지나간다)
                 while x in self.next_:
-                    nx = self.next_[x]
-                    if nx not in self.el:
-                        return ("orphan", "successor_deleted")
-                    x = nx
+                    x = self.next_[x]
                 if x != eid:
+                    if x not in self.el:
+                        return ("orphan", "successor_deleted")
                     self.used_succ += 1
-                eid, row = x, self.el[x]
+                    eid, row = x, self.el[x]
             p = row["params"]
             a, u, length = self._axis(eid)
             mid = a + u * length / 2
@@ -207,6 +209,40 @@ class Oracle:
     def expect(self, aid):
         return self.dim(aid) if self.el[aid]["kind"] == "dim" else self.tag(aid)
 
+    def _dir_wall(self, kind, eid):
+        if self.el.get(eid) is None:
+            return None
+        return eid if kind == "wall" else self.inn[("hosts", eid)][0]
+
+    def flags(self, aid):
+        """방향 경고의 기대값. 만들 때 저장된 지문(params.dirs, 원시 입력)과 복소수로 구한 지금 방향의 내적이 음수이면 경고.
+        끝 역할은 값을 내는 사슬 끝 벽의 방향도 본다."""
+        row = self.el[aid]
+        if row["kind"] != "dim":
+            return ()
+        p = row["params"]
+        out = []
+        for side in ("a", "b"):
+            fp = (p.get("dirs") or {}).get(side)
+            if fp is None:
+                continue
+            kind, rest = p[side].split(":", 1)
+            eid, role = rest.split("#", 1)
+            w = self._dir_wall(kind, eid)
+            if w is None:
+                continue
+            cand = [w]
+            if kind == "wall" and role in ("axis.end", "trim.end"):
+                x = w
+                while x in self.next_:
+                    x = self.next_[x]
+                if x != w and x in self.el:
+                    cand.append(x)
+            ref = complex(fp[0], fp[1])
+            if any((self._axis(c)[1] * ref.conjugate()).real < 0 for c in cand):     # 복소수 내적 = Re(u · conj(ref))
+                out.append(f"direction_changed:{side}")
+        return tuple(out)
+
 
 def annot_ids(eng):
     return sorted(i for k in ("dim", "tag") for i in eng.st.by_kind.get(k, ()))
@@ -237,6 +273,12 @@ def check(eng, splits) -> dict:
             c["ambiguous_skipped"] += 1
             c["total"] += 1
             continue
+        want_fl, got_fl = orc.flags(aid), tuple(eng.g.q(AN.annot_flags, aid))
+        if want_fl != got_fl:
+            c["flag_mismatch"] += 1
+            bad.append((aid, "flag_mismatch", got_fl, want_fl))
+        elif want_fl:
+            c["flag_direction_changed"] += 1
         if eng.st.el[aid]["params"]["view"] not in eng.st.el:
             c["dangling_view"] += 1
             bad.append((aid, "dangling_view"))
@@ -451,7 +493,7 @@ def edit_and_measure(h: Harness, steps: list[tuple[str, dict]]) -> dict:
 class Fuzz:
     """S1 임의 커맨드 생성기 + 주석 생성·삭제·재결합 + 벽 분할 + 뷰 삭제. 매 스텝 오라클·증분 대 전체·(주기적으로) undo 복원을 검사한다."""
 
-    def __init__(self, work: Path, seed: int, *, undo_check_every: int = 4, annot_every: int = 2):
+    def __init__(self, work: Path, seed: int, *, undo_check_every: int = 4, annot_every: int = 2, ifc_ref_every: int = 3):
         self.seed = seed
         work = Path(work)
         work.mkdir(parents=True, exist_ok=True)
@@ -464,6 +506,8 @@ class Fuzz:
         self.rng = random.Random(seed ^ 0xA5A5)
         self.vn = 0
         self.undo_every, self.annot_every = undo_check_every, annot_every
+        self.ifc_ref_every = ifc_ref_every
+        self._fp_seen: set = set()
         self.planned: set[str] = set()
         self.stats = Counter()
         self.failures: list = []
@@ -574,27 +618,60 @@ class Fuzz:
         else:                                                    # 벽 분할 계열 / 뷰 삭제(주석 연쇄 삭제)
             sub = r.random()
             walls = sorted(st.by_kind.get("wall", ()))
-            if sub < 0.35 and walls:                             # 임의 분할
+            if sub < 0.28 and walls:                             # 임의 분할
                 w = r.choice(walls)
                 x1, y1, x2, y2 = st.el[w]["params"]["axis"]
                 length = ((x2 - x1) ** 2 + (y2 - y1) ** 2) ** 0.5
                 return self._split(w, r.choice([0.25, 0.4, 0.5, 0.6, 0.75]) * length)
-            if sub < 0.6:                                        # 문이 있는 벽을 문 사이(또는 문 옆)에서 분할
+            if sub < 0.46:                                       # 문이 있는 벽을 문 사이(또는 문 옆)에서 분할
                 cands = [w for w in walls if st.out.get(("hosts", w))]
                 if cands:
                     w = r.choice(cands)
                     doors = sorted(st.out[("hosts", w)])
                     d = st.el[r.choice(doors)]["params"]
                     return self._split(w, d["offset"] + r.choice([-1, 1]) * (d["width"] / 2 + r.choice([50.0, 700.0, 1500.0])))
-            elif sub < 0.8:                                      # 분할 사슬의 끝 벽 삭제(후계 삭제 -> successor_deleted)
+            elif sub < 0.62:                                     # 분할 사슬의 벽 삭제(끝 벽이면 successor_deleted, 중간 벽이면 사슬 끝이 살아 있으면 값이 나온다)
                 tails = [n for _, n in self.h.splits() if n in st.el]
                 if tails and self.h.run("element.delete", {"id": r.choice(tails)})["ok"]:
                     return "delete_tail"
+            elif sub < 0.76:                                     # 분할 이력에 쓰인(지워진) id 로 다시 분할·생성: 거절돼야 한다(succ 순환·엉뚱한 부활 방지)
+                return self._reuse_attempt()
+            elif sub < 0.86:                                     # 축선 반전(방향 경고가 나와야 한다)
+                if walls:
+                    w = r.choice(walls)
+                    x1, y1, x2, y2 = st.el[w]["params"]["axis"]
+                    if self.h.run("wall.set", {"id": w, "axis": [x2, y2, x1, y1]})["ok"]:
+                        return "reverse"
             else:
                 vs = [v for v in sorted(st.by_kind.get("view", ())) if st.inn.get(("annot_of", v))]
                 if vs and self.h.run("view.delete", {"id": r.choice(vs)})["ok"]:
                     return "view_delete"
         return None
+
+    def _reuse_attempt(self):
+        """분할 이력(succ)에 쓰인 뒤 지워진 id 를 new_id 로 다시 주거나 wall.create 의 id 로 줘 본다. 받아들이면 결함이다."""
+        st = self.eng.st
+        used = sorted({d for (k, _), dsts in st.out.items() if k == "succ" for d in dsts if d not in st.el})
+        walls = sorted(st.by_kind.get("wall", ()))
+        if not used or not walls:
+            return None
+        nid, w = self.rng.choice(used), self.rng.choice(walls)
+        x1, y1, x2, y2 = st.el[w]["params"]["axis"]
+        length = ((x2 - x1) ** 2 + (y2 - y1) ** 2) ** 0.5
+        if self.rng.random() < 0.6:
+            r = self.h.run("wall.split", {"id": w, "at": round(length * 0.5, 3), "new_id": nid})
+            what = "wall.split"
+        else:
+            lv = st.out[("on_level", w)][0]
+            r = self.h.run("wall.create", {"id": nid, "level": lv, "axis": [0.0, 0.0, 1000.0, 0.0]})
+            what = "wall.create"
+        self.stats["reuse_attempts"] += 1
+        if r["ok"]:
+            self.stats["reuse_accepted"] += 1
+            self.failures.append({"step": self.stats["steps"], "kind": f"succ 이력 id 재사용을 {what} 가 받아들임", "bad": [nid]})
+            return None
+        self.stats["reuse_rejected"] += 1
+        return "reuse_rejected"
 
     def _physical(self):
         """물리적 앵커 위치: 모든 벽의 시작·끝점(끝은 분할 후계를 따라간 소유자 기준)과 모든 문 중심. 주석과 무관한 독립 검사용."""
@@ -622,7 +699,9 @@ class Fuzz:
         if gone:
             self.stats["split_physical_violations"] += len(gone)
             self.failures.append({"step": self.stats["steps"], "kind": "split moved geometry", "bad": [str(k) for k in gone[:3]]})
-        moved = [d for d in stable_diff(before, snapshot(self.eng)) if self.eng.st.el[d[0]]["kind"] == "dim" if len(d) == 3 or d[1] != "사라짐"]
+        # own.* 참조(이 벽 자신의 끝)는 분할로 값이 달라지는 것이 설계다: 불변성 검사에서 뺀다(다른 모든 치수는 그대로여야 한다)
+        moved = [d for d in stable_diff(before, snapshot(self.eng)) if self.eng.st.el[d[0]]["kind"] == "dim" if len(d) == 3 or d[1] != "사라짐"
+                 if "#own." not in self.eng.st.el[d[0]]["params"]["a"] + self.eng.st.el[d[0]]["params"]["b"]]
         self.stats["split_invariance_checks"] += 1
         if moved:
             self.stats["split_invariance_violations"] += len(moved)
@@ -630,7 +709,89 @@ class Fuzz:
         return "split"
 
     # ---- 검사
+    def succ_cycles(self):
+        """분할 이력(succ) 그래프의 순환 개수(불변식: 0). 상태 표(의도 저장소)만 읽는다."""
+        out = self.eng.st.out
+        nxt = {src: dsts for (k, src), dsts in out.items() if k == "succ" and dsts}
+        cyc = 0
+        for start in nxt:
+            seen, x = {start}, start
+            while x in nxt:
+                x = nxt[x][0]
+                if x in seen:
+                    cyc += 1
+                    break
+                seen.add(x)
+        return cyc
+
+    def _ifc_check(self, step, label):
+        """상주 엔진의 IFC 를 매번 투영(flush)해 터지지 않는지, 주기적으로는 파일을 새로 연 엔진의 IFC 해시와 같은지 본다.
+        (flush 를 안 하는 시험은 투영 상태가 낡은 채 undo 로 이어지는 결함을 못 본다: 분할로 문이 옮겨진 뒤 투영하고 undo 하면 터졌다)"""
+        self.stats["ifc_flushes"] += 1
+        try:
+            live = self.eng.ifc_hash()
+        except BaseException as ex:
+            self.failures.append({"step": step, "label": label, "kind": "ifc_flush_error", "err": f"{type(ex).__name__}: {str(ex)[:120]}"})
+            return False
+        if self.stats["ifc_flushes"] % self.ifc_ref_every == 0:
+            self.stats["ifc_ref_compares"] += 1
+            ref = Engine(self.sess.path, "ifc-ref")
+            try:
+                same = ref.ifc_hash() == live
+            except BaseException as ex:
+                self.failures.append({"step": step, "label": label, "kind": "ifc_reference_error", "err": f"{type(ex).__name__}: {str(ex)[:120]}"})
+                return False
+            finally:
+                ref.close()
+            if not same:
+                self.stats["ifc_ref_mismatch"] += 1
+                self.failures.append({"step": step, "label": label, "kind": "ifc_hash!=reopened"})
+                return False
+        return True
+
+    def _fingerprints_ok(self, step, label):
+        """새로 만들었거나 다시 묶은 치수의 방향 지문이, 그 순간의 실제 벽 방향(복소수로 따로 계산, 소수 6자리)과 같은가.
+        (오라클의 경고 기대는 저장된 지문을 입력으로 쓰므로, 지문을 저장하는 쪽이 틀리면 여기서만 잡힌다)"""
+        orc = Oracle(self.eng, self.h.splits())
+        st = self.eng.st
+        for aid in annot_ids(self.eng):
+            row = st.el[aid]
+            if row["kind"] != "dim":
+                continue
+            p = row["params"]
+            key = (aid, p["a"], p["b"])
+            if key in self._fp_seen:
+                continue
+            self._fp_seen.add(key)
+            for side in ("a", "b"):
+                kind, rest = p[side].split(":", 1)
+                eid, role = rest.split("#", 1)
+                uses = AN.uses_direction(kind, role)
+                got = (p.get("dirs") or {}).get(side)
+                if not uses:
+                    ok = got is None
+                else:
+                    w = orc._dir_wall(kind, eid)
+                    if w is None:
+                        continue
+                    _, u, _ = orc._axis(w)
+                    ok = got is not None and abs(got[0] - round(u.real, 6)) < 2e-6 and abs(got[1] - round(u.imag, 6)) < 2e-6
+                self.stats["fp_checks"] += 1
+                if not ok:
+                    self.stats["fp_mismatch"] += 1
+                    self.failures.append({"step": step, "label": label, "kind": "direction fingerprint", "bad": [f"{aid} {side} {p[side]} {got}"]})
+                    return False
+        return True
+
     def _verify(self, step, label):
+        if self.succ_cycles():
+            self.failures.append({"step": step, "label": label, "kind": "succ_cycle"})
+            self.stats["succ_cycles"] += 1
+            return False
+        if not self._ifc_check(step, label):
+            return False
+        if not self._fingerprints_ok(step, label):
+            return False
         res = self.h.check()
         for k, v in res["counts"].items():
             self.stats["c_" + k] += v
@@ -814,6 +975,29 @@ def mutation(name: str):
         cmd = registry.REGISTRY["wall.split"]
         restore.append((registry.REGISTRY, "wall.split", cmd))
         registry.REGISTRY["wall.split"] = dataclasses.replace(cmd, func=lambda ctx, a: real(Proxy(ctx), a))
+    elif name == "M12_벽_삭제시_개구부_투영상태_정리_누락":
+        import ifcopenshell.api.root as api_root
+        from dobim_core.ifc_model import IfcModel
+
+        def f(self, eid):                                              # 개구부가 벽과 함께 사라져도 self.openings 에 낡은 참조를 남기던 옛 구현
+            e = self.ents[eid]
+            self._unproject_door(eid)
+            api_root.remove_product(self.f, product=e)
+            self.ents.pop(eid)
+            self.container_of.pop(eid, None)
+            return []
+        patch(IfcModel, "remove_identity", f)
+    elif name == "M13_succ_이력_id_재사용_허용":
+        from dobim_core import commands as C
+        patch(C, "_in_split_history", lambda ctx, eid: False)             # 재사용 거절을 끈다
+        patch(C, "_assert_succ_acyclic", lambda ctx, start: None)         # 마지막 안전망도 끈다
+    elif name == "M14_방향_지문_경고_없음":
+        patch(AN, "dim_flags", lambda g, d: ())
+    elif name == "M15_사슬_중간_삭제를_고아로_처리":
+        def f(g, w):                                                      # 첫 후계만 보는 옛 규칙: 중간 벽이 지워지면 사슬 끝이 살아 있어도 고아
+            nxt = AN.Q.rel_out(g, "succ", w)
+            return nxt[0] if nxt else w
+        patch(AN, "chain_tail", f)
     else:
         raise KeyError(name)
     # 메모이즈 질의는 함수 객체 자체가 키다: 함수를 바꿨으면 이미 만든 그래프를 쓰지 않도록 호출 쪽이 새 엔진을 만든다
@@ -829,4 +1013,5 @@ def mutation(name: str):
 
 MUTANTS = ["M1_분할_이력_무시", "M2_의존_기록_누락(축선 직접 읽기)", "M3_삭제된_대상의_옛_값_유지", "M4_문틀_시작_끝_뒤바뀜",
            "M5_면_왼쪽_오른쪽_뒤바뀜", "M6_태그_속성셋_의존_누락", "M7_후계_삭제시_자기_끝으로_대체", "M8_succ_변경_미통지",
-           "M9_뷰_삭제시_주석_연쇄삭제_없음", "M10_고아를_0값으로_표시", "M11_분할이_문_오프셋을_옮기지_않음"]
+           "M9_뷰_삭제시_주석_연쇄삭제_없음", "M10_고아를_0값으로_표시", "M11_분할이_문_오프셋을_옮기지_않음",
+           "M12_벽_삭제시_개구부_투영상태_정리_누락", "M13_succ_이력_id_재사용_허용", "M14_방향_지문_경고_없음", "M15_사슬_중간_삭제를_고아로_처리"]
