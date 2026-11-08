@@ -16,6 +16,7 @@ import json
 import math
 import re
 from collections import OrderedDict
+from contextvars import ContextVar
 from dataclasses import dataclass
 from typing import Any
 
@@ -27,6 +28,8 @@ MAX_REPEAT = 50
 MAX_ITEMS = 400
 MAX_SAMPLES = 120
 MAX_PRIMS = 200
+MAX_CUTS_PER_SOLID = 16     # 한 solid 에 붙는 공극 수 상한(불리언 연산 비용이 공극 수에 거의 비례한다; 라이브러리 최대는 4)
+EVAL_BUDGET = 200_000       # 한 번의 evaluate 가 쓸 수 있는 식 노드 평가 수(라이브러리 최대는 2,100; 반복×다각형×긴 식의 폭주를 막는다)
 COORD_MAX = 100_000.0   # mm: 100 m. 이보다 큰 좌표는 단위 실수로 본다
 DEFAULT_HOST = {"host_thickness": 200.0, "host_height": 3000.0}
 _PLANE_AXES = {"xy": ("x", "y", "z"), "xz": ("x", "z", "y"), "yz": ("y", "z", "x")}   # (u축, v축, 돌출축)
@@ -382,9 +385,27 @@ def resolve_values(r: Recipe, type_values: dict | None, inst_values: dict | None
 
 
 # ---------------------------------------------------------------- 식 평가 도우미
+_BUDGET: ContextVar[list | None] = ContextVar("family_eval_budget", default=None)
+
+
+def _spend(n: int, path: str) -> None:
+    b = _BUDGET.get()
+    if b is not None:
+        b[0] -= n
+        if b[0] < 0:
+            raise _bad("E_LIMIT", path, f"식 평가 예산({EVAL_BUDGET:,} 노드)을 넘었다",
+                       "repeat 횟수·다각형 점 수·식 길이의 곱이 너무 크다. 파생값으로 식을 줄이거나 반복을 줄이세요")
+
+
 def _ev(raw: Any, env: dict, path: str, want: str = "number") -> Any:
     try:
-        v = E.evaluate(E.compile_expr(raw), env) if isinstance(raw, str) else raw
+        if isinstance(raw, str):
+            c = E.compile_expr(raw)
+            _spend(c.size, path)
+            v = E.evaluate(c, env)
+        else:
+            _spend(1, path)
+            v = raw
     except E.ExprError as ex:
         raise FamilyError(Issue(ex.code, path, ex.message, ex.hint)) from None
     if want == "number":
@@ -547,6 +568,9 @@ def resolve_solids(r: Recipe, env: dict) -> tuple[list[dict], list[str]]:
                 sd.setdefault("cuts", []).append({k: v[k] for k in v if k not in ("base",)})
     for sd in solids:
         sd.pop("base", None)
+        if len(sd.get("cuts", ())) > MAX_CUTS_PER_SOLID:
+            raise _bad("E_LIMIT", "/solids", f"형상 {sd['id']} 에 공극이 {len(sd['cuts'])}개 붙는다(최대 {MAX_CUTS_PER_SOLID}개)",
+                       "공극을 합치거나 repeat 횟수를 줄이세요. 불리언 연산 비용이 공극 수에 비례해 검증·투영이 매우 느려진다")
     return solids, sorted({v["base"] for _, v in voids})
 
 
@@ -607,6 +631,14 @@ def _value(raw: Any, env: dict, path: str) -> Any:
 def evaluate(r: Recipe, plan: Plan, type_values: dict | None, inst_values: dict | None, host: dict | None = None) -> dict:
     """레시피를 평가한다. 반환은 JSON 직렬화 가능한 순수 값이다."""
     tv, iv = resolve_values(r, type_values, inst_values)
+    token = _BUDGET.set([EVAL_BUDGET])
+    try:
+        return _evaluate(r, plan, tv, iv, host)
+    finally:
+        _BUDGET.reset(token)
+
+
+def _evaluate(r: Recipe, plan: Plan, tv: dict, iv: dict, host: dict | None) -> dict:
     env = build_env(r, plan, tv, iv, host)
     check_constraints(r, env)
     body, void_ids = resolve_solids(r, env)

@@ -77,6 +77,9 @@
 - **없는 것**: 삼각함수, 지수/로그, 리스트·딕셔너리·인덱싱, 속성 접근(`.`), 람다, 대입. 이런 것을 쓰면 오류. 각도가 필요하면 매개변수(deg)로 받는다.
 - 타입 규칙: 산술은 숫자끼리. `and/or/not` 과 조건식의 조건은 불리언(비교 결과 또는 bool 매개변수). 문자열은 `==`, `!=` 로만 비교(enum 판별용). 숫자와 문자열을 섞어 비교하면 오류.
 - 한계: 식 300자, 노드 120개, 거듭제곱 지수 -8..8. 0 으로 나누기·음수 제곱근은 오류(그 값이 나오는 매개변수 범위를 `min`/`max` 로 막는다).
+- **반올림**: `round(x)` 는 파이썬과 같은 **은행가 반올림**(0.5 → 0, 1.5 → 2, 2.5 → 2: 가까운 짝수로)이고 정수를 돌려준다. `round(x, n)` 도 이진 부동소수점 표현을 따른다(`round(1.005, 2)` 는 1.0). "사사오입"이 필요하면 `floor(x + 0.5)` 를 쓴다.
+- **거듭제곱 `**`**: 정수 지수는 곱셈만으로 계산하므로 플랫폼과 무관하게 같은 값이 나온다. **비정수 지수**(`x ** 0.5`)는 C 라이브러리 `pow` 를 써서 OS/CPU 에 따라 마지막 자리가 다를 수 있다(결과는 소수 6자리로 반올림해 대부분 가려지지만 경계값에서는 파생 해시가 달라질 수 있다). 제곱근은 `sqrt(x)`(IEEE 정확 반올림)를 쓴다.
+- **평가 예산**: 한 번의 평가가 쓸 수 있는 식 노드 수는 20만 개다(정상 레시피는 2천 개 안팎). `repeat`×다각형 점×긴 식의 곱이 크면 `E_LIMIT`(식 평가 예산)이다.
 - **사용할 수 있는 이름**: 매개변수, 파생값, 참조 평면, (호스팅이면) `host_thickness`(벽 두께 mm), `host_height`(벽 높이 mm), (반복 안에서) 반복 변수.
 - 속성셋·IFC 속성의 값 칸(§9, §10)은 **리터럴 또는 `{"expr": "식"}`** 이다. 거기서 일반 문자열 `"EI30"` 은 식이 아니라 문자열 값이다.
 
@@ -134,6 +137,8 @@
 ### 6.3 공극 `role: "void"`
 
 `"role": "void", "cuts": ["대상id", ...]` — 대상 solid 에서 이 형상을 **빼낸다**. 대상은 `role: solid`(기본)인 형상의 id. 반복 형상은 기본 id 로 지정하면 모든 반복에 적용된다. 공극 자체는 따로 보이지 않는다.
+- 한 solid 에 붙는 공극은 **16개 이하**다(`E_LIMIT`). 불리언 연산 비용이 공극 수에 비례해 검증·투영이 매우 느려진다(정상 레시피는 4개 이하).
+- 공극이 **어떤 표본에서도 대상과 만나지 않으면** `E_VOID_MISS`(경계 상자 검사, 반복 공극 중 일부만 빗나가는 것은 정상). 공극이 solid 를 **전부 지우거나 스치기만 하면**(절단해도 부피가 줄지 않으면) `E_SHAPE_VOLUME` — IfcOpenShell 은 빈 불리언 결과를 원본 형상으로 돌려줘 겉으로는 정상으로 보이므로 검증기가 절단 전후 부피를 비교한다.
 
 ### 6.4 표시 조건과 반복
 
@@ -213,14 +218,16 @@
 | `schema` | JSON 구조, 키, 타입, 매개변수 기본값·범위 | `E_JSON` `E_SCHEMA` |
 | `references` | 식 구문, 정의되지 않은 이름, 순환, 이름 중복, 타입/인스턴스 수준 위반, 호스트 문맥, solid id 중복, `cuts` 대상 | `E_EXPR_*` `E_UNDEFINED_NAME` `E_CYCLE` `E_NAME_*` `E_TYPE_REFERENCES_INSTANCE` `E_HOST_CONTEXT` `E_CUT_TARGET` `E_PLAN_*` |
 | `values` | 기본값·각 매개변수 최솟값/최댓값·모든 최소/모든 최대·쌍별 극단·각 열거값·호스트 두께 100/300/600 에서 값 검사·식 평가·제약 | `E_PARAM_*` `E_CONSTRAINT` `E_EXPR_MATH` `E_EXPR_TYPE` |
-| `geometry` | 같은 표본에서 형상 해석: 퇴화(0 이하 치수·역전된 범위), 좌표 범위, 반복 횟수, 스윕 방향 | `E_DEGENERATE` `E_GEOMETRY_RANGE` `E_REPEAT_RANGE` `E_SWEEP_NORMAL` `E_LIMIT` |
+| `geometry` | 같은 표본에서 형상 해석: 퇴화(0 이하 치수·역전된 범위), 좌표 범위, 반복 횟수, 스윕 방향, 공극 수·식 평가 예산, 공극이 대상과 만나는지 | `E_DEGENERATE` `E_GEOMETRY_RANGE` `E_REPEAT_RANGE` `E_SWEEP_NORMAL` `E_LIMIT` `E_VOID_MISS` |
 | `ifc_schema` | 클래스·타입 클래스·PredefinedType·속성 이름/종류/열거값(식 결과도 표본마다) | `E_IFC_CLASS` `E_IFC_ENUM` `E_IFC_ATTR_*` `E_IFC_USERDEFINED` |
 | `psets_standard` | `Pset_`/`Qto_` 표준 대조 | `E_PSET_NOT_STANDARD` `E_PSET_APPLICABLE` `E_PSET_PROP_UNKNOWN` `E_PSET_VALUE_TYPE` `E_PSET_ENUM` |
 | `ifc_projection` | 실제 코어 투영으로 IFC 를 만들고 `ifcopenshell.validate`(express 규칙) 오류 0 | `E_IFC_BUILD` `E_IFC_INVALID` |
-| `geometry_shape` | 인스턴스마다 실제 메시를 만들어 비어 있지 않고 납작하지 않고 부피 > 0 | `E_SHAPE_*` |
+| `geometry_shape` | 인스턴스마다 실제 메시를 만들어 비어 있지 않고 납작하지 않고 부피 > 0, 공극을 뺀 solid 의 부피가 실제로 줄었는지 | `E_SHAPE_*`(`E_SHAPE_VOLUME` 포함) |
 | `psets_values` | IFC 에서 다시 읽은 속성셋 값이 레시피가 평가한 값과 같다 | `E_PSET_MISMATCH` |
 
 경고(`warnings`, 통과를 막지 않음): `W_UNUSED`(안 쓰는 매개변수·파생값), `W_SOLID_NEVER_VISIBLE`(어떤 표본에서도 안 만들어지는 형상 — `when` 오타나 항상 거짓 조건을 의심).
+
+**자원 상한**: JSON 은 중첩 24단계·값 4만 개·숫자 ±1e15 이하이고 `NaN`/`Infinity` 는 JSON 이 아니라서 거절한다(`E_JSON`/`E_SCHEMA`/`E_LIMIT`, 어느 입력 경로에서도 `INTERNAL` 로 새지 않는다). 검증 전체 **시간 예산**은 `static` 10초, `full` 45초이고 넘으면 그 단계에서 멈추고 `E_LIMIT` 을 보고한다(정상 레시피의 full 은 5초 안팎). `full` 의 부하 의존 결과는 이 병적인 경우뿐이다.
 
 표본 검사는 증명이 아니다. 극단 조합 전부를 보지는 않으므로, 제약(`constraints`)과 범위(`min`/`max`)를 정직하게 써야 한다.
 
@@ -231,9 +238,22 @@
 - `family.list` — 기본 라이브러리 목록
 - `family.validate` `{family|path|recipe, level}` — 위 검증기(프로젝트 불필요)
 - `family.register` `{family|path|recipe, type_values, name}` — 타입 만들기(같은 레시피·값이면 같은 타입 id)
-- `family.place` `{family 또는 type, type_values, values, host+offset 또는 level+position, rotation, elevation, name}` — 인스턴스 배치(타입이 없으면 자동 생성). 호스팅이면 벽에 개구부.
+- `family.place` `{family 또는 type, type_values, values, host+offset 또는 level+position, rotation, elevation, name}` — 인스턴스 배치(타입이 없으면 자동 생성). 호스팅이면 벽에 개구부. `family` 로 지정했을 때 프로젝트에 같은 id 의 레시피가 여러 version 으로 올라와 있으면 **가장 높은 version** 을 쓴다. 같은 version 인데 내용이 다르면 모호해서 `CONSTRAINT` 로 거절하니 `type` 으로 지정한다. `family.register` 는 같은 id 의 다른 레시피(또는 기본 라이브러리와 같은 id 의 다른 내용)를 올릴 때 경고한다.
 - `family.set` `{id, values, offset|position, rotation, elevation, name}` — 인스턴스 수정
 - `family.preview` `{family 또는 type, type_values, values, scale}` — 평가 결과(개구부·형상 목록·평면 기호 도형·속성셋)를 요소 없이 확인
+
+### 12.1 오류 봉투: `FAMILY_INVALID` 와 `details.issues`
+
+레시피·값이 틀리면 커맨드는 `ok: false` 와 함께 `error.code = "FAMILY_INVALID"` 를 돌려준다.
+
+```json
+{"ok": false, "error": {"code": "FAMILY_INVALID", "message": "패밀리 검증 실패: <첫 번째 문제>", "path": "/params/width/default",
+  "hint": "<고치는 방법>", "details": {"total": 3, "issues": [{"level": "error", "code": "E_SCHEMA", "path": "/params/width/default", "message": "...", "hint": "..."}]}}}
+```
+
+- `error.path`/`error.message`/`error.hint` 는 **첫 번째** 문제다. `details.total` 은 전체 문제 수, `details.issues` 는 앞의 5개(각 항목: `level`, `code`, `path`(JSON 포인터), `message`, `hint`).
+- `family.validate` 는 오류 대신 `result` 에 `{ok, checks, total_errors, errors[], warnings[]}` 로 돌려준다(응답 크기 때문에 오류 20개·경고 10개까지).
+- 호스트 치수(`wall.set`)를 바꾸다 호스팅된 인스턴스의 제약이 깨지면 `CONSTRAINT`(`details.instance`, `details.issue`)로 거절된다. 이미 깨진 값이 로그에 있는 프로젝트(구버전)도 열리고, 그 인스턴스는 형상이 비는 오류 상태로 `model.validate` 에 `errors` 로 보고된다. 벽 값을 고치면 정상으로 돌아온다.
 
 ## 13. 흔한 실수
 

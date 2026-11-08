@@ -13,9 +13,14 @@
   psets_values    IFC 에 읽혀 나온 속성셋 값이 레시피가 평가한 값과 일치
 
 level="static" 은 앞의 네 단계, "full" 은 전부. 앞 단계가 실패하면 뒤 단계는 skipped.
+
+시간 예산: static 10초, full 45초(BUDGET_S). 넘으면 E_LIMIT 으로 멈춘다(read 질의가 서버를 오래 막지 않게). 정상 레시피는 full 이 5초 안팎이다.
+공극 검사: 어떤 표본에서도 대상 solid 와 교차하지 않는 공극은 E_VOID_MISS(경계 상자 검사, geometry),
+           절단해도 부피가 줄지 않는 solid(공극이 전부 지우거나 스치기만 함 — IfcOpenShell 은 빈 불리언 결과를 원본으로 되돌린다)는 E_SHAPE_VOLUME.
 """
 from __future__ import annotations
 
+import math
 import time
 import uuid
 from typing import Any
@@ -26,14 +31,24 @@ from dobim_core.family.recipe import FamilyError, Issue, Recipe, parse_recipe, p
 _FORBIDDEN_ATTRS = {"GlobalId", "OwnerHistory", "Name", "ObjectPlacement", "Representation", "RepresentationMaps",
                     "HasPropertySets", "PredefinedType"}
 _VALUE_CODES = ("E_PARAM", "E_EXPR", "E_CONSTRAINT", "E_UNKNOWN_PARAM", "E_WRONG_KIND", "E_VALUE")
+BUDGET_S = {"static": 10.0, "full": 45.0}   # 검증 전체 시간 예산(초)
 
 
 def _status(issues: list[Issue], prefixes: tuple[str, ...] | None = None) -> str:
     return "fail" if any(i.level == "error" and (prefixes is None or i.code.startswith(prefixes)) for i in issues) else "pass"
 
 
-def validate_recipe(data: Any, level: str = "full") -> dict:
+def validate_recipe(data: Any, level: str = "full", time_budget: float | None = None) -> dict:
     t0 = time.perf_counter()
+    deadline = t0 + (BUDGET_S.get(level, 45.0) if time_budget is None else time_budget)
+
+    def over() -> bool:
+        return time.perf_counter() > deadline
+
+    def limit_issue(where: str) -> Issue:
+        return Issue("E_LIMIT", "", f"검증 시간 예산({BUDGET_S.get(level, 45.0) if time_budget is None else time_budget:g}초)을 넘어 {where}에서 멈췄다",
+                     "레시피를 단순하게 하세요: repeat 횟수·공극 수·다각형 점 수·식 길이를 줄입니다")
+
     issues: list[Issue] = []
     checks: dict[str, str] = {k: "skipped" for k in ("schema", "references", "values", "geometry", "ifc_schema",
                                                        "psets_standard", "ifc_projection", "geometry_shape", "psets_values")}
@@ -68,6 +83,9 @@ def validate_recipe(data: Any, level: str = "full") -> dict:
     good: list[tuple[dict, dict, dict, dict]] = []
     sample_issues: list[Issue] = []
     for tv, iv, host in samples:
+        if over():
+            issues.append(limit_issue("표본 평가"))
+            return done(r)
         try:
             out = ev.evaluate(r, plan, tv, iv, host)
         except FamilyError as ex:
@@ -88,7 +106,11 @@ def validate_recipe(data: Any, level: str = "full") -> dict:
         if s.id not in seen_ids and good:
             issues.append(Issue("W_SOLID_NEVER_VISIBLE", ptr("solids", i), f"어떤 표본에서도 형상 {s.id} 이 만들어지지 않는다",
                                 "when 조건이 항상 거짓이거나 repeat 횟수가 항상 0 이 아닌지 확인하세요", "warning"))
-    if any(i.level == "error" for i in sample_issues) or not good or level == "static":
+    void_issues = check_void_overlap(r, good) if good else []
+    issues += void_issues
+    if void_issues:
+        checks["geometry"] = "fail"
+    if any(i.level == "error" for i in sample_issues + void_issues) or not good or level == "static":
         return done(r)
 
     # ---- IFC 스키마 대조
@@ -102,7 +124,7 @@ def validate_recipe(data: Any, level: str = "full") -> dict:
         return done(r)
 
     # ---- IFC 투영 + 유효성 + 메시
-    bi, shape_issues, value_issues = build_and_check(r, plan, good, stats)
+    bi, shape_issues, value_issues = build_and_check(r, plan, good, stats, deadline)
     issues += bi
     checks["ifc_projection"] = _status(bi)
     if checks["ifc_projection"] == "pass":
@@ -111,6 +133,64 @@ def validate_recipe(data: Any, level: str = "full") -> dict:
         issues += value_issues
         checks["psets_values"] = _status(value_issues)
     return done(r)
+
+
+# ---------------------------------------------------------------- 공극 교차 검사 (경계 상자, 순수 파이썬)
+_AXI = {"x": 0, "y": 1, "z": 2}
+
+
+def _aabb(it: dict) -> tuple[list[float], list[float]]:
+    """해석된 형상(돌출/스윕 구간) 하나의 축 정렬 경계 상자. 스윕 단면은 반대각선 길이로 부풀려 보수적으로(거짓 '빗나감'이 없게) 잡는다."""
+    lo, hi = [0.0] * 3, [0.0] * 3
+    if it["k"] == "extrude":
+        au, av, ae = (_AXI[a] for a in ev._PLANE_AXES[it["plane"]])
+        p = it["profile"]
+        if p["shape"] == "rect":
+            (u0, u1), (v0, v1) = p["u"], p["v"]
+        elif p["shape"] == "circle":
+            u0, u1 = p["center"][0] - p["r"], p["center"][0] + p["r"]
+            v0, v1 = p["center"][1] - p["r"], p["center"][1] + p["r"]
+        else:
+            us, vs = [q[0] for q in p["points"]], [q[1] for q in p["points"]]
+            u0, u1, v0, v1 = min(us), max(us), min(vs), max(vs)
+        lo[au], hi[au], lo[av], hi[av] = u0, u1, v0, v1
+        lo[ae], hi[ae] = it["range"]
+        return lo, hi
+    pr = it["profile"]
+    pad = math.hypot(pr["w"], pr["h"]) / 2.0 if pr["shape"] == "rect" else pr["r"]
+    for k in range(3):
+        lo[k] = min(it["start"][k], it["end"][k]) - pad
+        hi[k] = max(it["start"][k], it["end"][k]) + pad
+    return lo, hi
+
+
+def _overlap(a: tuple, b: tuple, eps: float = 1e-6) -> bool:
+    return all(a[0][k] < b[1][k] - eps and b[0][k] < a[1][k] - eps for k in range(3))
+
+
+def _base_id(i: str) -> str:
+    return i.split("[")[0].split(".")[0]
+
+
+def check_void_overlap(r: Recipe, good: list) -> list[Issue]:
+    """공극이 어떤 표본에서도 자기 대상 solid 의 경계 상자와 겹치지 않으면 E_VOID_MISS. (반복 공극 중 일부만 빗나가는 것은 정상으로 본다)"""
+    present: set[str] = set()
+    hit: set[str] = set()
+    for _tv, _iv, _h, out in good:
+        for sd in out["body"]:
+            cuts = sd.get("cuts")
+            if not cuts:
+                continue
+            box = _aabb(sd)
+            for cu in cuts:
+                b = _base_id(cu["id"])
+                present.add(b)
+                if b not in hit and _overlap(_aabb(cu), box):
+                    hit.add(b)
+    idx = {s.id: i for i, s in enumerate(r.solids)}
+    return [Issue("E_VOID_MISS", ptr("solids", idx.get(b, 0)), f"공극 {b} 가 대상 solid 와 어떤 표본에서도 교차하지 않는다(절단 효과가 없다)",
+                  "공극의 위치·range 가 대상 solid 를 지나가는지 확인하세요(좌표는 호스트/패밀리 로컬 mm). 구멍을 뚫으려면 대상보다 넉넉히 길게 잡습니다")
+            for b in sorted(present - hit)]
 
 
 def _describe(r: Recipe, tv: dict, iv: dict, host: dict) -> str:
@@ -296,6 +376,43 @@ def check_psets_standard(r: Recipe, good: list) -> list[Issue]:
     return out
 
 
+def _check_cut_reduces_volume(inst_bodies: list, settings, over) -> list[Issue]:
+    """공극이 붙은 solid 마다(첫 인스턴스에서 한 번) 절단 전후 부피를 비교한다. 줄지 않으면 공극이 solid 를 전부 지우거나 스치기만 하는 것이다.
+    (IfcOpenShell 은 불리언 결과가 비면 원본 형상으로 되돌려 주므로, 인스턴스 전체 부피 > 0 검사로는 못 잡는다)"""
+    import ifcopenshell
+    import ifcopenshell.geom
+    import ifcopenshell.util.shape as ush
+    from dobim_core.family import ifcproj as fp
+    out: list[Issue] = []
+    scratch = ifcopenshell.file(schema="IFC4")
+    seen: set[str] = set()
+
+    def volume(item: dict) -> float:
+        sh = ifcopenshell.geom.create_shape(settings, fp.solid_entity(scratch, item))
+        return ush.get_volume(sh) if len(sh.verts) else 0.0
+
+    for body in inst_bodies:
+        for sd in body:
+            if not sd.get("cuts") or _base_id(sd["id"]) in seen:
+                continue
+            seen.add(_base_id(sd["id"]))
+            if over():
+                out.append(Issue("E_LIMIT", "/solids", "검증 시간 예산을 넘어 공극 부피 검사에서 멈췄다"))
+                return out
+            try:
+                vc = volume(sd)
+                vu = volume({k: v for k, v in sd.items() if k != "cuts"})
+            except Exception as ex:
+                out.append(Issue("E_SHAPE_VOLUME", "/solids", f"형상 {sd['id']} 의 절단 결과를 만들 수 없다: {str(ex)[:140]}",
+                                 "공극이 solid 를 모두 지우지 않는지, 공극 치수가 퇴화하지 않았는지 확인하세요"))
+                continue
+            if vc <= 0 or vc >= vu * (1 - 1e-6):
+                out.append(Issue("E_SHAPE_VOLUME", "/solids",
+                                 f"형상 {sd['id']} 은 공극으로 절단해도 부피가 줄지 않는다(절단 전 {vu:.6g}, 후 {vc:.6g}): 공극이 solid 를 전부 지우거나 거의 닿지 않는다",
+                                 "공극이 solid 의 일부만 지나가도록 위치·range 를 조정하세요(전부 지우면 IfcOpenShell 이 원본을 돌려줘 오류가 가려집니다)"))
+    return out
+
+
 # ---------------------------------------------------------------- IFC 투영·유효성·메시
 def _gid(label: str) -> str:
     import ifcopenshell.guid
@@ -316,8 +433,14 @@ def _type_samples(r: Recipe, good: list) -> list:
     return out
 
 
-def build_and_check(r: Recipe, plan, good: list, stats: dict) -> tuple[list[Issue], list[Issue], list[Issue]]:
-    """코어와 같은 IfcModel 투영으로 IFC 를 만든다. (투영 오류, 형상 오류, 속성셋 값 오류)"""
+def build_and_check(r: Recipe, plan, good: list, stats: dict, deadline: float | None = None) -> tuple[list[Issue], list[Issue], list[Issue]]:
+    """코어와 같은 IfcModel 투영으로 IFC 를 만든다. (투영 오류, 형상 오류, 속성셋 값 오류). deadline 은 perf_counter 기준 마감 시각."""
+    def over() -> bool:
+        return deadline is not None and time.perf_counter() > deadline
+
+    def limit(where: str) -> Issue:
+        return Issue("E_LIMIT", "/ifc", f"검증 시간 예산을 넘어 {where}에서 멈췄다", "공극 수·반복 횟수·인스턴스 변형을 줄여 형상을 단순하게 하세요")
+
     from dobim_core.ifc_model import IfcModel
     from dobim_core.family import spec as FS
     build_i: list[Issue] = []
@@ -339,6 +462,7 @@ def build_and_check(r: Recipe, plan, good: list, stats: dict) -> tuple[list[Issu
         raw = r.model_dump(mode="json", by_alias=True)
         expected: list[tuple[str, str, dict]] = []   # (eid, 라벨, {pset: {prop: value}})
         inst_ids: list[str] = []
+        inst_bodies: list[list] = []   # inst_ids 와 같은 순서의 해석된 형상(부피 감소 검사용)
         alt_iv = next((iv for tv, iv, h, o in good if iv != good[0][1] and ev.canon(tv) == ev.canon(good[0][0])), good[0][1])
         for ti, (tv, iv, host, o) in enumerate(_type_samples(r, good)):
             tid = _gid(f"type{ti}")
@@ -347,6 +471,9 @@ def build_and_check(r: Recipe, plan, good: list, stats: dict) -> tuple[list[Issu
             m.project(tid, {**FS.ftype_spec(tp), "intent": {"kind": "ftype", "params": tp}})
             expected.append((tid, f"type{ti}", o["psets"]["type"]))
             for ii, ivx in enumerate([iv] + ([alt_iv] if ti == 0 else [])):
+                if over():
+                    build_i.append(limit("IFC 투영"))
+                    return build_i, shape_i, val_i
                 eid = _gid(f"inst{ti}.{ii}")
                 m.create_identity(eid, "finst", r.ifc.class_)
                 wl = "B" if ii == 1 else "A"
@@ -362,6 +489,7 @@ def build_and_check(r: Recipe, plan, good: list, stats: dict) -> tuple[list[Issu
                 spec = FS.finst_spec(tp, ip, tid, walls[wl][0] if hosted else None, lv, hctx)
                 m.project(eid, {**spec, "intent": {"kind": "finst"}})
                 inst_ids.append(eid)
+                inst_bodies.append(e2["body"])
                 expected.append((eid, f"inst{ti}.{ii}", e2["psets"]["instance"]))
                 if hosted and cut is None:
                     pass
@@ -396,6 +524,9 @@ def build_and_check(r: Recipe, plan, good: list, stats: dict) -> tuple[list[Issu
         st = ifcopenshell.geom.settings()
         shapes = 0
         for eid in inst_ids:
+            if over():
+                shape_i.append(limit("메시 생성"))
+                break
             e = m.ents[eid]
             try:
                 sh = ifcopenshell.geom.create_shape(st, e)
@@ -415,6 +546,7 @@ def build_and_check(r: Recipe, plan, good: list, stats: dict) -> tuple[list[Issu
                 shape_i.append(Issue("E_SHAPE_VOLUME", "/solids", f"형상 부피가 0 이하다({e.Name})", "공극이 solid 를 모두 지우지 않는지 확인하세요"))
             shapes += 1
         stats["meshes_ok"] = shapes
+        shape_i += _check_cut_reduces_volume(inst_bodies, st, over)
     except ImportError as ex:
         shape_i.append(Issue("E_SHAPE_FAIL", "/solids", f"ifcopenshell.geom 을 쓸 수 없다: {ex}"))
 

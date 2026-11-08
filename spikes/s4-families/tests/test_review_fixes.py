@@ -217,3 +217,122 @@ def test_family_set_예시가_성공한다(sess):
 def test_죽은_코드_정리():
     from dobim_core import commands_family
     assert not hasattr(commands_family, "_check_values_keys")
+
+
+# ---------------------------------------------------------------- 3. 시간·자원 상한
+BASE_RECIPE = {"schema": "dobim.family/1", "id": "x.t", "version": 1, "name": "t", "ifc": {"class": "IfcFurniture"},
+               "params": {"a": {"kind": "type", "default": 500, "min": 100, "max": 900}}, "solids": [],
+               "plan_symbol": {"default": [{"type": "line", "from": [0, 0], "to": [1, 1]}]}}
+BOX = {"id": "box", "op": "extrude", "plane": "xy", "profile": {"shape": "rect", "u": [0, "a"], "v": [0, "a"]}, "range": [0, "a"]}
+
+
+def _recipe(solids, **kw):
+    r = copy.deepcopy(BASE_RECIPE)
+    r["solids"] = solids
+    r.update(kw)
+    return r
+
+
+def _void(vid, u, v, rng=(-10, 2000), **kw):
+    return {"id": vid, "role": "void", "cuts": ["box"], "op": "extrude", "plane": "xy",
+            "profile": {"shape": "rect", "u": u, "v": v}, "range": list(rng), **kw}
+
+
+def test_solid당_공극_수_상한(sess):
+    from dobim_core.family.evaluate import MAX_CUTS_PER_SOLID
+    many = _void("v", ["k*10", "k*10+5"], [0, 5], repeat={"var": "k", "count": MAX_CUTS_PER_SOLID + 1})
+    r = _recipe([BOX, many])
+    t0 = __import__("time").perf_counter()
+    res = ok(sess.run("family.validate", {"recipe": r, "level": "static"}))
+    assert not res["ok"] and any(e["code"] == "E_LIMIT" and "공극" in e["message"] for e in res["errors"])
+    assert __import__("time").perf_counter() - t0 < 5
+    ok_n = _recipe([BOX, _void("v", ["k*10", "k*10+5"], [0, 5], repeat={"var": "k", "count": MAX_CUTS_PER_SOLID})])
+    assert ok(sess.run("family.validate", {"recipe": ok_n, "level": "static"}))["ok"]
+
+
+def _heavy_recipe():
+    import math
+    expr = "+".join(["1"] * 33)
+    pts = [[f"{round(100 * math.cos(2 * math.pi * i / 32))}+0*({expr})", f"{round(100 * math.sin(2 * math.pi * i / 32))}+0*({expr})"] for i in range(32)]
+    sol = [{"id": f"s{i}", "op": "extrude", "plane": "xy", "repeat": {"var": "k", "count": 50},
+            "profile": {"shape": "polygon", "points": pts}, "range": [f"0*({expr})", f"10+0*({expr})"]} for i in range(8)]
+    return _recipe(sol)
+
+
+def test_식_평가_예산이_폭주하는_레시피를_빠르게_거절한다(sess):
+    """검수 재현: 42KB 레시피는 평가 1회에 1.7초, 표본 120개면 3분 넘게 걸렸다. 이제 첫 평가에서 E_LIMIT."""
+    import time
+    r = _heavy_recipe()
+    t0 = time.perf_counter()
+    res = ok(sess.run("family.validate", {"recipe": r, "level": "full"}))
+    dt = time.perf_counter() - t0
+    assert not res["ok"] and any(e["code"] == "E_LIMIT" and "예산" in e["message"] for e in res["errors"]), res["errors"][:2]
+    assert dt < 10, dt
+    reg = sess.run("family.register", {"recipe": r})
+    assert reg["error"]["code"] == "FAMILY_INVALID" and reg["error"]["details"]["issues"][0]["code"] == "E_LIMIT"
+
+
+def test_검증_전체_시간_예산(door):
+    import time
+    from dobim_core.family.validate import validate_recipe
+    t0 = time.perf_counter()
+    res = validate_recipe(door, "full", time_budget=0.0)
+    assert not res["ok"] and res["errors"][-1]["code"] == "E_LIMIT" and "시간 예산" in res["errors"][-1]["message"]
+    assert time.perf_counter() - t0 < 3
+    # 표본 평가는 통과하지만 IFC 투영·메시 단계에서 예산이 바닥나는 경우도 멈춘다
+    t0 = time.perf_counter()
+    res = validate_recipe(door, "full", time_budget=1.0)
+    assert not res["ok"] and any(e["code"] == "E_LIMIT" for e in res["errors"]), res["checks"]
+    assert time.perf_counter() - t0 < 20
+    assert validate_recipe(door, "static")["ok"]      # 기본 예산 안에서는 정상
+
+
+# ---------------------------------------------------------------- 4. 공극이 solid 와 안 만나거나 전부 지우는 경우
+def _codes(r, level="full"):
+    from dobim_core.family.validate import validate_recipe
+    res = validate_recipe(r, level)
+    return res, sorted({e["code"] for e in res["errors"]})
+
+
+def test_공극이_solid를_빗나가면_정적_단계에서_E_VOID_MISS():
+    res, codes = _codes(_recipe([BOX, _void("v", [5000, 6000], [5000, 6000])]), "static")
+    assert "E_VOID_MISS" in codes and res["checks"]["geometry"] == "fail"
+    e = next(e for e in res["errors"] if e["code"] == "E_VOID_MISS")
+    assert e["path"] == "/solids/1" and e["hint"]
+
+
+def test_공극이_solid를_전부_지우면_E_SHAPE_VOLUME():
+    res, codes = _codes(_recipe([BOX, _void("v", [-10, 2000], [-10, 2000])]))
+    assert "E_SHAPE_VOLUME" in codes and res["checks"]["geometry_shape"] == "fail", res["errors"]
+    assert "부피가 줄지 않는다" in next(e for e in res["errors"] if e["code"] == "E_SHAPE_VOLUME")["message"]
+
+
+def test_정상_공극과_일부만_빗나가는_반복_공극은_통과():
+    half = _recipe([BOX, _void("v", ["a/2", 2000], [-10, 2000])])             # 절반만 절단
+    res, codes = _codes(half)
+    assert res["ok"], res["errors"]
+    holes = _recipe([BOX, _void("v", ["k*300", "k*300+50"], [100, 150], repeat={"var": "k", "count": 4})])   # a=100 에서는 k>=1 이 빗나간다
+    res, codes = _codes(holes, "static")
+    assert "E_VOID_MISS" not in codes and res["ok"], res["errors"]
+
+
+# ---------------------------------------------------------------- 7. SPEC 에 적은 식 동작(반올림·거듭제곱)이 실제와 같다
+def test_round는_은행가_반올림이고_정수_거듭제곱은_곱셈과_같다():
+    from dobim_core.family import expr as E
+
+    def ev(src, **env):
+        return E.evaluate(E.compile_expr(src), env)
+    assert [ev("round(x)", x=v) for v in (0.5, 1.5, 2.5, -0.5, -1.5)] == [0, 2, 2, 0, -2]
+    assert ev("round(x, 2)", x=1.005) == 1.0
+    x = 1.1
+    assert ev("x**3", x=x) == x * x * x and ev("x**-2", x=x) == 1.0 / (x * x) and ev("x**0", x=x) == 1.0
+    assert ev("2**8") == 256 and isinstance(ev("2**8"), int)
+    assert ev("x**8", x=1.5) == 1.5 ** 8
+    assert ev("x**0.5", x=4.0) == 2.0          # 비정수 지수는 libm pow
+
+
+def test_family_place_예시는_SPEC_의_FAMILY_INVALID_형식을_따른다(sess):
+    r = sess.run("family.place", {"family": "door.single", "values": {"swing": "X"}, "host": F.W3, "offset": 1500})
+    e = r["error"]
+    assert e["code"] == "FAMILY_INVALID" and e["path"] and e["hint"]
+    assert e["details"]["total"] >= 1 and set(e["details"]["issues"][0]) >= {"level", "code", "path", "message"}

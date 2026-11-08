@@ -48,6 +48,7 @@ class Compiled:
     src: str
     tree: ast.Expression
     names: frozenset[str]
+    size: int = 1          # 노드 수(평가 예산 계산용)
 
 
 _CACHE: dict[str, Compiled] = {}
@@ -93,7 +94,7 @@ def compile_expr(src: str) -> Compiled:
                     raise ExprError("E_EXPR_FUNC", f"함수 이름 {node.id} 은 호출로만 쓸 수 있다")
             elif node.id not in CONSTS:
                 names.add(node.id)
-    c = Compiled(src, tree, frozenset(names))
+    c = Compiled(src, tree, frozenset(names), n)
     if len(_CACHE) < 4096:
         _CACHE[src] = c
     return c
@@ -113,6 +114,21 @@ def _finite(x: Any, what: str) -> Any:
     if isinstance(x, int) and abs(x) > 10**15:
         raise ExprError("E_EXPR_LIMIT", f"{what} 결과가 너무 크다")
     return x
+
+
+def _pow(a: Any, b: Any) -> Any:
+    """거듭제곱. 정수 지수는 곱셈만으로 계산한다(IEEE 곱셈은 플랫폼과 무관하게 같은 결과). 비정수 지수만 C 라이브러리 pow 를 쓴다."""
+    if isinstance(a, int) and isinstance(b, int) and b >= 0:
+        return a ** b          # 파이썬 정수는 정확하다
+    if b == int(b):
+        n, base, res = abs(int(b)), float(a), 1.0
+        while n:
+            if n & 1:
+                res *= base
+            base *= base
+            n >>= 1
+        return 1.0 / res if b < 0 else res
+    return a ** b
 
 
 def evaluate(c: Compiled, env: dict[str, Any]) -> Any:
@@ -160,7 +176,7 @@ def _ev(n: ast.AST, env: dict[str, Any]) -> Any:
             if a < 0 and b != int(b):
                 raise ExprError("E_EXPR_MATH", "음수의 비정수 거듭제곱")
         r = {"+": lambda: a + b, "-": lambda: a - b, "*": lambda: a * b, "/": lambda: a / b,
-             "//": lambda: a // b, "%": lambda: a % b, "**": lambda: a ** b}[op]()
+             "//": lambda: a // b, "%": lambda: a % b, "**": lambda: _pow(a, b)}[op]()
         return _finite(r, op)
     if isinstance(n, ast.BoolOp):
         vals = []
