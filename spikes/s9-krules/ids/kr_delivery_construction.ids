@@ -1,0 +1,387 @@
+<?xml version='1.0' encoding='utf-8'?>
+<ids xmlns="http://standards.buildingsmart.org/IDS" xmlns:xs="http://www.w3.org/2001/XMLSchema" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://standards.buildingsmart.org/IDS http://standards.buildingsmart.org/IDS/1.0/ids.xsd">
+    <info>
+        <title>한국 납품 규칙 시범 IDS(조달청 v2.1 실시설계 + 국토부 시행지침 기준)</title>
+        <version>0.1</version>
+        <description>S9 스파이크: 공식 출처가 확인된 문서의 요구사항만 옮김. 속성 사상은 해석이며 사람 확인 필요.</description>
+        <author>spike-s9@example.invalid</author>
+        <purpose>납품 전 자체 점검</purpose>
+    </info>
+    <specifications>
+        <specification name="층(IfcBuildingStorey)이 1개 이상 있어야 함" ifcVersion="IFC2X3 IFC4 IFC4X3_ADD2" identifier="KR-IDS-01" description="조달청 v2.1 5.2.2(4)나 최소부위 작성대상(공간: 층)" instructions="구역(IfcZone)은 선택으로 두고 검사하지 않음">
+            <applicability minOccurs="1" maxOccurs="unbounded">
+                <entity>
+                    <name>
+                        <simpleValue>IFCBUILDINGSTOREY</simpleValue>
+                    </name>
+                </entity>
+            </applicability>
+            <requirements />
+        </specification>
+        <specification name="실(IfcSpace)이 1개 이상 있어야 함" ifcVersion="IFC2X3 IFC4 IFC4X3_ADD2" identifier="KR-IDS-02" description="조달청 v2.1 5.2.2(3) 공간객체 작성, 5.2.2(4)나 최소부위(공간: 실)" instructions="">
+            <applicability minOccurs="1" maxOccurs="unbounded">
+                <entity>
+                    <name>
+                        <simpleValue>IFCSPACE</simpleValue>
+                    </name>
+                </entity>
+            </applicability>
+            <requirements />
+        </specification>
+        <specification name="실에는 실명이 있어야 함" ifcVersion="IFC2X3 IFC4 IFC4X3_ADD2" identifier="KR-IDS-03" description="조달청 v2.1 부속서-1 3.1(1)(2) 공간객체 입력정보: 실명" instructions="해석: 실명 = IfcSpace.LongName (Revit/Archicad IFC 내보내기 관례). 원문은 IFC 속성을 지정하지 않음">
+            <applicability minOccurs="0" maxOccurs="unbounded">
+                <entity>
+                    <name>
+                        <simpleValue>IFCSPACE</simpleValue>
+                    </name>
+                </entity>
+            </applicability>
+            <requirements>
+                <attribute cardinality="required">
+                    <name>
+                        <simpleValue>LongName</simpleValue>
+                    </name>
+                </attribute>
+            </requirements>
+        </specification>
+        <specification name="실에는 실ID(Name)가 있어야 함" ifcVersion="IFC2X3 IFC4 IFC4X3_ADD2" identifier="KR-IDS-04" description="조달청 v2.1 부속서-1 3.1(1)(3) 공간객체 입력정보: 실ID" instructions="해석: 실ID = IfcSpace.Name (내보내기 관례: 방 번호). 형식 검사는 KR-CODE-08">
+            <applicability minOccurs="0" maxOccurs="unbounded">
+                <entity>
+                    <name>
+                        <simpleValue>IFCSPACE</simpleValue>
+                    </name>
+                </entity>
+            </applicability>
+            <requirements>
+                <attribute cardinality="required">
+                    <name>
+                        <simpleValue>Name</simpleValue>
+                    </name>
+                </attribute>
+            </requirements>
+        </specification>
+        <specification name="실에는 공간분류 분류참조가 있어야 함" ifcVersion="IFC2X3 IFC4 IFC4X3_ADD2" identifier="KR-IDS-05" description="조달청 v2.1 부속서-1 3.1(1)(4) 공간객체 입력정보: 공간분류코드" instructions="해석: IfcRelAssociatesClassification 로 연결. 코드 형식은 KR-CODE-09, 목록 전체 대조는 미구현">
+            <applicability minOccurs="0" maxOccurs="unbounded">
+                <entity>
+                    <name>
+                        <simpleValue>IFCSPACE</simpleValue>
+                    </name>
+                </entity>
+            </applicability>
+            <requirements>
+                <classification cardinality="required">
+                    <system>
+                        <xs:restriction base="xs:string">
+                            <xs:pattern value=".+" />
+                        </xs:restriction>
+                    </system>
+                </classification>
+            </requirements>
+        </specification>
+        <specification name="범용객체(IfcBuildingElementProxy)에는 분류 정보가 있어야 함" ifcVersion="IFC2X3 IFC4 IFC4X3_ADD2" identifier="KR-IDS-06" description="조달청 v2.1 5.2.2(4)마, 부속서-1 5.1: 범용객체는 건설정보분류체계 부위분류를 입력" instructions="해석: 분류 참조 존재만 검사. 부위분류 목록(E0.. 등) 대조는 미구현">
+            <applicability minOccurs="0" maxOccurs="unbounded">
+                <entity>
+                    <name>
+                        <simpleValue>IFCBUILDINGELEMENTPROXY</simpleValue>
+                    </name>
+                </entity>
+            </applicability>
+            <requirements>
+                <classification cardinality="required">
+                    <system>
+                        <xs:restriction base="xs:string">
+                            <xs:pattern value=".+" />
+                        </xs:restriction>
+                    </system>
+                </classification>
+            </requirements>
+        </specification>
+        <specification name="주요 부위 객체에는 부재명(Name)이 있어야 함" ifcVersion="IFC2X3 IFC4 IFC4X3_ADD2" identifier="KR-IDS-07" description="조달청 v2.1 5.2.2(4)바, 부속서-1 4.2(2): 부위객체에 부재명 입력" instructions="해석: 부재명 = IfcElement.Name. 원문은 소프트웨어 기본 속성 항목을 쓰라고만 함">
+            <applicability minOccurs="0" maxOccurs="unbounded">
+                <entity>
+                    <name>
+                        <xs:restriction base="xs:string">
+                            <xs:enumeration value="IFCWALL" />
+                            <xs:enumeration value="IFCSLAB" />
+                            <xs:enumeration value="IFCCOLUMN" />
+                            <xs:enumeration value="IFCBEAM" />
+                            <xs:enumeration value="IFCDOOR" />
+                            <xs:enumeration value="IFCWINDOW" />
+                            <xs:enumeration value="IFCROOF" />
+                            <xs:enumeration value="IFCSTAIR" />
+                            <xs:enumeration value="IFCRAILING" />
+                            <xs:enumeration value="IFCCURTAINWALL" />
+                            <xs:enumeration value="IFCCOVERING" />
+                            <xs:enumeration value="IFCFOOTING" />
+                        </xs:restriction>
+                    </name>
+                </entity>
+            </applicability>
+            <requirements>
+                <attribute cardinality="required">
+                    <name>
+                        <simpleValue>Name</simpleValue>
+                    </name>
+                </attribute>
+            </requirements>
+        </specification>
+        <specification name="에너지 검토 시 7종 부위에는 IsExternal 값이 있어야 함" ifcVersion="IFC2X3 IFC4 IFC4X3_ADD2" identifier="KR-IDS-08" description="조달청 v2.1 5.2.5(4)나 / 국토부 시행지침 설계자편 2.3.2 건축: 바닥·벽체·지붕·기둥·문·창문·커튼월" instructions="조건부 규칙(환경시뮬레이션 수행 시). 값이 외기 면 실제와 맞는지는 기하 판정이 필요해 검사하지 않음">
+            <applicability minOccurs="0" maxOccurs="unbounded">
+                <entity>
+                    <name>
+                        <xs:restriction base="xs:string">
+                            <xs:enumeration value="IFCSLAB" />
+                            <xs:enumeration value="IFCWALL" />
+                            <xs:enumeration value="IFCROOF" />
+                            <xs:enumeration value="IFCCOLUMN" />
+                            <xs:enumeration value="IFCDOOR" />
+                            <xs:enumeration value="IFCWINDOW" />
+                            <xs:enumeration value="IFCCURTAINWALL" />
+                        </xs:restriction>
+                    </name>
+                </entity>
+            </applicability>
+            <requirements>
+                <property dataType="IFCBOOLEAN" cardinality="required">
+                    <propertySet>
+                        <xs:restriction base="xs:string">
+                            <xs:pattern value="Pset_.*Common" />
+                        </xs:restriction>
+                    </propertySet>
+                    <baseName>
+                        <simpleValue>IsExternal</simpleValue>
+                    </baseName>
+                </property>
+            </requirements>
+        </specification>
+        <specification name="외기에 면한 6종 부위에는 열관류율이 있어야 함" ifcVersion="IFC2X3 IFC4 IFC4X3_ADD2" identifier="KR-IDS-09" description="조달청 v2.1 5.2.5(4)나: 바닥·벽체·지붕·문·창문·커튼월 6종" instructions="조건부: IsExternal=TRUE 인 객체만 대상. 두 문서의 대상 종류가 달라(바닥 포함 여부) 따로 둠">
+            <applicability minOccurs="0" maxOccurs="unbounded">
+                <entity>
+                    <name>
+                        <xs:restriction base="xs:string">
+                            <xs:enumeration value="IFCSLAB" />
+                            <xs:enumeration value="IFCWALL" />
+                            <xs:enumeration value="IFCROOF" />
+                            <xs:enumeration value="IFCDOOR" />
+                            <xs:enumeration value="IFCWINDOW" />
+                            <xs:enumeration value="IFCCURTAINWALL" />
+                        </xs:restriction>
+                    </name>
+                </entity>
+                <property dataType="IFCBOOLEAN">
+                    <propertySet>
+                        <xs:restriction base="xs:string">
+                            <xs:pattern value="Pset_.*Common" />
+                        </xs:restriction>
+                    </propertySet>
+                    <baseName>
+                        <simpleValue>IsExternal</simpleValue>
+                    </baseName>
+                    <value>
+                        <simpleValue>TRUE</simpleValue>
+                    </value>
+                </property>
+            </applicability>
+            <requirements>
+                <property dataType="IFCTHERMALTRANSMITTANCEMEASURE" cardinality="required">
+                    <propertySet>
+                        <xs:restriction base="xs:string">
+                            <xs:pattern value="Pset_.*Common" />
+                        </xs:restriction>
+                    </propertySet>
+                    <baseName>
+                        <simpleValue>ThermalTransmittance</simpleValue>
+                    </baseName>
+                </property>
+            </requirements>
+        </specification>
+        <specification name="외기에 면한 5종 부위에는 열관류율이 있어야 함" ifcVersion="IFC2X3 IFC4 IFC4X3_ADD2" identifier="KR-IDS-10" description="국토부 시행지침 설계자편 2.3.2 건축: 벽체·지붕·문·창문·커튼월 5종(선택 사항)" instructions="조건부: IsExternal=TRUE 인 객체만 대상. 두 문서의 대상 종류가 달라(바닥 포함 여부) 따로 둠">
+            <applicability minOccurs="0" maxOccurs="unbounded">
+                <entity>
+                    <name>
+                        <xs:restriction base="xs:string">
+                            <xs:enumeration value="IFCWALL" />
+                            <xs:enumeration value="IFCROOF" />
+                            <xs:enumeration value="IFCDOOR" />
+                            <xs:enumeration value="IFCWINDOW" />
+                            <xs:enumeration value="IFCCURTAINWALL" />
+                        </xs:restriction>
+                    </name>
+                </entity>
+                <property dataType="IFCBOOLEAN">
+                    <propertySet>
+                        <xs:restriction base="xs:string">
+                            <xs:pattern value="Pset_.*Common" />
+                        </xs:restriction>
+                    </propertySet>
+                    <baseName>
+                        <simpleValue>IsExternal</simpleValue>
+                    </baseName>
+                    <value>
+                        <simpleValue>TRUE</simpleValue>
+                    </value>
+                </property>
+            </applicability>
+            <requirements>
+                <property dataType="IFCTHERMALTRANSMITTANCEMEASURE" cardinality="required">
+                    <propertySet>
+                        <xs:restriction base="xs:string">
+                            <xs:pattern value="Pset_.*Common" />
+                        </xs:restriction>
+                    </propertySet>
+                    <baseName>
+                        <simpleValue>ThermalTransmittance</simpleValue>
+                    </baseName>
+                </property>
+            </requirements>
+        </specification>
+        <specification name="대지(IfcSite)에 위도·경도가 있어야 함" ifcVersion="IFC2X3 IFC4 IFC4X3_ADD2" identifier="KR-IDS-11" description="조달청 v2.1 5.2.7(2)가 대지 임시수준점의 GIS 좌표 / 국토부 설계자편 2.3.2(1)(나)" instructions="해석: IfcSite.RefLatitude/RefLongitude. 임시수준점이 대지 기준점과 같다고 보는 단순화">
+            <applicability minOccurs="0" maxOccurs="unbounded">
+                <entity>
+                    <name>
+                        <simpleValue>IFCSITE</simpleValue>
+                    </name>
+                </entity>
+            </applicability>
+            <requirements>
+                <attribute cardinality="required">
+                    <name>
+                        <simpleValue>RefLatitude</simpleValue>
+                    </name>
+                </attribute>
+                <attribute cardinality="required">
+                    <name>
+                        <simpleValue>RefLongitude</simpleValue>
+                    </name>
+                </attribute>
+            </requirements>
+        </specification>
+        <specification name="대지에 주소(SiteAddress)가 있어야 함" ifcVersion="IFC2X3 IFC4 IFC4X3_ADD2" identifier="KR-IDS-12" description="조달청 v2.1 부속서-1 2 사업정보: 대지현황(주소)" instructions="해석: IfcSite.SiteAddress">
+            <applicability minOccurs="0" maxOccurs="unbounded">
+                <entity>
+                    <name>
+                        <simpleValue>IFCSITE</simpleValue>
+                    </name>
+                </entity>
+            </applicability>
+            <requirements>
+                <attribute cardinality="required">
+                    <name>
+                        <simpleValue>SiteAddress</simpleValue>
+                    </name>
+                </attribute>
+            </requirements>
+        </specification>
+        <specification name="프로젝트에 사업명(Name)이 있어야 함" ifcVersion="IFC2X3 IFC4 IFC4X3_ADD2" identifier="KR-IDS-13" description="조달청 v2.1 부속서-1 2 사업정보: 사업명" instructions="해석: IfcProject.Name">
+            <applicability minOccurs="0" maxOccurs="unbounded">
+                <entity>
+                    <name>
+                        <simpleValue>IFCPROJECT</simpleValue>
+                    </name>
+                </entity>
+            </applicability>
+            <requirements>
+                <attribute cardinality="required">
+                    <name>
+                        <simpleValue>Name</simpleValue>
+                    </name>
+                </attribute>
+            </requirements>
+        </specification>
+        <specification name="건물에 용도(OccupancyType)가 있어야 함" ifcVersion="IFC2X3 IFC4 IFC4X3_ADD2" identifier="KR-IDS-14" description="조달청 v2.1 부속서-1 2 사업정보: 건축규모(용도)" instructions="해석: Pset_BuildingCommon.OccupancyType">
+            <applicability minOccurs="0" maxOccurs="unbounded">
+                <entity>
+                    <name>
+                        <simpleValue>IFCBUILDING</simpleValue>
+                    </name>
+                </entity>
+            </applicability>
+            <requirements>
+                <property cardinality="required">
+                    <propertySet>
+                        <simpleValue>Pset_BuildingCommon</simpleValue>
+                    </propertySet>
+                    <baseName>
+                        <simpleValue>OccupancyType</simpleValue>
+                    </baseName>
+                </property>
+            </requirements>
+        </specification>
+        <specification name="건물에 층수(NumberOfStoreys)가 있어야 함" ifcVersion="IFC2X3 IFC4 IFC4X3_ADD2" identifier="KR-IDS-15" description="조달청 v2.1 부속서-1 2 사업정보: 건축규모(층수)" instructions="해석: Pset_BuildingCommon.NumberOfStoreys">
+            <applicability minOccurs="0" maxOccurs="unbounded">
+                <entity>
+                    <name>
+                        <simpleValue>IFCBUILDING</simpleValue>
+                    </name>
+                </entity>
+            </applicability>
+            <requirements>
+                <property cardinality="required">
+                    <propertySet>
+                        <simpleValue>Pset_BuildingCommon</simpleValue>
+                    </propertySet>
+                    <baseName>
+                        <simpleValue>NumberOfStoreys</simpleValue>
+                    </baseName>
+                </property>
+            </requirements>
+        </specification>
+        <specification name="건물에 연면적(GrossFloorArea)이 있어야 함" ifcVersion="IFC4 IFC4X3_ADD2" identifier="KR-IDS-16" description="조달청 v2.1 부속서-1 2 사업정보: 건축규모(연면적)" instructions="해석: Qto_BuildingBaseQuantities.GrossFloorArea (IFC4 이상)">
+            <applicability minOccurs="0" maxOccurs="unbounded">
+                <entity>
+                    <name>
+                        <simpleValue>IFCBUILDING</simpleValue>
+                    </name>
+                </entity>
+            </applicability>
+            <requirements>
+                <property cardinality="required">
+                    <propertySet>
+                        <simpleValue>Qto_BuildingBaseQuantities</simpleValue>
+                    </propertySet>
+                    <baseName>
+                        <simpleValue>GrossFloorArea</simpleValue>
+                    </baseName>
+                </property>
+            </requirements>
+        </specification>
+        <specification name="건물에 건축면적(FootprintArea)이 있어야 함" ifcVersion="IFC4 IFC4X3_ADD2" identifier="KR-IDS-17" description="조달청 v2.1 부속서-1 2 사업정보: 건축규모(건축면적)" instructions="해석: Qto_BuildingBaseQuantities.FootprintArea (IFC4 이상)">
+            <applicability minOccurs="0" maxOccurs="unbounded">
+                <entity>
+                    <name>
+                        <simpleValue>IFCBUILDING</simpleValue>
+                    </name>
+                </entity>
+            </applicability>
+            <requirements>
+                <property cardinality="required">
+                    <propertySet>
+                        <simpleValue>Qto_BuildingBaseQuantities</simpleValue>
+                    </propertySet>
+                    <baseName>
+                        <simpleValue>FootprintArea</simpleValue>
+                    </baseName>
+                </property>
+            </requirements>
+        </specification>
+        <specification name="대지에 대지면적(GrossArea)이 있어야 함" ifcVersion="IFC4 IFC4X3_ADD2" identifier="KR-IDS-18" description="조달청 v2.1 부속서-1 2 사업정보: 대지현황(대지면적)" instructions="해석: Qto_SiteBaseQuantities.GrossArea (IFC4 이상)">
+            <applicability minOccurs="0" maxOccurs="unbounded">
+                <entity>
+                    <name>
+                        <simpleValue>IFCSITE</simpleValue>
+                    </name>
+                </entity>
+            </applicability>
+            <requirements>
+                <property cardinality="required">
+                    <propertySet>
+                        <simpleValue>Qto_SiteBaseQuantities</simpleValue>
+                    </propertySet>
+                    <baseName>
+                        <simpleValue>GrossArea</simpleValue>
+                    </baseName>
+                </property>
+            </requirements>
+        </specification>
+    </specifications>
+</ids>
