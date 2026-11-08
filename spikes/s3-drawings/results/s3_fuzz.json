@@ -11,8 +11,8 @@
       "error_count": 0,
       "min_match_ratio": 1.0,
       "max_segments_in_a_view": 138,
-      "mean_segments": 57.6,
-      "seconds": 71.0
+      "mean_segments": 55.0,
+      "seconds": 62.9
     },
     {
       "seed": 12,
@@ -24,8 +24,8 @@
       "error_count": 0,
       "min_match_ratio": 1.0,
       "max_segments_in_a_view": 235,
-      "mean_segments": 67.2,
-      "seconds": 119.8
+      "mean_segments": 65.9,
+      "seconds": 102.6
     },
     {
       "seed": 13,
@@ -37,8 +37,8 @@
       "error_count": 0,
       "min_match_ratio": 1.0,
       "max_segments_in_a_view": 149,
-      "mean_segments": 52.7,
-      "seconds": 94.1
+      "mean_segments": 51.8,
+      "seconds": 83.9
     },
     {
       "seed": 14,
@@ -50,18 +50,100 @@
       "error_count": 0,
       "min_match_ratio": 1.0,
       "max_segments_in_a_view": 212,
-      "mean_segments": 64.3,
-      "seconds": 130.4
+      "mean_segments": 63.6,
+      "seconds": 118.0
     }
   ],
   "total_checks": 10536,
   "total_diffs": 0,
   "total_errors": 0,
   "min_match_ratio": 1.0,
+  "affected_api": {
+    "what": "view.affected(rev) 가 rev 로 선분이 바뀐 뷰를 모두 포함하는가 (오라클: 변경 직전 증분 선분 vs 변경 뒤 캐시 없는 전체 재생성). missed_key_walk 는 낡은 뷰 포함 없이 입력 키 따라가기만으로 센 누락",
+    "runs": [
+      {
+        "seed": 41,
+        "steps": 300,
+        "ops": 289,
+        "checked": 289,
+        "changed_views": 166,
+        "reported_views": 337,
+        "over_reported": 171,
+        "missed_count": 0,
+        "missed": [],
+        "missed_key_walk_count": 0,
+        "missed_key_walk": [],
+        "error_count": 0,
+        "errors": [],
+        "precision": 0.493,
+        "seconds": 5.5
+      },
+      {
+        "seed": 42,
+        "steps": 300,
+        "ops": 307,
+        "checked": 307,
+        "changed_views": 267,
+        "reported_views": 464,
+        "over_reported": 197,
+        "missed_count": 0,
+        "missed": [],
+        "missed_key_walk_count": 0,
+        "missed_key_walk": [],
+        "error_count": 0,
+        "errors": [],
+        "precision": 0.575,
+        "seconds": 19.2
+      },
+      {
+        "seed": 43,
+        "steps": 300,
+        "ops": 303,
+        "checked": 303,
+        "changed_views": 208,
+        "reported_views": 291,
+        "over_reported": 83,
+        "missed_count": 0,
+        "missed": [],
+        "missed_key_walk_count": 0,
+        "missed_key_walk": [],
+        "error_count": 0,
+        "errors": [],
+        "precision": 0.715,
+        "seconds": 3.1
+      },
+      {
+        "seed": 44,
+        "steps": 300,
+        "ops": 306,
+        "checked": 306,
+        "changed_views": 224,
+        "reported_views": 396,
+        "over_reported": 172,
+        "missed_count": 0,
+        "missed": [],
+        "missed_key_walk_count": 0,
+        "missed_key_walk": [],
+        "error_count": 0,
+        "errors": [],
+        "precision": 0.566,
+        "seconds": 13.8
+      }
+    ],
+    "total_ops": 1205,
+    "total_checked": 1205,
+    "changed_views": 865,
+    "reported_views": 1488,
+    "over_reported": 623,
+    "precision": 0.581,
+    "total_missed": 0,
+    "total_missed_key_walk": 0,
+    "total_errors": 0
+  },
   "env": {
     "python": "3.12.2",
     "platform": "Windows-11-10.0.26200-SP0",
     "machine": "AMD64"
   },
-  "generated_at_utc": "2026-11-08T15:56:58Z"
+  "generated_at_utc": "2026-11-08T17:58:11Z"
 }

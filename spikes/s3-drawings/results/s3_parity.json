@@ -20,12 +20,1079 @@
   "risk_gating_enforced": true,
   "mismatches": [],
   "parity_C_percent": 100.0,
+  "results": [
+    {
+      "label": "ex-commands_describe-0",
+      "command": "commands.describe",
+      "same_envelope": true,
+      "exit_code": 0,
+      "exit_code_matches_envelope": true,
+      "ok": true,
+      "state_hash_equal": true,
+      "second_step": null
+    },
+    {
+      "label": "ex-commands_search-0",
+      "command": "commands.search",
+      "same_envelope": true,
+      "exit_code": 0,
+      "exit_code_matches_envelope": true,
+      "ok": true,
+      "state_hash_equal": true,
+      "second_step": null
+    },
+    {
+      "label": "ex-commands_search-1",
+      "command": "commands.search",
+      "same_envelope": true,
+      "exit_code": 0,
+      "exit_code_matches_envelope": true,
+      "ok": true,
+      "state_hash_equal": true,
+      "second_step": null
+    },
+    {
+      "label": "ex-commands_search-2",
+      "command": "commands.search",
+      "same_envelope": true,
+      "exit_code": 0,
+      "exit_code_matches_envelope": true,
+      "ok": true,
+      "state_hash_equal": true,
+      "second_step": null
+    },
+    {
+      "label": "ex-door_place-0",
+      "command": "door.place",
+      "same_envelope": true,
+      "exit_code": 0,
+      "exit_code_matches_envelope": true,
+      "ok": true,
+      "state_hash_equal": true,
+      "second_step": null
+    },
+    {
+      "label": "ex-door_set-0",
+      "command": "door.set",
+      "same_envelope": true,
+      "exit_code": 0,
+      "exit_code_matches_envelope": true,
+      "ok": true,
+      "state_hash_equal": true,
+      "second_step": null
+    },
+    {
+      "label": "ex-element_delete-0",
+      "command": "element.delete",
+      "same_envelope": true,
+      "exit_code": 0,
+      "exit_code_matches_envelope": true,
+      "ok": true,
+      "state_hash_equal": true,
+      "second_step": null
+    },
+    {
+      "label": "ex-element_get-0",
+      "command": "element.get",
+      "same_envelope": true,
+      "exit_code": 0,
+      "exit_code_matches_envelope": true,
+      "ok": true,
+      "state_hash_equal": true,
+      "second_step": null
+    },
+    {
+      "label": "ex-element_query-0",
+      "command": "element.query",
+      "same_envelope": true,
+      "exit_code": 0,
+      "exit_code_matches_envelope": true,
+      "ok": true,
+      "state_hash_equal": true,
+      "second_step": null
+    },
+    {
+      "label": "ex-history_affected-0",
+      "command": "history.affected",
+      "same_envelope": true,
+      "exit_code": 0,
+      "exit_code_matches_envelope": true,
+      "ok": true,
+      "state_hash_equal": true,
+      "second_step": null
+    },
+    {
+      "label": "ex-history_affected-1",
+      "command": "history.affected",
+      "same_envelope": true,
+      "exit_code": 0,
+      "exit_code_matches_envelope": true,
+      "ok": true,
+      "state_hash_equal": true,
+      "second_step": null
+    },
+    {
+      "label": "ex-history_list-0",
+      "command": "history.list",
+      "same_envelope": true,
+      "exit_code": 0,
+      "exit_code_matches_envelope": true,
+      "ok": true,
+      "state_hash_equal": true,
+      "second_step": null
+    },
+    {
+      "label": "ex-history_redo-0",
+      "command": "history.redo",
+      "same_envelope": true,
+      "exit_code": 0,
+      "exit_code_matches_envelope": true,
+      "ok": true,
+      "state_hash_equal": true,
+      "second_step": null
+    },
+    {
+      "label": "ex-history_undo-0",
+      "command": "history.undo",
+      "same_envelope": true,
+      "exit_code": 0,
+      "exit_code_matches_envelope": true,
+      "ok": true,
+      "state_hash_equal": true,
+      "second_step": null
+    },
+    {
+      "label": "ex-ifc_export-0",
+      "command": "ifc.export",
+      "same_envelope": true,
+      "exit_code": 6,
+      "exit_code_matches_envelope": true,
+      "ok": false,
+      "state_hash_equal": true,
+      "second_step": {
+        "cli": {
+          "ok": true,
+          "rev": 10,
+          "result": {
+            "path": "export-example.ifc",
+            "bytes": 10848,
+            "rev": 10,
+            "snapshot": null
+          },
+          "affected": {
+            "created": [],
+            "modified": [],
+            "deleted": [],
+            "counts": {
+              "created": 0,
+              "modified": 0,
+              "deleted": 0
+            },
+            "truncated": false
+          },
+          "warnings": [],
+          "page": null,
+          "artifacts": [],
+          "job": null
+        },
+        "mcp": {
+          "ok": true,
+          "rev": 10,
+          "result": {
+            "path": "export-example.ifc",
+            "bytes": 10848,
+            "rev": 10,
+            "snapshot": null
+          },
+          "affected": {
+            "created": [],
+            "modified": [],
+            "deleted": [],
+            "counts": {
+              "created": 0,
+              "modified": 0,
+              "deleted": 0
+            },
+            "truncated": false
+          },
+          "warnings": [],
+          "page": null,
+          "artifacts": [],
+          "job": null
+        },
+        "cli_exit": 0,
+        "mcp_is_error": false,
+        "both_ok": true
+      }
+    },
+    {
+      "label": "ex-ifc_restore-0",
+      "command": "ifc.restore",
+      "same_envelope": true,
+      "exit_code": 6,
+      "exit_code_matches_envelope": true,
+      "ok": false,
+      "state_hash_equal": true,
+      "second_step": {
+        "cli": {
+          "ok": true,
+          "rev": 10,
+          "result": {
+            "path": "export-example.ifc",
+            "restored_from": 1,
+            "bytes": 10848,
+            "snapshot": ".dobim-snapshots/export-example.ifc.3"
+          },
+          "affected": {
+            "created": [],
+            "modified": [],
+            "deleted": [],
+            "counts": {
+              "created": 0,
+              "modified": 0,
+              "deleted": 0
+            },
+            "truncated": false
+          },
+          "warnings": [],
+          "page": null,
+          "artifacts": [],
+          "job": null
+        },
+        "mcp": {
+          "ok": true,
+          "rev": 10,
+          "result": {
+            "path": "export-example.ifc",
+            "restored_from": 1,
+            "bytes": 10848,
+            "snapshot": ".dobim-snapshots/export-example.ifc.3"
+          },
+          "affected": {
+            "created": [],
+            "modified": [],
+            "deleted": [],
+            "counts": {
+              "created": 0,
+              "modified": 0,
+              "deleted": 0
+            },
+            "truncated": false
+          },
+          "warnings": [],
+          "page": null,
+          "artifacts": [],
+          "job": null
+        },
+        "cli_exit": 0,
+        "mcp_is_error": false,
+        "both_ok": true
+      }
+    },
+    {
+      "label": "ex-ifc_snapshots-0",
+      "command": "ifc.snapshots",
+      "same_envelope": true,
+      "exit_code": 0,
+      "exit_code_matches_envelope": true,
+      "ok": true,
+      "state_hash_equal": true,
+      "second_step": null
+    },
+    {
+      "label": "ex-join_clear-0",
+      "command": "join.clear",
+      "same_envelope": true,
+      "exit_code": 0,
+      "exit_code_matches_envelope": true,
+      "ok": true,
+      "state_hash_equal": true,
+      "second_step": null
+    },
+    {
+      "label": "ex-join_set-0",
+      "command": "join.set",
+      "same_envelope": true,
+      "exit_code": 0,
+      "exit_code_matches_envelope": true,
+      "ok": true,
+      "state_hash_equal": true,
+      "second_step": null
+    },
+    {
+      "label": "ex-level_create-0",
+      "command": "level.create",
+      "same_envelope": true,
+      "exit_code": 0,
+      "exit_code_matches_envelope": true,
+      "ok": true,
+      "state_hash_equal": true,
+      "second_step": null
+    },
+    {
+      "label": "ex-material_set-0",
+      "command": "material.set",
+      "same_envelope": true,
+      "exit_code": 0,
+      "exit_code_matches_envelope": true,
+      "ok": true,
+      "state_hash_equal": true,
+      "second_step": null
+    },
+    {
+      "label": "ex-model_hash-0",
+      "command": "model.hash",
+      "same_envelope": true,
+      "exit_code": 0,
+      "exit_code_matches_envelope": true,
+      "ok": true,
+      "state_hash_equal": true,
+      "second_step": null
+    },
+    {
+      "label": "ex-model_stats-0",
+      "command": "model.stats",
+      "same_envelope": true,
+      "exit_code": 0,
+      "exit_code_matches_envelope": true,
+      "ok": true,
+      "state_hash_equal": true,
+      "second_step": null
+    },
+    {
+      "label": "ex-model_validate-0",
+      "command": "model.validate",
+      "same_envelope": true,
+      "exit_code": 0,
+      "exit_code_matches_envelope": true,
+      "ok": true,
+      "state_hash_equal": true,
+      "second_step": null
+    },
+    {
+      "label": "ex-project_info-0",
+      "command": "project.info",
+      "same_envelope": true,
+      "exit_code": 0,
+      "exit_code_matches_envelope": true,
+      "ok": true,
+      "state_hash_equal": true,
+      "second_step": null
+    },
+    {
+      "label": "ex-project_new-0",
+      "command": "project.new",
+      "same_envelope": true,
+      "exit_code": 0,
+      "exit_code_matches_envelope": true,
+      "ok": true,
+      "state_hash_equal": true,
+      "second_step": null
+    },
+    {
+      "label": "ex-pset_delete-0",
+      "command": "pset.delete",
+      "same_envelope": true,
+      "exit_code": 0,
+      "exit_code_matches_envelope": true,
+      "ok": true,
+      "state_hash_equal": true,
+      "second_step": null
+    },
+    {
+      "label": "ex-pset_set-0",
+      "command": "pset.set",
+      "same_envelope": true,
+      "exit_code": 0,
+      "exit_code_matches_envelope": true,
+      "ok": true,
+      "state_hash_equal": true,
+      "second_step": null
+    },
+    {
+      "label": "ex-relation_list-0",
+      "command": "relation.list",
+      "same_envelope": true,
+      "exit_code": 0,
+      "exit_code_matches_envelope": true,
+      "ok": true,
+      "state_hash_equal": true,
+      "second_step": null
+    },
+    {
+      "label": "ex-schedule_rows-0",
+      "command": "schedule.rows",
+      "same_envelope": true,
+      "exit_code": 0,
+      "exit_code_matches_envelope": true,
+      "ok": true,
+      "state_hash_equal": true,
+      "second_step": null
+    },
+    {
+      "label": "ex-schedule_summary-0",
+      "command": "schedule.summary",
+      "same_envelope": true,
+      "exit_code": 0,
+      "exit_code_matches_envelope": true,
+      "ok": true,
+      "state_hash_equal": true,
+      "second_step": null
+    },
+    {
+      "label": "ex-view_affected-0",
+      "command": "view.affected",
+      "same_envelope": true,
+      "exit_code": 0,
+      "exit_code_matches_envelope": true,
+      "ok": true,
+      "state_hash_equal": true,
+      "second_step": null
+    },
+    {
+      "label": "ex-view_affected-1",
+      "command": "view.affected",
+      "same_envelope": true,
+      "exit_code": 0,
+      "exit_code_matches_envelope": true,
+      "ok": true,
+      "state_hash_equal": true,
+      "second_step": null
+    },
+    {
+      "label": "ex-view_create-0",
+      "command": "view.create",
+      "same_envelope": true,
+      "exit_code": 0,
+      "exit_code_matches_envelope": true,
+      "ok": true,
+      "state_hash_equal": true,
+      "second_step": null
+    },
+    {
+      "label": "ex-view_create-1",
+      "command": "view.create",
+      "same_envelope": true,
+      "exit_code": 0,
+      "exit_code_matches_envelope": true,
+      "ok": true,
+      "state_hash_equal": true,
+      "second_step": null
+    },
+    {
+      "label": "ex-view_create-2",
+      "command": "view.create",
+      "same_envelope": true,
+      "exit_code": 0,
+      "exit_code_matches_envelope": true,
+      "ok": true,
+      "state_hash_equal": true,
+      "second_step": null
+    },
+    {
+      "label": "ex-view_delete-0",
+      "command": "view.delete",
+      "same_envelope": true,
+      "exit_code": 0,
+      "exit_code_matches_envelope": true,
+      "ok": true,
+      "state_hash_equal": true,
+      "second_step": null
+    },
+    {
+      "label": "ex-view_export-0",
+      "command": "view.export",
+      "same_envelope": true,
+      "exit_code": 6,
+      "exit_code_matches_envelope": true,
+      "ok": false,
+      "state_hash_equal": true,
+      "second_step": {
+        "cli": {
+          "ok": true,
+          "rev": 11,
+          "result": {
+            "path": "view-example.svg",
+            "bytes": 3063,
+            "format": "svg",
+            "segments": 36,
+            "fills": 5,
+            "non_ascii_dropped": false,
+            "digest": "43c1e3044ab64c96",
+            "rev": 11,
+            "snapshot": null
+          },
+          "affected": {
+            "created": [],
+            "modified": [],
+            "deleted": [],
+            "counts": {
+              "created": 0,
+              "modified": 0,
+              "deleted": 0
+            },
+            "truncated": false
+          },
+          "warnings": [],
+          "page": null,
+          "artifacts": [],
+          "job": null
+        },
+        "mcp": {
+          "ok": true,
+          "rev": 11,
+          "result": {
+            "path": "view-example.svg",
+            "bytes": 3063,
+            "format": "svg",
+            "segments": 36,
+            "fills": 5,
+            "non_ascii_dropped": false,
+            "digest": "43c1e3044ab64c96",
+            "rev": 11,
+            "snapshot": null
+          },
+          "affected": {
+            "created": [],
+            "modified": [],
+            "deleted": [],
+            "counts": {
+              "created": 0,
+              "modified": 0,
+              "deleted": 0
+            },
+            "truncated": false
+          },
+          "warnings": [],
+          "page": null,
+          "artifacts": [],
+          "job": null
+        },
+        "cli_exit": 0,
+        "mcp_is_error": false,
+        "both_ok": true
+      }
+    },
+    {
+      "label": "ex-view_linework-0",
+      "command": "view.linework",
+      "same_envelope": true,
+      "exit_code": 0,
+      "exit_code_matches_envelope": true,
+      "ok": true,
+      "state_hash_equal": true,
+      "second_step": null
+    },
+    {
+      "label": "ex-view_list-0",
+      "command": "view.list",
+      "same_envelope": true,
+      "exit_code": 0,
+      "exit_code_matches_envelope": true,
+      "ok": true,
+      "state_hash_equal": true,
+      "second_step": null
+    },
+    {
+      "label": "ex-view_list-1",
+      "command": "view.list",
+      "same_envelope": true,
+      "exit_code": 0,
+      "exit_code_matches_envelope": true,
+      "ok": true,
+      "state_hash_equal": true,
+      "second_step": null
+    },
+    {
+      "label": "ex-view_set-0",
+      "command": "view.set",
+      "same_envelope": true,
+      "exit_code": 0,
+      "exit_code_matches_envelope": true,
+      "ok": true,
+      "state_hash_equal": true,
+      "second_step": null
+    },
+    {
+      "label": "ex-wall_create-0",
+      "command": "wall.create",
+      "same_envelope": true,
+      "exit_code": 0,
+      "exit_code_matches_envelope": true,
+      "ok": true,
+      "state_hash_equal": true,
+      "second_step": null
+    },
+    {
+      "label": "ex-wall_move-0",
+      "command": "wall.move",
+      "same_envelope": true,
+      "exit_code": 0,
+      "exit_code_matches_envelope": true,
+      "ok": true,
+      "state_hash_equal": true,
+      "second_step": null
+    },
+    {
+      "label": "ex-wall_set-0",
+      "command": "wall.set",
+      "same_envelope": true,
+      "exit_code": 0,
+      "exit_code_matches_envelope": true,
+      "ok": true,
+      "state_hash_equal": true,
+      "second_step": null
+    },
+    {
+      "label": "err-0",
+      "command": "no.such.command",
+      "same_envelope": true,
+      "exit_code": 2,
+      "exit_code_matches_envelope": true,
+      "ok": false,
+      "state_hash_equal": true,
+      "second_step": null
+    },
+    {
+      "label": "err-1",
+      "command": "wall.move",
+      "same_envelope": true,
+      "exit_code": 2,
+      "exit_code_matches_envelope": true,
+      "ok": false,
+      "state_hash_equal": true,
+      "second_step": null
+    },
+    {
+      "label": "err-2",
+      "command": "wall.create",
+      "same_envelope": true,
+      "exit_code": 2,
+      "exit_code_matches_envelope": true,
+      "ok": false,
+      "state_hash_equal": true,
+      "second_step": null
+    },
+    {
+      "label": "err-3",
+      "command": "wall.move",
+      "same_envelope": true,
+      "exit_code": 2,
+      "exit_code_matches_envelope": true,
+      "ok": false,
+      "state_hash_equal": true,
+      "second_step": null
+    },
+    {
+      "label": "err-4",
+      "command": "wall.move",
+      "same_envelope": true,
+      "exit_code": 5,
+      "exit_code_matches_envelope": true,
+      "ok": false,
+      "state_hash_equal": true,
+      "second_step": null
+    },
+    {
+      "label": "err-5",
+      "command": "door.place",
+      "same_envelope": true,
+      "exit_code": 1,
+      "exit_code_matches_envelope": true,
+      "ok": false,
+      "state_hash_equal": true,
+      "second_step": null
+    },
+    {
+      "label": "err-6",
+      "command": "wall.move",
+      "same_envelope": true,
+      "exit_code": 4,
+      "exit_code_matches_envelope": true,
+      "ok": false,
+      "state_hash_equal": true,
+      "second_step": null
+    },
+    {
+      "label": "err-7",
+      "command": "ifc.export",
+      "same_envelope": true,
+      "exit_code": 6,
+      "exit_code_matches_envelope": true,
+      "ok": false,
+      "state_hash_equal": true,
+      "second_step": null
+    },
+    {
+      "label": "err-8",
+      "command": "ifc.export",
+      "same_envelope": true,
+      "exit_code": 6,
+      "exit_code_matches_envelope": true,
+      "ok": false,
+      "state_hash_equal": true,
+      "second_step": {
+        "cli": {
+          "ok": true,
+          "rev": 10,
+          "result": {
+            "path": "x.ifc",
+            "bytes": 10848,
+            "rev": 10,
+            "snapshot": null
+          },
+          "affected": {
+            "created": [],
+            "modified": [],
+            "deleted": [],
+            "counts": {
+              "created": 0,
+              "modified": 0,
+              "deleted": 0
+            },
+            "truncated": false
+          },
+          "warnings": [],
+          "page": null,
+          "artifacts": [],
+          "job": null
+        },
+        "mcp": {
+          "ok": true,
+          "rev": 10,
+          "result": {
+            "path": "x.ifc",
+            "bytes": 10848,
+            "rev": 10,
+            "snapshot": null
+          },
+          "affected": {
+            "created": [],
+            "modified": [],
+            "deleted": [],
+            "counts": {
+              "created": 0,
+              "modified": 0,
+              "deleted": 0
+            },
+            "truncated": false
+          },
+          "warnings": [],
+          "page": null,
+          "artifacts": [],
+          "job": null
+        },
+        "cli_exit": 0,
+        "mcp_is_error": false,
+        "both_ok": true
+      }
+    },
+    {
+      "label": "err-9",
+      "command": "ifc.export",
+      "same_envelope": true,
+      "exit_code": 6,
+      "exit_code_matches_envelope": true,
+      "ok": false,
+      "state_hash_equal": true,
+      "second_step": null
+    },
+    {
+      "label": "err-10",
+      "command": "ifc.export",
+      "same_envelope": true,
+      "exit_code": 6,
+      "exit_code_matches_envelope": true,
+      "ok": false,
+      "state_hash_equal": true,
+      "second_step": null
+    },
+    {
+      "label": "err-11",
+      "command": "ifc.export",
+      "same_envelope": true,
+      "exit_code": 6,
+      "exit_code_matches_envelope": true,
+      "ok": false,
+      "state_hash_equal": true,
+      "second_step": null
+    },
+    {
+      "label": "err-12",
+      "command": "ifc.export",
+      "same_envelope": true,
+      "exit_code": 6,
+      "exit_code_matches_envelope": true,
+      "ok": false,
+      "state_hash_equal": true,
+      "second_step": null
+    },
+    {
+      "label": "err-13",
+      "command": "pset.set",
+      "same_envelope": true,
+      "exit_code": 2,
+      "exit_code_matches_envelope": true,
+      "ok": false,
+      "state_hash_equal": true,
+      "second_step": null
+    },
+    {
+      "label": "err-14",
+      "command": "pset.set",
+      "same_envelope": true,
+      "exit_code": 2,
+      "exit_code_matches_envelope": true,
+      "ok": false,
+      "state_hash_equal": true,
+      "second_step": null
+    },
+    {
+      "label": "err-15",
+      "command": "pset.set",
+      "same_envelope": true,
+      "exit_code": 2,
+      "exit_code_matches_envelope": true,
+      "ok": false,
+      "state_hash_equal": true,
+      "second_step": null
+    },
+    {
+      "label": "err-16",
+      "command": "pset.delete",
+      "same_envelope": true,
+      "exit_code": 2,
+      "exit_code_matches_envelope": true,
+      "ok": false,
+      "state_hash_equal": true,
+      "second_step": null
+    },
+    {
+      "label": "err-17",
+      "command": "pset.delete",
+      "same_envelope": true,
+      "exit_code": 0,
+      "exit_code_matches_envelope": true,
+      "ok": true,
+      "state_hash_equal": true,
+      "second_step": null
+    },
+    {
+      "label": "err-18",
+      "command": "pset.delete",
+      "same_envelope": true,
+      "exit_code": 0,
+      "exit_code_matches_envelope": true,
+      "ok": true,
+      "state_hash_equal": true,
+      "second_step": null
+    },
+    {
+      "label": "err-19",
+      "command": "pset.delete",
+      "same_envelope": true,
+      "exit_code": 1,
+      "exit_code_matches_envelope": true,
+      "ok": false,
+      "state_hash_equal": true,
+      "second_step": null
+    },
+    {
+      "label": "err-20",
+      "command": "wall.set",
+      "same_envelope": true,
+      "exit_code": 2,
+      "exit_code_matches_envelope": true,
+      "ok": false,
+      "state_hash_equal": true,
+      "second_step": null
+    },
+    {
+      "label": "err-21",
+      "command": "door.set",
+      "same_envelope": true,
+      "exit_code": 2,
+      "exit_code_matches_envelope": true,
+      "ok": false,
+      "state_hash_equal": true,
+      "second_step": null
+    },
+    {
+      "label": "err-22",
+      "command": "wall.set",
+      "same_envelope": true,
+      "exit_code": 2,
+      "exit_code_matches_envelope": true,
+      "ok": false,
+      "state_hash_equal": true,
+      "second_step": null
+    },
+    {
+      "label": "err-23",
+      "command": "element.query",
+      "same_envelope": true,
+      "exit_code": 0,
+      "exit_code_matches_envelope": true,
+      "ok": true,
+      "state_hash_equal": true,
+      "second_step": null
+    },
+    {
+      "label": "err-24",
+      "command": "element.query",
+      "same_envelope": true,
+      "exit_code": 0,
+      "exit_code_matches_envelope": true,
+      "ok": true,
+      "state_hash_equal": true,
+      "second_step": null
+    },
+    {
+      "label": "err-25",
+      "command": "schedule.rows",
+      "same_envelope": true,
+      "exit_code": 2,
+      "exit_code_matches_envelope": true,
+      "ok": false,
+      "state_hash_equal": true,
+      "second_step": null
+    },
+    {
+      "label": "err-26",
+      "command": "commands.search",
+      "same_envelope": true,
+      "exit_code": 0,
+      "exit_code_matches_envelope": true,
+      "ok": true,
+      "state_hash_equal": true,
+      "second_step": null
+    },
+    {
+      "label": "err-27",
+      "command": "history.list",
+      "same_envelope": true,
+      "exit_code": 0,
+      "exit_code_matches_envelope": true,
+      "ok": true,
+      "state_hash_equal": true,
+      "second_step": null
+    },
+    {
+      "label": "err-28",
+      "command": "schedule.rows",
+      "same_envelope": true,
+      "exit_code": 2,
+      "exit_code_matches_envelope": true,
+      "ok": false,
+      "state_hash_equal": true,
+      "second_step": null
+    },
+    {
+      "label": "err-29",
+      "command": "relation.list",
+      "same_envelope": true,
+      "exit_code": 2,
+      "exit_code_matches_envelope": true,
+      "ok": false,
+      "state_hash_equal": true,
+      "second_step": null
+    },
+    {
+      "label": "err-30",
+      "command": "history.list",
+      "same_envelope": true,
+      "exit_code": 2,
+      "exit_code_matches_envelope": true,
+      "ok": false,
+      "state_hash_equal": true,
+      "second_step": null
+    },
+    {
+      "label": "err-31",
+      "command": "schedule.rows",
+      "same_envelope": true,
+      "exit_code": 0,
+      "exit_code_matches_envelope": true,
+      "ok": true,
+      "state_hash_equal": true,
+      "second_step": null
+    },
+    {
+      "label": "err-32",
+      "command": "history.affected",
+      "same_envelope": true,
+      "exit_code": 0,
+      "exit_code_matches_envelope": true,
+      "ok": true,
+      "state_hash_equal": true,
+      "second_step": null
+    },
+    {
+      "label": "err-33",
+      "command": "history.affected",
+      "same_envelope": true,
+      "exit_code": 5,
+      "exit_code_matches_envelope": true,
+      "ok": false,
+      "state_hash_equal": true,
+      "second_step": null
+    },
+    {
+      "label": "err-34",
+      "command": "pset.set",
+      "same_envelope": true,
+      "exit_code": 2,
+      "exit_code_matches_envelope": true,
+      "ok": false,
+      "state_hash_equal": true,
+      "second_step": null
+    },
+    {
+      "label": "err-35",
+      "command": "pset.set",
+      "same_envelope": true,
+      "exit_code": 2,
+      "exit_code_matches_envelope": true,
+      "ok": false,
+      "state_hash_equal": true,
+      "second_step": null
+    },
+    {
+      "label": "err-36",
+      "command": "wall.move",
+      "same_envelope": true,
+      "exit_code": 0,
+      "exit_code_matches_envelope": true,
+      "ok": true,
+      "state_hash_equal": true,
+      "second_step": null
+    },
+    {
+      "label": "err-37",
+      "command": "history.redo",
+      "same_envelope": true,
+      "exit_code": 1,
+      "exit_code_matches_envelope": true,
+      "ok": false,
+      "state_hash_equal": true,
+      "second_step": null
+    },
+    {
+      "label": "big-batch",
+      "command": "batch(wall.create x300)",
+      "same_envelope": true,
+      "exit_code": 0,
+      "exit_code_matches_envelope": true,
+      "ok": true,
+      "state_hash_equal": true,
+      "second_step": null
+    }
+  ],
   "fixture_hashes": {
     "rev": 10,
     "state": "c85d7be0bc6c59015b2ee9e9b49bf4c75f2f779c934d7b8d4160aefd05cf9d0f",
     "derived": "47c215bb6ea9e93fa7fea940dc539192b7acd9d63483cc19a000e1ff7ed7bac8",
     "ifc": "9386029c481e74cf4a359465db9d07e7048d340730032e43829bb747e26baf7b"
   },
-  "pass": true,
-  "note": "S1 tools/parity.py 를 뷰 커맨드 7개를 더한 레지스트리(38개)에서 다시 실행. 뷰 예시는 준비 단계(PRE)로 뷰를 먼저 만든다"
+  "pass": true
 }

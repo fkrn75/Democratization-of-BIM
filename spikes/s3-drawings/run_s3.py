@@ -197,10 +197,27 @@ def fuzz(seeds=(11, 12, 13, 14), n=300):
         r = s3lib.fuzz_views(Path(tempfile.mkdtemp()), s, n)
         r["seconds"] = round(time.perf_counter() - t, 1)
         runs.append(r)
+    # 영향 뷰 조회(view.affected(rev)): 매 변경(뷰 생성·수정·삭제, undo/redo 포함)에서 선분이 실제로 바뀐 뷰를 빠뜨리지 않는지
+    aff_runs = []
+    for s in (41, 42, 43, 44):
+        t = time.perf_counter()
+        r = s3lib.fuzz_affected(Path(tempfile.mkdtemp()), s, 300)
+        r["seconds"] = round(time.perf_counter() - t, 1)
+        aff_runs.append(r)
+    rep = sum(r["reported_views"] for r in aff_runs)
+    over = sum(r["over_reported"] for r in aff_runs)
     return save("s3_fuzz.json", {
         "what": "S1 임의 커맨드 생성기로 편집(이동·두께·문·조인·삭제·undo/redo)하며 매 스텝 모든 뷰의 증분 선분 == 기준 그래프(캐시 없음) 선분",
         "runs": runs, "total_checks": sum(r["checks"] for r in runs), "total_diffs": sum(r["diff_count"] for r in runs),
-        "total_errors": sum(r["error_count"] for r in runs), "min_match_ratio": min(r["min_match_ratio"] for r in runs)})
+        "total_errors": sum(r["error_count"] for r in runs), "min_match_ratio": min(r["min_match_ratio"] for r in runs),
+        "affected_api": {
+            "what": "view.affected(rev) 가 rev 로 선분이 바뀐 뷰를 모두 포함하는가 (오라클: 변경 직전 증분 선분 vs 변경 뒤 캐시 없는 전체 재생성). "
+                    "missed_key_walk 는 낡은 뷰 포함 없이 입력 키 따라가기만으로 센 누락",
+            "runs": aff_runs, "total_ops": sum(r["ops"] for r in aff_runs), "total_checked": sum(r["checked"] for r in aff_runs),
+            "changed_views": sum(r["changed_views"] for r in aff_runs), "reported_views": rep, "over_reported": over,
+            "precision": round(1 - over / max(rep, 1), 3),
+            "total_missed": sum(r["missed_count"] for r in aff_runs), "total_missed_key_walk": sum(r["missed_key_walk_count"] for r in aff_runs),
+            "total_errors": sum(r["error_count"] for r in aff_runs)}})
 
 
 # ================================================================ D. 음성 대조 (무효화를 일부러 빠뜨림)
@@ -464,7 +481,10 @@ def export():
     rows = []
     for k, v in views.items():
         for ext in ("svg", "pdf"):
-            r = sess.run("view.export", {"id": v, "path": str(work / f"{k}.{ext}"), "overwrite": True})
+            args = {"id": v, "path": str(work / f"{k}.{ext}"), "overwrite": True}
+            first = sess.run("view.export", args)                      # destructive: 미리보기에서 받은 확인 토큰으로 다시 호출한다
+            assert first["error"]["code"] == "CONFIRM_REQUIRED", first
+            r = sess.run("view.export", args, confirm=first["error"]["details"]["confirm_token"])
             assert r["ok"], r
             shutil.copy(work / f"{k}.{ext}", OUT / f"RA-01-core_{k}.{ext}")
             rows.append({"view": k, "file": f"out/RA-01-core_{k}.{ext}", **{kk: r["result"][kk] for kk in ("bytes", "segments", "fills", "non_ascii_dropped")}})

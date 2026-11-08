@@ -12,58 +12,58 @@
   "moves": 40,
   "criterion_update_within_2s": {
     "limit_ms": 2000,
-    "max_total_ms": 22.028,
+    "max_total_ms": 27.464,
     "pass": true
   },
   "total_ms_mutate_plus_refresh_all_7_views": {
     "n": 40,
-    "min": 1.6,
-    "p50": 11.444,
-    "p95": 16.684,
-    "max": 22.028,
-    "mean": 11.615
+    "min": 1.442,
+    "p50": 12.134,
+    "p95": 25.878,
+    "max": 27.464,
+    "mean": 13.633
   },
   "mutate_ms": {
     "n": 40,
-    "min": 1.145,
-    "p50": 1.616,
-    "p95": 2.142,
-    "max": 2.362,
-    "mean": 1.659
+    "min": 0.897,
+    "p50": 1.575,
+    "p95": 2.441,
+    "max": 2.54,
+    "mean": 1.69
   },
   "refresh_all_views_ms": {
     "n": 40,
-    "min": 0.455,
-    "p50": 9.71,
-    "p95": 14.79,
-    "max": 19.753,
-    "mean": 9.955
+    "min": 0.421,
+    "p50": 10.287,
+    "p95": 23.616,
+    "max": 25.342,
+    "mean": 11.943
   },
   "max_single_view_refresh_ms": {
     "n": 40,
-    "min": 0.133,
-    "p50": 2.48,
-    "p95": 3.311,
-    "max": 4.317,
-    "mean": 2.319
+    "min": 0.122,
+    "p50": 2.737,
+    "p95": 5.965,
+    "max": 7.824,
+    "mean": 2.852
   },
   "full_regen_all_views_ms": {
     "n": 40,
-    "min": 88.072,
-    "p50": 138.423,
-    "p95": 164.655,
-    "max": 200.798,
-    "mean": 131.97
+    "min": 77.638,
+    "p50": 160.101,
+    "p95": 208.523,
+    "max": 222.898,
+    "mean": 143.833
   },
   "fresh_incremental_graph_all_views_ms": {
     "n": 40,
-    "min": 12.693,
-    "p50": 20.311,
-    "p95": 43.03,
-    "max": 125.374,
-    "mean": 23.371
+    "min": 11.536,
+    "p50": 24.434,
+    "p95": 34.867,
+    "max": 85.137,
+    "mean": 23.765
   },
-  "speedup_vs_full_regen_p50": 12.31,
+  "speedup_vs_full_regen_p50": 10.91,
   "nodes_recomputed_per_move": {
     "n": 40,
     "min": 23,
@@ -93,11 +93,11 @@
     "of": 40,
     "undo_plus_refresh_ms": {
       "n": 40,
-      "min": 1.933,
-      "p50": 12.924,
-      "p95": 17.975,
-      "max": 18.758,
-      "mean": 12.425
+      "min": 1.525,
+      "p50": 14.164,
+      "p95": 22.312,
+      "max": 28.004,
+      "mean": 13.024
     }
   },
   "affected_view_api": {
@@ -110,10 +110,10 @@
       "wall": "1000000000000000000001",
       "dx": -200.0,
       "dy": 0.0,
-      "mutate_ms": 1.3032999995630234,
-      "refresh_all_views_ms": 8.475700000417419,
-      "total_ms": 9.778999999980442,
-      "max_single_view_ms": 2.696100011235103,
+      "mutate_ms": 1.184399996418506,
+      "refresh_all_views_ms": 5.203699998673983,
+      "total_ms": 6.388099995092489,
+      "max_single_view_ms": 1.3988999999128282,
       "nodes_recomputed": 88,
       "views_stale_after_move": 6,
       "views_changed": [
@@ -129,22 +129,22 @@
         "서측 입면"
       ],
       "affected_api_covers_changed": true,
-      "full_regen_all_views_ms": 121.25749999540858,
-      "fresh_incremental_graph_all_views_ms": 16.3990000000922,
+      "full_regen_all_views_ms": 77.63810000324156,
+      "fresh_incremental_graph_all_views_ms": 12.660000007599592,
       "min_match_ratio": 1.0,
       "min_length_ratio": 1.0,
       "exact_equal_all_views": true,
-      "undo_ms": 11.931000000913627,
+      "undo_ms": 6.513500004075468,
       "undo_restores_original_exact": true
     },
     {
       "wall": "1000000000000000000002",
       "dx": 600.0,
       "dy": 200.0,
-      "mutate_ms": 1.5401999989990145,
-      "refresh_all_views_ms": 8.34289999329485,
-      "total_ms": 9.883099992293864,
-      "max_single_view_ms": 1.7349999980069697,
+      "mutate_ms": 1.3107999984640628,
+      "refresh_all_views_ms": 7.937799993669614,
+      "total_ms": 9.248599992133677,
+      "max_single_view_ms": 1.625200005946681,
       "nodes_recomputed": 234,
       "views_stale_after_move": 6,
       "views_changed": [
@@ -162,22 +162,22 @@
         "서측 입면"
       ],
       "affected_api_covers_changed": true,
-      "full_regen_all_views_ms": 101.08120000222698,
-      "fresh_incremental_graph_all_views_ms": 13.086000006296672,
+      "full_regen_all_views_ms": 79.96279999497347,
+      "fresh_incremental_graph_all_views_ms": 11.7173000035109,
       "min_match_ratio": 1.0,
       "min_length_ratio": 1.0,
       "exact_equal_all_views": true,
-      "undo_ms": 10.962000000290573,
+      "undo_ms": 9.267899993574247,
       "undo_restores_original_exact": true
     },
     {
       "wall": "1000000000000000000003",
       "dx": 1000.0,
       "dy": 0.0,
-      "mutate_ms": 1.145000001997687,
-      "refresh_all_views_ms": 0.4552999889710918,
-      "total_ms": 1.6002999909687787,
-      "max_single_view_ms": 0.13259999104775488,
+      "mutate_ms": 1.0934000019915402,
+      "refresh_all_views_ms": 0.42050000047311187,
+      "total_ms": 1.513900002464652,
+      "max_single_view_ms": 0.12169999536126852,
       "nodes_recomputed": 23,
       "views_stale_after_move": 6,
       "views_changed": [],
@@ -190,22 +190,22 @@
         "서측 입면"
       ],
       "affected_api_covers_changed": true,
-      "full_regen_all_views_ms": 93.74880000541452,
-      "fresh_incremental_graph_all_views_ms": 13.25889999861829,
+      "full_regen_all_views_ms": 81.89330001187045,
+      "fresh_incremental_graph_all_views_ms": 12.207899999339134,
       "min_match_ratio": 1.0,
       "min_length_ratio": 1.0,
       "exact_equal_all_views": true,
-      "undo_ms": 2.4221999919973314,
+      "undo_ms": 1.5793000056874007,
       "undo_restores_original_exact": true
     },
     {
       "wall": "1000000000000000000004",
       "dx": 600.0,
       "dy": 200.0,
-      "mutate_ms": 1.9437000009929761,
-      "refresh_all_views_ms": 9.82970000768546,
-      "total_ms": 11.773400008678436,
-      "max_single_view_ms": 2.4818999954732135,
+      "mutate_ms": 0.941999998758547,
+      "refresh_all_views_ms": 7.758799998555332,
+      "total_ms": 8.70079999731388,
+      "max_single_view_ms": 1.643399999011308,
       "nodes_recomputed": 205,
       "views_stale_after_move": 6,
       "views_changed": [
@@ -223,22 +223,22 @@
         "서측 입면"
       ],
       "affected_api_covers_changed": true,
-      "full_regen_all_views_ms": 93.06420000211801,
-      "fresh_incremental_graph_all_views_ms": 14.174500000081025,
+      "full_regen_all_views_ms": 94.8738000006415,
+      "fresh_incremental_graph_all_views_ms": 12.616899999557063,
       "min_match_ratio": 1.0,
       "min_length_ratio": 1.0,
       "exact_equal_all_views": true,
-      "undo_ms": 10.194600006798282,
+      "undo_ms": 9.199099993566051,
       "undo_restores_original_exact": true
     },
     {
       "wall": "1000000000000000000005",
       "dx": -200.0,
       "dy": 0.0,
-      "mutate_ms": 1.7928000015672296,
-      "refresh_all_views_ms": 8.867899989127181,
-      "total_ms": 10.660699990694411,
-      "max_single_view_ms": 2.016300000832416,
+      "mutate_ms": 1.5331000031437725,
+      "refresh_all_views_ms": 9.402700001373887,
+      "total_ms": 10.93580000451766,
+      "max_single_view_ms": 2.5430000096093863,
       "nodes_recomputed": 184,
       "views_stale_after_move": 6,
       "views_changed": [
@@ -255,22 +255,22 @@
         "서측 입면"
       ],
       "affected_api_covers_changed": true,
-      "full_regen_all_views_ms": 96.02129999257158,
-      "fresh_incremental_graph_all_views_ms": 12.692800009972416,
+      "full_regen_all_views_ms": 84.74429999478161,
+      "fresh_incremental_graph_all_views_ms": 12.975500008906238,
       "min_match_ratio": 1.0,
       "min_length_ratio": 1.0,
       "exact_equal_all_views": true,
-      "undo_ms": 9.332300003734417,
+      "undo_ms": 9.212999997544102,
       "undo_restores_original_exact": true
     },
     {
       "wall": "1000000000000000000006",
       "dx": 600.0,
       "dy": 0.0,
-      "mutate_ms": 1.5272000018740073,
-      "refresh_all_views_ms": 6.393300005584024,
-      "total_ms": 7.920500007458031,
-      "max_single_view_ms": 1.7037999932654202,
+      "mutate_ms": 1.2301999959163368,
+      "refresh_all_views_ms": 6.153900001663715,
+      "total_ms": 7.384099997580051,
+      "max_single_view_ms": 1.491400005761534,
       "nodes_recomputed": 92,
       "views_stale_after_move": 6,
       "views_changed": [
@@ -287,12 +287,12 @@
         "서측 입면"
       ],
       "affected_api_covers_changed": true,
-      "full_regen_all_views_ms": 94.95289999176748,
-      "fresh_incremental_graph_all_views_ms": 13.82769999327138,
+      "full_regen_all_views_ms": 89.90120000089519,
+      "fresh_incremental_graph_all_views_ms": 11.949399995501153,
       "min_match_ratio": 1.0,
       "min_length_ratio": 1.0,
       "exact_equal_all_views": true,
-      "undo_ms": 7.560900005046278,
+      "undo_ms": 7.071100000757724,
       "undo_restores_original_exact": true
     }
   ],
@@ -301,5 +301,5 @@
     "platform": "Windows-11-10.0.26200-SP0",
     "machine": "AMD64"
   },
-  "generated_at_utc": "2026-11-08T15:23:54Z"
+  "generated_at_utc": "2026-11-08T17:51:21Z"
 }

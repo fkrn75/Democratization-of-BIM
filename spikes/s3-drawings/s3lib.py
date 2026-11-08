@@ -216,3 +216,99 @@ def fuzz_views(work: Path, seed: int, n: int, check_every: int = 1, view_every: 
     return {"seed": seed, "steps": n, "checks": checks, "diffs": diffs[:20], "diff_count": len(diffs), "errors": errors[:20],
             "error_count": len(errors), "min_match_ratio": min_ratio, "max_segments_in_a_view": max_lines,
             "mean_segments": round(total_lines / max(checks, 1), 1)}
+
+# ---------------------------------------------------------------- 영향 뷰 조회(view.affected)의 누락 검사
+def fuzz_affected(work: Path, seed: int, n: int) -> dict:
+    """임의 편집열에서 view.affected(rev=R) 가 R 로 선분이 실제로 바뀐 뷰를 하나도 빠뜨리지 않는지 본다.
+
+    기준(오라클): 변경 직전에 모든 뷰를 증분으로 계산해 둔 선분(prev)과, 변경 뒤 캐시 없는 전체 재생성 선분(full_lines)을 비교해
+    달라진 뷰 집합(changed)을 구한다. view.affected(rev) 의 결과(dep)가 changed 를 모두 포함해야 한다(누락 0).
+    과포함 = dep - changed 도 센다(보수적으로 알리는 정도). 뷰 생성·수정·삭제와 undo/redo 도 같은 방식으로 본다.
+    """
+    import json
+    import random
+    from dobim_core import engine as E
+    work = Path(work)
+    work.mkdir(parents=True, exist_ok=True)
+    sess = kit.Session(work / f"fuzz-aff-{seed}.dobim", guid=GUID)
+    eng = sess.eng
+    gen = kit.Gen(seed)
+    rng = random.Random(seed ^ 0xAFF)
+    made, vid_n = set(), [0]
+    stat = {"ops": 0, "checked": 0, "changed_views": 0, "reported_views": 0, "over_reported": 0}
+    missed, missed_keys, errors = [], [], []
+
+    def live():
+        return sorted(eng.st.by_kind.get("view", ()))
+
+    def snapshot():
+        eng.sync()
+        eng._touch_pending()
+        return {v: eng.g.q(D.view_lines, v) for v in live()}
+
+    def observe(prev, resp, label):
+        if not resp.get("ok") or resp.get("rev") is None:
+            return
+        stat["ops"] += 1
+        aff = sess.run("view.affected", {"rev": resp["rev"]})
+        if not aff["ok"]:
+            errors.append({"op": label, "rev": resp["rev"], "error": aff["error"]["code"]})
+            return
+        cache = {i["id"] for i in sess.run("view.affected", {})["result"]["items"]}
+        dep = {i["id"] for i in aff["result"]["items"]}
+        now = live()
+        changed = {v for v in now if v not in prev or full_lines(eng, v) != prev[v]}
+        stat["checked"] += 1
+        # 키 따라가기만(낡은 뷰 포함 없이): 모든 뷰가 최신이던 직후라 의존 목록이 정확하므로 이것만으로도 누락이 없어야 한다
+        eng.sync()
+        eng._touch_pending()
+        txn = eng.conn.execute("SELECT txn_id FROM op_log WHERE seq=?", (resp["rev"],)).fetchone()[0]
+        keys = E.input_keys_of([x for en in eng.txn_entries(txn) for x in E.invert(json.loads(en[4]))])
+        walk = set(D.views_depending_on(eng.g, keys, now, include_not_fresh=False))
+        if changed - walk:
+            missed_keys.append({"op": label, "rev": resp["rev"], "missed": sorted(v[-6:] for v in changed - walk)})
+        stat["changed_views"] += len(changed)
+        stat["reported_views"] += len(dep)
+        stat["over_reported"] += len(dep - changed)
+        if changed - dep:
+            missed.append({"op": label, "rev": resp["rev"], "missed": sorted(v[-6:] for v in changed - dep)})
+        if not cache <= dep:
+            errors.append({"op": label, "rev": resp["rev"], "error": "cache 모드의 뷰가 dependency 모드에 없다"})
+        if not dep <= set(now):
+            errors.append({"op": label, "rev": resp["rev"], "error": "삭제된 뷰가 결과에 있다"})
+
+    def vcreate(**kw):
+        vid_n[0] += 1
+        kw.setdefault("id", _i("4", seed * 1000 + vid_n[0]))
+        prev = snapshot()
+        r = sess.run("view.create", kw)
+        observe(prev, r, "view.create")
+
+    for d in "NESW":
+        vcreate(name=f"E-{d}", type="elevation", dir=d)
+    vcreate(name="S-0", type="section", p1=[0.0, 1000.0], p2=[9000.0, 1000.0])
+    for step in range(n):
+        prev = snapshot()
+        it = gen.next(eng)
+        r = sess.item(it)
+        observe(prev, r, it.get("name") or "batch")
+        if step % 10 == 0:
+            for lv in sorted(eng.st.by_kind.get("level", ())):
+                if lv not in made:
+                    made.add(lv)
+                    vcreate(name=f"P-{lv[-6:]}", type="plan", level=lv, cut_height=rng.choice([1200.0, 500.0, 2500.0]))
+        if step % 7 == 3 and live():
+            vv = rng.choice(live())
+            t = eng.st.el[vv]["params"]["type"]
+            args = {"id": vv, **({"cut_height": rng.choice([300.0, 1200.0, 3000.0])} if t == "plan" else
+                                 {"depth": rng.choice([2000.0, 20000.0])} if t == "section" else {"dir": rng.choice(list("NESW"))})}
+            prev = snapshot()
+            observe(prev, sess.run("view.set", args), "view.set")
+        if step % 23 == 11 and live():
+            prev = snapshot()
+            observe(prev, sess.run("view.delete", {"id": rng.choice(live())}), "view.delete")
+    sess.close()
+    return {"seed": seed, "steps": n, **stat, "missed_count": len(missed), "missed": missed[:10],
+            "missed_key_walk_count": len(missed_keys), "missed_key_walk": missed_keys[:10], "error_count": len(errors),
+            "errors": errors[:10], "precision": round(1 - stat["over_reported"] / max(stat["reported_views"], 1), 3)}
+
