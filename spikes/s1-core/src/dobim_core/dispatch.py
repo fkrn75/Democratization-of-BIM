@@ -81,7 +81,7 @@ def ok_env(rev, result, *, affected=None, warnings=None, page=None, dry_run=Fals
 
 
 def err_env(ex: DobimError, rev=None) -> dict:
-    out = {"ok": False, "error": ex.to_dict()}
+    out = {"ok": False, "error": limits.fit_error(ex.to_dict())}   # 오류 응답도 성공 응답과 같은 상한을 지킨다
     if rev is not None:
         out["rev"] = rev
     return out
@@ -117,12 +117,15 @@ def parse_args(cmd: registry.Command, raw: dict | None, *, replay: bool = False)
     try:
         return cmd.args_model.model_validate(raw or {}, context={"replay": True} if replay else None)
     except ValidationError as ex:
-        errs = ex.errors()
+        total = ex.error_count()
+        errs = ex.errors(include_url=False, include_context=False, include_input=False)
         first = errs[0]
+        # path 는 클라이언트가 보낸 키가 그대로 들어오므로 길이를 자른다. 항목 수도 제한하고 총 개수·잘림 여부를 알린다
+        shown = [{"path": limits.clip_chars(_pointer(e["loc"]), limits.DETAIL_PATH_CHARS), "type": e["type"],
+                  "msg": limits.clip_chars(e["msg"], limits.DETAIL_MSG_CHARS)} for e in errs[:limits.MAX_DETAIL_ERRORS]]
         raise DobimError("SCHEMA_INVALID", f"{_pointer(first['loc']) or '/'}: {first['msg']}",
                          path=_pointer(first["loc"]) or "/", hint=SCHEMA_HINT,
-                         details={"errors": [{"path": _pointer(e["loc"]), "type": e["type"], "msg": e["msg"]}
-                                             for e in errs[:5]]}) from None
+                         details={"errors": shown, "total": total, "truncated": total > len(shown)}) from None
 
 
 def get_command(name: str) -> registry.Command:
@@ -286,8 +289,9 @@ def run_script(env: Env, items: list, *, project: str | None, dry_run: bool = Fa
         else:
             if "rev" in r:
                 e["rev"] = r["rev"]
-            e["error"] = r["error"]
-            failure = r["error"]
+            # 실패한 오류는 항목 안과 최상위에 두 번 실리므로 한 벌을 상한의 반 이하로 줄여 둔다
+            failure = limits.fit_error(r["error"], limits.RESPONSE_CAP_BYTES // 2 - 500, limits.RESPONSE_CAP_TOKENS / 2 - 300)
+            e["error"] = failure
         entries.append(e)
         if failure is not None:
             break

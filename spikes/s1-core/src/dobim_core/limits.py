@@ -151,6 +151,48 @@ def clip_deep(x: Any) -> tuple[Any, int]:
     return x, 0
 
 
+# ---------------------------------------------------------------- 오류 봉투
+MAX_DETAIL_ERRORS = 5       # SCHEMA_INVALID 의 details.errors 에 싣는 항목 수(총 개수는 details.total)
+DETAIL_PATH_CHARS = 120     # details.errors[].path 의 길이(클라이언트가 보낸 키가 그대로 들어오므로 자른다)
+DETAIL_MSG_CHARS = 160      # details.errors[].msg 의 길이
+_KEEP_WHOLE = frozenset({"confirm_token", "code"})   # 잘라서는 안 되는 값(자르면 쓸 수 없게 된다)
+
+
+def clip_chars(s: str, n: int) -> str:
+    """n 문자를 넘으면 앞부분 n-1 문자 + '…' 로 줄인다(사용자 유래 문자열을 오류에 넣을 때)."""
+    return s if len(s) <= n else s[:n - 1] + "…"
+
+
+def _clip_tree(x: Any, n: int, key: str | None = None) -> Any:
+    if isinstance(x, str):
+        return x if key in _KEEP_WHOLE else clip_chars(x, n)
+    if isinstance(x, dict):
+        return {k: _clip_tree(v, n, k) for k, v in x.items()}
+    if isinstance(x, list):
+        return [_clip_tree(v, n, key) for v in x]
+    return x
+
+
+def fit_error(err: dict, max_bytes: int = RESPONSE_CAP_BYTES, max_tokens: float = RESPONSE_CAP_TOKENS) -> dict:
+    """오류(error 필드)를 상한 안으로 줄인다. 성공 응답과 같은 상한(실제 직렬화 바이트와 추정 토큰)을 쓴다.
+    이미 들어맞으면 그대로 돌려준다. 아니면 문자열 길이 한도를 단계적으로 줄이고 details.errors 의 항목을 덜어낸다
+    (덜어내면 details.truncated=true, 총 개수는 details.total 에 남는다). code·retryable·confirm_token 은 건드리지 않는다."""
+    def fits(e: dict) -> bool:
+        env = {"ok": False, "error": e, "rev": _BIG}   # 봉투 뼈대(rev 는 가장 긴 정수로 어림)
+        return jsize(env) <= max_bytes and est_tokens(env) <= max_tokens
+    if fits(err):
+        return err
+    e = err
+    for chars, keep in ((200, MAX_DETAIL_ERRORS), (120, 3), (80, 2), (48, 1), (24, 0)):
+        e = _clip_tree(err, chars)
+        d = e.get("details")
+        if isinstance(d, dict) and isinstance(d.get("errors"), list) and len(d["errors"]) > keep:
+            e["details"] = {**d, "errors": d["errors"][:keep], "truncated": True}
+        if fits(e):
+            break
+    return e
+
+
 # ---------------------------------------------------------------- 커서
 def enc_cursor(v) -> str:
     return base64.urlsafe_b64encode(json.dumps(v, ensure_ascii=False).encode("utf-8")).decode()

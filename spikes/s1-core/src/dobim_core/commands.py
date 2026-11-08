@@ -848,11 +848,68 @@ _WIN_LOCKED = {32, 33}
 _WIN_FULL = {39, 112}
 
 
+def _probe(fn) -> str:
+    """쓰기 시도 하나의 결과: "ok"(성공했거나 접근 거부와 무관한 실패), "denied"(접근 거부), "busy"(공유·잠금 위반)."""
+    import errno
+    try:
+        fn()
+    except OSError as ex:
+        win = getattr(ex, "winerror", None)
+        if win in _WIN_LOCKED or ex.errno in (errno.EBUSY, getattr(errno, "ETXTBSY", -1)):
+            return "busy"
+        if isinstance(ex, PermissionError) or win == 5 or ex.errno == errno.EACCES:
+            return "denied"
+    return "ok"
+
+
+def _try_open_for_write(f: Path) -> None:
+    """대상 파일을 쓰기용으로 열어 보기만 한다(내용·수정 시각을 바꾸지 않는다).
+    윈도는 CRT 의 open 이 공유 위반(32)을 접근 거부(errno 13)와 구별하지 않으므로 Win32 CreateFile 을 직접 부른다.
+    이름 바꾸기로 덮어쓰려면 쓰기와 삭제 권한이 둘 다 있어야 하므로 두 접근을 함께 요청하고, 공유는 모두 허용한다."""
+    import sys
+    if sys.platform == "win32":
+        import _winapi
+        _winapi.CloseHandle(_winapi.CreateFile(str(f), 0x40000000 | 0x00010000, 7, 0, 3, 0x80, 0))   # GENERIC_WRITE|DELETE, 공유 7, OPEN_EXISTING
+        return
+    with open(f, "r+b"):
+        pass
+
+
+def _try_create_in(d: Path) -> None:
+    import os
+    import uuid
+    probe = d / f".dobim-probe-{os.getpid()}-{uuid.uuid4().hex[:12]}"
+    fd = os.open(probe, os.O_WRONLY | os.O_CREAT | os.O_EXCL)   # 폴더에 새 파일을 만들 권한이 있는지만 본다
+    try:
+        os.close(fd)
+    finally:
+        _cleanup(probe)   # 판별용 파일은 어떤 경우에도 남기지 않는다
+
+
+def _access_state(p, ex: OSError) -> str:
+    """접근 거부(WinError 5)의 원인을 가른다. 대상 파일과 실패한 연산이 닿은 폴더에 실제로 써 보아 판정한다.
+    "busy" = 다른 프로세스가 잡고 있다, "denied" = 권한(ACL 등)이 막는다, "ok" = 권한 문제로 볼 증거가 없다(잠금으로 본다).
+    os.access 는 윈도에서 읽기 전용 속성만 보므로 ACL 거부를 알아내지 못한다."""
+    import os
+    dirs = {p.parent}
+    for f in (ex.filename, ex.filename2):
+        if isinstance(f, (str, bytes, os.PathLike)):
+            dirs.add(Path(os.fsdecode(f)).parent)
+    states = []
+    if p.is_file():
+        states.append(_probe(lambda: _try_open_for_write(p)))
+    states += [_probe(lambda d=d: _try_create_in(d)) for d in sorted(dirs, key=str) if d.is_dir()]
+    if "busy" in states:
+        return "busy"
+    return "denied" if "denied" in states else "ok"
+
+
 def _io_error(p, ex: OSError) -> DobimError:
     """OSError 를 원인별 오류로 나눈다. 디스크 가득을 FILE_LOCKED(파일을 닫으라는 안내)로 보고하면 사용자가 엉뚱한 곳을 찾는다.
       - 잠금(공유 위반·잠금 위반, 또는 유닉스의 EBUSY·ETXTBSY) -> FILE_LOCKED
-      - 접근 거부(WinError 5, errno 13): 윈도는 '열려 있는 파일 위로 이름 바꾸기'와 '다른 프로세스가 잡은 .tmp 열기'를 접근 거부로 알린다.
-        읽기 전용 속성이 붙은 파일이면 PATH_DENIED, 아니면 잠금이다(FILE_LOCKED)
+      - 접근 거부(WinError 5, errno 13): 윈도는 '열려 있는 파일 위로 이름 바꾸기'와 '다른 프로세스가 잡은 .tmp 열기'도 접근 거부로 알린다.
+        그래서 원인을 가린다: 읽기 전용 속성이거나 대상·폴더에 실제로 쓸 수 없으면(ACL 거부) PATH_DENIED(재시도해도 소용없다),
+        다른 프로세스가 잡고 있거나 권한 문제의 증거가 없으면 FILE_LOCKED
       - 디스크·할당량 부족 -> DISK_FULL, 없는 경로 -> NOT_FOUND, 나머지 -> IO_ERROR(오류 번호를 메시지에 남긴다)"""
     import errno
     import os
@@ -865,6 +922,9 @@ def _io_error(p, ex: OSError) -> DobimError:
     if isinstance(ex, PermissionError) or win == 5 or en == errno.EACCES:
         if p.exists() and not os.access(p, os.W_OK):
             return DobimError("PATH_DENIED", f"읽기 전용이라 바꿀 수 없다: {p.name}", path="/path")
+        if _access_state(p, ex) == "denied":
+            return DobimError("PATH_DENIED", f"쓸 권한이 없어 바꿀 수 없다: {p.name} (파일 또는 폴더의 접근 권한이 쓰기를 막는다)",
+                              path="/path", hint="권한을 바꾸기 전에는 다시 호출해도 같은 결과다: 파일·폴더의 쓰기 권한을 확인하세요")
         return _locked(p)
     if isinstance(ex, (FileNotFoundError, NotADirectoryError)):
         return DobimError("NOT_FOUND", f"경로를 찾을 수 없다: {p.name}", path="/path")
