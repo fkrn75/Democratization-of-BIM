@@ -24,7 +24,7 @@ def hashes_of(flow: dict, variant: str | None):
 
 def check(runs: list[dict], ids: list[str] | None = None) -> list[str]:
     fails: list[str] = []
-    ids = ids or sorted(runs[0])
+    ids = ids or [i for i in sorted(runs[0]) if not i.startswith("_")]
     for sid in ids:
         sc = BY_ID[sid]
         per = [r[sid] for r in runs if sid in r]
@@ -97,4 +97,20 @@ def check(runs: list[dict], ids: list[str] | None = None) -> list[str]:
         if sid == "s18_fast_forward":
             if (fa["preview"]["relation"], fb["preview"]["relation"]) != ("ours_behind", "ours_ahead"):
                 fails.append(f"[기대] {sid}: 빠른 감기 관계가 틀렸다")
+    # 시나리오 밖의 독립 점검(재병합·배치·조작된 로그·사이드카 등): 모든 실행에서 참이고 실행 사이에 같아야 한다
+    ex = [r.get("_extra") for r in runs if "_extra" in r]
+    if not ex:
+        pass   # 시나리오 결과만 넘긴 호출(시나리오 하나를 한 프로세스에서 돌린 시험)은 독립 점검을 따로 한다
+    elif len(ex) != len(runs):
+        fails.append("[정확성] _extra: 독립 점검 결과가 없다")
+    else:
+        for k, e in enumerate(ex):
+            if e.get("crash"):
+                fails.append(f"[정확성] _extra: 독립 점검이 예외로 끝났다 {e['crash']}")
+            else:
+                bad = [n for n, v in e.items() if v is not True]
+                if bad:
+                    fails.append(f"[정확성] _extra 실행 {k}: 거짓인 점검 {bad}")
+        if len({_j(e) for e in ex}) > 1:
+            fails.append("[결정성] _extra: 독립 점검 결과가 실행마다 다르다")
     return fails

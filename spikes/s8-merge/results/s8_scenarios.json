@@ -28,7 +28,7 @@
    "run": 3
   }
  ],
- "scenarios": 21,
+ "scenarios": 23,
  "table": [
   {
    "expect": {
@@ -45,7 +45,7 @@
       "state": "1a4d3abb46094d8ad5d3869ee654378db127598ef959923edc31f0fbc34c23e5"
      },
      "plan_digest": "bccb56f36026b728134327047e4bcd0ad45dd5e2a871aafb671c4fe82ccd90b2",
-     "preview_bytes": 629,
+     "preview_bytes": 666,
      "relation": "diverged"
     },
     "B<-A": {
@@ -58,7 +58,7 @@
       "state": "1a4d3abb46094d8ad5d3869ee654378db127598ef959923edc31f0fbc34c23e5"
      },
      "plan_digest": "bccb56f36026b728134327047e4bcd0ad45dd5e2a871aafb671c4fe82ccd90b2",
-     "preview_bytes": 629,
+     "preview_bytes": 666,
      "relation": "diverged"
     }
    },
@@ -90,7 +90,7 @@
       "state": "de876d23572a45fdcccc4d25cb65a640dd2e025a2da3a36b38c6428750e18f07"
      },
      "plan_digest": "1226228e8a72721a3e016bdbf29c896bb2726d4b51c44b1d3a9ee4ff348da593",
-     "preview_bytes": 628,
+     "preview_bytes": 665,
      "relation": "diverged"
     },
     "B<-A": {
@@ -103,7 +103,7 @@
       "state": "de876d23572a45fdcccc4d25cb65a640dd2e025a2da3a36b38c6428750e18f07"
      },
      "plan_digest": "1226228e8a72721a3e016bdbf29c896bb2726d4b51c44b1d3a9ee4ff348da593",
-     "preview_bytes": 628,
+     "preview_bytes": 665,
      "relation": "diverged"
     }
    },
@@ -135,7 +135,7 @@
      "fork_rev": 10,
      "hashes": null,
      "plan_digest": null,
-     "preview_bytes": 1238,
+     "preview_bytes": 1275,
      "relation": "diverged",
      "variants": {
       "spec": {
@@ -168,7 +168,7 @@
      "fork_rev": 10,
      "hashes": null,
      "plan_digest": null,
-     "preview_bytes": 1238,
+     "preview_bytes": 1275,
      "relation": "diverged",
      "variants": {
       "spec": {
@@ -222,7 +222,7 @@
      "fork_rev": 10,
      "hashes": null,
      "plan_digest": null,
-     "preview_bytes": 1431,
+     "preview_bytes": 1468,
      "relation": "diverged",
      "variants": {
       "spec": {
@@ -255,7 +255,7 @@
      "fork_rev": 10,
      "hashes": null,
      "plan_digest": null,
-     "preview_bytes": 1431,
+     "preview_bytes": 1468,
      "relation": "diverged",
      "variants": {
       "spec": {
@@ -312,7 +312,7 @@
      "fork_rev": 10,
      "hashes": null,
      "plan_digest": null,
-     "preview_bytes": 1466,
+     "preview_bytes": 1503,
      "relation": "diverged",
      "variants": {
       "spec": {
@@ -345,7 +345,7 @@
      "fork_rev": 10,
      "hashes": null,
      "plan_digest": null,
-     "preview_bytes": 1466,
+     "preview_bytes": 1503,
      "relation": "diverged",
      "variants": {
       "spec": {
@@ -402,7 +402,7 @@
      "fork_rev": 10,
      "hashes": null,
      "plan_digest": null,
-     "preview_bytes": 1373,
+     "preview_bytes": 1410,
      "relation": "diverged",
      "variants": {
       "spec": {
@@ -435,7 +435,7 @@
      "fork_rev": 10,
      "hashes": null,
      "plan_digest": null,
-     "preview_bytes": 1373,
+     "preview_bytes": 1410,
      "relation": "diverged",
      "variants": {
       "spec": {
@@ -492,7 +492,7 @@
      "fork_rev": 10,
      "hashes": null,
      "plan_digest": null,
-     "preview_bytes": 1344,
+     "preview_bytes": 1381,
      "relation": "diverged",
      "variants": {
       "spec": {
@@ -525,7 +525,7 @@
      "fork_rev": 10,
      "hashes": null,
      "plan_digest": null,
-     "preview_bytes": 1344,
+     "preview_bytes": 1381,
      "relation": "diverged",
      "variants": {
       "spec": {
@@ -584,7 +584,7 @@
      "fork_rev": 10,
      "hashes": null,
      "plan_digest": null,
-     "preview_bytes": 1859,
+     "preview_bytes": 1896,
      "relation": "diverged",
      "variants": {
       "spec": {
@@ -618,7 +618,7 @@
      "fork_rev": 10,
      "hashes": null,
      "plan_digest": null,
-     "preview_bytes": 1859,
+     "preview_bytes": 1896,
      "relation": "diverged",
      "variants": {
       "spec": {
@@ -678,7 +678,7 @@
      "fork_rev": 10,
      "hashes": null,
      "plan_digest": null,
-     "preview_bytes": 1349,
+     "preview_bytes": 1386,
      "relation": "diverged",
      "variants": {
       "spec": {
@@ -711,7 +711,7 @@
      "fork_rev": 10,
      "hashes": null,
      "plan_digest": null,
-     "preview_bytes": 1349,
+     "preview_bytes": 1386,
      "relation": "diverged",
      "variants": {
       "spec": {
@@ -765,7 +765,7 @@
      "fork_rev": 10,
      "hashes": null,
      "plan_digest": null,
-     "preview_bytes": 1379,
+     "preview_bytes": 1416,
      "relation": "diverged",
      "variants": {
       "spec": {
@@ -798,7 +798,7 @@
      "fork_rev": 10,
      "hashes": null,
      "plan_digest": null,
-     "preview_bytes": 1379,
+     "preview_bytes": 1416,
      "relation": "diverged",
      "variants": {
       "spec": {
@@ -852,7 +852,7 @@
      "fork_rev": 10,
      "hashes": null,
      "plan_digest": null,
-     "preview_bytes": 1224,
+     "preview_bytes": 1261,
      "relation": "diverged",
      "variants": {
       "spec": {
@@ -885,7 +885,7 @@
      "fork_rev": 10,
      "hashes": null,
      "plan_digest": null,
-     "preview_bytes": 1224,
+     "preview_bytes": 1261,
      "relation": "diverged",
      "variants": {
       "spec": {
@@ -945,7 +945,7 @@
      "fork_rev": 10,
      "hashes": null,
      "plan_digest": null,
-     "preview_bytes": 1256,
+     "preview_bytes": 1293,
      "relation": "diverged",
      "variants": {
       "spec": {
@@ -978,7 +978,7 @@
      "fork_rev": 10,
      "hashes": null,
      "plan_digest": null,
-     "preview_bytes": 1256,
+     "preview_bytes": 1293,
      "relation": "diverged",
      "variants": {
       "spec": {
@@ -1032,7 +1032,7 @@
       "state": "cbaee1f5582f509ee2736998de31ddcba8201b578e07b3e89f48b2f94352a2b0"
      },
      "plan_digest": "c2ffeacdb02ca78606af69b02d7aad2676cd47317fb0ca99a7053c0aa0287c66",
-     "preview_bytes": 628,
+     "preview_bytes": 665,
      "relation": "diverged"
     },
     "B<-A": {
@@ -1045,7 +1045,7 @@
       "state": "cbaee1f5582f509ee2736998de31ddcba8201b578e07b3e89f48b2f94352a2b0"
      },
      "plan_digest": "c2ffeacdb02ca78606af69b02d7aad2676cd47317fb0ca99a7053c0aa0287c66",
-     "preview_bytes": 628,
+     "preview_bytes": 665,
      "relation": "diverged"
     }
    },
@@ -1077,7 +1077,7 @@
      "fork_rev": 10,
      "hashes": null,
      "plan_digest": null,
-     "preview_bytes": 1230,
+     "preview_bytes": 1267,
      "relation": "diverged",
      "variants": {
       "spec": {
@@ -1110,7 +1110,7 @@
      "fork_rev": 10,
      "hashes": null,
      "plan_digest": null,
-     "preview_bytes": 1230,
+     "preview_bytes": 1267,
      "relation": "diverged",
      "variants": {
       "spec": {
@@ -1165,7 +1165,7 @@
      "fork_rev": 10,
      "hashes": null,
      "plan_digest": null,
-     "preview_bytes": 1268,
+     "preview_bytes": 1305,
      "relation": "diverged",
      "variants": {
       "spec": {
@@ -1198,7 +1198,7 @@
      "fork_rev": 10,
      "hashes": null,
      "plan_digest": null,
-     "preview_bytes": 1268,
+     "preview_bytes": 1305,
      "relation": "diverged",
      "variants": {
       "spec": {
@@ -1252,7 +1252,7 @@
       "state": "c2079aa34ca7b4b43a54b6380deb230812dccdacf275d21e642b56cbddba6abb"
      },
      "plan_digest": "f3a9fb7d73715501b2a99ef65d8feb35e668474092222d1858f49d6e417629e8",
-     "preview_bytes": 630,
+     "preview_bytes": 667,
      "relation": "diverged"
     },
     "B<-A": {
@@ -1265,7 +1265,7 @@
       "state": "c2079aa34ca7b4b43a54b6380deb230812dccdacf275d21e642b56cbddba6abb"
      },
      "plan_digest": "f3a9fb7d73715501b2a99ef65d8feb35e668474092222d1858f49d6e417629e8",
-     "preview_bytes": 630,
+     "preview_bytes": 667,
      "relation": "diverged"
     }
    },
@@ -1303,7 +1303,7 @@
      "fork_rev": 10,
      "hashes": null,
      "plan_digest": null,
-     "preview_bytes": 1467,
+     "preview_bytes": 1512,
      "relation": "diverged",
      "variants": {
       "spec": {
@@ -1336,7 +1336,7 @@
      "fork_rev": 10,
      "hashes": null,
      "plan_digest": null,
-     "preview_bytes": 1467,
+     "preview_bytes": 1512,
      "relation": "diverged",
      "variants": {
       "spec": {
@@ -1396,7 +1396,7 @@
       "state": "5df4ec66163f30cfd116678fe1e976a654c8555367f7b3ea300b733f9a878377"
      },
      "plan_digest": "e2b1a8366c100a5a5f29a9a5bfe988da352a4c46ca7296c7a51981b3c23b8f11",
-     "preview_bytes": 631,
+     "preview_bytes": 668,
      "relation": "ours_behind"
     },
     "B<-A": {
@@ -1409,7 +1409,7 @@
       "state": "5df4ec66163f30cfd116678fe1e976a654c8555367f7b3ea300b733f9a878377"
      },
      "plan_digest": "e2b1a8366c100a5a5f29a9a5bfe988da352a4c46ca7296c7a51981b3c23b8f11",
-     "preview_bytes": 630,
+     "preview_bytes": 667,
      "relation": "ours_ahead"
     }
    },
@@ -1441,7 +1441,7 @@
       "state": "3b949994c620a5d865cec38c490286e18942df9f5129f5efad99ea7128195fd7"
      },
      "plan_digest": "cddba4bee9fe389ff0c50db64af5e225fb67449b5ad301dc78bb1d8dea97d443",
-     "preview_bytes": 629,
+     "preview_bytes": 666,
      "relation": "diverged"
     },
     "B<-A": {
@@ -1454,7 +1454,7 @@
       "state": "3b949994c620a5d865cec38c490286e18942df9f5129f5efad99ea7128195fd7"
      },
      "plan_digest": "cddba4bee9fe389ff0c50db64af5e225fb67449b5ad301dc78bb1d8dea97d443",
-     "preview_bytes": 629,
+     "preview_bytes": 666,
      "relation": "diverged"
     }
    },
@@ -1490,7 +1490,7 @@
      "fork_rev": 10,
      "hashes": null,
      "plan_digest": null,
-     "preview_bytes": 2370,
+     "preview_bytes": 2407,
      "relation": "diverged",
      "variants": {
       "spec": {
@@ -1525,7 +1525,7 @@
      "fork_rev": 10,
      "hashes": null,
      "plan_digest": null,
-     "preview_bytes": 2370,
+     "preview_bytes": 2407,
      "relation": "diverged",
      "variants": {
       "spec": {
@@ -1582,7 +1582,7 @@
       "state": "ff45aebb5ae8ea784c2d0bb11189c0f06ba891ebacee647083feb365863536a6"
      },
      "plan_digest": "ad30022b4dba21573b9c2c71b7191f0115be5508e6e3ab83de0172e321f992d3",
-     "preview_bytes": 629,
+     "preview_bytes": 666,
      "relation": "diverged"
     },
     "B<-A": {
@@ -1595,7 +1595,7 @@
       "state": "ff45aebb5ae8ea784c2d0bb11189c0f06ba891ebacee647083feb365863536a6"
      },
      "plan_digest": "ad30022b4dba21573b9c2c71b7191f0115be5508e6e3ab83de0172e321f992d3",
-     "preview_bytes": 629,
+     "preview_bytes": 666,
      "relation": "diverged"
     }
    },
@@ -1611,6 +1611,169 @@
     }
    },
    "title": "한쪽(A)이 스스로 같은 자리 벽 중복을 만들었다: 병합이 새로 만든 위반이 아니므로 충돌로 보고하지 않는다"
+  },
+  {
+   "expect": {
+    "conflicts": [
+     "DOOR_OUT_OF_HOST",
+     "DOOR_OUT_OF_HOST",
+     "DOOR_OUT_OF_HOST",
+     "DOOR_OUT_OF_HOST",
+     "DOOR_OUT_OF_HOST",
+     "DOOR_OUT_OF_HOST",
+     "DOOR_OUT_OF_HOST",
+     "DOOR_OUT_OF_HOST",
+     "DOOR_OUT_OF_HOST",
+     "DOOR_OUT_OF_HOST",
+     "DOOR_OUT_OF_HOST",
+     "DOOR_OUT_OF_HOST",
+     "DOOR_OUTSIDE_TRIMMED",
+     "DOOR_OUTSIDE_TRIMMED",
+     "DOOR_OUTSIDE_TRIMMED",
+     "DOOR_OUTSIDE_TRIMMED",
+     "DOOR_OUTSIDE_TRIMMED",
+     "DOOR_OUTSIDE_TRIMMED",
+     "DOOR_OUTSIDE_TRIMMED",
+     "DOOR_OUTSIDE_TRIMMED",
+     "DOOR_OUTSIDE_TRIMMED",
+     "DOOR_OUTSIDE_TRIMMED",
+     "DOOR_OUTSIDE_TRIMMED",
+     "DOOR_OUTSIDE_TRIMMED"
+    ]
+   },
+   "flows": {
+    "A<-B": {
+     "apply": "MERGE_CONFLICT",
+     "conflicts": {
+      "DOOR_OUTSIDE_TRIMMED": 12,
+      "DOOR_OUT_OF_HOST": 12
+     },
+     "fork_rev": 34,
+     "hashes": null,
+     "plan_digest": null,
+     "preview_bytes": 4454,
+     "relation": "diverged",
+     "variants": {
+      "spec": {
+       "apply": "ok",
+       "facts_failed": [],
+       "hashes": {
+        "derived": "bf1996cefd833c6a7d4c1d022f87a7b49ed567b2e076010740efd8b89d6a6628",
+        "ifc": "cffefad7920cc095542e03a3a142c242215af6a6499856512801502feb1a9129",
+        "state": "69d722a16f362d75b7b4d78a706a8a1a3980838427659f9f1b6d859bbd21de9c"
+       },
+       "rounds": 1
+      },
+      "swap": {
+       "apply": "ok",
+       "facts_failed": [],
+       "hashes": {
+        "derived": "9db063fd097bb4c46d1c77a60cd2d0c60cdf4ced2739c8963d8efbad9b0ac229",
+        "ifc": "4d58a4f4ea06bda3bc90ee8f5ecca3c1a91f8d88ca9f9cfb14a0e3e8fbada004",
+        "state": "15e5dd16d7b3bbf5c444cca1efb0a0be1da89dbe9fe49b0e2b6d68cfc4638255"
+       },
+       "rounds": 1
+      }
+     }
+    },
+    "B<-A": {
+     "apply": "MERGE_CONFLICT",
+     "conflicts": {
+      "DOOR_OUTSIDE_TRIMMED": 12,
+      "DOOR_OUT_OF_HOST": 12
+     },
+     "fork_rev": 34,
+     "hashes": null,
+     "plan_digest": null,
+     "preview_bytes": 4454,
+     "relation": "diverged",
+     "variants": {
+      "spec": {
+       "apply": "ok",
+       "facts_failed": [],
+       "hashes": {
+        "derived": "bf1996cefd833c6a7d4c1d022f87a7b49ed567b2e076010740efd8b89d6a6628",
+        "ifc": "cffefad7920cc095542e03a3a142c242215af6a6499856512801502feb1a9129",
+        "state": "69d722a16f362d75b7b4d78a706a8a1a3980838427659f9f1b6d859bbd21de9c"
+       },
+       "rounds": 1
+      },
+      "swap": {
+       "apply": "ok",
+       "facts_failed": [],
+       "hashes": {
+        "derived": "9db063fd097bb4c46d1c77a60cd2d0c60cdf4ced2739c8963d8efbad9b0ac229",
+        "ifc": "4d58a4f4ea06bda3bc90ee8f5ecca3c1a91f8d88ca9f9cfb14a0e3e8fbada004",
+        "state": "15e5dd16d7b3bbf5c444cca1efb0a0be1da89dbe9fe49b0e2b6d68cfc4638255"
+       },
+       "rounds": 1
+      }
+     }
+    }
+   },
+   "id": "s22_many_semantic_conflicts",
+   "replay_oracle": {
+    "A<-B": {
+     "code": "CONSTRAINT",
+     "equals_merge": null,
+     "op": "door.set",
+     "path": "/offset",
+     "status": "command_error"
+    },
+    "B<-A": {
+     "code": "CONSTRAINT",
+     "equals_merge": null,
+     "op": "wall.set",
+     "path": "/axis",
+     "status": "command_error"
+    }
+   },
+   "title": "의미 충돌 12건: 벽 12개를 A 가 줄이고 B 가 각 벽의 문을 끝으로 옮김. 해결 지시가 8건을 넘어도 위반이 남지 않는다"
+  },
+  {
+   "expect": {
+    "clean": true
+   },
+   "flows": {
+    "A<-B": {
+     "apply": "ok",
+     "conflicts": {},
+     "fork_rev": 10,
+     "hashes": {
+      "derived": "a450b4d749f1952202fd7d6091dcf87ee2474d6cadf4d40ebc3a5af6422a4436",
+      "ifc": "59acb1fab0368d2f8bae06e71a856283ebebde566795014aa6a5076d573dc0ac",
+      "state": "fdbb92914c8cb76382eca5a1c2514648d089419256d8ef5dbe16c340b6c5a91b"
+     },
+     "plan_digest": "21a6d269e921041605a4e26edb8388e3d212b9a1b1f7f317447ad3bea7db1c7f",
+     "preview_bytes": 666,
+     "relation": "diverged"
+    },
+    "B<-A": {
+     "apply": "ok",
+     "conflicts": {},
+     "fork_rev": 10,
+     "hashes": {
+      "derived": "a450b4d749f1952202fd7d6091dcf87ee2474d6cadf4d40ebc3a5af6422a4436",
+      "ifc": "59acb1fab0368d2f8bae06e71a856283ebebde566795014aa6a5076d573dc0ac",
+      "state": "fdbb92914c8cb76382eca5a1c2514648d089419256d8ef5dbe16c340b6c5a91b"
+     },
+     "plan_digest": "21a6d269e921041605a4e26edb8388e3d212b9a1b1f7f317447ad3bea7db1c7f",
+     "preview_bytes": 666,
+     "relation": "diverged"
+    }
+   },
+   "id": "s23_auto_ids_after_merge",
+   "replay_oracle": {
+    "A<-B": {
+     "equals_merge": true,
+     "status": "replayed"
+    },
+    "B<-A": {
+     "equals_merge": true,
+     "status": "replayed"
+    }
+   },
+   "title": "상대가 id 를 주지 않고 벽 3개를 만들고 우리는 다른 곳을 고쳤다: 합친 뒤 우리 쪽 자동 id 생성이 상대 id 와 겹치지 않는다"
   }
  ]
 }

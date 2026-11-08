@@ -96,27 +96,33 @@ def compact_conflicts(items: list) -> list:
              "theirs_ops": [(o["seq"], o["op"]) for o in c["theirs"]["ops"]]} for c in items]
 
 
-def all_conflicts(sess: kit.Session, resolve: list | None = None) -> tuple[dict, list]:
-    """merge.preview 를 limit=1 쪽 나누기로 끝까지 읽고, limit=200 한 번 읽은 것과 같은지도 돌려준다."""
-    args = {"other": "other.dobim", "limit": 200}
-    if resolve:
-        args["resolve"] = resolve
-    whole = sess.run("merge.preview", args)
-    assert whole["ok"], whole
-    items, cursor, pages = [], None, 0
+def _read_pages(sess: kit.Session, args: dict, limit: int) -> tuple[dict, list]:
+    """merge.preview 를 쪽 나누기로 끝까지 읽는다. (첫 응답, 모든 항목)"""
+    items, cursor, pages, first = [], None, 0, None
     while True:
-        a = dict(args, limit=1)
+        a = dict(args, limit=limit)
         if cursor:
             a["cursor"] = cursor
         r = sess.run("merge.preview", a)
         assert r["ok"], r
+        first = first or r
         items += r["result"]["items"]
         pages += 1
         cursor = r["page"]["next_cursor"]
         if not cursor:
-            break
+            return first, items
         assert pages <= 500
-    assert [c["key"] for c in items] == [c["key"] for c in whole["result"]["items"]], "쪽 나누기 결과가 한 번에 읽은 것과 다르다"
+
+
+def all_conflicts(sess: kit.Session, resolve: list | None = None) -> tuple[dict, list]:
+    """merge.preview 를 limit=200 으로 끝까지 읽은 것과 limit=1 쪽 나누기로 끝까지 읽은 것이 같은지 확인하고 (첫 응답, 항목)을 돌려준다.
+    충돌이 많으면 응답 크기 상한 때문에 한 번에 다 오지 않으므로 둘 다 쪽 나누기로 읽는다."""
+    args = {"other": "other.dobim"}
+    if resolve:
+        args["resolve"] = resolve
+    whole, whole_items = _read_pages(sess, args, 200)
+    _first, items = _read_pages(sess, args, 1)
+    assert [c["key"] for c in items] == [c["key"] for c in whole_items], "쪽 나누기 결과가 한 번에 읽은 것과 다르다"
     return whole, items
 
 
@@ -140,10 +146,34 @@ def resolve_list(items: list, spec: list, direction: str, swap: bool) -> list:
     return out
 
 
+def next_auto_ids_ok(path: Path) -> dict:
+    """합친 프로젝트의 복사본에서 id 를 주지 않고 레벨·벽·문을 만든다: 병합이 들여온 자동 id 와 겹쳐 CONSTRAINT 가 나면 안 된다."""
+    cp = path.with_name(path.stem + "-autoid.dobim")
+    shutil.copyfile(path, cp)
+    s = kit.Session(cp, "autoid", create=False)
+    try:
+        # 먼저 기존 레벨에 벽부터 만든다: 병합 직후 첫 자동 id 가 상대의 자동 id 와 가장 겹치기 쉽다
+        lvs = sorted(s.eng.st.by_kind.get("level", ()))
+        ok = bool(lvs)
+        last = None
+        for i in range(4):
+            if not ok:
+                break
+            w = s.run("wall.create", {"level": lvs[0], "axis": [0, 50000 + i * 700, 3000, 50000 + i * 700]})
+            ok = ok and w["ok"]
+            last = w
+        if ok:
+            ok = s.run("door.place", {"host": last["result"]["id"], "offset": 1500, "width": 900})["ok"] and                 s.run("level.create", {"name": "ZZ-auto", "elevation": 9999})["ok"]
+        return {"next_auto_ids_ok": bool(ok)}
+    finally:
+        s.close()
+
+
 def post_checks(work: Path, name: str, h_before: dict, h_after: dict, rev_after: int, resolve: list | None = None, changed: bool = True) -> dict:
     """합친 프로젝트에 대한 사후 검사. 모두 참이어야 한다."""
     path = work / name
     out = {}
+    out.update(next_auto_ids_ok(path))   # 병합 직후 상태에서(뒤의 undo·재적용이 리비전을 올리기 전에) 확인한다
     s = kit.Session(path, "merger", create=False)
     try:
         eng = s.eng
@@ -331,4 +361,119 @@ def run_scenario(sc: dict, work: Path, *, delay: float = 0.0, dirs=DIRS, oracle:
         for d in dirs:   # 재실행(rebase 식) 결과가 3-way 병합 결과와 같은가(깨끗하게 합쳐진 경우만 비교한다)
             o, ap = out["oracle"][d], out["flows"][d]["apply"]
             o["equals_merge"] = (o.get("hashes") == ap.get("hashes")) if o["status"] == "replayed" and ap["ok"] else None
+    return out
+
+
+# ---------------------------------------------------------------- 시나리오 밖의 독립 점검 (변이 시험이 이빨을 확인하는 데도 쓴다)
+def _sess(path: Path, actor="x") -> kit.Session:
+    return kit.Session(path, actor, create=False)
+
+
+def extra_checks(work: Path) -> dict:
+    """시나리오 틀에 안 맞는 계약을 한 번씩 확인한다. 값은 모두 True 여야 한다."""
+    work.mkdir(parents=True, exist_ok=True)
+    out: dict = {}
+    # (1) 공통 조상은 트랜잭션 경계로 물린다
+    mk = lambda seq, txn, op: (seq, txn, "x", seq - 1, op, "{}", "[]")  # noqa: E731
+    a = [mk(1, "t1", "p"), mk(2, "t2", "q"), mk(3, "t2", "r1")]
+    b = [mk(1, "t1", "p"), mk(2, "t2", "q"), mk(3, "t2", "r2")]
+    out["fork_txn_boundary"] = M.fork_count(a, b) == 1
+
+    def pair(name, sc):
+        d = work / name
+        build_branches(sc, d)
+        shutil.copyfile(d / "a.dobim", d / "ours.dobim")
+        shutil.copyfile(d / "b.dobim", d / "other.dobim")
+        return d
+
+    # (2) 같은 상대 재병합: 거짓 충돌 없음 / 취소한 병합은 다시 들여옴
+    d = pair("remerge", {"a": [("wall.set", {"id": F.W2, "name": "A-only"})], "b": [("wall.set", {"id": F.W1, "thickness": 250})]})
+    s = _sess(d / "ours.dobim")
+    try:
+        s.run("merge.apply", {"other": "other.dobim"})
+        sb = _sess(d / "b.dobim", "bob")
+        sb.run("wall.set", {"id": F.W1, "thickness": 300})
+        sb.close()
+        shutil.copyfile(d / "b.dobim", d / "other.dobim")
+        pv = s.run("merge.preview", {"other": "other.dobim"})
+        out["remerge_no_false_conflict"] = bool(pv["ok"] and pv["result"]["conflict_count"] == 0)
+        ap = s.run("merge.apply", {"other": "other.dobim"})
+        out["remerge_applies"] = bool(ap["ok"] and s.eng.st.el[F.W1]["params"]["thickness"] == 300.0)
+        out["remerge_idempotent"] = s.run("merge.apply", {"other": "other.dobim"})["warnings"] == ["merge.apply: 변경 없음"]
+    finally:
+        s.close()
+    d = pair("undone", {"a": [("wall.set", {"id": F.W2, "name": "A-only"})], "b": [("wall.set", {"id": F.W1, "thickness": 250})]})
+    s = _sess(d / "ours.dobim")
+    try:
+        s.run("merge.apply", {"other": "other.dobim"})
+        s.run("history.undo", {})
+        ap = s.run("merge.apply", {"other": "other.dobim"})
+        out["undone_merge_reimported"] = bool(ap["ok"] and s.eng.st.el[F.W1]["params"]["thickness"] == 250.0)
+    finally:
+        s.close()
+
+    # (3) 배치: 다른 변경 뒤의 병합은 USAGE, 상태는 그대로
+    d = pair("batch", {"a": [("wall.set", {"id": F.W2, "name": "A-only"})], "b": [("wall.set", {"id": F.W1, "thickness": 250})]})
+    s = _sess(d / "ours.dobim")
+    try:
+        h0 = hashes3(s.eng)
+        r = s.batch([{"command": "wall.set", "args": {"id": F.W3, "name": "pre"}}, {"command": "merge.apply", "args": {"other": "other.dobim"}}])
+        r2 = s.batch([{"command": "merge.apply", "args": {"other": "other.dobim"}}, {"command": "merge.apply", "args": {"other": "other.dobim"}}])
+        out["batch_merge_after_change_is_usage"] = bool(not r["ok"] and r["error"]["code"] == "USAGE" and not r2["ok"]
+                                                        and r2["error"]["code"] == "USAGE" and hashes3(s.eng) == h0)
+    finally:
+        s.close()
+
+    # (4) 조작된 상대 로그는 정의된 오류로 거절하고 아무것도 바꾸지 않는다
+    d = pair("tamper", {"a": [("wall.set", {"id": F.W1, "thickness": 250})], "b": [("wall.set", {"id": F.W2, "name": "zz"})]})
+    c = sqlite3.connect(str(d / "other.dobim"))
+    seq = c.execute("select max(seq) from op_log").fetchone()[0]
+    c.execute("insert into op_log(seq,txn_id,actor,base_rev,ts,op,args,inverse) values(?,?,?,?,?,?,?,?)",
+              (seq + 1, f"t{seq + 1}", "evil", seq, "2026-01-01T00:00:00", "wall.set", "{}", json.dumps([["pset", F.W1, "DoBIM_Intent", "k", "evil", None]])))
+    c.commit()
+    c.close()
+    s = _sess(d / "ours.dobim")
+    try:
+        h0, rev0 = hashes3(s.eng), s.eng.rev
+        r = s.run("merge.apply", {"other": "other.dobim"})
+        out["tampered_log_rejected"] = bool(not r["ok"] and r["error"]["code"] == "IO_ERROR" and hashes3(s.eng) == h0 and s.eng.rev == rev0
+                                            and "DoBIM_Intent" not in str(s.eng.ifc.get_psets(F.W1)))
+    finally:
+        s.close()
+
+    # (5) 상대를 읽어도 상대 폴더에 아무것도 남지 않는다
+    d = pair("sidecar", {"a": [("wall.set", {"id": F.W2, "name": "A-only"})], "b": [("wall.set", {"id": F.W1, "thickness": 250})]})
+    od = d / "theirs"
+    od.mkdir()
+    shutil.copyfile(d / "b.dobim", od / "o.dobim")
+    before = sorted(p.name for p in od.iterdir())
+    s = _sess(d / "ours.dobim")
+    try:
+        r1 = s.run("merge.preview", {"other": "theirs/o.dobim"})
+        r2 = s.run("merge.apply", {"other": "theirs/o.dobim"})
+        out["no_sidecar_left_in_other_dir"] = bool(r1["ok"] and r2["ok"] and sorted(p.name for p in od.iterdir()) == before)
+    finally:
+        s.close()
+
+    # (6) 상대가 속성을 지운 것은 삭제 대 수정이 아니다
+    d = pair("delmod_prop", {"a": [("element.delete", {"id": F.D1})],
+                             "b": [("pset.delete", {"id": F.D1, "pset": "Pset_DoorCommon", "prop": "FireRating"})]})
+    s = _sess(d / "ours.dobim")
+    try:
+        pv = s.run("merge.preview", {"other": "other.dobim"})
+        out["prop_delete_vs_element_delete_not_conflict"] = bool(pv["ok"] and pv["result"]["conflict_count"] == 0)
+    finally:
+        s.close()
+
+    # (7) 같은 자리 벽 중복이 아주 많아도 위반 수가 선형이다
+    n = 300
+    u = {("el", F.LV1, "@"): M.canon({"kind": "level", "ifc_class": "IfcBuildingStorey", "origin": "authored", "family_id": "level.basic"}),
+         ("el", F.LV1, "p", "name"): M.canon("L"), ("el", F.LV1, "p", "elevation"): M.canon(0.0)}
+    for i in range(n):
+        e = "1%021d" % i
+        u[("el", e, "@")] = M.canon({"kind": "wall", "ifc_class": "IfcWall", "origin": "authored", "family_id": "wall.basic"})
+        for k, v in (("name", "w"), ("axis", [0.0, 0.0, 6000.0, 0.0]), ("thickness", 200.0), ("height", 3000.0)):
+            u[("el", e, "p", k)] = M.canon(v)
+        u[("rel", "on_level", e, F.LV1)] = "1"
+    out["many_duplicate_walls_linear"] = len([v for v in M.violations(M.View(u)) if v["rule"] == "DUPLICATE_WALL"]) == n
     return out

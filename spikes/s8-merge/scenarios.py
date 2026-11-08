@@ -230,5 +230,27 @@ sc(id="s21_parent_violation_not_merge_fault", title="한쪽(A)이 스스로 같�
    expect={"clean": True},
    facts=lambda e, v: _bad((W4 in e.st.el and W5 in e.st.el, "A 의 두 벽 그대로"), (_p(e, F.W2)["name"] == "동측", "B 이름")))
 
+# 22. 의미 충돌 12건: 해결 지시가 8건을 넘어도 마지막 재검사가 남아 위반이 새지 않는다(반복 상한 결함 회귀)
+_MW = [I("1", 400 + i) for i in range(12)]
+_MD = [I("2", 400 + i) for i in range(12)]
+sc(id="s22_many_semantic_conflicts", title="의미 충돌 12건: 벽 12개를 A 가 줄이고 B 가 각 벽의 문을 끝으로 옮김. 해결 지시가 8건을 넘어도 위반이 남지 않는다",
+   base=[x for i, w in enumerate(_MW) for x in (("wall.create", {"id": w, "level": F.LV1, "axis": [0, 20000 + i * 1000, 6000, 20000 + i * 1000]}),
+                                                 ("door.place", {"id": _MD[i], "host": w, "offset": 1500, "width": 900}))],
+   a=[("@batch", [("wall.set", {"id": w, "axis": [0, 20000 + i * 1000, 3000, 20000 + i * 1000]}) for i, w in enumerate(_MW)])],
+   b=[("@batch", [("door.set", {"id": d, "offset": 2800}) for d in _MD])],
+   expect={"conflicts": ["DOOR_OUT_OF_HOST"] * 12 + ["DOOR_OUTSIDE_TRIMMED"] * 12},
+   resolve=[{"match": {"type": "DOOR_OUT_OF_HOST"}, "take": "A"}, {"match": {"type": "DOOR_OUTSIDE_TRIMMED"}, "take": "A"}],
+   facts=lambda e, v: _bad(*[((_p(e, d)["offset"] == (1500.0 if v == "spec" else 2800.0)) and
+                              (_p(e, w)["axis"] == ([0.0, 20000.0 + i * 1000, 3000.0, 20000.0 + i * 1000] if v == "spec" else [0.0, 20000.0 + i * 1000, 6000.0, 20000.0 + i * 1000]))
+                              , f"문/벽 {i}") for i, (w, d) in enumerate(zip(_MW, _MD))]))
+
+# 23. 병합 뒤 자동 id: 상대가 id 없이 만든 벽 3개와 우리 다음 자동 id 가 겹치지 않는다(사후 검사 next_auto_ids_ok 가 본다)
+sc(id="s23_auto_ids_after_merge", title="상대가 id 를 주지 않고 벽 3개를 만들고 우리는 다른 곳을 고쳤다: 합친 뒤 우리 쪽 자동 id 생성이 상대 id 와 겹치지 않는다",
+   a=[("wall.set", {"id": F.W2, "name": "A-only"})],
+   b=[("wall.create", {"level": F.LV1, "axis": [0, 7000 + i * 500, 2000, 7000 + i * 500]}) for i in range(3)],
+   expect={"clean": True},
+   facts=lambda e, v: _bad((len([w for w in e.st.by_kind["wall"] if w not in (F.W1, F.W2, F.W3)]) == 3, "상대의 벽 3개"),
+                           (_p(e, F.W2)["name"] == "A-only", "A 이름")))
+
 BY_ID = {s["id"]: s for s in SCENARIOS}
 assert len(BY_ID) == len(SCENARIOS)
