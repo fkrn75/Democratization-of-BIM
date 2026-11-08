@@ -248,3 +248,24 @@ def test_4_정상_script와_없는_커맨드는_그대로다(base):
     assert ok["ok"]
     unk = dispatch.run_script(base.env, [{"command": "no.such", "args": {}}], project=base.path.name)
     assert not unk["ok"] and unk["error"]["code"] == "UNKNOWN_COMMAND"
+
+
+# ---------------------------------------------------------------- 5. 클라이언트가 보낸 긴 확인 토큰은 INTERNAL 이 아니라 CONFIRM_INVALID
+@pytest.mark.parametrize("tok", ["9" * 100 + ".abc", "9" * 130 + ".abc", "9" * 1000 + ".a", "9" * 5000 + ".a",
+                                 "-5.a", "x" * 129])
+def test_long_client_token_is_confirm_invalid(tmp_path, tok):
+    s = kit.Session(tmp_path / "p.dobim")
+    for n, a in F.SCRIPT:
+        s.run(n, a)
+    r = s.run("ifc.export", {"path": "a.ifc"}, confirm=tok)
+    assert r["ok"] is False and r["error"]["code"] == "CONFIRM_INVALID", r["error"]
+
+
+def test_issued_token_roundtrip_still_works(tmp_path):
+    s = kit.Session(tmp_path / "p.dobim")
+    for n, a in F.SCRIPT:
+        s.run(n, a)
+    r = s.run("ifc.export", {"path": "a.ifc"})
+    tok = r["error"]["details"]["confirm_token"]
+    assert len(tok) <= limits.TOKEN_MAX_CHARS
+    assert s.run("ifc.export", {"path": "a.ifc"}, confirm=tok)["ok"] is True

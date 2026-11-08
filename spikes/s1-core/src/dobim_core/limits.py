@@ -156,7 +156,7 @@ MAX_DETAIL_ERRORS = 5       # SCHEMA_INVALID 의 details.errors 에 싣는 항�
 DETAIL_PATH_CHARS = 120     # details.errors[].path 의 길이(클라이언트가 보낸 키가 그대로 들어오므로 자른다)
 DETAIL_MSG_CHARS = 160      # details.errors[].msg 의 길이
 _KEEP_WHOLE = frozenset({"confirm_token", "code"})   # 잘라서는 안 되는 값(자르면 쓸 수 없게 된다)
-TOKEN_MAX_CHARS = 128       # 서버가 만드는 확인 토큰의 길이 상한(실제는 "<만료 초>.<24자>" 약 35자, dispatch._token 이 assert 로 고정한다)
+TOKEN_MAX_CHARS = 128       # 서버가 만드는 확인 토큰의 길이 상한(실제는 "<만료 초>.<24자>" 약 35자, dispatch._issue_token 이 assert 로 고정한다)
 _ELLIPSIS = "…"
 
 

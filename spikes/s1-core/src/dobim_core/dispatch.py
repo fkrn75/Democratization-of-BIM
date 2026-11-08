@@ -142,13 +142,22 @@ def get_command(name: str) -> registry.Command:
 def _token(eng, name: str, args_json: str, rev: int, exp: int) -> str:
     msg = f"{name}|{args_json}|{rev}|{exp}".encode()
     mac = hmac.new(eng.confirm_secret.encode(), msg, hashlib.sha256).hexdigest()[:24]
-    tok = f"{exp}.{mac}"
+    return f"{exp}.{mac}"
+
+
+def _issue_token(eng, name: str, args_json: str, rev: int, exp: int) -> str:
+    """서버가 발급하는 확인 토큰. 길이 불변식은 발급 지점에서만 검사한다(클라이언트 입력으로 터지면 안 된다)."""
+    tok = _token(eng, name, args_json, rev, exp)
     # 토큰은 오류 봉투에서 잘리지 않으므로(limits.fit_error) 길이가 고정이어야 한다: "<만료 초>.<24자>" 는 35자 안팎이다
     assert len(tok) <= limits.TOKEN_MAX_CHARS, "확인 토큰이 상한보다 길다"
     return tok
 
 
 def _check_token(eng, name, args_json, rev, token: str) -> None:
+    # 서버가 발급할 수 없는 길이의 토큰은 계산하기 전에 거절한다
+    if not isinstance(token, str) or len(token) > limits.TOKEN_MAX_CHARS:
+        raise DobimError("CONFIRM_INVALID", "확인 토큰 형식이 틀렸다", path="/confirm",
+                         hint="미리보기를 다시 받으세요")
     try:
         exp = int(token.split(".", 1)[0])
     except ValueError:
@@ -208,7 +217,7 @@ def _run_destructive(eng, cmd, model, confirm, dry_run) -> dict:
         exp = int(time.time()) + CONFIRM_TTL_S
         raise DobimError("CONFIRM_REQUIRED", f"{cmd.name} 은 되돌릴 수 없는 커맨드라 확인이 필요하다",
                          path="/confirm", hint="details.confirm_token 을 confirm 인자로 다시 호출하세요",
-                         details={"preview": _clean(preview), "confirm_token": _token(eng, cmd.name, args_json, eng.rev, exp),
+                         details={"preview": _clean(preview), "confirm_token": _issue_token(eng, cmd.name, args_json, eng.rev, exp),
                                   "expires_in_s": CONFIRM_TTL_S, "rev": eng.rev})
     _check_token(eng, cmd.name, args_json, eng.rev, confirm)
     result, warns = eng.read(cmd, model)
