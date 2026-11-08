@@ -17,6 +17,8 @@ from typing import Annotated, ClassVar, Literal, Union, get_args, get_origin
 from pydantic import (AfterValidator, BaseModel, BeforeValidator, ConfigDict, Field, StrictBool, StrictFloat, StrictInt, StrictStr,
                       ValidationInfo, field_validator, model_validator)
 
+from dobim_core import drawing as D
+from dobim_core import drawing_export as DX
 from dobim_core import fixture as F
 from dobim_core import limits
 from dobim_core import queries as Q
@@ -520,7 +522,7 @@ def element_get(ctx, a: ElementGet):
 
 
 class ElementQuery(A):
-    kind: Literal["level", "wall", "door"] | None = None
+    kind: Literal["level", "wall", "door", "view"] | None = None
     level: Id | None = None
     name_contains: str | None = Field(None, max_length=64)
     limit: int = Field(100, ge=1, le=1000, description="최대 개수. 응답 크기 상한에 걸리면 이보다 적게 돌려주고 page.truncated 로 알린다")
@@ -643,6 +645,229 @@ class ScheduleKind(A):
          args=ScheduleKind, idempotent=True, examples=[{"kind": "wall"}])
 def schedule_summary(ctx, a: ScheduleKind):
     return ctx.g.q(Q.schedule_summary, a.kind)
+
+
+# ================================================================ 뷰·도면 (S3)
+Point2 = Annotated[list[Num], Field(min_length=2, max_length=2, description="[x,y] mm")]
+Scale = Annotated[int, Field(strict=True, ge=1, le=1000, description="축척 분모 (100 = 1:100)")]
+_PLAN_ONLY, _SEC_ONLY, _ELEV_ONLY = ("level", "cut_height", "view_depth"), ("p1", "p2", "depth", "flip"), ("dir",)
+
+
+class ViewCreate(A):
+    id: Id | None = None
+    name: Name
+    type: Literal["plan", "section", "elevation"]
+    level: Id | None = Field(None, description="평면: 레벨 id (필수)")
+    cut_height: Num = Field(1200.0, description="평면: 레벨 바닥에서 절단면까지 mm")
+    view_depth: Num = Field(300.0, ge=0, description="평면: 절단면 아래로 투영선을 보일 깊이 mm")
+    p1: Point2 | None = Field(None, description="단면: 절단선 시작점 (필수)")
+    p2: Point2 | None = Field(None, description="단면: 절단선 끝점 (필수)")
+    depth: Num = Field(20000.0, gt=0, description="단면: 절단면 뒤로 보이는 거리 mm")
+    flip: bool = Field(False, description="단면: 거짓이면 절단선 진행 방향의 왼쪽을 본다, 참이면 오른쪽")
+    dir: Literal["N", "E", "S", "W"] | None = Field(None, description="입면: 건물을 바라보는 면의 방위 (N = 북측 입면, 바깥에서 남쪽을 봄)")
+    scale: Scale = 100
+
+    @model_validator(mode="after")
+    def _by_type(self):
+        given = self.model_fields_set
+        own = {"plan": _PLAN_ONLY, "section": _SEC_ONLY, "elevation": _ELEV_ONLY}[self.type]
+        stray = sorted((given & {*_PLAN_ONLY, *_SEC_ONLY, *_ELEV_ONLY}) - set(own))
+        if stray:
+            raise ValueError(f"{self.type} 뷰에는 쓰지 않는 필드다: {', '.join(stray)}")
+        if self.type == "plan" and self.level is None:
+            raise ValueError("평면 뷰에는 level 이 필요하다")
+        if self.type == "section":
+            if self.p1 is None or self.p2 is None:
+                raise ValueError("단면 뷰에는 p1, p2 가 필요하다")
+            if (self.p2[0] - self.p1[0]) ** 2 + (self.p2[1] - self.p1[1]) ** 2 < 1.0:
+                raise ValueError("절단선 길이는 1mm 이상이어야 한다")
+        if self.type == "elevation" and self.dir is None:
+            raise ValueError("입면 뷰에는 dir 이 필요하다")
+        return self
+
+
+def _view_name_free(ctx, name, except_id=None):
+    for v in ctx.st.by_kind.get("view", ()):
+        if v != except_id and ctx.st.el[v]["params"]["name"] == name:
+            raise DobimError("CONSTRAINT", f"같은 이름의 뷰가 있다: {name}", path="/name")
+
+
+@command("view.create", kind="mutation", risk="write", group="view",
+         summary="뷰를 만든다(평면·단면·입면)",
+         args=ViewCreate, since="0.1",
+         examples=[{"id": F.V1, "name": "1F 평면", "type": "plan", "level": F.LV1, "cut_height": 1200},
+                   {"name": "A-A 단면", "type": "section", "p1": [3000, -2000], "p2": [3000, 6000]},
+                   {"name": "남측 입면", "type": "elevation", "dir": "S", "scale": 50}])
+def view_create(ctx, a: ViewCreate):
+    _fresh_id(ctx, a, "view")
+    _view_name_free(ctx, a.name)
+    if a.type == "plan":
+        ctx.row(a.level, "level")
+        params = {"name": a.name, "type": "plan", "level": a.level, "cut_height": a.cut_height, "view_depth": a.view_depth, "scale": a.scale}
+    elif a.type == "section":
+        params = {"name": a.name, "type": "section", "p1": list(a.p1), "p2": list(a.p2), "depth": a.depth, "flip": a.flip, "scale": a.scale}
+    else:
+        params = {"name": a.name, "type": "elevation", "dir": a.dir, "scale": a.scale}
+    ctx.put_el(a.id, row("view", "", "view.basic", params))
+    return {"id": a.id}
+
+
+class ViewSet(A):
+    forbid_null = True
+    id: Id
+    name: Name | None = None
+    cut_height: Num | None = None
+    view_depth: Num | None = Field(None, ge=0)
+    p1: Point2 | None = None
+    p2: Point2 | None = None
+    depth: Num | None = Field(None, gt=0)
+    flip: bool | None = None
+    dir: Literal["N", "E", "S", "W"] | None = None
+    scale: Scale | None = None
+
+    @model_validator(mode="after")
+    def _any(self):
+        if len(self.model_fields_set - {"id"}) == 0:
+            raise ValueError("바꿀 필드가 하나도 없다")
+        return self
+
+
+@command("view.set", kind="mutation", risk="write", group="view", summary="뷰 설정을 바꾼다",
+         args=ViewSet, since="0.1", examples=[{"id": F.V1, "cut_height": 1500}])
+def view_set(ctx, a: ViewSet):
+    r = ctx.row(a.id, "view")
+    p = dict(r["params"])
+    allowed = {"plan": _PLAN_ONLY, "section": _SEC_ONLY, "elevation": _ELEV_ONLY}[p["type"]]
+    for k in ("name", "scale", "cut_height", "view_depth", *_SEC_ONLY, *_ELEV_ONLY):
+        v = getattr(a, k)
+        if v is None:
+            continue
+        if k not in ("name", "scale") and k not in allowed:
+            raise DobimError("CONSTRAINT", f"{p['type']} 뷰에는 쓰지 않는 필드다: {k}", path=f"/{k}")
+        p[k] = list(v) if k in ("p1", "p2") else v
+    if a.name is not None:
+        _view_name_free(ctx, a.name, a.id)
+    if p["type"] == "section" and (p["p2"][0] - p["p1"][0]) ** 2 + (p["p2"][1] - p["p1"][1]) ** 2 < 1.0:
+        raise DobimError("CONSTRAINT", "절단선 길이는 1mm 이상이어야 한다", path="/p2")
+    ctx.put_el(a.id, dict(r, params=p))
+    return {"id": a.id}
+
+
+@command("view.delete", kind="mutation", risk="write", group="view", summary="뷰를 지운다",
+         args=IdArg, since="0.1", examples=[{"id": F.V1}])
+def view_delete(ctx, a: IdArg):
+    ctx.row(a.id, "view")
+    ctx.put_el(a.id, None)
+    return {"deleted": [a.id]}
+
+
+class ViewList(A):
+    type: Literal["plan", "section", "elevation"] | None = None
+    limit: int = Field(100, ge=1, le=1000, description="최대 개수. 응답 크기 상한에 걸리면 이보다 적게 돌려주고 page.truncated 로 알린다")
+    cursor: str | None = Field(None, max_length=2048, description="이전 응답의 page.next_cursor")
+
+
+@command("view.list", kind="query", risk="read", group="view", summary="뷰 목록과 캐시 상태",
+         args=ViewList, idempotent=True, examples=[{}, {"type": "plan"}])
+def view_list(ctx, a: ViewList):
+    st = ctx.st
+    after = _dec_cursor(a.cursor, "id")
+    ids = [v for v in sorted(st.by_kind.get("view", ())) if a.type is None or st.el[v]["params"]["type"] == a.type]
+    start = 0 if after is None else next((i for i, e in enumerate(ids) if e > after), len(ids))
+    cache = D.view_cache_state(ctx.g, ids[start:start + a.limit])
+    window = [{"id": v, **st.el[v]["params"], "cache": cache[v]} for v in ids[start:start + a.limit]]
+    items, cut = _fit(window, cursor_of=lambda i: _enc_cursor(window[i]["id"]))
+    nxt = _enc_cursor(items[-1]["id"]) if start + len(items) < len(ids) else None
+    return {"items": items, "page": _page(nxt, len(ids), cut)}
+
+
+class ViewLinework(A):
+    id: Id
+    limit: int = Field(100, ge=1, le=1000, description="최대 개수. 응답 크기 상한에 걸리면 이보다 적게 돌려주고 page.truncated 로 알린다")
+    cursor: str | None = Field(None, max_length=2048, description="이전 응답의 page.next_cursor (선분 번호)")
+
+
+@command("view.linework", kind="query", risk="read", group="view",
+         summary="뷰 선분 통계와 목록(큰 도면은 view.export)",
+         args=ViewLinework, idempotent=True, examples=[{"id": F.V1, "limit": 5}])
+def view_linework(ctx, a: ViewLinework):
+    r = ctx.row(a.id, "view")
+    lines = ctx.g.q(D.view_lines, a.id)
+    start = _dec_cursor(a.cursor, "int") or 0
+    window = [list(ln) for ln in lines[start:start + a.limit]]
+    summary = D.view_summary(lines)
+    head = {"id": a.id, "name": r["params"]["name"], "type": r["params"]["type"], "summary": summary,
+            "columns": ["class", "x0", "y0", "x1", "y1"]}
+    items, cut = _fit(window, base=head, cursor_of=lambda i: _enc_cursor(start + i + 1))
+    nxt = _enc_cursor(start + len(items)) if start + len(items) < len(lines) else None
+    return {**head, "items": items, "page": _page(nxt, len(lines), cut)}
+
+
+class ViewExport(A):
+    id: Id
+    path: str = Field(max_length=260, description="작업 폴더 안의 .svg 또는 .pdf 경로 (확장자가 형식을 정한다). 응답에는 경로·크기·요약만 담는다. PDF 는 글꼴을 내장하지 않아 한글을 물음표로 쓴다")
+    overwrite: bool = Field(False, description="거짓이면 이미 있는 파일을 덮어쓰지 않는다")
+
+
+def _render_view(ctx, vid):
+    """뷰의 선분·채움·기준선(레벨)·제목을 내보내기용 데이터로 묶는다."""
+    r = ctx.row(vid, "view")
+    p = r["params"]
+    levels = sorted(((ctx.st.el[l]["params"]["name"], ctx.st.el[l]["params"]["elevation"]) for l in ctx.st.by_kind.get("level", ())),
+                    key=lambda t: (t[1], t[0]))
+    lines = ctx.g.q(D.view_lines, vid)
+    return {"type": p["type"], "name": p["name"], "scale": p["scale"], "lines": lines, "fills": ctx.g.q(D.view_fills, vid),
+            "datums": levels}
+
+
+@command("view.export", kind="job", risk="write", group="view",
+         summary="뷰를 SVG·PDF 파일로 쓴다",
+         args=ViewExport, since="0.1", examples=[{"id": F.V1, "path": "view-example.svg", "overwrite": True}])
+def view_export(ctx, a: ViewExport):
+    p = resolve_in_workspace(ctx.eng.workspace, a.path)
+    ext = p.suffix.lower()
+    if ext not in (".svg", ".pdf"):
+        raise DobimError("PATH_DENIED", f"내보내기 대상은 .svg 또는 .pdf 여야 한다: {p.name}", path="/path")
+    if SNAP_DIR.lower() in [x.lower() for x in p.parts] or p.is_dir():
+        raise DobimError("PATH_DENIED", f"쓸 수 없는 경로다: {p.name}", path="/path")
+    if p.exists() and not a.overwrite:
+        raise DobimError("FILE_EXISTS", f"이미 있는 파일이다: {p.name}", path="/path", hint="overwrite=true 로 덮어쓰거나 다른 이름을 쓰세요")
+    data = _render_view(ctx, a.id)
+    dropped = False
+    if ext == ".svg":
+        blob = DX.render_svg(data)
+    else:
+        blob, dropped = DX.render_pdf(data)
+    _replace(p, lambda tmp: tmp.write_bytes(blob))
+    return {"path": p.name, "bytes": len(blob), "format": ext[1:], "segments": len(data["lines"]), "fills": len(data["fills"]),
+            "non_ascii_dropped": dropped, "digest": D.view_summary(data["lines"])["digest"], "rev": ctx.eng.rev}
+
+
+class ViewAffected(A):
+    rev: int | None = Field(None, ge=1, description="변경 응답의 rev. 그 변경이 건드린 요소에 의존하는 뷰를 돌려준다. 생략하면 지금 다시 계산해야 하는(stale·new) 뷰")
+
+
+@command("view.affected", kind="query", risk="read", group="view",
+         summary="영향 뷰 조회(갱신 대기열)",
+         args=ViewAffected, idempotent=True, examples=[{}, {"rev": 3}])
+def view_affected(ctx, a: ViewAffected):
+    vids = sorted(ctx.st.by_kind.get("view", ()))
+    g = ctx.g
+    if a.rev is None:
+        state = D.view_cache_state(g, vids)
+        hit = [v for v in vids if state[v] != "fresh"]
+        basis = "cache"
+    else:
+        row_ = ctx.eng.conn.execute("SELECT txn_id FROM op_log WHERE seq=?", (a.rev,)).fetchone()
+        if row_ is None:
+            raise DobimError("NOT_FOUND", f"로그에 없는 리비전이다: {a.rev}", path="/rev")
+        from dobim_core.engine import affected_of, invert   # 지연 import: 레지스트리 로드가 엔진에 의존하지 않게
+        aff = affected_of([x for e in ctx.eng.txn_entries(row_[0]) for x in invert(json.loads(e[4]))])
+        keys = [("el", e) for k in ("created", "modified", "deleted") for e in aff[k]]
+        hit = D.views_depending_on(g, keys, vids)
+        basis = "dependency"
+    items = [{"id": v, "name": ctx.st.el[v]["params"]["name"], "type": ctx.st.el[v]["params"]["type"]} for v in hit]
+    return {"basis": basis, "count": len(items), "items": items[:200], "truncated": len(items) > 200}
 
 
 # ================================================================ 이력

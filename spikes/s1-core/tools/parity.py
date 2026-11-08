@@ -26,7 +26,9 @@ from dobim_core.engine import Engine  # noqa: E402
 SRC = str(HERE.parent / "src")
 # 예시 실행 전에 필요한 준비 (양쪽에 같은 경로로 실행한다)
 _EXP = ("ifc.export", {"path": "export-example.ifc"}, True)   # True = 파괴적 커맨드의 확인 토큰 2단계
-PRE = {"history.redo": [("history.undo", {})], "ifc.restore": [_EXP, _EXP], "ifc.snapshots": [_EXP, _EXP]}
+_V1 = ("view.create", {"id": F.V1, "name": "1F 평면", "type": "plan", "level": F.LV1, "cut_height": 1200})   # S3: 뷰가 있어야 하는 예시의 준비
+PRE = {"history.redo": [("history.undo", {})], "ifc.restore": [_EXP, _EXP], "ifc.snapshots": [_EXP, _EXP],
+       "view.set": [_V1], "view.delete": [_V1], "view.list": [_V1], "view.linework": [_V1], "view.export": [_V1], "view.affected": [_V1]}
 ERROR_CASES = [
     ("없는 커맨드", "no.such.command", {}, {}),
     ("스키마 오류(타입)", "wall.move", {"id": F.W1, "dx": "abc"}, {}),

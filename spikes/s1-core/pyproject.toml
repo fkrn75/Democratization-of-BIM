@@ -45,7 +45,7 @@ forbidden_modules = ["tkinter", "PyQt5", "PyQt6", "PySide2", "PySide6", "wx", "b
 [[tool.importlinter.contracts]]
 name = "순수 질의는 엔진·프로토콜 계층을 모른다"
 type = "forbidden"
-source_modules = ["dobim_core.queries", "dobim_core.graph"]
+source_modules = ["dobim_core.queries", "dobim_core.graph", "dobim_core.drawing", "dobim_core.drawing_export"]
 forbidden_modules = ["dobim_core.engine", "dobim_core.cli", "dobim_core.mcp_server", "dobim_core.dispatch", "dobim_core.ifc_model"]
 allow_indirect_imports = true
 
@@ -66,6 +66,6 @@ name = "ifcopenshell 은 엔진과 IFC 투영 모듈만 import 한다 (커맨드
 type = "forbidden"
 source_modules = ["dobim_core.commands", "dobim_core.queries", "dobim_core.graph", "dobim_core.registry",
                   "dobim_core.dispatch", "dobim_core.cli", "dobim_core.mcp_server", "dobim_core.fixture",
-                  "dobim_core.paths", "dobim_core.errors"]
+                  "dobim_core.paths", "dobim_core.errors", "dobim_core.drawing", "dobim_core.drawing_export"]
 forbidden_modules = ["ifcopenshell"]
 allow_indirect_imports = true

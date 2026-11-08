@@ -14,6 +14,8 @@ MIN_TRIMMED = 1.0       # 조인 후 벽 길이 하한. 미달이면 조인을 �
 PARALLEL_EPS = 1e-9
 
 
+NON_IFC_KINDS = frozenset({"view"})   # IFC 로 투영하지 않는 의도 요소(뷰 정의). 신원·속성셋·재료가 없다 (S3)
+
 NB = 64  # 일람표 버킷 수. 요소 하나가 바뀌면 그 버킷만 다시 계산한다
 
 
@@ -275,8 +277,10 @@ def derived_bundle(g, eids):
            "door_summary": g.q(schedule_summary, "door"), "wall_summary": g.q(schedule_summary, "wall"),
            "stats": g.q(model_stats), "specs": {}, "trim": {}, "world": {}}
     for e in eids:
-        out["specs"][e] = g.q(ifc_spec, e)
         k = el(g, e)["kind"]
+        if k in NON_IFC_KINDS:
+            continue
+        out["specs"][e] = g.q(ifc_spec, e)
         if k == "wall":
             out["trim"][e] = g.q(wall_trim, e)
         elif k == "door":

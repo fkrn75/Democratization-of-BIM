@@ -13,6 +13,7 @@ def _id(prefix: str, n: int) -> str:
 LV1, LV2 = _id("3", 1), _id("3", 2)
 W1, W2, W3 = _id("1", 1), _id("1", 2), _id("1", 3)
 D1, D2 = _id("2", 1), _id("2", 2)
+V1 = _id("4", 1)   # 뷰 예시용 고정 id (SCRIPT 에는 넣지 않는다: 기존 기준 해시를 바꾸지 않으려고)
 GUID = "5d0b1a50-0000-4a00-8000-0d0b1a5000f1"
 
 SCRIPT: list[tuple[str, dict]] = [

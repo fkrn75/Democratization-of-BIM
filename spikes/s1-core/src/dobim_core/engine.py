@@ -179,11 +179,17 @@ class Ctx:
     def rels_in(self, kind, dst) -> list:
         return list(self.eng.st.inn.get((kind, dst), ()))
 
+    def _in_ifc(self, eid) -> bool:
+        """IFC 신원이 있어야 하는 요소인가(뷰 같은 비 IFC 요소가 아닌가). ents 에 있는지가 아니라 종류로 판단한다:
+        있어야 할 신원이 없는 것은 숨기지 말고 오류로 드러나야 한다."""
+        row = self.eng.st.el.get(eid)
+        return row is None or row["kind"] not in Q.NON_IFC_KINDS
+
     def psets(self, eid) -> dict:
-        return self.eng.ifc.get_psets(eid)
+        return self.eng.ifc.get_psets(eid) if self._in_ifc(eid) else {}
 
     def material(self, eid):
-        return self.eng.ifc.get_material(eid)
+        return self.eng.ifc.get_material(eid) if self._in_ifc(eid) else None
 
     def new_id(self, kind: str) -> str:
         """결정적 GlobalId. 같은 프로젝트에서 같은 순번이면 같은 값이 나온다."""
@@ -210,6 +216,8 @@ class Ctx:
         return True
 
     def set_prop(self, eid: str, pset: str, prop: str, value) -> bool:
+        if not self._in_ifc(eid):
+            raise DobimError("CONSTRAINT", f"속성을 가질 수 없는 요소다: {eid}", path="/id")
         old = self.eng.ifc.get_psets(eid).get(pset, {}).get(prop)
         if old == value and type(old) is type(value):
             return False
@@ -217,6 +225,10 @@ class Ctx:
         return True
 
     def set_material(self, eid: str, name) -> bool:
+        if not self._in_ifc(eid):
+            if name is None:
+                return False
+            raise DobimError("CONSTRAINT", f"재료를 가질 수 없는 요소다: {eid}", path="/id")
         old = self.eng.ifc.get_material(eid)
         if old == name:
             return False
@@ -344,7 +356,8 @@ class Engine:
                 elif e[0] == "mat":
                     mats[e[1]] = e[3]
         for eid in sorted(self.st.el):
-            self.ifc.create_identity(eid, self.st.el[eid]["kind"])
+            if self.st.el[eid]["kind"] not in Q.NON_IFC_KINDS:
+                self.ifc.create_identity(eid, self.st.el[eid]["kind"])
         for (eid, pset, prop), v in sorted(psets.items(), key=lambda kv: kv[0]):
             if v is not None and eid in self.ifc.ents:
                 self.ifc.set_prop(eid, pset, prop, v)
@@ -379,7 +392,9 @@ class Engine:
             self.st.apply_el(eid, old, new)
             p.add(("el", eid))
             try:   # IFC 쪽이 실패하면 메모리 상태도 되돌리고, IFC 는 어떤 상태인지 모르니 오염으로 표시한다
-                if old is None:
+                if (new or old)["kind"] in Q.NON_IFC_KINDS:
+                    pass   # 뷰 정의 같은 비 IFC 요소는 신원이 없다
+                elif old is None:
                     self.ifc.create_identity(eid, new["kind"])
                 elif new is None:
                     self.ifc.remove_identity(eid)
@@ -635,8 +650,8 @@ class Engine:
         return {
             "elements": [[i, self.st.el[i]] for i in ids],
             "relations": self.st.relations(),
-            "psets": {i: p for i in ids if (p := self.ifc.get_psets(i))},
-            "materials": {i: m for i in ids if (m := self.ifc.get_material(i)) is not None},
+            "psets": {i: p for i in ids if self.st.el[i]["kind"] not in Q.NON_IFC_KINDS and (p := self.ifc.get_psets(i))},
+            "materials": {i: m for i in ids if self.st.el[i]["kind"] not in Q.NON_IFC_KINDS and (m := self.ifc.get_material(i)) is not None},
         }
 
     def state_hash(self) -> str:
@@ -662,6 +677,8 @@ class Engine:
         bad = []
         texts = self.ifc.intent_texts()
         for eid in sorted(self.st.el):
+            if self.st.el[eid]["kind"] in Q.NON_IFC_KINDS:
+                continue
             want = canon(self.g.q(Q.intent_of, eid))
             if texts.get(eid) != want:
                 bad.append(eid)
