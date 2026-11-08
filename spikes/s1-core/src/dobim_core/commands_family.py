@@ -76,7 +76,7 @@ class FamilyList(A):
     cursor: str | None = Field(None, max_length=2048, description="이전 응답의 page.next_cursor")
 
 
-@command("family.list", kind="query", risk="read", group="family", summary="기본 패밀리 라이브러리의 레시피 목록(id·IFC 클래스·호스팅·매개변수 이름)",
+@command("family.list", kind="query", risk="read", group="family", summary="기본 패밀리 라이브러리 목록",
          args=FamilyList, needs_project=False, idempotent=True, since="0.2", examples=[{}])
 def family_list(env, a: FamilyList):
     from dobim_core.family import library
@@ -104,7 +104,7 @@ class FamilyValidate(Source):
 
 
 @command("family.validate", kind="query", risk="read", group="family",
-         summary="레시피를 검증한다(스키마·식·순환/미정의 참조·범위·형상·IFC 유효성·표준 속성셋). 오류는 경로·이유·힌트로 돌려준다",
+         summary="레시피 검증(구조화 오류: 경로·이유·힌트)",
          args=FamilyValidate, needs_project=False, idempotent=True, since="0.2",
          examples=[{"family": "door.single", "level": "static"}, {"family": "column.section"}])
 def family_validate(env, a: FamilyValidate):
@@ -117,6 +117,7 @@ def family_validate(env, a: FamilyValidate):
         return {"ok": False, "level": a.level, "checks": {"schema": "fail"}, "total_errors": ex.details.get("total", 1),
                 "errors": ex.details.get("issues", []), "warnings": []}
     res = validate_recipe(data, a.level)
+    res.get("stats", {}).pop("seconds", None)   # 실행 시간은 비결정적이라 응답에 넣지 않는다(CLI == MCP 패리티)
     res["errors"] = [_clip_issue(i) for i in res["errors"][:MAX_ISSUES]]
     res["warnings"] = [_clip_issue(i) for i in res["warnings"][:MAX_ISSUES // 2]]
     return res
@@ -169,7 +170,7 @@ class FamilyRegister(Source):
 
 
 @command("family.register", kind="mutation", risk="write", group="family",
-         summary="레시피로 패밀리 타입을 만든다(IfcXxxType 로 투영, 타입 수준 속성셋 기록). 같은 레시피·값이면 같은 타입 id",
+         summary="레시피로 패밀리 타입을 만든다",
          args=FamilyRegister, since="0.2",
          examples=[{"family": "door.single", "type_values": {"width": 1000}, "name": "D1000"}])
 def family_register(ctx, a: FamilyRegister):
@@ -260,7 +261,7 @@ def _inst_params(a_name, tid, values, ev, hosted, offset, position, rotation, el
 
 
 @command("family.place", kind="mutation", risk="write", group="family",
-         summary="패밀리 인스턴스를 배치한다(벽에 호스팅하거나 레벨에 자립). 타입이 없으면 만든다. 개구부·속성셋·IFC 타입 관계 포함",
+         summary="패밀리 인스턴스를 배치한다(호스팅/자립)",
          args=FamilyPlace, since="0.2",
          examples=[{"family": "door.single", "values": {"swing": "R"}, "host": C.F.W3, "offset": 1500},
                    {"family": "column.section", "type_values": {"section": "round"}, "level": C.F.LV1, "position": [1000, 1000]}])
@@ -329,7 +330,7 @@ class FamilySet(A):
 
 
 @command("family.set", kind="mutation", risk="write", group="family",
-         summary="패밀리 인스턴스의 이름·인스턴스 매개변수·위치·회전·높이를 바꾼다(타입 값은 바꾸지 못한다: 새 타입으로 다시 배치)",
+         summary="패밀리 인스턴스를 수정한다",
          args=FamilySet, since="0.2", examples=[{"id": C.F.D1, "name": "X"}])
 def family_set(ctx, a: FamilySet):
     r_ = ctx.row(a.id, "finst")
@@ -376,7 +377,7 @@ PREVIEW_ITEMS = 24
 
 
 @command("family.preview", kind="query", risk="read", group="family",
-         summary="타입/패밀리 + 값을 평가해 형상 요약·개구부·평면 기호 도형·속성셋을 보여 준다(요소를 만들지 않는다)",
+         summary="타입/패밀리 평가 결과를 미리 본다",
          args=FamilyPreview, idempotent=True, since="0.2",
          examples=[{"family": "door.single", "values": {"swing": "R"}, "scale": "1:200"}])
 def family_preview(ctx, a: FamilyPreview):
