@@ -1,0 +1,193 @@
+{
+  "frozen_dir_size": {
+    "files": 1486,
+    "bytes": 224289709,
+    "mib": 213.9
+  },
+  "ifcopenshell_dir_size": {
+    "files": 667,
+    "bytes": 129045817,
+    "mib": 123.1
+  },
+  "A_fixture_hashes": {
+    "cli_process_launches_per_side": 12,
+    "venv": {
+      "state": "c85d7be0bc6c59015b2ee9e9b49bf4c75f2f779c934d7b8d4160aefd05cf9d0f",
+      "derived": "47c215bb6ea9e93fa7fea940dc539192b7acd9d63483cc19a000e1ff7ed7bac8",
+      "ifc": "9386029c481e74cf4a359465db9d07e7048d340730032e43829bb747e26baf7b"
+    },
+    "frozen": {
+      "state": "c85d7be0bc6c59015b2ee9e9b49bf4c75f2f779c934d7b8d4160aefd05cf9d0f",
+      "derived": "47c215bb6ea9e93fa7fea940dc539192b7acd9d63483cc19a000e1ff7ed7bac8",
+      "ifc": "9386029c481e74cf4a359465db9d07e7048d340730032e43829bb747e26baf7b"
+    },
+    "s1_recorded": {
+      "state": "c85d7be0bc6c59015b2ee9e9b49bf4c75f2f779c934d7b8d4160aefd05cf9d0f",
+      "derived": "47c215bb6ea9e93fa7fea940dc539192b7acd9d63483cc19a000e1ff7ed7bac8",
+      "ifc": "9386029c481e74cf4a359465db9d07e7048d340730032e43829bb747e26baf7b"
+    },
+    "equal_venv_frozen": true,
+    "equal_s1_recorded": true,
+    "pass": true
+  },
+  "C_validate_export": {
+    "venv": {
+      "validate": {
+        "ok": true,
+        "result_head": "{\"errors\": 0, \"warnings\": 0, \"violations\": []}"
+      },
+      "export_ok": true,
+      "ifc_bytes": 10848,
+      "ifc_head": "ISO-10303-21;\r",
+      "validate_ok": true
+    },
+    "frozen": {
+      "validate": {
+        "ok": true,
+        "result_head": "{\"errors\": 0, \"warnings\": 0, \"violations\": []}"
+      },
+      "export_ok": true,
+      "ifc_bytes": 10848,
+      "ifc_head": "ISO-10303-21;\r",
+      "validate_ok": true
+    },
+    "validate_equal": true,
+    "export_body_equal": true,
+    "pass": true
+  },
+  "E_all_command_examples_venv_vs_frozen": {
+    "example_runs": 34,
+    "commands_covered": 31,
+    "commands_in_registry": 31,
+    "mismatches": [],
+    "pass": true
+  },
+  "D_timing": {
+    "venv": {
+      "list_s": {
+        "min": 0.658,
+        "median": 0.712,
+        "max": 0.829
+      },
+      "model_hash_s": {
+        "min": 1.519,
+        "median": 1.671,
+        "max": 1.925
+      }
+    },
+    "frozen": {
+      "list_s": {
+        "min": 0.349,
+        "median": 0.38,
+        "max": 0.43
+      },
+      "model_hash_s": {
+        "min": 1.626,
+        "median": 1.894,
+        "max": 2.057
+      }
+    }
+  },
+  "B_generated_sequences_via_mcp": {
+    "runs": [
+      {
+        "seed": 1,
+        "items": 300,
+        "ok_items": 260,
+        "failed_items": 40,
+        "batches": 35,
+        "undo_redo": 23,
+        "venv": {
+          "hash": {
+            "state": "54f105802975455a4dd5cbd9b42fbab2db12ff741bdea611bb9add92785a26ec",
+            "derived": "bf2a30420d38a7b3f69e15fe95da528637145c58f0c30d21c3d29207270a8985",
+            "ifc": "aca2497c6eb78ef34b4f89c6f74f48e55d457ffff66fbbf97785ac9b8ea81261"
+          },
+          "ok_flags_equal_oracle": true,
+          "seconds": 2.3
+        },
+        "frozen": {
+          "hash": {
+            "state": "54f105802975455a4dd5cbd9b42fbab2db12ff741bdea611bb9add92785a26ec",
+            "derived": "bf2a30420d38a7b3f69e15fe95da528637145c58f0c30d21c3d29207270a8985",
+            "ifc": "aca2497c6eb78ef34b4f89c6f74f48e55d457ffff66fbbf97785ac9b8ea81261"
+          },
+          "ok_flags_equal_oracle": true,
+          "seconds": 2.3
+        },
+        "oracle_hash": {
+          "state": "54f105802975455a4dd5cbd9b42fbab2db12ff741bdea611bb9add92785a26ec",
+          "derived": "bf2a30420d38a7b3f69e15fe95da528637145c58f0c30d21c3d29207270a8985",
+          "ifc": "aca2497c6eb78ef34b4f89c6f74f48e55d457ffff66fbbf97785ac9b8ea81261"
+        },
+        "pass": true
+      },
+      {
+        "seed": 2,
+        "items": 300,
+        "ok_items": 257,
+        "failed_items": 43,
+        "batches": 46,
+        "undo_redo": 31,
+        "venv": {
+          "hash": {
+            "state": "7babaa3e6966b06b01706ce00975c8b6e055d4a76ede529e0392b55deead90b4",
+            "derived": "cc62a22e5c9fa413733e91a1139e606dc684b49953ea4ff8ebf54e9e9cfdd17c",
+            "ifc": "dc903765150b445351e5868d4cf58a11aaf50115a75342da55f31870f40040b8"
+          },
+          "ok_flags_equal_oracle": true,
+          "seconds": 2.2
+        },
+        "frozen": {
+          "hash": {
+            "state": "7babaa3e6966b06b01706ce00975c8b6e055d4a76ede529e0392b55deead90b4",
+            "derived": "cc62a22e5c9fa413733e91a1139e606dc684b49953ea4ff8ebf54e9e9cfdd17c",
+            "ifc": "dc903765150b445351e5868d4cf58a11aaf50115a75342da55f31870f40040b8"
+          },
+          "ok_flags_equal_oracle": true,
+          "seconds": 2.4
+        },
+        "oracle_hash": {
+          "state": "7babaa3e6966b06b01706ce00975c8b6e055d4a76ede529e0392b55deead90b4",
+          "derived": "cc62a22e5c9fa413733e91a1139e606dc684b49953ea4ff8ebf54e9e9cfdd17c",
+          "ifc": "dc903765150b445351e5868d4cf58a11aaf50115a75342da55f31870f40040b8"
+        },
+        "pass": true
+      },
+      {
+        "seed": 3,
+        "items": 300,
+        "ok_items": 251,
+        "failed_items": 49,
+        "batches": 36,
+        "undo_redo": 52,
+        "venv": {
+          "hash": {
+            "state": "70978ccce01c852665546ada2c9afe892a7c300aa3c8d44bce91e4cae3be8878",
+            "derived": "a32ac85df0b134514c618117a4aa9591d0183cfe209ed95cac142348ea06ac24",
+            "ifc": "09b2238db02ba23396506c1992df38eead9a9e2f7d708b2a27b17c6605fdc3d9"
+          },
+          "ok_flags_equal_oracle": true,
+          "seconds": 2.1
+        },
+        "frozen": {
+          "hash": {
+            "state": "70978ccce01c852665546ada2c9afe892a7c300aa3c8d44bce91e4cae3be8878",
+            "derived": "a32ac85df0b134514c618117a4aa9591d0183cfe209ed95cac142348ea06ac24",
+            "ifc": "09b2238db02ba23396506c1992df38eead9a9e2f7d708b2a27b17c6605fdc3d9"
+          },
+          "ok_flags_equal_oracle": true,
+          "seconds": 2.2
+        },
+        "oracle_hash": {
+          "state": "70978ccce01c852665546ada2c9afe892a7c300aa3c8d44bce91e4cae3be8878",
+          "derived": "a32ac85df0b134514c618117a4aa9591d0183cfe209ed95cac142348ea06ac24",
+          "ifc": "09b2238db02ba23396506c1992df38eead9a9e2f7d708b2a27b17c6605fdc3d9"
+        },
+        "pass": true
+      }
+    ],
+    "pass": true
+  },
+  "pass": true
+}

@@ -1,0 +1,36 @@
+{
+  "base_bytes": 224289709,
+  "baseline_ok": true,
+  "stages": {
+    "S1_cgal_svgfill_manifold": {
+      "removed_files": 4,
+      "bytes_after": 215042989,
+      "run_ok": true,
+      "hash_equal_to_baseline": true,
+      "validate_ok": true,
+      "failure": null
+    },
+    "S2_all_geometry_plugins": {
+      "removed_files": 24,
+      "bytes_after": 205904301,
+      "run_ok": false,
+      "hash_equal_to_baseline": null,
+      "validate_ok": null,
+      "failure": {
+        "stage": "project.new",
+        "stderr_tail": "ifcopenshell\\__init__.py\", line 89, in <module>\r\n    raise ImportError(\"IfcOpenShell not built for '%s' (%s)\" % (python_distribution, e)) from e\r\nImportError: IfcOpenShell not built for 'windows\\64bit\\python3.12' (DLL load failed while importing _ifcopenshell_wrapper: ������ ����� ã�� �� �����ϴ�.)\r\n"
+      }
+    },
+    "S3_geometry_plus_occt": {
+      "removed_files": 73,
+      "bytes_after": 153647021,
+      "run_ok": false,
+      "hash_equal_to_baseline": null,
+      "validate_ok": null,
+      "failure": {
+        "stage": "project.new",
+        "stderr_tail": "ifcopenshell\\__init__.py\", line 89, in <module>\r\n    raise ImportError(\"IfcOpenShell not built for '%s' (%s)\" % (python_distribution, e)) from e\r\nImportError: IfcOpenShell not built for 'windows\\64bit\\python3.12' (DLL load failed while importing _ifcopenshell_wrapper: ������ ����� ã�� �� �����ϴ�.)\r\n"
+      }
+    }
+  }
+}

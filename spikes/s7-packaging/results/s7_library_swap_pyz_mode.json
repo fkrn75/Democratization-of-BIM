@@ -1,0 +1,73 @@
+{
+  "source_dir_is_py_mode": true,
+  "baseline": {
+    "ok": true,
+    "hash": {
+      "state": "c85d7be0bc6c59015b2ee9e9b49bf4c75f2f779c934d7b8d4160aefd05cf9d0f",
+      "derived": "47c215bb6ea9e93fa7fea940dc539192b7acd9d63483cc19a000e1ff7ed7bac8",
+      "ifc": "9386029c481e74cf4a359465db9d07e7048d340730032e43829bb747e26baf7b"
+    },
+    "validate_ok": true,
+    "validate": {
+      "errors": 1,
+      "warnings": 0,
+      "violations": [
+        "검증기 예외: ModuleNotFoundError(\"No module named '_pytest'\")"
+      ]
+    }
+  },
+  "E1_python_source_modification_takes_effect": {
+    "guid_py_exists_as_file": true,
+    "marker_seen_on_stderr": false,
+    "pass": false
+  },
+  "E2_wheel_swap": [
+    {
+      "wheel": "ifcopenshell-0.8.5-py312-none-win_amd64.whl",
+      "files_before": 670,
+      "files_after": 580,
+      "run_ok": false,
+      "failure": {
+        "stage": "project.new",
+        "stderr_tail": "\"dobim_core\\engine.py\", line 25, in <module>\r\n  File \"pyimod02_importers.py\", line 457, in exec_module\r\n  File \"ifcopenshell\\__init__.py\", line 89, in <module>\r\n    raise ImportError(\"IfcOpenShell not built for '%s'\" % python_distribution)\r\nImportError: IfcOpenShell not built for 'windows\\64bit\\python3.12' (module 'ifcopenshell._ifcopenshell_wrapper' has no attribute 'SWIG_PyInstanceMethod_New')\r\n",
+        "error": null
+      }
+    },
+    {
+      "wheel": "ifcopenshell-0.9.0-py312-none-win_amd64.whl",
+      "files_before": 670,
+      "files_after": 695,
+      "run_ok": true,
+      "hash_equal_to_baseline": true,
+      "validate_ok": true,
+      "hash": {
+        "state": "c85d7be0bc6c59015b2ee9e9b49bf4c75f2f779c934d7b8d4160aefd05cf9d0f",
+        "derived": "47c215bb6ea9e93fa7fea940dc539192b7acd9d63483cc19a000e1ff7ed7bac8",
+        "ifc": "9386029c481e74cf4a359465db9d07e7048d340730032e43829bb747e26baf7b"
+      }
+    },
+    {
+      "wheel": "ifcopenshell-0.9.0.post1-py312-none-win_amd64.whl",
+      "files_before": 670,
+      "files_after": 670,
+      "run_ok": true,
+      "hash_equal_to_baseline": true,
+      "validate_ok": true,
+      "hash": {
+        "state": "c85d7be0bc6c59015b2ee9e9b49bf4c75f2f779c934d7b8d4160aefd05cf9d0f",
+        "derived": "47c215bb6ea9e93fa7fea940dc539192b7acd9d63483cc19a000e1ff7ed7bac8",
+        "ifc": "9386029c481e74cf4a359465db9d07e7048d340730032e43829bb747e26baf7b"
+      }
+    }
+  ],
+  "pass": false,
+  "summary": {
+    "py_modification_effective": false,
+    "same_version_reinstall_ok": true,
+    "other_versions": {
+      "ifcopenshell-0.8.5-py312-none-win_amd64.whl": "실행 실패",
+      "ifcopenshell-0.9.0-py312-none-win_amd64.whl": "해시 동일",
+      "ifcopenshell-0.9.0.post1-py312-none-win_amd64.whl": "해시 동일"
+    }
+  }
+}
