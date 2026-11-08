@@ -1,13 +1,13 @@
 {
   "place_ms": [
-    9.1,
-    4.7,
-    8.9,
-    5.8,
-    5.8,
-    12.3
+    12.1,
+    7.6,
+    12.8,
+    7.6,
+    7.4,
+    15.0
   ],
-  "flush_and_hash_ms": 116.2,
+  "flush_and_hash_ms": 149.4,
   "model_validate_errors": 0,
   "intent_consistency_bad": [],
   "derived_incremental_equals_reference": true,

@@ -336,3 +336,11 @@ def test_family_place_예시는_SPEC_의_FAMILY_INVALID_형식을_따른다(sess
     e = r["error"]
     assert e["code"] == "FAMILY_INVALID" and e["path"] and e["hint"]
     assert e["details"]["total"] >= 1 and set(e["details"]["issues"][0]) >= {"level", "code", "path", "message"}
+
+
+def test_패리티_하네스의_family_set_준비_단계는_place_예시와_같다():
+    import parity
+    from dobim_core import registry
+    pre_name, pre_args = parity.PRE["family.set"][0]
+    assert pre_name == "family.place" and pre_args == registry.load()["family.place"].examples[0]
+    assert registry.load()["family.set"].examples[0]["id"] == pre_args["id"]

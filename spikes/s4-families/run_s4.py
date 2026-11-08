@@ -125,6 +125,113 @@ def integration() -> dict:
     return out
 
 
+def review_fixes() -> dict:
+    """독립 검수에서 나온 결함의 재현 시나리오를 다시 돌려 결과 코드와 소요 시간을 기록한다(수정 전에는 INTERNAL/78초/재오픈 불능)."""
+    import math
+    import sqlite3
+    import kit
+    from dobim_core import fixture as F
+    from dobim_core.engine import Engine
+    from dobim_core.family import spec as FS
+    from dobim_core.family.validate import validate_recipe
+    from conftest import load_lib
+    out: dict = {}
+    d = Path(tempfile.mkdtemp(prefix="s4-rev-"))
+    s = kit.Session(d / "t.dobim")
+    for n, a in F.SCRIPT:
+        assert s.run(n, a)["ok"]
+
+    def code(r):
+        return r["error"]["code"] if not r["ok"] else "ok"
+
+    # 1) wall.set 이 호스팅된 문의 제약을 깨는 경우
+    s.run("family.place", {"family": "door.single", "host": F.W3, "offset": 1500})
+    rev = s.eng.rev
+    out["wall_set_thickness_50"] = {"result": code(s.run("wall.set", {"id": F.W3, "thickness": 50})), "rev_unchanged": s.eng.rev == rev}
+    out["wall_set_height_2000"] = code(s.run("wall.set", {"id": F.W3, "height": 2000}))
+    out["wall_set_thickness_120_allowed"] = code(s.run("wall.set", {"id": F.W3, "thickness": 120}))
+    # 이미 깨진 값이 로그에 있는 프로젝트(구버전 시뮬레이션)가 열리는가
+    s.eng.close()
+    con = sqlite3.connect(s.path)
+    p = json.loads(con.execute("SELECT params FROM element WHERE id=?", (F.W3,)).fetchone()[0])
+    p["thickness"] = 50.0
+    con.execute("UPDATE element SET params=? WHERE id=?", (json.dumps(p), F.W3))
+    con.commit()
+    con.close()
+    try:
+        s.eng = Engine(s.path, "t")
+        s.env.adopt(s.path, s.eng)
+        v = s.run("model.validate", {})["result"]
+        out["legacy_broken_project"] = {"opens": True, "validate_errors": v["errors"], "reported": bool(v["violations"])}
+        s.run("wall.set", {"id": F.W3, "thickness": 250})
+        out["legacy_broken_project"]["after_repair_errors"] = s.run("model.validate", {})["result"]["errors"]
+    except Exception as ex:   # noqa: BLE001
+        out["legacy_broken_project"] = {"opens": False, "error": type(ex).__name__}
+    # 2) 평가 캐시 포화
+    FS._EVAL_MAX = 4
+    codes = []
+    for i in range(12):
+        r = copy.deepcopy(load_lib("door.single"))
+        r["id"] = f"door.v{i}"
+        codes.append(code(s.run("family.register", {"recipe": r})))
+    out["cache_saturation"] = {"registers_ok": codes.count("ok"), "of": len(codes), "validate_errors": s.run("model.validate", {})["result"]["errors"]}
+    FS._EVAL_MAX = 1024
+    # 5) 비정상 JSON
+    bad = {}
+    for label, mut in (("nan_default", lambda r: r["params"]["width"].update(default=float("nan"))),
+                       ("inf_max", lambda r: r["params"]["width"].update(max=float("inf"))),
+                       ("max_1e400_int", lambda r: r["params"]["width"].update(max=10 ** 400))):
+        r = copy.deepcopy(load_lib("door.single"))
+        mut(r)
+        bad[label] = code(s.run("family.register", {"recipe": r}))
+    (d / "deep.json").write_text("[" * 5000 + "]" * 5000, encoding="utf-8")
+    bad["deep_5000_file"] = code(s.run("family.register", {"path": "deep.json"}))
+    out["malformed_json"] = bad
+    # 3) 자원 상한
+    box = {"id": "box", "op": "extrude", "plane": "xy", "profile": {"shape": "rect", "u": [0, "a"], "v": [0, "a"]}, "range": [0, "a"]}
+    base = {"schema": "dobim.family/1", "id": "x.t", "version": 1, "name": "t", "ifc": {"class": "IfcFurniture"},
+            "params": {"a": {"kind": "type", "default": 500, "min": 100, "max": 900}}, "solids": [],
+            "plan_symbol": {"default": [{"type": "line", "from": [0, 0], "to": [1, 1]}]}}
+
+    def recipe(solids):
+        r = copy.deepcopy(base)
+        r["solids"] = solids
+        return r
+
+    def void(vid, u, v, **kw):
+        return {"id": vid, "role": "void", "cuts": ["box"], "op": "extrude", "plane": "xy", "profile": {"shape": "rect", "u": u, "v": v}, "range": [-10, 2000], **kw}
+
+    def timed(r, level="full"):
+        t = time.perf_counter()
+        res = validate_recipe(r, level)
+        return {"ok": res["ok"], "codes": sorted({e["code"] for e in res["errors"]}), "seconds": round(time.perf_counter() - t, 2)}
+
+    expr = "+".join(["1"] * 33)
+    pts = [[f"{round(100 * math.cos(2 * math.pi * i / 32))}+0*({expr})", f"{round(100 * math.sin(2 * math.pi * i / 32))}+0*({expr})"] for i in range(32)]
+    heavy = recipe([{"id": f"s{i}", "op": "extrude", "plane": "xy", "repeat": {"var": "k", "count": 50}, "profile": {"shape": "polygon", "points": pts},
+                     "range": [f"0*({expr})", f"10+0*({expr})"]} for i in range(8)])
+    out["limits"] = {
+        "heavy_42KB_recipe": {**timed(heavy), "recipe_bytes": len(json.dumps(heavy))},
+        "17_voids_on_one_solid": timed(recipe([box, void("v", ["k*10", "k*10+5"], [0, 5], repeat={"var": "k", "count": 17})]), "static"),
+        "16_voids_on_one_solid": timed(recipe([box, void("v", ["k*10", "k*10+5"], [0, 5], repeat={"var": "k", "count": 16})]), "static"),
+        "time_budget_0s": {"codes": sorted({e["code"] for e in validate_recipe(load_lib("door.single"), "full", time_budget=0.0)["errors"]})},
+    }
+    out["void_checks"] = {"void_eats_all": timed(recipe([box, void("v", [-10, 2000], [-10, 2000])])),
+                          "void_misses": timed(recipe([box, void("v", [5000, 6000], [5000, 6000])])),
+                          "void_half_ok": timed(recipe([box, void("v", ["a/2", 2000], [-10, 2000])]))}
+    # 6) 다중 version
+    r1, r2 = copy.deepcopy(load_lib("door.single")), copy.deepcopy(load_lib("door.single"))
+    for r, ver in ((r1, 2), (r2, 1)):
+        r["id"], r["version"], r["name"] = "door.multi", ver, f"v{ver}"
+    s.run("family.register", {"recipe": r1})
+    reg = s.run("family.register", {"recipe": r2})
+    pl = s.run("family.place", {"family": "door.multi", "host": F.W3, "offset": 4000})
+    out["multi_version"] = {"register_warned": any("door.multi" in w for w in reg["warnings"]),
+                            "placed_version": s.eng.st.el[pl["result"]["type"]]["params"]["recipe"]["version"]}
+    s.close()
+    return out
+
+
 def main() -> int:
     if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(encoding="utf-8")
@@ -134,8 +241,11 @@ def main() -> int:
     write("s4_mutants.json", mu)
     it = integration()
     write("s4_integration.json", it)
+    rf = review_fixes()
+    write("s4_review_fixes.json", rf)
     print(json.dumps({"library_all_ok": lib["all_ok"], "mutants": f"{mu['caught']}/{mu['total']}", "integration": {k: it[k] for k in (
-        "model_validate_errors", "undo_restores_hashes", "redo_restores_hashes", "reopen_equal", "derived_incremental_equals_reference")}},
+        "model_validate_errors", "undo_restores_hashes", "redo_restores_hashes", "reopen_equal", "derived_incremental_equals_reference")},
+                      "review_fixes": {k: rf[k] for k in ("wall_set_thickness_50", "legacy_broken_project", "cache_saturation", "malformed_json", "multi_version")}},
         ensure_ascii=False, indent=2))
     return 0
 

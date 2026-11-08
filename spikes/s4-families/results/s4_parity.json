@@ -165,9 +165,9 @@
       "label": "ex-family_set-0",
       "command": "family.set",
       "same_envelope": true,
-      "exit_code": 5,
+      "exit_code": 0,
       "exit_code_matches_envelope": true,
-      "ok": false,
+      "ok": true,
       "state_hash_equal": true,
       "second_step": null
     },

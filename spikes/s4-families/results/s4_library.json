@@ -24,7 +24,7 @@
         "ifc_entities": 857,
         "recipe_json_bytes": 3655,
         "meshes_ok": 7,
-        "seconds": 4.95
+        "seconds": 5.03
       },
       "recipe_bytes": 3468
     },
@@ -51,7 +51,7 @@
         "ifc_entities": 724,
         "recipe_json_bytes": 3770,
         "meshes_ok": 7,
-        "seconds": 4.97
+        "seconds": 5.39
       },
       "recipe_bytes": 3556
     },
@@ -78,7 +78,7 @@
         "ifc_entities": 438,
         "recipe_json_bytes": 3364,
         "meshes_ok": 7,
-        "seconds": 4.78
+        "seconds": 5.22
       },
       "recipe_bytes": 3102
     },
@@ -105,7 +105,7 @@
         "ifc_entities": 1382,
         "recipe_json_bytes": 4890,
         "meshes_ok": 7,
-        "seconds": 5.79
+        "seconds": 5.95
       },
       "recipe_bytes": 4566
     }
