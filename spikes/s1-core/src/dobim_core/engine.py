@@ -428,7 +428,8 @@ class Engine:
                 elif old is None:
                     self.ifc.create_identity(eid, new["kind"])
                 elif new is None:
-                    self.ifc.remove_identity(eid)
+                    for d in self.ifc.remove_identity(eid):   # 벽과 함께 개구부를 잃은 문은 다시 투영해야 한다
+                        self._proj_stamp.pop(d, None)
                     self._proj_stamp.pop(eid, None)
             except BaseException as ex:
                 self.st.apply_el(eid, new, old)

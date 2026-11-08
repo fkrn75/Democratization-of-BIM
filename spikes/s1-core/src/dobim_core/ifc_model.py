@@ -139,13 +139,25 @@ class IfcModel:
             e.ObjectPlacement = self._placement(self.building.ObjectPlacement)
         self.ents[eid] = e
 
-    def remove_identity(self, eid: str) -> None:
+    def remove_identity(self, eid: str) -> list:
+        """요소의 IFC 신원을 지운다. 벽이면 그 벽에 뚫린 개구부가 (ifcopenshell 의 remove_product 로) 함께 사라지므로,
+        그 개구부를 투영 상태(self.openings)에서도 먼저 뺀다: 안 그러면 다음 투영이 이미 없는 개구부를 또 지우려다 터진다
+        (분할로 문이 새 벽으로 옮겨진 뒤 투영하고 분할을 undo 하면 새 벽이 지워지는 경로). 개구부를 잃은 문 id 목록을 돌려주면
+        엔진이 그 문의 투영 스탬프를 지워 다음 투영 때 다시 만들게 한다(스펙이 되돌아와도 스탬프가 같아 건너뛰는 일을 막는다)."""
         f = self.f
         e = self.ents[eid]
         self._unproject_door(eid)
+        lost = []
+        for rel in list(getattr(e, "HasOpenings", None) or ()):
+            op = rel.RelatedOpeningElement.id()   # 엔티티 래퍼는 접근할 때마다 새로 만들어지므로 번호로 비교한다
+            for d, o in list(self.openings.items()):
+                if o.id() == op:
+                    self._unproject_door(d)
+                    lost.append(d)
         api_root.remove_product(f, product=e)   # 실패하면 ents 가 그대로라 상태가 설명 가능하다(순서: 지운 뒤에 목록에서 뺀다)
         self.ents.pop(eid)
         self.container_of.pop(eid, None)
+        return sorted(lost)
 
     # ------------------------------------------------------------ 속성셋·재료 (정본)
     def get_psets(self, eid: str) -> dict:
