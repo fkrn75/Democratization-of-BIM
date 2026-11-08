@@ -9,6 +9,7 @@
 """
 from __future__ import annotations
 
+from math import atan2, degrees
 from xml.sax.saxutils import escape
 
 MARGIN = 15.0          # 용지 여백 mm
@@ -25,6 +26,8 @@ def _frame(data):
     pts = [(ln[1], ln[2]) for ln in lines] + [(ln[3], ln[4]) for ln in lines]
     for poly in data["fills"]:
         pts += list(poly)
+    for it in data.get("annots", ()):
+        pts += _annot_pts(it)
     if pts:
         x0, x1 = min(p[0] for p in pts), max(p[0] for p in pts)
         y0, y1 = min(p[1] for p in pts), max(p[1] for p in pts)
@@ -47,6 +50,66 @@ def _frame(data):
         return MARGIN + (y1 - y) / scale
 
     return w, h, tx, ty, datums, (x0, x1)
+
+
+def _annot_pts(it):
+    """주석 항목이 차지하는 대표 좌표들(용지 크기 계산용)."""
+    t = it[0]
+    if t == "dim":
+        return [(it[2][0], it[2][1]), (it[2][2], it[2][3]), (it[3][2], it[3][3]), (it[4][0], it[4][1]), (it[4][2], it[4][3])]
+    if t == "tag":
+        return [tuple(it[2]), (it[3][0] + 1500.0, it[3][1])]
+    return [(it[4], it[5]), (it[4] + 3000.0, it[5])]
+
+
+REASON_KO = {"target_deleted": "대상 삭제됨", "successor_deleted": "이어받은 벽 삭제됨", "bad_ref": "잘못된 참조",
+             "not_parallel": "평행하지 않음", "mixed": "참조 종류 혼합"}
+ANNOT_COLOR, ORPHAN_COLOR = "#1a4fa0", "#c62828"
+
+
+def annot_svg(data, tx, ty) -> list[str]:
+    """주석 층(SVG). 치수: 보조선·치수선·눈금·글, 태그: 지시선·글, 고아·무효: 빨간 표시와 이유. 한글은 SVG 에만 담는다."""
+    items = data.get("annots", ())
+    if not items:
+        return []
+    out = [f'<g id="annotations" font-size="2.5" fill="{ANNOT_COLOR}" stroke="{ANNOT_COLOR}" stroke-width="0.13" stroke-linecap="round">']
+    for it in items:
+        t, aid = it[0], it[1]
+        if t == "dim":
+            _, _, e0, e1, ln, text, tpos, u = it
+            out.append(f'<g class="dim" data-id="{aid}">')
+            for e in (e0, e1):
+                out.append(f'<line x1="{tx(e[0]):.3f}" y1="{ty(e[1]):.3f}" x2="{tx(e[2]):.3f}" y2="{ty(e[3]):.3f}"/>')
+            out.append(f'<line x1="{tx(ln[0]):.3f}" y1="{ty(ln[1]):.3f}" x2="{tx(ln[2]):.3f}" y2="{ty(ln[3]):.3f}"/>')
+            upx, upy = u[0], -u[1]                                  # 용지 좌표는 y 가 아래로 자란다
+            for px, py in ((tx(ln[0]), ty(ln[1])), (tx(ln[2]), ty(ln[3]))):
+                kx, ky = (upx - upy) * 0.64, (upy + upx) * 0.64      # 45도 눈금
+                out.append(f'<line x1="{px - kx:.3f}" y1="{py - ky:.3f}" x2="{px + kx:.3f}" y2="{py + ky:.3f}" stroke-width="0.25"/>')
+            ang = degrees(atan2(upy, upx))
+            ang = ang - 180.0 if ang > 90.0 else (ang + 180.0 if ang <= -90.0 else ang)
+            out.append(f'<text transform="translate({tx(tpos[0]):.3f},{ty(tpos[1]):.3f}) rotate({ang:.2f})" text-anchor="middle" '
+                       f'dy="-0.8" stroke="none">{escape(text)}</text>')
+            out.append("</g>")
+        elif t == "tag":
+            _, _, anc, lab, text = it
+            out.append(f'<g class="tag" data-id="{aid}" fill="#8a3b00" stroke="#8a3b00">')
+            out.append(f'<line x1="{tx(anc[0]):.3f}" y1="{ty(anc[1]):.3f}" x2="{tx(lab[0]):.3f}" y2="{ty(lab[1]):.3f}"/>')
+            out.append(f'<circle cx="{tx(anc[0]):.3f}" cy="{ty(anc[1]):.3f}" r="0.5" stroke="none"/>')
+            out.append(f'<text x="{tx(lab[0]) + 0.6:.3f}" y="{ty(lab[1]):.3f}" stroke="none">{escape(text)}</text>')
+            out.append("</g>")
+        else:
+            _, _, kind, reason, x, y = it
+            what = "치수" if kind == "dim" else "태그"
+            label = f"{'고아' if t == 'orphan' else '무효'} {what} {aid[-6:]}: {REASON_KO.get(reason, reason)}"
+            px, py = tx(x), ty(y)
+            out.append(f'<g class="{t}" data-id="{aid}" fill="{ORPHAN_COLOR}" stroke="{ORPHAN_COLOR}">')
+            out.append(f'<line x1="{px - 1:.3f}" y1="{py - 1:.3f}" x2="{px + 1:.3f}" y2="{py + 1:.3f}"/>'
+                       f'<line x1="{px - 1:.3f}" y1="{py + 1:.3f}" x2="{px + 1:.3f}" y2="{py - 1:.3f}"/>'
+                       f'<circle cx="{px:.3f}" cy="{py:.3f}" r="1.6" fill="none" stroke-dasharray="0.6 0.4"/>')
+            out.append(f'<text x="{px + 2.2:.3f}" y="{py + 0.8:.3f}" stroke="none">{escape(label)}</text>')
+            out.append("</g>")
+    out.append("</g>")
+    return out
 
 
 def title_text(data) -> str:
@@ -84,6 +147,7 @@ def render_svg(data) -> bytes:
         for _, x0, y0, x1, y1 in sel:
             out.append(f'<line x1="{tx(x0):.3f}" y1="{ty(y0):.3f}" x2="{tx(x1):.3f}" y2="{ty(y1):.3f}"/>')
         out.append("</g>")
+    out += annot_svg(data, tx, ty)
     out.append(f'<text x="{MARGIN}" y="{h - 5:.2f}" font-size="5" fill="#000000">{escape(title_text(data))}</text>')
     out.append("</svg>\n")
     return "\n".join(out).encode("utf-8")
@@ -128,6 +192,25 @@ def render_pdf(data) -> tuple[bytes, bool]:
         c.append(f"{STYLE[cls][0] * k:.3f} w")
         for _, x0, y0, x1, y1 in sel:
             c.append(f"{px(x0)} {py(y0)} m {px(x1)} {py(y1)} l S")
+    c.append("0.1 0.3 0.63 RG 0.1 0.3 0.63 rg")
+    for it in data.get("annots", ()):
+        if it[0] == "dim":
+            c.append(f"{0.13 * k:.3f} w")
+            for e in (it[2], it[3], it[4]):
+                c.append(f"{px(e[0])} {py(e[1])} m {px(e[2])} {py(e[3])} l S")
+            s, d = _pdf_str(it[5])
+            dropped |= d
+            c.append(f"BT /F1 {2.5 * k:.2f} Tf {tx(it[6][0]) * k:.2f} {(h - ty(it[6][1]) + 0.8) * k:.2f} Td ({s}) Tj ET")
+        elif it[0] == "tag":
+            c.append(f"{0.13 * k:.3f} w {px(it[2][0])} {py(it[2][1])} m {px(it[3][0])} {py(it[3][1])} l S")
+            s, d = _pdf_str(it[4])
+            dropped |= d
+            c.append(f"BT /F1 {2.5 * k:.2f} Tf {tx(it[3][0]) * k + 2:.2f} {(h - ty(it[3][1])) * k:.2f} Td ({s}) Tj ET")
+        else:
+            s, d = _pdf_str(f"{it[0]} {it[2]} {it[1][-6:]}: {it[3]}")
+            dropped |= d
+            c.append(f"BT /F1 {2.5 * k:.2f} Tf {tx(it[4]) * k:.2f} {(h - ty(it[5])) * k:.2f} Td ({s}) Tj ET")
+    c.append("0 G 0 g")
     s, d = _pdf_str(title_text(data))
     dropped |= d
     c.append(f"BT /F1 {5 * k:.2f} Tf {MARGIN * k:.2f} {5 * k:.2f} Td ({s}) Tj ET")

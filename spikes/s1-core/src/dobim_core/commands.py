@@ -17,6 +17,7 @@ from typing import Annotated, ClassVar, Literal, Union, get_args, get_origin
 from pydantic import (AfterValidator, BaseModel, BeforeValidator, ConfigDict, Field, StrictBool, StrictFloat, StrictInt, StrictStr,
                       ValidationInfo, field_validator, model_validator)
 
+from dobim_core import annot as AN
 from dobim_core import drawing as D
 from dobim_core import drawing_export as DX
 from dobim_core import fixture as F
@@ -126,7 +127,7 @@ class ProjectNew(A):
     guid: str | None = Field(None, max_length=36, description="프로젝트 UUID. 생략하면 무작위, 지정하면 재현 가능")
 
 
-@command("project.new", kind="session", risk="write", group="project", summary="새 프로젝트 파일(.dobim)을 만든다",
+@command("project.new", kind="session", risk="write", group="project", summary="프로젝트 생성",
          args=ProjectNew, needs_project=False, examples=[{"path": "new-example.dobim", "guid": "5d0b1a50-0000-4a00-8000-0d0b1a5000f2"}])
 def project_new(env, a: ProjectNew):
     from dobim_core.engine import Engine
@@ -142,7 +143,7 @@ class Empty(A):
     pass
 
 
-@command("project.info", kind="query", risk="read", group="project", summary="프로젝트 리비전·요소 수·이력 깊이",
+@command("project.info", kind="query", risk="read", group="project", summary="프로젝트 정보",
          args=Empty, examples=[{}], idempotent=True)
 def project_info(ctx, a):
     g = ctx.g
@@ -159,7 +160,7 @@ class Search(A):
     cursor: str | None = Field(None, max_length=2048, description="이전 응답의 page.next_cursor")
 
 
-@command("commands.search", kind="query", risk="read", group="system", summary="커맨드를 키워드·그룹·위험 등급으로 찾는다",
+@command("commands.search", kind="query", risk="read", group="system", summary="커맨드를 찾는다",
          args=Search, needs_project=False, idempotent=True, examples=[{"query": "wall"}, {"group": "history"}, {"limit": 5}])
 def commands_search(env, a: Search):
     rows = registry.search(a.query, a.group, a.risk)
@@ -175,7 +176,7 @@ class Describe(A):
     name: str = Field(max_length=64)
 
 
-@command("commands.describe", kind="query", risk="read", group="system", summary="커맨드 하나의 스키마와 예시",
+@command("commands.describe", kind="query", risk="read", group="system", summary="커맨드 스키마·예시",
          args=Describe, needs_project=False, idempotent=True, examples=[{"name": "wall.move"}])
 def commands_describe(env, a: Describe):
     c = registry.load().get(a.name)
@@ -192,7 +193,7 @@ class LevelCreate(A):
     elevation: Num = Field(description="mm")
 
 
-@command("level.create", kind="mutation", risk="write", group="model.level", summary="레벨(층)을 만든다",
+@command("level.create", kind="mutation", risk="write", group="model.level", summary="레벨 생성",
          args=LevelCreate, since="0.1", examples=[{"name": "3F", "elevation": 6600}])
 def level_create(ctx, a: LevelCreate):
     _fresh_id(ctx, a, "level")
@@ -212,7 +213,7 @@ class WallCreate(A):
     name: Name | None = None
 
 
-@command("wall.create", kind="mutation", risk="write", group="model.wall", summary="벽을 만든다(축선 기준)",
+@command("wall.create", kind="mutation", risk="write", group="model.wall", summary="벽 생성",
          args=WallCreate, since="0.1",
          examples=[{"level": F.LV1, "axis": [0, 4000, 6000, 4000], "thickness": 200}])
 def wall_create(ctx, a: WallCreate):
@@ -258,7 +259,7 @@ class WallSet(A):
         return self
 
 
-@command("wall.set", kind="mutation", risk="write", group="model.wall", summary="벽의 이름·두께·높이·축선을 바꾼다",
+@command("wall.set", kind="mutation", risk="write", group="model.wall", summary="벽 속성 변경",
          args=WallSet, since="0.1", examples=[{"id": F.W1, "thickness": 250}])
 def wall_set(ctx, a: WallSet):
     r = ctx.row(a.id, "wall")
@@ -291,7 +292,7 @@ def _join_pair(ctx, x: JoinArgs):
     return ra, rb, min(x.a, x.b), max(x.a, x.b)
 
 
-@command("join.set", kind="mutation", risk="write", group="model.join", summary="두 벽을 조인한다(끝점 정리)",
+@command("join.set", kind="mutation", risk="write", group="model.join", summary="벽 조인",
          args=JoinArgs, since="0.1",
          examples=[{"a": F.W2, "b": F.W3}])
 def join_set(ctx, a: JoinArgs):
@@ -311,6 +312,117 @@ def join_clear(ctx, a: JoinArgs):
     return {"cleared": [lo, hi]}
 
 
+# ================================================================ 벽 분할 (S5: 안정 참조의 규칙을 시험하려고 코어에 더한 모델링 커맨드)
+def _frame_of(axis):
+    dx, dy = axis[2] - axis[0], axis[3] - axis[1]
+    length = sqrt(dx * dx + dy * dy)
+    return axis[0], axis[1], dx / length, dy / length, length
+
+
+def _join_pt(wa, axa, wb, axb):
+    """queries.join_point 와 같은 계산(작은 id 가 앞). 변경 커맨드가 낡은 그래프 없이 원시 축선에서 직접 계산한다."""
+    if wa > wb:
+        wa, axa, wb, axb = wb, axb, wa, axa
+    x1, y1, c1, s1, _ = _frame_of(axa)
+    x2, y2, c2, s2, _ = _frame_of(axb)
+    det = c1 * s2 - s1 * c2
+    if -Q.PARALLEL_EPS < det < Q.PARALLEL_EPS:
+        return None
+    t = ((x2 - x1) * s2 - (y2 - y1) * c2) / det
+    return (x1 + t * c1, y1 + t * s1)
+
+
+def _trim_raw(wid, axis, partners):
+    """queries.wall_trim 과 같은 규칙으로 (시작, 끝)을 원시 축선에서 계산한다. partners = [(상대 id, 상대 축선)]."""
+    x, y, c, s, length = _frame_of(axis)
+    start, end = 0.0, length
+    for oid, oax in sorted(partners):
+        p = _join_pt(wid, axis, oid, oax)
+        if p is None:
+            continue
+        t = (p[0] - x) * c + (p[1] - y) * s
+        if abs(t) <= abs(t - length):
+            if abs(t) <= Q.JOIN_MAX_EXT:
+                start = t
+        elif abs(t - length) <= Q.JOIN_MAX_EXT:
+            end = t
+    if end - start < Q.MIN_TRIMMED:
+        return (0.0, length)
+    return (start, end)
+
+
+class WallSplit(A):
+    id: Id
+    at: Pos = Field(description="축선 시작점에서 분할 위치 mm")
+    new_id: Id | None = Field(None, description="끝 쪽 새 벽의 id (생략하면 결정적으로 만든다)")
+
+
+@command("wall.split", kind="mutation", risk="write", group="model.wall",
+         summary="벽 분할(참조 유지)",
+         args=WallSplit, since="0.1", examples=[{"id": F.W1, "at": 3000}])
+def wall_split(ctx, a: WallSplit):
+    """벽 W 를 분할점에서 둘로 나눈다. W 는 시작 쪽을 지키고, 끝 쪽은 새 벽 N 이 된다.
+    - 형상이 그대로여야 한다: 조인 보정(trim)이 분할로 달라지면 거절한다(문을 가로지르는 분할도 거절).
+    - 문은 놓인 쪽 벽으로 옮겨진다(id 유지, 오프셋만 이동). 조인은 조인 지점이 있는 쪽 벽이 가진다. 속성·재료는 복사한다.
+    - 분할 이력은 관계 succ(W -> N)로 남는다. 주석 참조의 끝 역할(axis.end, trim.end)이 이 관계를 따라가 값이 변하지 않는다."""
+    r = ctx.row(a.id, "wall")
+    p = r["params"]
+    x1, y1, x2, y2 = p["axis"]
+    _, _, c, s, length = _frame_of(p["axis"])
+    if a.at < 1.0 or length - a.at < 1.0:
+        raise DobimError("CONSTRAINT", f"분할 위치는 양쪽 조각이 1mm 이상 남아야 한다(벽 길이 {length:.1f}mm)", path="/at")
+    nid = a.new_id = a.new_id or ctx.new_id("wall")    # 로그에 새 벽 id 를 명시해 재생이 같은 id 를 만들게 한다
+    if nid in ctx.st.el:
+        raise DobimError("CONSTRAINT", f"이미 있는 id 다: {nid}", path="/new_id")
+    sx, sy = x1 + a.at * c, y1 + a.at * s
+    ax_w, ax_n = [x1, y1, sx, sy], [sx, sy, x2, y2]
+    doors_n = []
+    for d in sorted(ctx.rels_out("hosts", a.id)):
+        dp = ctx.st.el[d]["params"]
+        lo, hi = dp["offset"] - dp["width"] / 2, dp["offset"] + dp["width"] / 2
+        if hi <= a.at:
+            continue
+        if lo >= a.at:
+            doors_n.append(d)
+        else:
+            raise DobimError("CONSTRAINT", f"분할 위치가 문을 가로지른다: {d}", path="/at")
+    partners = sorted(ctx.rels_out("joins", a.id) + ctx.rels_in("joins", a.id))
+    pax = [(o, ctx.st.el[o]["params"]["axis"]) for o in partners]
+    to_n, keep_w = [], []
+    for o, oax in pax:
+        pt = _join_pt(a.id, p["axis"], o, oax)
+        t = None if pt is None else (pt[0] - x1) * c + (pt[1] - y1) * s
+        (to_n if t is not None and t >= a.at else keep_w).append((o, oax))
+    b0, b1 = _trim_raw(a.id, p["axis"], pax)
+    w0, w1 = _trim_raw(a.id, ax_w, keep_w)
+    n0, n1 = _trim_raw(nid, ax_n, to_n)
+    tol = 1e-6
+    if abs(w0 - b0) > tol or abs(w1 - a.at) > tol or abs(n0) > tol or abs(n1 - (b1 - a.at)) > tol:
+        raise DobimError("CONSTRAINT", "이 위치에서 나누면 조인 정리(trim)가 달라진다", path="/at",
+                         hint="조인 지점에서 1000mm 넘게 떨어진 곳에서 나누세요")
+    name = (p["name"][:62] + "-b")
+    ctx.put_el(a.id, dict(r, params=dict(p, axis=ax_w)))
+    ctx.put_el(nid, row("wall", "IfcWall", "wall.basic", {"name": name, "axis": ax_n, "thickness": p["thickness"], "height": p["height"]}))
+    ctx.rel("on_level", nid, ctx.rels_out("on_level", a.id)[0], True)
+    for d in doors_n:
+        dr = ctx.st.el[d]
+        ctx.rel("hosts", a.id, d, False)
+        ctx.rel("hosts", nid, d, True)
+        ctx.put_el(d, dict(dr, params=dict(dr["params"], offset=dr["params"]["offset"] - a.at)))
+    for o, _ in to_n:
+        ctx.rel("joins", min(a.id, o), max(a.id, o), False)
+        ctx.rel("joins", min(nid, o), max(nid, o), True)
+    for nx in ctx.rels_out("succ", a.id):          # 이미 끝을 넘겨준 이력이 있으면 N 이 이어받는다(W -> N -> 기존 후계)
+        ctx.rel("succ", a.id, nx, False)
+        ctx.rel("succ", nid, nx, True)
+    ctx.rel("succ", a.id, nid, True)
+    for pset, props in sorted(ctx.psets(a.id).items()):
+        for prop in sorted(props):
+            ctx.set_prop(nid, pset, prop, props[prop])
+    ctx.set_material(nid, ctx.material(a.id))
+    return {"id": a.id, "new": nid, "split_at": [sx, sy], "doors_moved": doors_n}
+
+
 class DoorPlace(A):
     id: Id | None = None
     host: Id
@@ -327,7 +439,7 @@ def _fits(ctx, host, offset, width):
         raise DobimError("CONSTRAINT", f"문이 호스트 벽({length:.1f}mm) 밖으로 나간다", path="/offset")
 
 
-@command("door.place", kind="mutation", risk="write", group="model.door", summary="벽에 문을 호스팅한다",
+@command("door.place", kind="mutation", risk="write", group="model.door", summary="문 배치",
          args=DoorPlace, since="0.1",
          examples=[{"host": F.W2, "offset": 2000, "width": 900, "height": 2100}])
 def door_place(ctx, a: DoorPlace):
@@ -357,7 +469,7 @@ class DoorSet(A):
         return self
 
 
-@command("door.set", kind="mutation", risk="write", group="model.door", summary="문의 이름·치수·위치를 바꾼다",
+@command("door.set", kind="mutation", risk="write", group="model.door", summary="문 속성 변경",
          args=DoorSet, since="0.1", examples=[{"id": F.D1, "width": 1000}])
 def door_set(ctx, a: DoorSet):
     r = ctx.row(a.id, "door")
@@ -375,12 +487,21 @@ class IdArg(A):
     id: Id
 
 
+def _cascade_view_annots(ctx, vid) -> list:
+    """뷰를 지울 때 그 뷰에 속한 주석(치수·태그)도 같은 트랜잭션에서 지운다. 응답의 deleted 에 나열되므로 조용하지 않고, undo 로 함께 돌아온다."""
+    gone = []
+    for an in sorted(ctx.rels_in("annot_of", vid)):
+        _delete_one(ctx, an)
+        gone.append(an)
+    return gone
+
+
 def _delete_one(ctx, eid):
     for pset, props in sorted(ctx.psets(eid).items()):   # IFC 안의 삽입 순서에 기대지 않는다(로그 결정성)
         for prop in sorted(props):
             ctx.set_prop(eid, pset, prop, None)
     ctx.set_material(eid, None)
-    for kind in ("joins", "on_level", "hosts"):
+    for kind in ("joins", "on_level", "hosts", "annot_of"):
         for dst in ctx.rels_out(kind, eid):
             ctx.rel(kind, eid, dst, False)
         for src in ctx.rels_in(kind, eid):
@@ -388,7 +509,7 @@ def _delete_one(ctx, eid):
     ctx.put_el(eid, None)
 
 
-@command("element.delete", kind="mutation", risk="write", group="model", summary="요소를 지운다(벽이면 호스팅된 문도)",
+@command("element.delete", kind="mutation", risk="write", group="model", summary="요소 삭제(벽이면 문 포함)",
          args=IdArg, since="0.1", examples=[{"id": F.D2}])
 def element_delete(ctx, a: IdArg):
     r = ctx.row(a.id)
@@ -400,6 +521,8 @@ def element_delete(ctx, a: IdArg):
         for d in ctx.rels_out("hosts", a.id):
             _delete_one(ctx, d)
             gone.append(d)
+    elif r["kind"] == "view":
+        gone += _cascade_view_annots(ctx, a.id)
     _delete_one(ctx, a.id)
     return {"deleted": gone}
 
@@ -412,7 +535,7 @@ class PsetSet(A):
                                          "(속성을 지우려면 pset.delete)")
 
 
-@command("pset.set", kind="mutation", risk="write", group="model.pset", summary="속성셋 값을 쓴다(IFC 정본). 지우기는 pset.delete",
+@command("pset.set", kind="mutation", risk="write", group="model.pset", summary="속성 쓰기",
          args=PsetSet, since="0.1",
          examples=[{"id": F.D1, "pset": "Pset_DoorCommon", "prop": "FireRating", "value": "EI60"}])
 def pset_set(ctx, a: PsetSet):
@@ -429,7 +552,7 @@ class PsetDelete(A):
 
 
 @command("pset.delete", kind="mutation", risk="write", group="model.pset",
-         summary="속성 하나를 지운다(IFC 정본). 없는 속성이면 변경 없음. 마지막 속성이면 빈 속성셋도 사라진다",
+         summary="속성 삭제",
          args=PsetDelete, since="0.1", examples=[{"id": F.D1, "pset": "Pset_DoorCommon", "prop": "FireRating"}])
 def pset_delete(ctx, a: PsetDelete):
     ctx.row(a.id)
@@ -443,7 +566,7 @@ class MatSet(A):
     name: Name | None = Field(description="null 이면 재료를 뗀다")
 
 
-@command("material.set", kind="mutation", risk="write", group="model.pset", summary="요소에 재료를 지정한다(IFC 정본)",
+@command("material.set", kind="mutation", risk="write", group="model.pset", summary="재료 지정",
          args=MatSet, since="0.1", examples=[{"id": F.W1, "name": "Concrete"}])
 def material_set(ctx, a: MatSet):
     ctx.row(a.id)
@@ -473,7 +596,7 @@ class ElementGet(A):
 
 
 @command("element.get", kind="query", risk="read", group="query",
-         summary="요소 하나의 의도·속성·파생값. 속성이 많으면 page 로 나눠 돌려주고, 관계는 20건까지만(나머지는 relation.list)",
+         summary="요소 상세·파생값",
          args=ElementGet, idempotent=True, examples=[{"id": F.W1}])
 def element_get(ctx, a: ElementGet):
     r = ctx.row(a.id)
@@ -522,14 +645,14 @@ def element_get(ctx, a: ElementGet):
 
 
 class ElementQuery(A):
-    kind: Literal["level", "wall", "door", "view"] | None = None
+    kind: Literal["level", "wall", "door", "view", "dim", "tag"] | None = None
     level: Id | None = None
     name_contains: str | None = Field(None, max_length=64)
     limit: int = Field(100, ge=1, le=1000, description="최대 개수. 응답 크기 상한에 걸리면 이보다 적게 돌려주고 page.truncated 로 알린다")
     cursor: str | None = Field(None, max_length=2048, description="이전 응답의 page.next_cursor")
 
 
-@command("element.query", kind="query", risk="read", group="query", summary="요소 목록(종류·레벨·이름 필터, 페이지)",
+@command("element.query", kind="query", risk="read", group="query", summary="요소 목록",
          args=ElementQuery, idempotent=True, examples=[{"kind": "wall", "limit": 10}])
 def element_query(ctx, a: ElementQuery):
     st = ctx.st
@@ -556,7 +679,7 @@ class RelationList(A):
     cursor: str | None = Field(None, max_length=2048, description="이전 응답의 page.next_cursor")
 
 
-@command("relation.list", kind="query", risk="read", group="query", summary="요소의 관계(레벨·조인·호스팅), 페이지",
+@command("relation.list", kind="query", risk="read", group="query", summary="요소의 관계 목록",
          args=RelationList, idempotent=True, examples=[{"id": F.W1}])
 def relation_list(ctx, a: RelationList):
     ctx.row(a.id)
@@ -584,7 +707,7 @@ def model_stats(ctx, a):
 
 
 @command("model.hash", kind="query", risk="read", group="query",
-         summary="정규화된 의미 해시(상태·파생값·IFC 투영). 원시 파일 바이트가 아니다",
+         summary="의미 해시",
          args=Empty, idempotent=True, examples=[{}])
 def model_hash(ctx, a):
     return ctx.eng.hashes()
@@ -594,7 +717,7 @@ class Validate(A):
     express_rules: bool = True
 
 
-@command("model.validate", kind="query", risk="read", group="check", summary="IFC 투영의 유효성 검사(M8)",
+@command("model.validate", kind="query", risk="read", group="check", summary="IFC 투영 유효성 검사",
          args=Validate, idempotent=True, examples=[{"express_rules": False}])
 def model_validate(ctx, a: Validate):
     ctx.eng.flush_ifc()
@@ -621,7 +744,7 @@ class ScheduleRows(A):
     cursor: str | None = Field(None, max_length=2048, description="이전 응답의 page.next_cursor")
 
 
-@command("schedule.rows", kind="query", risk="read", group="schedule", summary="문·벽 일람표 행(페이지)",
+@command("schedule.rows", kind="query", risk="read", group="schedule", summary="문·벽 일람표 행",
          args=ScheduleRows, idempotent=True, examples=[{"kind": "door", "limit": 5}])
 def schedule_rows(ctx, a: ScheduleRows):
     rows = ctx.g.q(Q.schedule_sorted, a.kind)
@@ -686,7 +809,10 @@ class ViewCreate(A):
     def _by_type(self):
         given = self.model_fields_set
         own = {"plan": _PLAN_ONLY, "section": _SEC_ONLY, "elevation": _ELEV_ONLY}[self.type]
-        stray = sorted((given & {*_PLAN_ONLY, *_SEC_ONLY, *_ELEV_ONLY}) - set(own))
+        # 기본값과 같은 값은 쓰지 않은 것으로 본다: 로그에는 기본값까지 적혀 있어(log_args) 단면·입면 뷰의 로그를 다시 실행하면
+        # cut_height 같은 기본값이 '쓰지 않는 필드'로 거절됐다(S5 의 전체 재생 검사가 찾은 S3 결함)
+        stray = sorted(f for f in (given & {*_PLAN_ONLY, *_SEC_ONLY, *_ELEV_ONLY}) - set(own)
+                       if getattr(self, f) != type(self).model_fields[f].default)
         if stray:
             raise ValueError(f"{self.type} 뷰에는 쓰지 않는 필드다: {', '.join(stray)}")
         if self.type == "plan" and self.level is None:
@@ -713,7 +839,7 @@ def _view_name_free(ctx, name, except_id=None):
 
 
 @command("view.create", kind="mutation", risk="write", group="view",
-         summary="뷰를 만든다(평면·단면·입면)",
+         summary="뷰 생성",
          args=ViewCreate, since="0.1",
          examples=[{"id": F.V1, "name": "1F 평면", "type": "plan", "level": F.LV1, "cut_height": 1200},
                    {"name": "A-A 단면", "type": "section", "p1": [3000, -2000], "p2": [3000, 6000]},
@@ -777,8 +903,9 @@ def view_set(ctx, a: ViewSet):
          args=IdArg, since="0.1", examples=[{"id": F.V1}])
 def view_delete(ctx, a: IdArg):
     ctx.row(a.id, "view")
+    gone = _cascade_view_annots(ctx, a.id)
     ctx.put_el(a.id, None)
-    return {"deleted": [a.id]}
+    return {"deleted": [a.id, *gone]}
 
 
 class ViewList(A):
@@ -808,7 +935,7 @@ class ViewLinework(A):
 
 
 @command("view.linework", kind="query", risk="read", group="view",
-         summary="뷰 선분 통계와 목록(큰 도면은 view.export)",
+         summary="뷰 선분 통계와 목록",
          args=ViewLinework, idempotent=True, examples=[{"id": F.V1, "limit": 5}])
 def view_linework(ctx, a: ViewLinework):
     r = ctx.row(a.id, "view")
@@ -837,7 +964,7 @@ def _render_view(ctx, vid):
                     key=lambda t: (t[1], t[0]))
     lines = ctx.g.q(D.view_lines, vid)
     return {"type": p["type"], "name": p["name"], "scale": p["scale"], "lines": lines, "fills": ctx.g.q(D.view_fills, vid),
-            "datums": levels}
+            "datums": levels, "annots": ctx.g.q(AN.view_annots, vid)}
 
 
 def _view_export_target(ctx, a: ViewExport):
@@ -864,7 +991,7 @@ def _view_export_preview(ctx, a: ViewExport):
 # ifc.export 와 같은 절차를 탄다: 1회차 미리보기·확인 토큰, 덮어쓰기 전 .dobim-snapshots/<이름>.<번호> 스냅숏(ifc.snapshots 로 목록).
 # 새 파일 내보내기도 같은 절차를 탄다: 확인 없이 쓰는 길을 두지 않는다(overwrite 인자는 토큰이 묶는 인자에 들어간다).
 @command("view.export", kind="session", risk="destructive", group="view",
-         summary="뷰를 SVG·PDF 파일로 쓴다",   # commands.search 가 응답 상한 안에 들도록 짧게(destructive 는 risk 에 나온다)
+         summary="SVG·PDF 내보내기",   # commands.search 가 응답 상한 안에 들도록 짧게(destructive 는 risk 에 나온다)
          args=ViewExport, since="0.1", preview=_view_export_preview,
          examples=[{"id": F.V1, "path": "view-example.svg", "overwrite": True}])
 def view_export(ctx, a: ViewExport):
@@ -881,7 +1008,7 @@ def view_export(ctx, a: ViewExport):
     except BaseException:   # 쓰지 못했으면 방금 만든 스냅숏은 필요 없다(재시도마다 쌓이지 않게)
         _drop_snapshot(p, snap, ctx.eng.workspace)
         raise
-    return {"path": p.name, "bytes": len(blob), "format": ext[1:], "segments": len(data["lines"]), "fills": len(data["fills"]),
+    return {"path": p.name, "bytes": len(blob), "format": ext[1:], "segments": len(data["lines"]), "fills": len(data["fills"]), "annotations": len(data["annots"]),
             "non_ascii_dropped": dropped, "digest": D.view_summary(data["lines"])["digest"], "rev": ctx.eng.rev, "snapshot": snap}
 
 
@@ -890,7 +1017,7 @@ class ViewAffected(A):
 
 
 @command("view.affected", kind="query", risk="read", group="view",
-         summary="영향 뷰 조회(갱신 대기열)",
+         summary="영향 뷰 조회",
          args=ViewAffected, idempotent=True, examples=[{}, {"rev": 3}])
 def view_affected(ctx, a: ViewAffected):
     vids = sorted(ctx.st.by_kind.get("view", ()))
@@ -910,6 +1037,255 @@ def view_affected(ctx, a: ViewAffected):
         basis = "dependency"
     items = [{"id": v, "name": ctx.st.el[v]["params"]["name"], "type": ctx.st.el[v]["params"]["type"]} for v in hit]
     return {"basis": basis, "count": len(items), "items": items[:200], "truncated": len(items) > 200}
+
+
+# ================================================================ 주석: 치수·태그 (S5)
+# 주석은 의도 요소(kind dim, tag)이고 IFC 로 투영하지 않는다(IFC 해시 불변). 값은 저장하지 않고 항상 파생이다(그래프 질의).
+# 대상이 사라지면 조용히 지우지 않고 고아로 표시한다(annot.check). 뷰를 지우면 그 뷰의 주석도 같이 지운다(응답에 나열, undo 로 복귀).
+RefStr = Annotated[str, Field(pattern=r"^(wall|door|level):[0-9A-Za-z_$]{22}#[a-z]{3,9}(\.[a-z]{3,9})?$", max_length=48,
+                              description="안정 참조 '종류:id#역할'. wall: axis.start axis.end trim.start trim.end axis face.left face.right base top / door: center jamb.start jamb.end sill head / level: elevation")]
+Off = Annotated[float, Field(allow_inf_nan=False, ge=-1e5, le=1e5)]
+_ANNOT_KINDS = ("dim", "tag")
+
+
+def _ref_parts(ctx, ref, field):
+    """참조 문법·요소 존재·역할을 검사해 (종류, id, 역할)을 돌려준다."""
+    parts = AN.parse_ref(ref)
+    if parts is None:
+        kind = ref.split(":", 1)[0]
+        roles = ", ".join(AN.ROLE_TYPES.get(kind, {})) or "wall, door, level"
+        raise DobimError("CONSTRAINT", f"없는 참조 역할이다: {ref[:40]}", path=field, hint=f"{kind} 의 역할: {roles}")
+    ctx.row(parts[1], parts[0])
+    return parts
+
+
+def _level_of(ctx, kind, eid):
+    if kind == "level":
+        return eid
+    if kind == "door":
+        eid = ctx.rels_in("hosts", eid)[0]
+    return ctx.rels_out("on_level", eid)[0]
+
+
+def _dim_checked(ctx, view, a_ref, b_ref, at):
+    """치수 정의를 검사하고 (높이 치수인지, 해석 결과 둘, 기준 그래프)를 돌려준다. 지금 메모리 상태를 직접 읽는다."""
+    vr = ctx.row(view, "view")
+    pa, pb = _ref_parts(ctx, a_ref, "/a"), _ref_parts(ctx, b_ref, "/b")
+    ta, tb = AN.ROLE_TYPES[pa[0]][pa[2]], AN.ROLE_TYPES[pb[0]][pb[2]]
+    vertical = ta == "z" and tb == "z"
+    if (ta == "z") != (tb == "z"):
+        raise DobimError("CONSTRAINT", "높이 참조와 평면 참조는 한 치수에 섞을 수 없다", path="/b")
+    vt = vr["params"]["type"]
+    if vertical and vt == "plan":
+        raise DobimError("CONSTRAINT", "높이 치수는 단면·입면 뷰에 둔다", path="/view")
+    if not vertical and vt != "plan":
+        raise DobimError("CONSTRAINT", "평면 치수는 평면 뷰에 둔다", path="/view")
+    if not vertical:
+        for pr, fld in ((pa, "/a"), (pb, "/b")):
+            if _level_of(ctx, pr[0], pr[1]) != vr["params"]["level"]:
+                raise DobimError("CONSTRAINT", "치수 대상이 이 평면 뷰의 레벨에 있지 않다", path=fld)
+    if at is not None and not vertical:
+        raise DobimError("CONSTRAINT", "at 은 높이 치수에만 쓴다", path="/at")
+    g = ctx.fresh()
+    ra, rb = g.q(AN.ref_resolve, a_ref), g.q(AN.ref_resolve, b_ref)
+    for r_, fld in ((ra, "/a"), (rb, "/b")):
+        if r_[0] == "orphan":     # 요소는 있어도 끝 역할이 분할 후계 삭제로 고아일 수 있다
+            raise DobimError("CONSTRAINT", f"참조를 풀 수 없다: {r_[1]}", path=fld)
+    st, val = AN.measure(ra, rb)
+    if st != "ok":
+        raise DobimError("CONSTRAINT", f"잴 수 없는 참조 쌍이다: {val}", path="/b",
+                         hint="선 참조 두 개는 평행해야 한다" if val == "not_parallel" else None)
+    return vertical, ra, rb, g
+
+
+def _new_annot(ctx, a, kind, params):
+    ctx.put_el(a.id, row(kind, "", f"annot.{kind}", params))
+    ctx.rel("annot_of", a.id, a.view, True)
+    return {"id": a.id}
+
+
+class DimCreate(A):
+    id: Id | None = None
+    view: Id = Field(description="치수를 그릴 뷰. 평면 치수는 평면 뷰, 높이 치수는 단면·입면 뷰")
+    a: RefStr
+    b: RefStr
+    offset: Off = Field(600.0, description="치수선 간격 mm (재는 방향 왼쪽이 +)")
+    at: Point2 | None = Field(None, description="높이 치수: 치수선을 그릴 평면 위치 [x,y] (생략하면 [0,0])")
+    name: Name | None = None
+
+
+@command("annot.dim.create", kind="mutation", risk="write", group="annot",
+         summary="연관 치수 생성",
+         args=DimCreate, since="0.1",
+         examples=[{"view": F.V1, "a": f"wall:{F.W1}#trim.start", "b": f"wall:{F.W1}#trim.end"}])
+def annot_dim_create(ctx, a: DimCreate):
+    _fresh_id(ctx, a, "dim")
+    vertical, ra, rb, g = _dim_checked(ctx, a.view, a.a, a.b, a.at)
+    params = {"name": a.name or f"DIM-{a.id[-6:]}", "view": a.view, "a": a.a, "b": a.b, "off": a.offset, "home": [0.0, 0.0]}
+    if vertical:
+        params["at"] = list(a.at or [0.0, 0.0])
+    (ax, ay), (bx, by) = AN.dim_ends(g, params, ra, rb)
+    params["home"] = [round((ax + bx) / 2, 3), round((ay + by) / 2, 3)]
+    return _new_annot(ctx, a, "dim", params)
+
+
+class TagCreate(A):
+    id: Id | None = None
+    view: Id = Field(description="태그를 둘 평면 뷰")
+    target: Id = Field(description="벽 또는 문")
+    fields: Annotated[list[Annotated[str, Field(max_length=16)]], Field(min_length=1, max_length=4)] = ["name"]
+    offset: Annotated[list[Off], Field(min_length=2, max_length=2)] = [400.0, 400.0]
+    name: Name | None = None
+
+
+def _tag_checked(ctx, view, target, fields):
+    vr = ctx.row(view, "view")
+    tr = ctx.row(target)
+    if vr["params"]["type"] != "plan":
+        raise DobimError("CONSTRAINT", "태그는 평면 뷰에 둔다", path="/view")
+    if tr["kind"] not in AN.TAG_FIELDS:
+        raise DobimError("CONSTRAINT", f"태그는 벽·문에만 단다: {tr['kind']}", path="/target")
+    bad = [f for f in fields if f not in AN.TAG_FIELDS[tr["kind"]]]
+    if bad:
+        raise DobimError("CONSTRAINT", f"{tr['kind']} 에 없는 표시 필드: {', '.join(bad)}", path="/fields",
+                         hint="가능: " + ", ".join(AN.TAG_FIELDS[tr["kind"]]))
+    if _level_of(ctx, tr["kind"], target) != vr["params"]["level"]:
+        raise DobimError("CONSTRAINT", "태그 대상이 이 평면 뷰의 레벨에 있지 않다", path="/target")
+
+
+@command("annot.tag.create", kind="mutation", risk="write", group="annot",
+         summary="태그 생성",
+         args=TagCreate, since="0.1", examples=[{"view": F.V1, "target": F.D1, "fields": ["name", "width"]}])
+def annot_tag_create(ctx, a: TagCreate):
+    _fresh_id(ctx, a, "tag")
+    _tag_checked(ctx, a.view, a.target, a.fields)
+    ax, ay = AN.tag_anchor(ctx.fresh(), a.target)
+    params = {"name": a.name or f"TAG-{a.id[-6:]}", "view": a.view, "target": a.target, "fields": list(a.fields),
+              "off": list(a.offset), "home": [round(ax + a.offset[0], 3), round(ay + a.offset[1], 3)]}
+    return _new_annot(ctx, a, "tag", params)
+
+
+class AnnotRebind(A):
+    forbid_null = True
+    id: Id
+    a: RefStr | None = Field(None, description="치수: 새 첫째 참조")
+    b: RefStr | None = Field(None, description="치수: 새 둘째 참조")
+    target: Id | None = Field(None, description="태그: 새 대상")
+    fields: Annotated[list[Annotated[str, Field(max_length=16)]], Field(min_length=1, max_length=4)] | None = None
+
+    @model_validator(mode="after")
+    def _any(self):
+        if all(v is None for v in (self.a, self.b, self.target, self.fields)):
+            raise ValueError("바꿀 필드가 하나도 없다")
+        return self
+
+
+@command("annot.rebind", kind="mutation", risk="write", group="annot",
+         summary="고아 주석 다시 묶기",
+         args=AnnotRebind, since="0.1", examples=[{"id": F.A1, "b": f"wall:{F.W1}#axis.end"}])
+def annot_rebind(ctx, a: AnnotRebind):
+    r = ctx.row(a.id)
+    if r["kind"] not in _ANNOT_KINDS:
+        raise DobimError("CONSTRAINT", f"주석이 아니다: {r['kind']}", path="/id")
+    p = dict(r["params"])
+    if r["kind"] == "dim":
+        if a.target is not None or a.fields is not None:
+            raise DobimError("CONSTRAINT", "치수에는 a, b 만 쓴다", path="/target")
+        p["a"], p["b"] = a.a or p["a"], a.b or p["b"]
+        vertical, ra, rb, g = _dim_checked(ctx, p["view"], p["a"], p["b"], p.get("at"))
+        (ax, ay), (bx, by) = AN.dim_ends(g, p, ra, rb)
+        p["home"] = [round((ax + bx) / 2, 3), round((ay + by) / 2, 3)]
+    else:
+        if a.a is not None or a.b is not None:
+            raise DobimError("CONSTRAINT", "태그에는 target, fields 만 쓴다", path="/a")
+        p["target"], p["fields"] = a.target or p["target"], list(a.fields or p["fields"])
+        _tag_checked(ctx, p["view"], p["target"], p["fields"])
+        ax, ay = AN.tag_anchor(ctx.fresh(), p["target"])
+        p["home"] = [round(ax + p["off"][0], 3), round(ay + p["off"][1], 3)]
+    ctx.put_el(a.id, dict(r, params=p))
+    return {"id": a.id}
+
+
+@command("annot.delete", kind="mutation", risk="write", group="annot", summary="주석 하나를 지운다",
+         args=IdArg, since="0.1", examples=[{"id": F.A1}])
+def annot_delete(ctx, a: IdArg):
+    r = ctx.row(a.id)
+    if r["kind"] not in _ANNOT_KINDS:
+        raise DobimError("CONSTRAINT", f"주석이 아니다: {r['kind']}", path="/id")
+    _delete_one(ctx, a.id)
+    return {"deleted": [a.id]}
+
+
+def _annot_item(ctx, aid):
+    """주석 하나의 목록 항목: 정의 + 파생 상태."""
+    r = ctx.st.el[aid]
+    p = r["params"]
+    st = ctx.g.q(AN.annot_state, aid)
+    out = {"id": aid, "kind": r["kind"], "name": p["name"], "view": p["view"], "status": st[1]}
+    if r["kind"] == "dim":
+        out.update(a=p["a"], b=p["b"])
+    else:
+        out.update(target=p["target"], fields=p["fields"])
+    if st[1] == "ok":
+        out["value" if r["kind"] == "dim" else "text"] = st[2]
+    elif st[1] == "orphan":
+        out["reasons"] = [{"ref": w, "why": why} for w, why in st[2]]
+    else:
+        out["why"] = st[2]
+    return out
+
+
+class AnnotList(A):
+    view: Id | None = None
+    kind: Literal["dim", "tag"] | None = None
+    status: Literal["ok", "orphan", "invalid"] | None = Field(None, description="orphan = 참조 대상이 사라져 값을 낼 수 없는 주석")
+    limit: int = Field(100, ge=1, le=1000, description="최대 개수. 응답 크기 상한에 걸리면 이보다 적게 돌려주고 page.truncated 로 알린다")
+    cursor: str | None = Field(None, max_length=2048, description="이전 응답의 page.next_cursor")
+
+
+@command("annot.list", kind="query", risk="read", group="annot", summary="주석 목록·고아 상태",
+         args=AnnotList, idempotent=True, examples=[{}, {"status": "orphan", "limit": 5}])
+def annot_list(ctx, a: AnnotList):
+    after = _dec_cursor(a.cursor, "id")
+    ids = sorted(i for k in _ANNOT_KINDS if a.kind in (None, k) for i in ctx.st.by_kind.get(k, ()))
+    ids = [i for i in ids if a.view is None or ctx.st.el[i]["params"]["view"] == a.view]
+    if a.status:
+        ids = [i for i in ids if ctx.g.q(AN.annot_state, i)[1] == a.status]
+    start = 0 if after is None else next((i for i, e in enumerate(ids) if e > after), len(ids))
+    window = [_annot_item(ctx, i) for i in ids[start:start + a.limit]]
+    items, cut = _fit(window, cursor_of=lambda i: _enc_cursor(window[i]["id"]))
+    nxt = _enc_cursor(items[-1]["id"]) if start + len(items) < len(ids) else None
+    return {"items": items, "page": _page(nxt, len(ids), cut)}
+
+
+class AnnotCheck(A):
+    limit: int = Field(20, ge=1, le=1000, description="문제 주석을 한 번에 나열할 최대 개수")
+    cursor: str | None = Field(None, max_length=2048, description="이전 응답의 page.next_cursor")
+
+
+@command("annot.check", kind="query", risk="read", group="annot", summary="주석 점검(정상·고아·무효)",
+         args=AnnotCheck, idempotent=True, examples=[{}])
+def annot_check(ctx, a: AnnotCheck):
+    ids = ctx.g.q(AN.all_annots)
+    orphan, invalid, ok, problems = {}, {}, 0, []
+    for i in ids:
+        st = ctx.g.q(AN.annot_state, i)
+        if st[1] == "ok":
+            ok += 1
+            continue
+        bucket = orphan if st[1] == "orphan" else invalid
+        key = st[2][0][1] if st[1] == "orphan" else st[2]
+        bucket[key] = bucket.get(key, 0) + 1
+        problems.append(i)
+    dangling = sum(1 for i in ids if ctx.st.el[i]["params"]["view"] not in ctx.st.el)   # 뷰가 없는 주석(있으면 결함)
+    after = _dec_cursor(a.cursor, "id")
+    start = 0 if after is None else next((k for k, e in enumerate(problems) if e > after), len(problems))
+    window = [_annot_item(ctx, i) for i in problems[start:start + a.limit]]
+    head = {"total": len(ids), "ok": ok, "orphan": dict(sorted(orphan.items())), "invalid": dict(sorted(invalid.items())),
+            "dangling_view": dangling, "problems": len(problems)}
+    items, cut = _fit(window, base=head, cursor_of=lambda i: _enc_cursor(window[i]["id"]))
+    nxt = _enc_cursor(items[-1]["id"]) if start + len(items) < len(problems) else None
+    return {**head, "items": items, "page": _page(nxt, len(problems), cut)}
 
 
 # ================================================================ 이력
@@ -945,13 +1321,13 @@ def _inv(effs):
     return invert(effs)
 
 
-@command("history.undo", kind="mutation", risk="write", group="history", summary="마지막 변경(트랜잭션)을 되돌린다",
+@command("history.undo", kind="mutation", risk="write", group="history", summary="되돌리기",
          args=HistoryArgs, since="0.1", examples=[{}])
 def history_undo(ctx, a: HistoryArgs):
     return _history(ctx, a, True)
 
 
-@command("history.redo", kind="mutation", risk="write", group="history", summary="되돌린 변경을 다시 적용한다",
+@command("history.redo", kind="mutation", risk="write", group="history", summary="다시 실행",
          args=HistoryArgs, since="0.1", examples=[{}])
 def history_redo(ctx, a: HistoryArgs):
     return _history(ctx, a, False)
@@ -993,7 +1369,7 @@ class HistoryAffected(A):
 
 
 @command("history.affected", kind="query", risk="read", group="history",
-         summary="변경 하나(rev)가 만들거나 바꾸거나 지운 요소 id 목록, 페이지(항목의 seq = 그 요소를 처음 건드린 명령의 로그 번호). 변경 응답이 잘렸을 때 나머지를 얻는다",
+         summary="변경이 건드린 요소 목록",
          args=HistoryAffected, idempotent=True, examples=[{}, {"rev": 3, "limit": 2}])
 def history_affected(ctx, a: HistoryAffected):
     rev = a.rev if a.rev is not None else ctx.eng.rev
@@ -1286,7 +1662,7 @@ def _export_preview(ctx, a: IfcExport):
 
 
 @command("ifc.export", kind="session", risk="destructive", group="io",
-         summary="IFC4 파일로 내보낸다. 기존 파일은 덮어쓰기 전에 자동 스냅숏을 남긴다",
+         summary="IFC4 내보내기",
          args=IfcExport, preview=_export_preview, examples=[{"path": "export-example.ifc"}])
 def ifc_export(ctx, a: IfcExport):
     p = _target(ctx, a.path)
@@ -1306,7 +1682,7 @@ class SnapshotList(A):
     cursor: str | None = Field(None, max_length=2048, description="이전 응답의 page.next_cursor")
 
 
-@command("ifc.snapshots", kind="query", risk="read", group="io", summary="IFC 내보내기 덮어쓰기 전 스냅숏 목록, 페이지",
+@command("ifc.snapshots", kind="query", risk="read", group="io", summary="IFC 스냅숏 목록",
          args=SnapshotList, idempotent=True, needs_project=True, examples=[{"path": "export-example.ifc"}])
 def ifc_snapshots(ctx, a: SnapshotList):
     p = resolve_in_workspace(ctx.eng.workspace, a.path)
@@ -1332,7 +1708,7 @@ def _restore_preview(ctx, a: IfcRestore):
 
 
 @command("ifc.restore", kind="session", risk="destructive", group="io",
-         summary="스냅숏으로 .ifc 파일을 되돌린다(현재 파일도 먼저 스냅숏으로 남긴다)",
+         summary="스냅숏으로 복원",
          args=IfcRestore, preview=_restore_preview, examples=[{"path": "export-example.ifc", "snapshot": 1}])
 def ifc_restore(ctx, a: IfcRestore):
     import shutil

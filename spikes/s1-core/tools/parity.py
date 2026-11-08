@@ -27,8 +27,11 @@ SRC = str(HERE.parent / "src")
 # 예시 실행 전에 필요한 준비 (양쪽에 같은 경로로 실행한다)
 _EXP = ("ifc.export", {"path": "export-example.ifc"}, True)   # True = 파괴적 커맨드의 확인 토큰 2단계
 _V1 = ("view.create", {"id": F.V1, "name": "1F 평면", "type": "plan", "level": F.LV1, "cut_height": 1200})   # S3: 뷰가 있어야 하는 예시의 준비
+_A1 = ("annot.dim.create", {"id": F.A1, "view": F.V1, "a": f"wall:{F.W1}#trim.start", "b": f"wall:{F.W1}#trim.end"})   # S5: 주석이 있어야 하는 예시의 준비
 PRE = {"history.redo": [("history.undo", {})], "ifc.restore": [_EXP, _EXP], "ifc.snapshots": [_EXP, _EXP],
-       "view.set": [_V1], "view.delete": [_V1], "view.list": [_V1], "view.linework": [_V1], "view.export": [_V1], "view.affected": [_V1]}
+       "view.set": [_V1], "view.delete": [_V1], "view.list": [_V1], "view.linework": [_V1], "view.export": [_V1], "view.affected": [_V1],
+       "annot.dim.create": [_V1], "annot.tag.create": [_V1], "annot.rebind": [_V1, _A1], "annot.delete": [_V1, _A1],
+       "annot.list": [_V1, _A1], "annot.check": [_V1, _A1]}
 ERROR_CASES = [
     ("없는 커맨드", "no.such.command", {}, {}),
     ("스키마 오류(타입)", "wall.move", {"id": F.W1, "dx": "abc"}, {}),
@@ -71,6 +74,12 @@ ERROR_CASES = [
     ("속성값 NUL", "pset.set", {"id": F.W1, "pset": "Pset_Z", "prop": "P", "value": "a\x00b"}, {}),
     ("dry-run", "wall.move", {"id": F.W1, "dx": 700}, {"dry_run": True}),
     ("되돌릴 것 없음", "history.redo", {}, {}),
+    ("주석: 없는 뷰", "annot.dim.create", {"view": "9" * 22, "a": f"wall:{F.W1}#axis.start", "b": f"wall:{F.W1}#axis.end"}, {}),
+    ("주석: 없는 역할", "annot.dim.create", {"view": F.V1, "a": f"wall:{F.W1}#axis.mid", "b": f"wall:{F.W1}#axis.end"}, {}),
+    ("주석: 참조 문법 오류", "annot.dim.create", {"view": F.V1, "a": "wall:short#axis", "b": f"wall:{F.W1}#axis.end"}, {}),
+    ("주석: 주석이 아닌 요소 삭제", "annot.delete", {"id": F.W1}, {}),
+    ("벽 분할: 문을 가로지름", "wall.split", {"id": F.W1, "at": 1500}, {}),
+    ("벽 분할: 끝 조각이 너무 짧음", "wall.split", {"id": F.W1, "at": 5999.5}, {}),
 ]
 
 

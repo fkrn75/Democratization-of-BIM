@@ -24,6 +24,7 @@ from typing import Any
 
 import ifcopenshell.guid
 
+from dobim_core import annot as AN
 from dobim_core import drawing as D
 from dobim_core import queries as Q
 from dobim_core.errors import DobimError, internal_error
@@ -160,6 +161,11 @@ class Ctx:
         self._n = 0
 
     # ---- 읽기
+    def fresh(self) -> RefGraph:
+        """캐시 없는 기준 그래프. 지금 메모리 상태를 바로 읽으므로(같은 배치에서 앞 커맨드의 효과도 보인다) 변경 커맨드가
+        검증용으로 파생값을 계산할 때 쓴다. 증분 그래프는 배치가 끝나야 갱신되어 낡은 값을 줄 수 있다."""
+        return RefGraph(_Inputs(self.eng))
+
     @property
     def st(self) -> State:
         return self.eng.st
@@ -689,7 +695,10 @@ class Engine:
         self.sync()
         self._touch_pending()
         g = RefGraph(_Inputs(self)) if reference else self.g
-        return digest(Q.derived_bundle(g, sorted(self.st.el)))
+        bundle = Q.derived_bundle(g, sorted(self.st.el))
+        if self.st.by_kind.get("dim") or self.st.by_kind.get("tag"):   # 주석이 없으면 키를 더하지 않아 기존 파생 해시가 그대로다
+            bundle["annot"] = AN.annot_bundle(g)
+        return digest(bundle)
 
     def ifc_hash(self) -> str:
         self.flush_ifc()

@@ -14,7 +14,7 @@ MIN_TRIMMED = 1.0       # 조인 후 벽 길이 하한. 미달이면 조인을 �
 PARALLEL_EPS = 1e-9
 
 
-NON_IFC_KINDS = frozenset({"view"})   # IFC 로 투영하지 않는 의도 요소(뷰 정의). 신원·속성셋·재료가 없다 (S3)
+NON_IFC_KINDS = frozenset({"view", "dim", "tag"})   # IFC 로 투영하지 않는 의도 요소(뷰 정의 S3, 치수·태그 S5). 신원·속성셋·재료가 없다
 
 NB = 64  # 일람표 버킷 수. 요소 하나가 바뀌면 그 버킷만 다시 계산한다
 
