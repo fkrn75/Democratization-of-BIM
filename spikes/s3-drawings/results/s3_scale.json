@@ -1,0 +1,110 @@
+{
+  "what": "합성 격자(벽 끝이 닿는 방 격자, 조인 없음) 규모 시험: 이동 1회 뒤 평면·단면·남측입면 3뷰 갱신",
+  "rows": [
+    {
+      "grid_k": 3,
+      "walls": 24,
+      "doors": 6,
+      "views": [
+        "plan",
+        "section",
+        "elev-S"
+      ],
+      "segments": {
+        "plan": 126,
+        "section": 25,
+        "elev-S": 12
+      },
+      "cold_3_views_ms": 20.4,
+      "incremental_refresh_ms": {
+        "n": 12,
+        "min": 5.463,
+        "p50": 8.164,
+        "p95": 11.683,
+        "max": 13.651,
+        "mean": 8.3
+      },
+      "full_regen_ms": {
+        "n": 12,
+        "min": 69.655,
+        "p50": 88.211,
+        "p95": 133.395,
+        "max": 166.882,
+        "mean": 95.058
+      },
+      "speedup_p50": 11.56
+    },
+    {
+      "grid_k": 6,
+      "walls": 84,
+      "doors": 21,
+      "views": [
+        "plan",
+        "section",
+        "elev-S"
+      ],
+      "segments": {
+        "plan": 429,
+        "section": 46,
+        "elev-S": 19
+      },
+      "cold_3_views_ms": 102.5,
+      "incremental_refresh_ms": {
+        "n": 12,
+        "min": 27.686,
+        "p50": 35.439,
+        "p95": 45.687,
+        "max": 47.388,
+        "mean": 36.814
+      },
+      "full_regen_ms": {
+        "n": 12,
+        "min": 789.437,
+        "p50": 828.735,
+        "p95": 1005.927,
+        "max": 1018.248,
+        "mean": 860.879
+      },
+      "speedup_p50": 22.82
+    },
+    {
+      "grid_k": 10,
+      "walls": 220,
+      "doors": 55,
+      "views": [
+        "plan",
+        "section",
+        "elev-S"
+      ],
+      "segments": {
+        "plan": 1127,
+        "section": 73,
+        "elev-S": 27
+      },
+      "cold_3_views_ms": 475.7,
+      "incremental_refresh_ms": {
+        "n": 12,
+        "min": 106.235,
+        "p50": 134.514,
+        "p95": 192.287,
+        "max": 200.393,
+        "mean": 142.668
+      },
+      "full_regen_ms": {
+        "n": 12,
+        "min": 3516.26,
+        "p50": 4562.677,
+        "p95": 5472.526,
+        "max": 5474.386,
+        "mean": 4529.623
+      },
+      "speedup_p50": 31.3
+    }
+  ],
+  "env": {
+    "python": "3.12.2",
+    "platform": "Windows-11-10.0.26200-SP0",
+    "machine": "AMD64"
+  },
+  "generated_at_utc": "2026-11-08T15:25:13Z"
+}

@@ -1,0 +1,67 @@
+{
+  "what": "S1 임의 커맨드 생성기로 편집(이동·두께·문·조인·삭제·undo/redo)하며 매 스텝 모든 뷰의 증분 선분 == 기준 그래프(캐시 없음) 선분",
+  "runs": [
+    {
+      "seed": 11,
+      "steps": 300,
+      "checks": 2388,
+      "diffs": [],
+      "diff_count": 0,
+      "errors": [],
+      "error_count": 0,
+      "min_match_ratio": 1.0,
+      "max_segments_in_a_view": 138,
+      "mean_segments": 57.6,
+      "seconds": 71.0
+    },
+    {
+      "seed": 12,
+      "steps": 300,
+      "checks": 2640,
+      "diffs": [],
+      "diff_count": 0,
+      "errors": [],
+      "error_count": 0,
+      "min_match_ratio": 1.0,
+      "max_segments_in_a_view": 235,
+      "mean_segments": 67.2,
+      "seconds": 119.8
+    },
+    {
+      "seed": 13,
+      "steps": 300,
+      "checks": 2784,
+      "diffs": [],
+      "diff_count": 0,
+      "errors": [],
+      "error_count": 0,
+      "min_match_ratio": 1.0,
+      "max_segments_in_a_view": 149,
+      "mean_segments": 52.7,
+      "seconds": 94.1
+    },
+    {
+      "seed": 14,
+      "steps": 300,
+      "checks": 2724,
+      "diffs": [],
+      "diff_count": 0,
+      "errors": [],
+      "error_count": 0,
+      "min_match_ratio": 1.0,
+      "max_segments_in_a_view": 212,
+      "mean_segments": 64.3,
+      "seconds": 130.4
+    }
+  ],
+  "total_checks": 10536,
+  "total_diffs": 0,
+  "total_errors": 0,
+  "min_match_ratio": 1.0,
+  "env": {
+    "python": "3.12.2",
+    "platform": "Windows-11-10.0.26200-SP0",
+    "machine": "AMD64"
+  },
+  "generated_at_utc": "2026-11-08T15:56:58Z"
+}

@@ -1,0 +1,315 @@
+{
+  "what": "일부러 캐시 무효화를 빠뜨린 변이를 넣고, 같은 임의 편집열 검사가 불일치를 잡는지 본다",
+  "baseline_without_mutation": {
+    "diffs": 0,
+    "errors": 0,
+    "checks": 2448
+  },
+  "mutants": [
+    {
+      "mutant": "M1 벽 형상(wall_solid)이 의존성을 기록하지 않음",
+      "detected": true,
+      "first_detection": {
+        "seed": 21,
+        "diffs": 1083,
+        "errors": 0,
+        "min_match_ratio": 0.0,
+        "first_diff_step": 5
+      },
+      "per_seed": [
+        {
+          "seed": 21,
+          "diffs": 1083,
+          "errors": 0,
+          "min_match_ratio": 0.0,
+          "first_diff_step": 5
+        },
+        {
+          "seed": 22,
+          "diffs": 1016,
+          "errors": 0,
+          "min_match_ratio": 0.0,
+          "first_diff_step": 3
+        }
+      ]
+    },
+    {
+      "mutant": "M2 개구부(wall_openings)가 문 변경을 구독하지 않음",
+      "detected": true,
+      "first_detection": {
+        "seed": 21,
+        "diffs": 641,
+        "errors": 0,
+        "min_match_ratio": 0.21052631578947367,
+        "first_diff_step": 7
+      },
+      "per_seed": [
+        {
+          "seed": 21,
+          "diffs": 641,
+          "errors": 0,
+          "min_match_ratio": 0.21052631578947367,
+          "first_diff_step": 7
+        },
+        {
+          "seed": 22,
+          "diffs": 661,
+          "errors": 0,
+          "min_match_ratio": 0.06666666666666667,
+          "first_diff_step": 3
+        }
+      ]
+    },
+    {
+      "mutant": "M3 입면·단면 이웃(vnbrs)이 다른 벽의 이동을 구독하지 않음",
+      "detected": true,
+      "first_detection": {
+        "seed": 21,
+        "diffs": 112,
+        "errors": 626,
+        "min_match_ratio": 0.5151515151515151,
+        "first_diff_step": 2
+      },
+      "per_seed": [
+        {
+          "seed": 21,
+          "diffs": 112,
+          "errors": 626,
+          "min_match_ratio": 0.5151515151515151,
+          "first_diff_step": 2
+        },
+        {
+          "seed": 22,
+          "diffs": 483,
+          "errors": 222,
+          "min_match_ratio": 0.42105263157894735,
+          "first_diff_step": 7
+        }
+      ]
+    },
+    {
+      "mutant": "M4 평면 이웃(plan_nbrs)이 다른 벽의 이동을 구독하지 않음",
+      "detected": true,
+      "first_detection": {
+        "seed": 21,
+        "diffs": 115,
+        "errors": 132,
+        "min_match_ratio": 0.6666666666666666,
+        "first_diff_step": 25
+      },
+      "per_seed": [
+        {
+          "seed": 21,
+          "diffs": 115,
+          "errors": 132,
+          "min_match_ratio": 0.6666666666666666,
+          "first_diff_step": 25
+        },
+        {
+          "seed": 22,
+          "diffs": 148,
+          "errors": 50,
+          "min_match_ratio": 0.5757575757575758,
+          "first_diff_step": 8
+        }
+      ]
+    },
+    {
+      "mutant": "M5 평면 조각(plan_pieces)이 뷰 변경(절단 높이)을 구독하지 않음",
+      "detected": true,
+      "first_detection": {
+        "seed": 21,
+        "diffs": 273,
+        "errors": 0,
+        "min_match_ratio": 0.125,
+        "first_diff_step": 5
+      },
+      "per_seed": [
+        {
+          "seed": 21,
+          "diffs": 273,
+          "errors": 0,
+          "min_match_ratio": 0.125,
+          "first_diff_step": 5
+        },
+        {
+          "seed": 22,
+          "diffs": 226,
+          "errors": 0,
+          "min_match_ratio": 0.3235294117647059,
+          "first_diff_step": 3
+        }
+      ]
+    },
+    {
+      "mutant": "M6 코너 보정 범위(wall_range)가 조인 변경을 구독하지 않음",
+      "detected": true,
+      "first_detection": {
+        "seed": 21,
+        "diffs": 838,
+        "errors": 0,
+        "min_match_ratio": 0.25,
+        "first_diff_step": 5
+      },
+      "per_seed": [
+        {
+          "seed": 21,
+          "diffs": 838,
+          "errors": 0,
+          "min_match_ratio": 0.25,
+          "first_diff_step": 5
+        },
+        {
+          "seed": 22,
+          "diffs": 848,
+          "errors": 0,
+          "min_match_ratio": 0.26666666666666666,
+          "first_diff_step": 6
+        }
+      ]
+    },
+    {
+      "mutant": "M7 그래프가 관계 입력(조인·호스팅·레벨) 변경을 표시하지 않음",
+      "detected": true,
+      "first_detection": {
+        "seed": 21,
+        "diffs": 1008,
+        "errors": 0,
+        "min_match_ratio": 0.0,
+        "first_diff_step": 1
+      },
+      "per_seed": [
+        {
+          "seed": 21,
+          "diffs": 1008,
+          "errors": 0,
+          "min_match_ratio": 0.0,
+          "first_diff_step": 1
+        },
+        {
+          "seed": 22,
+          "diffs": 874,
+          "errors": 4,
+          "min_match_ratio": 0.0,
+          "first_diff_step": 2
+        }
+      ]
+    },
+    {
+      "mutant": "M8 그래프가 요소 행 변경을 표시하지 않음",
+      "detected": true,
+      "first_detection": {
+        "seed": 21,
+        "diffs": 992,
+        "errors": 0,
+        "min_match_ratio": 0.0,
+        "first_diff_step": 5
+      },
+      "per_seed": [
+        {
+          "seed": 21,
+          "diffs": 992,
+          "errors": 0,
+          "min_match_ratio": 0.0,
+          "first_diff_step": 5
+        },
+        {
+          "seed": 22,
+          "diffs": 1029,
+          "errors": 0,
+          "min_match_ratio": 0.0,
+          "first_diff_step": 4
+        }
+      ]
+    },
+    {
+      "mutant": "M9 그래프가 일람표 버킷(벽 생성·삭제) 변경을 표시하지 않음",
+      "detected": true,
+      "first_detection": {
+        "seed": 21,
+        "diffs": 834,
+        "errors": 0,
+        "min_match_ratio": 0.0,
+        "first_diff_step": 1
+      },
+      "per_seed": [
+        {
+          "seed": 21,
+          "diffs": 834,
+          "errors": 0,
+          "min_match_ratio": 0.0,
+          "first_diff_step": 1
+        },
+        {
+          "seed": 22,
+          "diffs": 814,
+          "errors": 0,
+          "min_match_ratio": 0.0,
+          "first_diff_step": 2
+        }
+      ]
+    },
+    {
+      "mutant": "M10 이웃 변화가 전파되지 않음(조기 차단 오류)",
+      "detected": true,
+      "first_detection": {
+        "seed": 21,
+        "diffs": 123,
+        "errors": 291,
+        "min_match_ratio": 0.625,
+        "first_diff_step": 2
+      },
+      "per_seed": [
+        {
+          "seed": 21,
+          "diffs": 123,
+          "errors": 291,
+          "min_match_ratio": 0.625,
+          "first_diff_step": 2
+        },
+        {
+          "seed": 22,
+          "diffs": 302,
+          "errors": 194,
+          "min_match_ratio": 0.5625,
+          "first_diff_step": 7
+        }
+      ]
+    },
+    {
+      "mutant": "M11 뷰 설정(view_cfg)이 뷰 편집을 구독하지 않음",
+      "detected": true,
+      "first_detection": {
+        "seed": 21,
+        "diffs": 374,
+        "errors": 0,
+        "min_match_ratio": 0.0,
+        "first_diff_step": 13
+      },
+      "per_seed": [
+        {
+          "seed": 21,
+          "diffs": 374,
+          "errors": 0,
+          "min_match_ratio": 0.0,
+          "first_diff_step": 13
+        },
+        {
+          "seed": 22,
+          "diffs": 311,
+          "errors": 0,
+          "min_match_ratio": 0.0,
+          "first_diff_step": 4
+        }
+      ]
+    }
+  ],
+  "detected": 11,
+  "total": 11,
+  "env": {
+    "python": "3.12.2",
+    "platform": "Windows-11-10.0.26200-SP0",
+    "machine": "AMD64"
+  },
+  "generated_at_utc": "2026-11-08T15:49:47Z"
+}

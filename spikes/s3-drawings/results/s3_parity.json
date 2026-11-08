@@ -1,0 +1,31 @@
+{
+  "negative_control_detects_divergence": true,
+  "commands_in_registry": 38,
+  "commands_executed_with_examples": 38,
+  "coverage_percent": 100.0,
+  "example_runs": 45,
+  "error_case_runs": 38,
+  "mcp_tools": [
+    "dobim_command_describe",
+    "dobim_commands_search",
+    "dobim_execute",
+    "dobim_execute_destructive",
+    "dobim_job",
+    "dobim_project",
+    "dobim_query",
+    "dobim_render"
+  ],
+  "describe_parity_all_commands": true,
+  "search_parity": true,
+  "risk_gating_enforced": true,
+  "mismatches": [],
+  "parity_C_percent": 100.0,
+  "fixture_hashes": {
+    "rev": 10,
+    "state": "c85d7be0bc6c59015b2ee9e9b49bf4c75f2f779c934d7b8d4160aefd05cf9d0f",
+    "derived": "47c215bb6ea9e93fa7fea940dc539192b7acd9d63483cc19a000e1ff7ed7bac8",
+    "ifc": "9386029c481e74cf4a359465db9d07e7048d340730032e43829bb747e26baf7b"
+  },
+  "pass": true,
+  "note": "S1 tools/parity.py 를 뷰 커맨드 7개를 더한 레지스트리(38개)에서 다시 실행. 뷰 예시는 준비 단계(PRE)로 뷰를 먼저 만든다"
+}
