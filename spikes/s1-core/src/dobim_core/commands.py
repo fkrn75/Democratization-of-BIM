@@ -25,6 +25,7 @@ from dobim_core import limits, merge
 from dobim_core import queries as Q
 from dobim_core import registry
 from dobim_core.errors import DobimError
+from dobim_core.kinds import KIND_NAMES, READ_REL_NAMES, REL_KINDS
 from dobim_core.paths import resolve_in_workspace
 from dobim_core.registry import command
 
@@ -112,6 +113,11 @@ def row(kind, ifc_class, family, params):
 def _axis_len2(axis):
     dx, dy = axis[2] - axis[0], axis[3] - axis[1]
     return dx * dx + dy * dy
+
+
+# 요소를 지울 때 끊는 관계(분할 이력 succ 제외). 로그의 효과 순서가 바뀌지 않게 순서는 고정하고, 레지스트리와 같은 집합인지 import 때 확인한다
+DELETE_REL_NAMES = ("joins", "on_level", "hosts", "annot_of", "of_type")
+assert set(DELETE_REL_NAMES) == {k for k, r in REL_KINDS.items() if not r.dangling_ok}, "kinds.REL_KINDS 에 관계를 더했으면 DELETE_REL_NAMES 도 고친다"
 
 
 def _hosted_span(ctx, d) -> tuple:
@@ -549,7 +555,7 @@ def _delete_one(ctx, eid):
             ctx.set_prop(eid, pset, prop, None)
     if not ctx.complex_material(eid):   # 층 구성 같은 복합 재료는 이름 하나로 되살릴 수 없어 부속 스냅숏이 맡는다
         ctx.set_material(eid, None)
-    for kind in ("joins", "on_level", "hosts", "annot_of", "of_type"):
+    for kind in DELETE_REL_NAMES:   # 분할 이력(succ)은 지우지 않는다: 지워진 벽의 id 를 가리킨 채 남아 주석 참조가 이어진다
         for dst in ctx.rels_out(kind, eid):
             ctx.rel(kind, eid, dst, False)
         for src in ctx.rels_in(kind, eid):
@@ -656,7 +662,7 @@ class ElementGet(A):
          args=ElementGet, idempotent=True, examples=[{"id": F.W1}])
 def element_get(ctx, a: ElementGet):
     r = ctx.row(a.id)
-    rel_all = [(k, x) for k in ("on_level", "joins", "hosts", "of_type") for x in ctx.rels_out(k, a.id) + [f"<-{x}" for x in ctx.rels_in(k, a.id)]]
+    rel_all = [(k, x) for k in READ_REL_NAMES for x in ctx.rels_out(k, a.id) + [f"<-{x}" for x in ctx.rels_in(k, a.id)]]
     relations: dict = {}
     for k, x in rel_all[:RELATIONS_SHOWN]:
         relations.setdefault(k, []).append(x)
@@ -707,7 +713,7 @@ def element_get(ctx, a: ElementGet):
 
 
 class ElementQuery(A):
-    kind: Literal["level", "wall", "door", "view", "dim", "tag", "ftype", "finst", "foreign"] | None = None
+    kind: Literal[KIND_NAMES] | None = None   # 종류 목록의 정본은 kinds.ELEMENT_KINDS
     origin: Literal["authored", "foreign", "detached"] | None = Field(None, description="출처: authored=의도가 정본, foreign=IFC 가 정본, detached=외부 도구가 형상을 바꿔 동결됨")
     level: Id | None = None
     name_contains: str | None = Field(None, max_length=64)
@@ -752,7 +758,7 @@ def relation_list(ctx, a: RelationList):
     # 전순서 키 (관계 종류 번호, 방향 0=나가는 1=들어오는, 상대 id). 키셋 커서는 마지막으로 읽은 항목의 키를 담는다:
     # 읽는 동안 앞쪽 관계가 생기거나 사라져도 빠짐·중복이 없고, 커서가 가리키던 관계가 사라져도 그 키 뒤에서 이어간다.
     keyed = []
-    for ki, k in enumerate(("on_level", "joins", "hosts", "of_type")):
+    for ki, k in enumerate(READ_REL_NAMES):
         keyed += [((ki, 0, d), {"kind": k, "src": a.id, "dst": d}) for d in ctx.rels_out(k, a.id)]
         keyed += [((ki, 1, s), {"kind": k, "src": s, "dst": a.id}) for s in ctx.rels_in(k, a.id)]
     keyed.sort(key=lambda t: t[0])

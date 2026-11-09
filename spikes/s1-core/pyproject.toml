@@ -48,7 +48,8 @@ forbidden_modules = ["tkinter", "PyQt5", "PyQt6", "PySide2", "PySide6", "wx", "b
 [[tool.importlinter.contracts]]
 name = "순수 질의는 엔진·프로토콜 계층을 모른다"
 type = "forbidden"
-source_modules = ["dobim_core.queries", "dobim_core.graph", "dobim_core.drawing", "dobim_core.drawing_export", "dobim_core.annot"]
+source_modules = ["dobim_core.queries", "dobim_core.graph", "dobim_core.drawing", "dobim_core.drawing_export", "dobim_core.annot",
+                  "dobim_core.kinds", "dobim_core.family.spec", "dobim_core.family.evaluate"]
 forbidden_modules = ["dobim_core.engine", "dobim_core.cli", "dobim_core.mcp_server", "dobim_core.dispatch", "dobim_core.ifc_model"]
 allow_indirect_imports = true
 
@@ -67,8 +68,13 @@ forbidden_modules = ["dobim_core.mcp_server", "mcp"]
 [[tool.importlinter.contracts]]
 name = "ifcopenshell 은 엔진과 IFC 투영 모듈만 import 한다 (커맨드는 IFC 파일을 직접 고치지 못한다, ADR-0005)"
 type = "forbidden"
+# 허용: engine, ifc_model(IFC 투영), foreign(외래 IFC 를 읽어 분류하는 가져오기 계획, S2), family.ifcproj(패밀리의 IFC 투영, S4),
+# family.validate(레시피의 IFC 클래스 이름을 IFC4 스키마 정의로 확인한다, S4: IFC 파일을 열거나 쓰지 않고 스키마 정의만 읽는다).
+# 나머지는 모두 감시한다: 병합(merge)·종류 레지스트리(kinds)·패밀리 평가/레시피/식/명세/라이브러리는 IFC 를 직접 만지지 못한다.
 source_modules = ["dobim_core.commands", "dobim_core.commands_family", "dobim_core.queries", "dobim_core.graph", "dobim_core.registry",
                   "dobim_core.dispatch", "dobim_core.cli", "dobim_core.mcp_server", "dobim_core.fixture",
-                  "dobim_core.paths", "dobim_core.errors", "dobim_core.drawing", "dobim_core.drawing_export", "dobim_core.annot"]
+                  "dobim_core.paths", "dobim_core.errors", "dobim_core.drawing", "dobim_core.drawing_export", "dobim_core.annot",
+                  "dobim_core.merge", "dobim_core.kinds", "dobim_core.limits", "dobim_core.family.evaluate", "dobim_core.family.expr",
+                  "dobim_core.family.recipe", "dobim_core.family.spec", "dobim_core.family.library"]
 forbidden_modules = ["ifcopenshell"]
 allow_indirect_imports = true

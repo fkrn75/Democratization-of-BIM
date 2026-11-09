@@ -26,12 +26,13 @@ import ifcopenshell.util.unit as uunit
 from dobim_core import queries as Q
 from dobim_core.errors import DobimError
 from dobim_core.graph import Graph
+from dobim_core.kinds import FAMILY_OF_KIND, IMPORTABLE_BY_CLASS
 from dobim_core.ifc_model import (INTENT_PSET, Closure, IfcModel, closure_diff, open_ifc_bytes, skeleton_check)
 
 MAX_IMPORT_BYTES = 256 * 1024 * 1024
 MAX_MM = 1e9   # 의도 숫자의 상한(1000 km). 이보다 큰 값은 제곱하는 계산이 넘치므로 해석하지 않고 외래로 둔다
-KIND_OF = {"IfcBuildingStorey": "level", "IfcWall": "wall", "IfcDoor": "door"}
-FAMILY = {"level": "level.basic", "wall": "wall.basic", "door": "door.single"}
+KIND_OF = IMPORTABLE_BY_CLASS   # 요소 종류 표의 정본은 kinds.py 다(의도를 복원할 수 있는 종류만 뽑은 것)
+FAMILY = FAMILY_OF_KIND
 _ID = re.compile(r"^[0-9A-Za-z_$]{22}$")
 NAME_MAX = 255
 

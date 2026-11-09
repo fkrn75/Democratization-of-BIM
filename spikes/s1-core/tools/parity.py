@@ -279,11 +279,30 @@ async def run_parity(work: Path | None = None) -> dict:
             e2, _ = await mcp.call("commands.describe", {"name": name})
             if norm(e1) != norm(e2):
                 mismatches.append(f"describe {name} 불일치")
-        e1, _ = cli.call("commands.search", {"query": ""})
-        e2, _ = await mcp.call("commands.search", {"query": ""})
-        search_same = norm(e1) == norm(e2) and {i["name"] for i in e1["result"]["items"]} == set(cmds)
+        # commands.search 는 응답 상한(6,000B) 때문에 한 쪽에 일부만 돌려준다: 커맨드가 늘면 첫 쪽만으로는 레지스트리 전체와 비교할 수 없다.
+        # 양쪽(CLI·MCP)을 쪽 번호표(next_cursor)로 끝까지 넘기며 모아서, 쪽마다 봉투가 같고 모은 이름이 레지스트리와 같은지 본다.
+        pages, search_same = 0, True
+        names1, names2 = [], []
+        cur1 = cur2 = None
+        while True:
+            args1 = {"query": "", **({"cursor": cur1} if cur1 else {})}
+            args2 = {"query": "", **({"cursor": cur2} if cur2 else {})}
+            e1, _ = cli.call("commands.search", args1)
+            e2, _ = await mcp.call("commands.search", args2)
+            pages += 1
+            search_same = search_same and norm(e1) == norm(e2) and e1["ok"] and e2["ok"]
+            names1 += [i["name"] for i in e1["result"]["items"]]
+            names2 += [i["name"] for i in e2["result"]["items"]]
+            cur1, cur2 = e1["page"]["next_cursor"], e2["page"]["next_cursor"]
+            if cur1 != cur2 or not cur1:
+                search_same = search_same and cur1 == cur2
+                break
+            if pages > 100:
+                search_same = False
+                break
+        search_same = search_same and sorted(names1) == sorted(cmds) and sorted(names2) == sorted(cmds) and len(names1) == len(set(names1))
         if not search_same:
-            mismatches.append("commands.search 불일치")
+            mismatches.append(f"commands.search 불일치(쪽 {pages}, 모은 이름 {len(names1)}/{len(cmds)})")
         # 3) 오류 사례
         for i, (label, name, args, kw) in enumerate(ERROR_CASES):
             await both(name, args, f"err-{i}", **kw)
