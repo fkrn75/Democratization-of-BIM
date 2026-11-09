@@ -57,6 +57,10 @@ def _pt(v, hi) -> bool:
     return K._pt_ok(v) and all(abs(x) <= hi for x in v)
 
 
+def _name_ok(v) -> bool:
+    return not any(0xD800 <= ord(c) <= 0xDFFF for c in v)   # 짝 없는 서로게이트는 UTF-8 로 쓸 수 없다
+
+
 def _view_values(p: dict) -> None:
     if type(p["scale"]) is not int or not 1 <= p["scale"] <= 1000:
         raise ValueError("뷰 축척이 올바르지 않다")
@@ -121,6 +125,8 @@ def parse_def(eid: str, text) -> dict:
     if (err := K.row_params_error(kind, params)) is not None:
         raise ValueError(err)
     try:
+        if not _name_ok(params["name"]):
+            raise ValueError("이름에 짝 없는 서로게이트가 있다")
         {"view": _view_values, "dim": _dim_values, "tag": _tag_values}[kind](params)
     except (KeyError, TypeError, IndexError) as ex:
         raise ValueError(f"정의 값이 올바르지 않다({type(ex).__name__})") from None

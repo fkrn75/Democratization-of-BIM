@@ -434,12 +434,14 @@ def plan_import(data: bytes) -> ImportPlan:
         if rows[g]["origin"] == "authored":   # 가져온 뒤 명세가 이 값 그대로면 첫 투영에서 들어온 엔티티를 그대로 둔다(engine.flush_ifc)
             rows[g]["spec_hash"] = digest(graph.q(Q.ifc_spec, g))
     # 길이 단위: 의도의 값은 mm 다. 단위 표기만 바뀐 파일은 요소 클로저가 같아 보이므로 후보 전체를 분리한다
+    unit_ok = True
     if rows:
         try:
             scale = uunit.calculate_unit_scale(f)
         except Exception:
             scale = None
         if scale is None or abs(scale - 0.001) > 1e-9:
+            unit_ok = False
             n = 0
             for g, r in rows.items():
                 if r["origin"] == "authored":
@@ -471,7 +473,10 @@ def plan_import(data: bytes) -> ImportPlan:
     projs = f.by_type("IfcProject")
     if projs and isinstance(getattr(projs[0], "GlobalId", None), str):
         taken.add(projs[0].GlobalId)
-    _restore_defs(f, rows, rels, taken, plan)
+    if unit_ok:
+        _restore_defs(f, rows, rels, taken, plan)
+    elif _read_defs(f, plan):   # 정의의 값(mm)도 길이 단위가 밀리미터일 때만 해석한다(요소의 의도와 같은 이유)
+        plan.warnings.append("길이 단위가 밀리미터가 아니라 뷰·주석 정의를 되살리지 않는다")
     # 5) 공간 소속(on_level): 외래·분리 요소도 층에 담긴 관계를 남긴다(레벨 삭제 검사와 element.query level 필터가 쓴다)
     for p in prods:
         g = p.GlobalId
