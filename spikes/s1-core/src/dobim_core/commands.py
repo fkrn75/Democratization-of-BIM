@@ -1439,6 +1439,11 @@ def _history(ctx, a, undo: bool):
         effects = [e for _, _, _, _, inv in reversed(entries) for e in json.loads(inv)]
     else:
         effects = [e for _, _, _, _, inv in entries for e in _inv(json.loads(inv))]
+    # 되돌리기·다시 실행도 동결 규칙을 지킨다: 다시 판정으로 동결된 요소의 동결 전 편집은 되돌릴 수 없다(효과를 그대로 적용하면 저작으로 되살아난다).
+    # 다른 효과를 하나라도 적용하기 전에 모두 확인해 거절이 아무것도 남기지 않게 한다. 이 트랜잭션이 스스로 만드는 요소는 지금 상태에 없으므로 걸리지 않는다
+    for e in effects:
+        if e[0] in ("el", "mat") and (row := ctx.st.el.get(e[1])) is not None:
+            ctx._frozen_check(e[1], row, "동결 전 편집")
     for e in effects:
         ctx.emit(e)
     # 같은 커맨드 이름을 건수 만큼 되풀이하지 않고 커맨드별 건수로 요약한다. 커맨드 종류는 레지스트리 크기로 묶이므로 응답이 커지지 않고
