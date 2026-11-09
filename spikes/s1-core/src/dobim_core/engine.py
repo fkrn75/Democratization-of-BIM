@@ -32,7 +32,8 @@ from dobim_core import queries as Q
 from dobim_core.errors import DobimError, internal_error
 from dobim_core.graph import Graph, RefGraph
 from dobim_core.ifc_model import CLOSURE_FORMAT, IfcModel
-from dobim_core.kinds import EFFECTS, ELEMENT_KINDS, PROJECTED_KINDS, REL_KINDS, invert, invert_effect  # noqa: F401  (invert 는 엔진의 공개 이름으로도 쓰인다)
+from dobim_core import kinds as K
+from dobim_core.kinds import EFFECTS, ELEMENT_KINDS, PROJECTED_KINDS, REL_KINDS
 from dobim_core.registry import Command
 
 SCHEMA_VERSION = "1"
@@ -56,6 +57,16 @@ CREATE TABLE import_spec (id TEXT PRIMARY KEY, spec_hash TEXT NOT NULL);
 
 
 # ---------------------------------------------------------------- 효과
+def invert_effect(e: list) -> list:
+    """효과를 뒤집는다. 어느 태그가 값 교환형인지는 kinds.EFFECTS 가 정한다(병합·키 계산과 같은 표).
+    엔진 쪽 이름으로 한 겹 감싼다: 변이 시험(tools/run_mutants.py)이 이 이름을 바꿔치기해 되돌리기 검사의 이빨을 확인한다."""
+    return K.invert_effect(e)
+
+
+def invert(effects: list) -> list:
+    return [invert_effect(e) for e in reversed(effects)]
+
+
 def canon(obj: Any) -> str:
     return json.dumps(obj, sort_keys=True, separators=(",", ":"), allow_nan=False)
 
