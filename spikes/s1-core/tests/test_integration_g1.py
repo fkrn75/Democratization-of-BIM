@@ -415,3 +415,33 @@ def test_9_종류_레지스트리가_모든_모듈과_맞는다(tmp_path):
         assert eng.rev == len(rows) and eng.head == len(rows)   # seq 0 항목은 리비전에 세지 않는다
     finally:
         eng.close()
+
+
+def test_1b_가져온_IFC가_원래_갖던_속성의_삭제와_충돌이_병합에서_사라지지_않는다(tmp_path):
+    """가져온 IFC 의 속성값은 로그에 없다(시작 상태 기록은 요소·관계만 담는다). 한쪽이 그 값을 지우면 '조상에도 없고 상대에도 없는 값'으로
+    보여 삭제가 조용히 사라지고, 한쪽 수정 vs 다른 쪽 삭제는 충돌로 잡히지 않는다. 접기가 이전 값을 조상에 시드로 넣어 둘 다 막는다."""
+    make_imported(tmp_path)
+    prop = {"id": F.D1, "pset": "Pset_DoorCommon", "prop": "FireRating"}
+    branch(tmp_path, "imp.dobim", "a.dobim", "b.dobim", "c.dobim", "d.dobim")
+    b = S.Bench(tmp_path)
+    try:
+        _ok(b.run("pset.delete", prop, project="b.dobim"))                                  # 가지 B: 삭제
+        _ok(b.run("pset.set", dict(prop, value="EI60"), project="c.dobim"))                 # 가지 C: 같은 속성을 수정
+        # (1) 삭제만: A 에 합치면 그 속성이 사라진다
+        r = b.run("merge.apply", {"other": "b.dobim"}, project="a.dobim")
+        assert r["ok"], r
+        # (2) 수정 vs 삭제: 충돌이다(조용히 한쪽을 이기게 하지 않는다)
+        prev = b.run("merge.preview", {"other": "c.dobim"}, project="b.dobim")
+        assert prev["ok"] and prev["result"]["conflict_count"] == 1, prev
+        assert prev["result"]["items"][0]["type"] == "PSET_SAME_PROP"
+        # 충돌을 풀면(상대 것을 택함) 그 값이 들어온다
+        key = prev["result"]["items"][0]["key"]
+        assert b.run("merge.apply", {"other": "c.dobim", "resolve": [{"key": key, "take": "theirs"}]}, project="b.dobim")["ok"]
+    finally:
+        b.close()
+    for name, expect in (("a.dobim", None), ("b.dobim", "EI60")):
+        eng = Engine(tmp_path / name, "t", create=False)
+        try:
+            assert eng.ifc.get_psets(F.D1).get("Pset_DoorCommon", {}).get("FireRating") == expect, name
+        finally:
+            eng.close()
