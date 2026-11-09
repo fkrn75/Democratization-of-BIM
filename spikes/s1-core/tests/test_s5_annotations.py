@@ -627,9 +627,16 @@ def test_새_커맨드는_레지스트리_규약을_지키고_search_는_한_쪽
         c = reg[n]
         assert c.examples and c.summary and c.args_model
     assert reg["annot.list"].risk == reg["annot.check"].risk == "read" and reg["wall.split"].risk == "write"
-    r = sess.run("commands.search", {"limit": 1000})
-    size = len(json.dumps(r, ensure_ascii=False).encode("utf-8"))
-    assert r["page"]["truncated"] is False and len(r["result"]["items"]) == len(reg)
-    assert size <= 6000 - 200, size                                          # 응답 상한(6,000B)에 200B 이상 여유
+    # 커맨드가 늘면 한 쪽(6,000B)에 다 들어가지 않는다: 쪽을 넘기며 모으면 레지스트리 전체와 같고, 모든 쪽이 상한 안이어야 한다
+    got, cursor, sizes = [], None, []
+    while True:
+        r = sess.run("commands.search", {"limit": 1000, **({"cursor": cursor} if cursor else {})})
+        sizes.append(len(json.dumps(r, ensure_ascii=False).encode("utf-8")))
+        got += [i["name"] for i in r["result"]["items"]]
+        cursor = r["page"]["next_cursor"]
+        if not cursor:
+            break
+    assert sorted(got) == sorted(reg) and len(got) == len(set(got))
+    assert max(sizes) <= 6000, sizes                                         # 응답 상한(6,000B)
     d = sess.run("commands.describe", {"name": "annot.dim.create"})
     assert d["ok"] and "annot.refs" not in json.dumps(d)                    # 존재하지 않는 도구를 가리키지 않는다
