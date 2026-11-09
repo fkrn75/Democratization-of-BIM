@@ -1,0 +1,725 @@
+{
+  "file": "RA-01.ifc",
+  "sha256": "49bf1c83db2e091c20430e694adda07e28b95cc64ca016a2f81243adfe32b969",
+  "schema": "IFC4",
+  "profile": "조달청 v2.1 실시설계 + 국토부 시행지침(설계자·발주자 편)",
+  "energy_mode": false,
+  "deliverable_mode": true,
+  "name_checked_as": "RA-01.ifc",
+  "unreadable_schema": false,
+  "summary": {
+    "pass": 15,
+    "fail": 14,
+    "na": 3,
+    "warn": 1,
+    "conditional": {
+      "enabled": false,
+      "na": 3
+    },
+    "total": 36
+  },
+  "checks": [
+    {
+      "id": "KR-IDS-01",
+      "title": "층(IfcBuildingStorey)이 1개 이상 있어야 함",
+      "mode": "ids",
+      "severity": "필수",
+      "requirements": [
+        "REQ-010"
+      ],
+      "status": "pass",
+      "applicable": 2,
+      "failed": 0,
+      "examples": [],
+      "note": "대상 2개"
+    },
+    {
+      "id": "KR-IDS-02",
+      "title": "실(IfcSpace)이 1개 이상 있어야 함",
+      "mode": "ids",
+      "severity": "필수",
+      "requirements": [
+        "REQ-010"
+      ],
+      "status": "pass",
+      "applicable": 6,
+      "failed": 0,
+      "examples": [],
+      "note": "대상 6개"
+    },
+    {
+      "id": "KR-IDS-03",
+      "title": "실에는 실명이 있어야 함",
+      "mode": "ids",
+      "severity": "필수",
+      "requirements": [
+        "REQ-014"
+      ],
+      "status": "pass",
+      "applicable": 6,
+      "failed": 0,
+      "examples": [],
+      "note": ""
+    },
+    {
+      "id": "KR-IDS-04",
+      "title": "실에는 실ID(Name)가 있어야 함",
+      "mode": "ids",
+      "severity": "필수",
+      "requirements": [
+        "REQ-015"
+      ],
+      "status": "pass",
+      "applicable": 6,
+      "failed": 0,
+      "examples": [],
+      "note": ""
+    },
+    {
+      "id": "KR-IDS-05",
+      "title": "실에는 공간분류 분류참조가 있어야 함",
+      "mode": "ids",
+      "severity": "필수",
+      "requirements": [
+        "REQ-017"
+      ],
+      "status": "fail",
+      "applicable": 6,
+      "failed": 6,
+      "examples": [
+        {
+          "class": "IfcSpace",
+          "name": "SP-101",
+          "global_id": "2wr_uKvDXHhAMA_V6_wRjJ",
+          "reason": "System: The entity has no classification"
+        },
+        {
+          "class": "IfcSpace",
+          "name": "SP-102",
+          "global_id": "2qrkWgQlLRWggqKDm9T4yc",
+          "reason": "System: The entity has no classification"
+        },
+        {
+          "class": "IfcSpace",
+          "name": "SP-103",
+          "global_id": "1bwnjRtvrNgw9Z9r3Lsi0e",
+          "reason": "System: The entity has no classification"
+        },
+        {
+          "class": "IfcSpace",
+          "name": "SP-201",
+          "global_id": "1_nEk9RPrSi80f09aBT8LF",
+          "reason": "System: The entity has no classification"
+        },
+        {
+          "class": "IfcSpace",
+          "name": "SP-202",
+          "global_id": "2qdqtwRLXJYBUw4ybuIEGV",
+          "reason": "System: The entity has no classification"
+        }
+      ],
+      "note": ""
+    },
+    {
+      "id": "KR-IDS-06",
+      "title": "범용객체(IfcBuildingElementProxy)에는 분류 정보가 있어야 함",
+      "mode": "ids",
+      "severity": "필수",
+      "requirements": [
+        "REQ-025",
+        "REQ-028"
+      ],
+      "status": "na",
+      "applicable": 0,
+      "failed": 0,
+      "examples": [],
+      "note": "적용 대상 객체 없음"
+    },
+    {
+      "id": "KR-IDS-07",
+      "title": "주요 부위 객체에는 부재명(Name)이 있어야 함",
+      "mode": "ids",
+      "severity": "필수",
+      "requirements": [
+        "REQ-022",
+        "REQ-046"
+      ],
+      "status": "pass",
+      "applicable": 50,
+      "failed": 0,
+      "examples": [],
+      "note": ""
+    },
+    {
+      "id": "KR-IDS-08",
+      "title": "에너지 검토 시 7종 부위에는 IsExternal 값이 있어야 함",
+      "mode": "ids",
+      "severity": "조건부",
+      "requirements": [
+        "REQ-030"
+      ],
+      "status": "na",
+      "applicable": 0,
+      "failed": 0,
+      "examples": [],
+      "conditional_off": true,
+      "note": "조건부 규칙: 에너지 검토(환경 시뮬레이션) 수행 시에만 적용. --energy 로 켬"
+    },
+    {
+      "id": "KR-IDS-09",
+      "title": "외기에 면한 6종 부위에는 열관류율이 있어야 함",
+      "mode": "ids",
+      "severity": "조건부",
+      "requirements": [
+        "REQ-031"
+      ],
+      "status": "na",
+      "applicable": 0,
+      "failed": 0,
+      "examples": [],
+      "conditional_off": true,
+      "note": "조건부 규칙: 에너지 검토(환경 시뮬레이션) 수행 시에만 적용. --energy 로 켬"
+    },
+    {
+      "id": "KR-IDS-10",
+      "title": "외기에 면한 5종 부위에는 열관류율이 있어야 함",
+      "mode": "ids",
+      "severity": "조건부",
+      "requirements": [
+        "REQ-032"
+      ],
+      "status": "na",
+      "applicable": 0,
+      "failed": 0,
+      "examples": [],
+      "conditional_off": true,
+      "note": "조건부 규칙: 에너지 검토(환경 시뮬레이션) 수행 시에만 적용. --energy 로 켬"
+    },
+    {
+      "id": "KR-IDS-11",
+      "title": "대지(IfcSite)에 위도·경도가 있어야 함",
+      "mode": "ids",
+      "severity": "필수",
+      "requirements": [
+        "REQ-039"
+      ],
+      "status": "fail",
+      "applicable": 1,
+      "failed": 1,
+      "examples": [
+        {
+          "class": "IfcSite",
+          "name": "Site",
+          "global_id": "2OeeOI5vbGuuDI2EE7Z39t",
+          "reason": "RefLatitude: The attribute value \"None\" is empty; RefLongitude: The attribute value \"None\" is empty"
+        }
+      ],
+      "note": ""
+    },
+    {
+      "id": "KR-IDS-12",
+      "title": "대지에 주소(SiteAddress)가 있어야 함",
+      "mode": "ids",
+      "severity": "필수",
+      "requirements": [
+        "REQ-035"
+      ],
+      "status": "fail",
+      "applicable": 1,
+      "failed": 1,
+      "examples": [
+        {
+          "class": "IfcSite",
+          "name": "Site",
+          "global_id": "2OeeOI5vbGuuDI2EE7Z39t",
+          "reason": "SiteAddress: The attribute value \"None\" is empty"
+        }
+      ],
+      "note": ""
+    },
+    {
+      "id": "KR-IDS-13",
+      "title": "프로젝트에 사업명(Name)이 있어야 함",
+      "mode": "ids",
+      "severity": "필수",
+      "requirements": [
+        "REQ-034"
+      ],
+      "status": "pass",
+      "applicable": 1,
+      "failed": 0,
+      "examples": [],
+      "note": ""
+    },
+    {
+      "id": "KR-IDS-14",
+      "title": "건물에 용도(OccupancyType)가 있어야 함",
+      "mode": "ids",
+      "severity": "필수",
+      "requirements": [
+        "REQ-036"
+      ],
+      "status": "fail",
+      "applicable": 1,
+      "failed": 1,
+      "examples": [
+        {
+          "class": "IfcBuilding",
+          "name": "RA-01",
+          "global_id": "3jO$rPRgXJEBMb6ABNtRqE",
+          "reason": "Pset_BuildingCommon.OccupancyType: The required property set does not exist"
+        }
+      ],
+      "note": ""
+    },
+    {
+      "id": "KR-IDS-15",
+      "title": "건물에 층수(NumberOfStoreys)가 있어야 함",
+      "mode": "ids",
+      "severity": "필수",
+      "requirements": [
+        "REQ-036"
+      ],
+      "status": "fail",
+      "applicable": 1,
+      "failed": 1,
+      "examples": [
+        {
+          "class": "IfcBuilding",
+          "name": "RA-01",
+          "global_id": "3jO$rPRgXJEBMb6ABNtRqE",
+          "reason": "Pset_BuildingCommon.NumberOfStoreys: The required property set does not exist"
+        }
+      ],
+      "note": ""
+    },
+    {
+      "id": "KR-IDS-16",
+      "title": "건물에 연면적(GrossFloorArea)이 있어야 함",
+      "mode": "ids",
+      "severity": "필수",
+      "requirements": [
+        "REQ-037"
+      ],
+      "status": "fail",
+      "applicable": 1,
+      "failed": 1,
+      "examples": [
+        {
+          "class": "IfcBuilding",
+          "name": "RA-01",
+          "global_id": "3jO$rPRgXJEBMb6ABNtRqE",
+          "reason": "Qto_BuildingBaseQuantities.GrossFloorArea: The required property set does not exist"
+        }
+      ],
+      "note": ""
+    },
+    {
+      "id": "KR-IDS-17",
+      "title": "건물에 건축면적(FootprintArea)이 있어야 함",
+      "mode": "ids",
+      "severity": "필수",
+      "requirements": [
+        "REQ-037"
+      ],
+      "status": "fail",
+      "applicable": 1,
+      "failed": 1,
+      "examples": [
+        {
+          "class": "IfcBuilding",
+          "name": "RA-01",
+          "global_id": "3jO$rPRgXJEBMb6ABNtRqE",
+          "reason": "Qto_BuildingBaseQuantities.FootprintArea: The required property set does not exist"
+        }
+      ],
+      "note": ""
+    },
+    {
+      "id": "KR-IDS-18",
+      "title": "대지에 대지면적(GrossArea)이 있어야 함",
+      "mode": "ids",
+      "severity": "필수",
+      "requirements": [
+        "REQ-037"
+      ],
+      "status": "fail",
+      "applicable": 1,
+      "failed": 1,
+      "examples": [
+        {
+          "class": "IfcSite",
+          "name": "Site",
+          "global_id": "2OeeOI5vbGuuDI2EE7Z39t",
+          "reason": "Qto_SiteBaseQuantities.GrossArea: The required property set does not exist"
+        }
+      ],
+      "note": ""
+    },
+    {
+      "id": "KR-CODE-01",
+      "title": "제출 IFC 는 2x3 이상(조달청 5.2.1(2), 5.5.2(1)). IFC2X2 이하는 실행기가 헤더에서 먼저 걸러 같은 판정을 쓴다.",
+      "mode": "code",
+      "severity": "필수",
+      "requirements": [
+        "REQ-001",
+        "REQ-002",
+        "REQ-052"
+      ],
+      "status": "pass",
+      "applicable": 1,
+      "failed": 0,
+      "examples": [],
+      "note": "스키마=IFC4"
+    },
+    {
+      "id": "KR-CODE-02",
+      "title": "납품 IFC 파일명 = 건물번호2자리_건물명_구분(BA/BS/BM/BE/BC/BL/B/E).ifc (조달청 5.5.2(3)).",
+      "mode": "code",
+      "severity": "필수",
+      "requirements": [
+        "REQ-003"
+      ],
+      "status": "fail",
+      "applicable": 1,
+      "failed": 1,
+      "examples": [
+        {
+          "reason": "파일명 'RA-01.ifc' 이 NN_건물명_구분.ifc 형식이 아님"
+        }
+      ],
+      "note": ""
+    },
+    {
+      "id": "KR-CODE-03",
+      "title": "BIM 데이터 파일명은 영문·한글·숫자·'-'·'_' 만(시행지침 설계자편 3.1(3)(가), 발주자편 3.6.3·부속서1 5.3 나).",
+      "mode": "code",
+      "severity": "필수",
+      "requirements": [
+        "REQ-004"
+      ],
+      "status": "pass",
+      "applicable": 1,
+      "failed": 0,
+      "examples": [],
+      "note": ""
+    },
+    {
+      "id": "KR-CODE-04",
+      "title": "길이 단위 mm 원칙(조달청 5.2.2(5)다).",
+      "mode": "code",
+      "severity": "필수",
+      "requirements": [
+        "REQ-005"
+      ],
+      "status": "fail",
+      "applicable": 1,
+      "failed": 1,
+      "examples": [
+        {
+          "reason": "길이 단위 METRE"
+        }
+      ],
+      "note": "길이 단위=METRE"
+    },
+    {
+      "id": "KR-CODE-05",
+      "title": "길이 단위 m 또는 mm(국토부 기본지침·시행지침 설계자편 2.3.2(1)(가)).",
+      "mode": "code",
+      "severity": "필수",
+      "requirements": [
+        "REQ-006"
+      ],
+      "status": "pass",
+      "applicable": 1,
+      "failed": 0,
+      "examples": [],
+      "note": "길이 단위=METRE"
+    },
+    {
+      "id": "KR-CODE-06",
+      "title": "모든 공간객체·부위객체는 특정 층에 소속(조달청 5.2.2(6)가, 시행지침 설계자편 2.3.2(2)).",
+      "mode": "code",
+      "severity": "필수",
+      "requirements": [
+        "REQ-011"
+      ],
+      "status": "pass",
+      "applicable": 57,
+      "failed": 0,
+      "examples": [],
+      "note": ""
+    },
+    {
+      "id": "KR-CODE-07",
+      "title": "지하층 이름은 'B' 또는 '지하' 로 시작(조달청 5.2.2(6)라). 지하층 = 고도<0 인 층(해석).",
+      "mode": "code",
+      "severity": "필수",
+      "requirements": [
+        "REQ-012"
+      ],
+      "status": "na",
+      "applicable": 0,
+      "failed": 0,
+      "examples": [],
+      "note": "고도<0 인 층 없음"
+    },
+    {
+      "id": "KR-CODE-08",
+      "title": "실ID 형식 AA.BBB.CC (AA=시설-구역 01~89·공용 98, 조달청 부속서-1 3.1(3)). 변형 허용이라 권고 수준.",
+      "mode": "code",
+      "severity": "권고",
+      "requirements": [
+        "REQ-016"
+      ],
+      "status": "fail",
+      "applicable": 6,
+      "failed": 6,
+      "examples": [
+        {
+          "class": "IfcSpace",
+          "name": "SP-101",
+          "global_id": "2wr_uKvDXHhAMA_V6_wRjJ",
+          "reason": "실ID 'SP-101' 형식 불일치"
+        },
+        {
+          "class": "IfcSpace",
+          "name": "SP-102",
+          "global_id": "2qrkWgQlLRWggqKDm9T4yc",
+          "reason": "실ID 'SP-102' 형식 불일치"
+        },
+        {
+          "class": "IfcSpace",
+          "name": "SP-103",
+          "global_id": "1bwnjRtvrNgw9Z9r3Lsi0e",
+          "reason": "실ID 'SP-103' 형식 불일치"
+        },
+        {
+          "class": "IfcSpace",
+          "name": "SP-201",
+          "global_id": "1_nEk9RPrSi80f09aBT8LF",
+          "reason": "실ID 'SP-201' 형식 불일치"
+        },
+        {
+          "class": "IfcSpace",
+          "name": "SP-202",
+          "global_id": "2qdqtwRLXJYBUw4ybuIEGV",
+          "reason": "실ID 'SP-202' 형식 불일치"
+        }
+      ],
+      "note": ""
+    },
+    {
+      "id": "KR-CODE-09",
+      "title": "공간분류코드는 부속서-1 3.2 목록의 5자리 세분류(33xxx·34xxx) 형식. 목록 전체 대조는 하지 않음.",
+      "mode": "code",
+      "severity": "필수",
+      "requirements": [
+        "REQ-017"
+      ],
+      "status": "fail",
+      "applicable": 6,
+      "failed": 6,
+      "examples": [
+        {
+          "class": "IfcSpace",
+          "name": "SP-101",
+          "global_id": "2wr_uKvDXHhAMA_V6_wRjJ",
+          "reason": "분류 코드 없음"
+        },
+        {
+          "class": "IfcSpace",
+          "name": "SP-102",
+          "global_id": "2qrkWgQlLRWggqKDm9T4yc",
+          "reason": "분류 코드 없음"
+        },
+        {
+          "class": "IfcSpace",
+          "name": "SP-103",
+          "global_id": "1bwnjRtvrNgw9Z9r3Lsi0e",
+          "reason": "분류 코드 없음"
+        },
+        {
+          "class": "IfcSpace",
+          "name": "SP-201",
+          "global_id": "1_nEk9RPrSi80f09aBT8LF",
+          "reason": "분류 코드 없음"
+        },
+        {
+          "class": "IfcSpace",
+          "name": "SP-202",
+          "global_id": "2qdqtwRLXJYBUw4ybuIEGV",
+          "reason": "분류 코드 없음"
+        }
+      ],
+      "note": ""
+    },
+    {
+      "id": "KR-CODE-10",
+      "title": "같은 층의 공간객체끼리 겹치지 않음(조달청 5.2.2(3)바, 5.3(4)가).",
+      "mode": "code",
+      "severity": "필수",
+      "requirements": [
+        "REQ-018"
+      ],
+      "status": "pass",
+      "applicable": 6,
+      "failed": 0,
+      "examples": [],
+      "note": "AABB 근사, 같은 층끼리만"
+    },
+    {
+      "id": "KR-CODE-11",
+      "title": "진북 방향각을 갖도록 관리(조달청 5.2.7(2)다, 시행지침 설계자편 2.3.2(1)(나)).",
+      "mode": "code",
+      "severity": "필수",
+      "requirements": [
+        "REQ-040"
+      ],
+      "status": "fail",
+      "applicable": 1,
+      "failed": 1,
+      "examples": [
+        {
+          "reason": "TrueNorth 미정의, IfcMapConversion 없음"
+        }
+      ],
+      "note": ""
+    },
+    {
+      "id": "KR-CODE-12",
+      "title": "좌표계 선언 권고(시행지침 설계자편 2.3.2(1)(나): GRS80 TM / 기본지침: 통상 UTM52 계열).",
+      "mode": "code",
+      "severity": "권고",
+      "requirements": [
+        "REQ-041",
+        "REQ-051"
+      ],
+      "status": "warn",
+      "applicable": 1,
+      "failed": 1,
+      "examples": [
+        {
+          "reason": "IfcMapConversion 없음(상대 기준 좌표계를 쓰는 경우 정상일 수 있어 발주자 확인 필요)"
+        }
+      ],
+      "note": "좌표계 선언 없음"
+    },
+    {
+      "id": "KR-CODE-13",
+      "title": "조달청표준공사코드 값 구문 'D', 'D+E', 'D:200+FA11' (조달청 부속서-1 4.3). 코드 목록 대조는 하지 않음.",
+      "mode": "code",
+      "severity": "필수",
+      "requirements": [
+        "REQ-024"
+      ],
+      "status": "na",
+      "applicable": 0,
+      "failed": 0,
+      "examples": [],
+      "note": "'조달청표준공사코드' 속성을 가진 객체 없음"
+    },
+    {
+      "id": "KR-CODE-14",
+      "title": "창호는 벽에 소속(조달청 5.2.5(2)). 문·창이 개구부(IfcOpeningElement)를 채우고 그 개구부가 IfcWall 을 뚫어야 함.",
+      "mode": "code",
+      "severity": "필수",
+      "requirements": [
+        "REQ-026"
+      ],
+      "status": "pass",
+      "applicable": 13,
+      "failed": 0,
+      "examples": [],
+      "note": ""
+    },
+    {
+      "id": "KR-CODE-15",
+      "title": "단일 건물은 단일 파일(조달청 5.2.2(7)나). 통합 파일은 건물이 여럿일 수 있어 위반이 아닌 경고.",
+      "mode": "code",
+      "severity": "권고",
+      "requirements": [
+        "REQ-008"
+      ],
+      "status": "pass",
+      "applicable": 1,
+      "failed": 0,
+      "examples": [],
+      "note": "IfcBuilding 1개"
+    },
+    {
+      "id": "KR-CODE-16",
+      "title": "파일이 200MB 를 넘으면 분할 검토(시행지침 발주자편 부속서2 12번, 원본 기준을 IFC 에 준용).",
+      "mode": "code",
+      "severity": "권고",
+      "requirements": [
+        "REQ-007"
+      ],
+      "status": "pass",
+      "applicable": 1,
+      "failed": 0,
+      "examples": [],
+      "note": "97707 바이트"
+    },
+    {
+      "id": "KR-CODE-17",
+      "title": "중복 객체 없음(시행지침 발주자편 부속서2 5번). GlobalId 중복, 또는 같은 클래스·같은 경계상자의 겹친 객체.",
+      "mode": "code",
+      "severity": "권고",
+      "requirements": [
+        "REQ-044"
+      ],
+      "status": "pass",
+      "applicable": 376,
+      "failed": 0,
+      "examples": [],
+      "note": ""
+    },
+    {
+      "id": "KR-CODE-19",
+      "title": "주요 부위 객체에 '조달청표준공사코드' 속성이 있음(조달청 부속서-1 4.2(3)). Pset 이름은 묻지 않음.",
+      "mode": "code",
+      "severity": "필수",
+      "requirements": [
+        "REQ-023",
+        "REQ-046"
+      ],
+      "status": "fail",
+      "applicable": 50,
+      "failed": 50,
+      "examples": [
+        {
+          "class": "IfcWall",
+          "name": "W-E-01",
+          "global_id": "3Y2ETKAITKWwOynuyfZ9lq",
+          "reason": "'조달청표준공사코드' 속성 없음"
+        },
+        {
+          "class": "IfcWall",
+          "name": "W-E-02",
+          "global_id": "06j3reGVjO6e1bGgGxbqSO",
+          "reason": "'조달청표준공사코드' 속성 없음"
+        },
+        {
+          "class": "IfcWall",
+          "name": "W-E-03",
+          "global_id": "1zCNdybhrS3BERfRW1zGef",
+          "reason": "'조달청표준공사코드' 속성 없음"
+        },
+        {
+          "class": "IfcWall",
+          "name": "W-E-04",
+          "global_id": "1N3Lq$r_jMWvF$JdsilU2j",
+          "reason": "'조달청표준공사코드' 속성 없음"
+        },
+        {
+          "class": "IfcWall",
+          "name": "W-E-05",
+          "global_id": "2bt3PtnQPOHv9VYcEoZeN7",
+          "reason": "'조달청표준공사코드' 속성 없음"
+        }
+      ],
+      "note": ""
+    }
+  ]
+}
