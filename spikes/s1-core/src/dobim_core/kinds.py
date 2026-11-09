@@ -161,6 +161,9 @@ class ElementKind(NamedTuple):
     order: int                   # 생성·투영 순서(작을수록 먼저 만들고, 삭제는 반대). 호스트·타입·뷰가 의존하는 것보다 먼저
     params: Callable             # 파라미터 검사(오류 문장 또는 None)
     geometric: bool = False      # 도면(평면·단면·입면)이 그리는 모델 요소: 저작 요소만 그린다. 외래·분리는 생략하고 개수를 알린다
+    refs: tuple = ()             # 파라미터 안의 id 참조: (파라미터 이름, 형태 "id"|"ref", 같은 뜻을 담는 관계 이름 또는 None).
+                                 # "id" = 값이 요소 id, "ref" = 주석 참조 문자열 "종류:id#역할". 관계 이름이 있으면 이 요소에서 나가는 그 관계의 끝이 값과 같아야 한다.
+                                 # 병합이 id 를 새로 매길 때 이 표로 params 안의 참조를 함께 옮기고, model.validate 가 관계와의 어긋남을 잡는다
 
 
 ELEMENT_KINDS: dict[str, ElementKind] = {k.name: k for k in (
@@ -168,11 +171,11 @@ ELEMENT_KINDS: dict[str, ElementKind] = {k.name: k for k in (
     ElementKind("wall", True, "IfcWall", True, 1, _wall_params, geometric=True),
     ElementKind("door", True, "IfcDoor", True, 2, _door_params, geometric=True),
     ElementKind("ftype", True, None, True, 3, _ftype_params),
-    ElementKind("finst", True, None, True, 4, _finst_params, geometric=True),
+    ElementKind("finst", True, None, True, 4, _finst_params, geometric=True, refs=(("type", "id", "of_type"),)),
     ElementKind("foreign", True, None, False, 5, _foreign_params),
-    ElementKind("view", False, None, False, 6, _view_params),
-    ElementKind("dim", False, None, False, 7, _dim_params),
-    ElementKind("tag", False, None, False, 7, _tag_params),
+    ElementKind("view", False, None, False, 6, _view_params, refs=(("level", "id", None),)),   # 평면 뷰만 level 이 있다
+    ElementKind("dim", False, None, False, 7, _dim_params, refs=(("view", "id", "annot_of"), ("a", "ref", None), ("b", "ref", None))),
+    ElementKind("tag", False, None, False, 7, _tag_params, refs=(("view", "id", "annot_of"), ("target", "id", None))),
 )}
 
 NON_IFC_KINDS = frozenset(k for k, v in ELEMENT_KINDS.items() if not v.ifc)      # 신원·속성셋·재료가 없는 의도 요소(뷰 정의, 치수·태그)
@@ -182,6 +185,37 @@ KIND_NAMES = tuple(ELEMENT_KINDS)
 # 의도 복원(S2 가져오기)이 해석하는 종류: IFC 클래스 -> 종류. 패밀리·뷰·주석은 의도 모양이 달라 외래로 둔다(알려진 한계)
 IMPORTABLE_BY_CLASS = {"IfcBuildingStorey": "level", "IfcWall": "wall", "IfcDoor": "door"}
 FAMILY_OF_KIND = {"level": "level.basic", "wall": "wall.basic", "door": "door.single"}
+
+
+def _remap_ref(form: str, v, m: dict):
+    """참조 값 하나에서 id 를 m(옛 id -> 새 id)으로 바꾼다. 모양이 다른 값은 그대로 둔다(검사는 다른 곳의 일이다)."""
+    if not isinstance(v, str):
+        return v
+    if form == "id":
+        return m.get(v, v)
+    head, sep, role = v.partition("#")   # "종류:id#역할"
+    kind, colon, eid = head.partition(":")
+    return f"{kind}:{m[eid]}#{role}" if sep and colon and eid in m else v
+
+
+def remap_params(kind: str, params, m: dict):
+    """파라미터 안의 id 참조를 m 으로 바꾼 새 파라미터(바꿀 게 없으면 같은 객체). 참조 위치는 ELEMENT_KINDS[kind].refs 가 정한다."""
+    k = ELEMENT_KINDS.get(kind)
+    if k is None or not isinstance(params, dict):
+        return params
+    out = params
+    for name, form, _rel in k.refs:
+        if name in params and (nv := _remap_ref(form, params[name], m)) != params[name]:
+            out = dict(out, **{name: nv})
+    return out
+
+
+def param_ref_targets(kind: str, params) -> list:
+    """관계와 같은 뜻을 담은 파라미터 참조 [(파라미터 이름, 관계 이름, 대상 id)]. 값이 문자열이 아니면 대상은 None."""
+    k = ELEMENT_KINDS.get(kind)
+    if k is None or not isinstance(params, dict):
+        return []
+    return [(name, rel, params[name] if isinstance(params[name], str) else None) for name, _f, rel in k.refs if rel and name in params]
 
 
 def order_of(kind: str) -> int:

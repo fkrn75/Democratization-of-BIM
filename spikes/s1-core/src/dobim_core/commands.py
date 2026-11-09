@@ -25,7 +25,7 @@ from dobim_core import limits, merge
 from dobim_core import queries as Q
 from dobim_core import registry
 from dobim_core.errors import DobimError
-from dobim_core.kinds import KIND_NAMES, READ_REL_NAMES, REL_KINDS
+from dobim_core.kinds import KIND_NAMES, READ_REL_NAMES, REL_KINDS, param_ref_targets
 from dobim_core.paths import resolve_in_workspace
 from dobim_core.registry import command
 
@@ -805,8 +805,24 @@ def model_validate(ctx, a: Validate):
         err = ctx.eng.g.q(Q.ifc_spec, eid).get("error")
         if err:
             bad.append(f"패밀리 인스턴스 {eid} 를 평가할 수 없다({err['code']} {err['path']}): {err['message']}")
-    return {"errors": v["errors"] + len(dangling) + len(bad), "warnings": v["warnings"],
-            "violations": (bad + v["samples"] + samples)[:8]}
+    # 파라미터 안의 id 참조와 관계가 같은 뜻을 담는 곳(치수·태그의 view ↔ annot_of, 인스턴스의 type ↔ of_type)이 어긋나면 오류다:
+    # 한쪽만 옮겨진 병합 결과 등이 둘이 다른 대상을 가리키게 한다
+    skew = _param_rel_skew(ctx)
+    return {"errors": v["errors"] + len(dangling) + len(bad) + len(skew), "warnings": v["warnings"],
+            "violations": (bad + skew + v["samples"] + samples)[:8]}
+
+
+def _param_rel_skew(ctx) -> list:
+    """kinds.ELEMENT_KINDS[종류].refs 가 관계와 짝지은 파라미터 참조가 관계와 다른 대상을 가리키는 요소의 문장 목록."""
+    st = ctx.st
+    out = []
+    for eid in sorted(st.el):
+        row = st.el[eid]
+        for name, rel, target in param_ref_targets(row["kind"], row["params"]):
+            ends = sorted(st.out.get((rel, eid), ()))
+            if ends != ([target] if target is not None else []):
+                out.append(f"{row['kind']} {eid} 의 params.{name} 은 {str(target)[:22]} 인데 관계 {rel} 은 {', '.join(e[:22] for e in ends) or '없음'} 을 가리킨다")
+    return out
 
 
 def _dangling_view_levels(ctx) -> list:

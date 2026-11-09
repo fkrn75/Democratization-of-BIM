@@ -33,7 +33,7 @@ from dobim_core import queries as Q
 from dobim_core.errors import DobimError
 from dobim_core.graph import RefGraph
 from dobim_core.kinds import (ELEMENT_KINDS, FIXED_IFC_CLASS, NAME_MAX, NON_IFC_KINDS, REL_KINDS, class_error, id_ok as _id_ok, invert,
-                              num_ok as _num, row_params_error, text_ok as _text_ok)
+                              num_ok as _num, remap_params, row_params_error, text_ok as _text_ok)
 
 DUP_PAIRS_MAX_GROUP = 40  # 같은 자리 벽 중복: 이 수까지는 쌍(n^2/2)으로 보고하고, 더 큰 묶음은 벽마다 하나씩(n)으로 보고한다(겹친 벽 1200개가 쌍 72만 개가 되는 것을 막는다)
 OPS_SHOWN = 4             # 충돌 하나에 보여 주는 양쪽 op 수
@@ -769,6 +769,28 @@ def _rename_unit(u: tuple, m: dict) -> tuple:
     return (u[0], m.get(u[1], u[1])) + tuple(u[2:])
 
 
+def rename_units(units: dict, m: dict) -> dict:
+    """단위 사전의 id 를 m(옛 id -> 새 id)으로 모두 바꾼다: 단위의 키(요소·관계·속성·재료)뿐 아니라 요소 파라미터 값 안의 id 참조
+    (view.level, 치수·태그의 view·참조, 인스턴스의 type 등)도 함께 옮긴다. 안 그러면 관계(annot_of 등)는 새 id 를 가리키는데
+    파라미터는 옛 id(= 우리 쪽의 다른 요소)를 가리킨다. 참조 위치는 kinds.ELEMENT_KINDS[종류].refs 가 정한다."""
+    kind_of = {}
+    for u, v in units.items():
+        if u[0] == "el" and u[2] == "@":
+            try:
+                kind_of[u[1]] = json.loads(v)["kind"]
+            except (ValueError, KeyError, TypeError):
+                pass   # 모양이 깨진 행은 다른 검사가 거른다
+    out = {}
+    for u, v in units.items():
+        if u[0] == "el" and u[2] == "p" and u[1] in kind_of:
+            pv = json.loads(v)
+            nv = remap_params(kind_of[u[1]], {u[3]: pv}, m)[u[3]]
+            if nv != pv:
+                v = canon(nv)
+        out[_rename_unit(u, m)] = v
+    return out
+
+
 def _created_seq(rows: list[tuple], eid: str) -> int:
     """rows 중 요소 eid 를 처음 만든(없던 것이 생긴) 로그 항목의 seq."""
     for r in rows:
@@ -822,7 +844,7 @@ def build_plan(ours_rows: list[tuple], theirs_rows: list[tuple], resolve: list[d
         if res.get(f"ID_COLLISION:{e}") == "both":
             renamed[e] = renamed_id(puid, e, _created_seq(theirs_rows[n:], e))
     if renamed:
-        theirs = {_rename_unit(u, renamed): v for u, v in theirs.items()}
+        theirs = rename_units(theirs, renamed)
         tt = {_rename_unit(u, renamed): w for u, w in tt.items()}
     plan = Plan()
     plan.renamed = renamed
