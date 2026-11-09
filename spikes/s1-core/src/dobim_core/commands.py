@@ -114,6 +114,17 @@ def _axis_len2(axis):
     return dx * dx + dy * dy
 
 
+def _hosted_span(ctx, d) -> tuple:
+    """벽에 호스팅된 요소가 벽 길이 방향으로 차지하는 구간 (lo, hi). 문은 offset ± width/2, 패밀리 인스턴스는 평가한 개구부(cut) 범위."""
+    dr = ctx.st.el[d]
+    dp = dr["params"]
+    if dr["kind"] == "finst":
+        cut = ctx.fresh().q(Q.ifc_spec, d).get("cut")
+        if cut:
+            return dp["offset"] + cut["x"][0], dp["offset"] + cut["x"][1]
+    return dp["offset"] - dp["width"] / 2, dp["offset"] + dp["width"] / 2
+
+
 def _in_split_history(ctx, eid) -> bool:
     """분할 이력(관계 succ)에 한 번이라도 쓰인 id 인가(지워진 벽 포함: 이력은 지워져도 남는다)."""
     return bool(ctx.rels_out("succ", eid) or ctx.rels_in("succ", eid))
@@ -396,7 +407,7 @@ def wall_split(ctx, a: WallSplit):
     - 문은 놓인 쪽 벽으로 옮겨진다(id 유지, 오프셋만 이동). 조인은 조인 지점이 있는 쪽 벽이 가진다. 속성·재료는 복사한다.
     - 분할 이력은 관계 succ(W -> N)로 남는다. 주석 참조의 끝 역할(axis.end, trim.end)이 이 관계를 따라가 값이 변하지 않는다.
     - 지워진 벽도 이력에는 남으므로, 이력에 한 번이라도 쓰인 id 는 new_id 로 다시 쓸 수 없다(succ 순환·엉뚱한 부활 방지)."""
-    r = ctx.row(a.id, "wall")
+    r = ctx.authored(a.id, "wall", what="분할")   # S5 의 분할이 S2 의 저작 확인을 거치지 않던 틈
     p = r["params"]
     x1, y1, x2, y2 = p["axis"]
     _, _, c, s, length = _frame_of(p["axis"])
@@ -412,10 +423,10 @@ def wall_split(ctx, a: WallSplit):
     ax_w, ax_n = [x1, y1, sx, sy], [sx, sy, x2, y2]
     doors_n = []
     for d in sorted(ctx.rels_out("hosts", a.id)):
-        dp = ctx.st.el[d]["params"]
-        lo, hi = dp["offset"] - dp["width"] / 2, dp["offset"] + dp["width"] / 2
+        lo, hi = _hosted_span(ctx, d)
         if hi <= a.at:
             continue
+        ctx.authored(d, what="분할로 옮겨지는 호스팅 요소")
         if lo >= a.at:
             doors_n.append(d)
         else:
@@ -1005,8 +1016,10 @@ def view_linework(ctx, a: ViewLinework):
     start = _dec_cursor(a.cursor, "int") or 0
     window = [list(ln) for ln in lines[start:start + a.limit]]
     summary = D.view_summary(lines)
+    omitted = ctx.g.q(D.view_omitted, a.id)
     head = {"id": a.id, "name": r["params"]["name"], "type": r["params"]["type"], "summary": summary,
-            "columns": ["class", "x0", "y0", "x1", "y1"]}
+            "omitted": omitted, "columns": ["class", "x0", "y0", "x1", "y1"]}
+    _warn_omitted(ctx, omitted)
     items, cut = _fit(window, base=head, cursor_of=lambda i: _enc_cursor(start + i + 1))
     nxt = _enc_cursor(start + len(items)) if start + len(items) < len(lines) else None
     return {**head, "items": items, "page": _page(nxt, len(lines), cut)}
@@ -1018,6 +1031,13 @@ class ViewExport(A):
     overwrite: bool = Field(False, description="거짓이면 이미 있는 파일을 덮어쓰지 않는다. 참이면 덮어쓰며 덮어쓰기 전에 자동 스냅숏을 남긴다(이 커맨드는 destructive 라 확인 토큰이 필요하다)")
 
 
+def _warn_omitted(ctx, omitted: dict) -> None:
+    """도면이 그리지 못한 외래 요소·분리된 벽이 있으면 조용히 넘기지 않고 알린다(S2 × S3)."""
+    if omitted["foreign"] or omitted["detached"]:
+        ctx.warn(f"이 뷰는 외래 요소 {omitted['foreign']}개와 분리된 벽 {omitted['detached']}개를 그리지 않았다"
+                 "(외래는 형상 정보가 없고, 분리된 벽의 의도 값은 낡았다)")
+
+
 def _render_view(ctx, vid):
     """뷰의 선분·채움·기준선(레벨)·제목을 내보내기용 데이터로 묶는다."""
     r = ctx.row(vid, "view")
@@ -1025,6 +1045,7 @@ def _render_view(ctx, vid):
     levels = sorted(((ctx.st.el[l]["params"]["name"], ctx.st.el[l]["params"]["elevation"]) for l in ctx.st.by_kind.get("level", ())),
                     key=lambda t: (t[1], t[0]))
     lines = ctx.g.q(D.view_lines, vid)
+    _warn_omitted(ctx, ctx.g.q(D.view_omitted, vid))
     return {"type": p["type"], "name": p["name"], "scale": p["scale"], "lines": lines, "fills": ctx.g.q(D.view_fills, vid),
             "datums": levels, "annots": ctx.g.q(AN.view_annots, vid)}
 
@@ -1117,7 +1138,7 @@ def _ref_parts(ctx, ref, field):
         kind = ref.split(":", 1)[0]
         roles = ", ".join(AN.ROLE_TYPES.get(kind, {})) or "wall, door, level"
         raise DobimError("CONSTRAINT", f"없는 참조 역할이다: {ref[:40]}", path=field, hint=f"{kind} 의 역할: {roles}")
-    ctx.row(parts[1], parts[0])
+    ctx.authored(parts[1], parts[0], what="치수 대상(낡은 형상을 재게 된다)")
     return parts
 
 
@@ -1212,7 +1233,7 @@ class TagCreate(A):
 
 def _tag_checked(ctx, view, target, fields):
     vr = ctx.row(view, "view")
-    tr = ctx.row(target)
+    tr = ctx.authored(target, what="태그 대상(낡은 값을 보이게 된다)")
     if vr["params"]["type"] != "plan":
         raise DobimError("CONSTRAINT", "태그는 평면 뷰에 둔다", path="/view")
     if tr["kind"] not in AN.TAG_FIELDS:
@@ -1529,7 +1550,11 @@ def _merge_plan(ctx, a: MergeBase):
     if a.other_rev is not None and a.other_rev != len(theirs):
         raise DobimError("REV_CONFLICT", f"상대 리비전이 어긋났다: 기대 {a.other_rev}, 현재 {len(theirs)}", path="/other_rev",
                          details={"expected": a.other_rev, "actual": len(theirs)})
-    ours = eng.conn.execute(merge.LOG_SQL).fetchall()
+    ours = merge.read_rows(eng.conn)
+    for who, rows, has_base in (("이 프로젝트", ours, eng.has_base), ("상대 프로젝트", theirs, getattr(theirs, "has_base", False))):
+        if has_base and merge.genesis_of(rows) is None:   # 통합 전에 가져온 프로젝트: 시작 상태가 로그에 없어 병합할 수 없다
+            raise DobimError("CONSTRAINT", f"{who}는 시작 상태 기록 없이 가져온 프로젝트라 병합할 수 없다", path="/other",
+                             hint="ifc.import 로 다시 가져오세요(시작 상태 기록은 가져올 때만 만들 수 있다)")
     return merge.build_plan(ours, theirs, [{"key": r.key, "take": r.take} for r in a.resolve], eng.project_guid_uuid)
 
 

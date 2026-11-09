@@ -31,10 +31,12 @@ from dobim_core import drawing as D
 from dobim_core import queries as Q
 from dobim_core.errors import DobimError, internal_error
 from dobim_core.graph import Graph, RefGraph
-from dobim_core.ifc_model import IfcModel
+from dobim_core.ifc_model import CLOSURE_FORMAT, IfcModel
+from dobim_core.kinds import EFFECTS, ELEMENT_KINDS, PROJECTED_KINDS, REL_KINDS, invert, invert_effect  # noqa: F401  (invert 는 엔진의 공개 이름으로도 쓰인다)
 from dobim_core.registry import Command
 
 SCHEMA_VERSION = "1"
+GENESIS_OP = "ifc.import"   # 가져온 시작 상태를 담는 로그 항목(seq 0). 되돌리기 대상이 아니고 리비전(rev)에 세지 않는다
 DDL = """
 CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
 CREATE TABLE element (
@@ -54,17 +56,6 @@ CREATE TABLE import_spec (id TEXT PRIMARY KEY, spec_hash TEXT NOT NULL);
 
 
 # ---------------------------------------------------------------- 효과
-def invert_effect(e: list) -> list:
-    t = e[0]
-    if t == "el" or t == "mat" or t == "att":
-        return [t, e[1], e[3], e[2]]
-    return [t, e[1], e[2], e[3], e[5], e[4]]
-
-
-def invert(effects: list) -> list:
-    return [invert_effect(e) for e in reversed(effects)]
-
-
 def canon(obj: Any) -> str:
     return json.dumps(obj, sort_keys=True, separators=(",", ":"), allow_nan=False)
 
@@ -77,6 +68,16 @@ def log_args(model) -> str:
         if d.get(name) is None and not f.is_required() and f.default is None:
             d.pop(name, None)
     return canon(d)
+
+
+def genesis_effects(rows: list[dict], rels: list) -> list:
+    """가져오기가 만든 시작 상태를 효과로 쓴다(요소 생성 + 관계 맺기). 병합이 로그만 접어서 시작 상태를 알 수 있게 하는 기록이다.
+    projection_hash·spec_hash 는 IFC 쪽 판정 부산물이라 담지 않는다(origin 은 담는다: 동결 여부는 의미다)."""
+    out = [["el", r["id"], None, {"kind": r["kind"], "ifc_class": r["ifc_class"], "origin": r["origin"],
+                                  "family_id": r["family_id"], "params": r["params"]}]
+           for r in sorted(rows, key=lambda r: (ELEMENT_KINDS[r["kind"]].order, r["id"]))]
+    out += [["rel", k, s, d, 0, 1] for k, s, d in sorted(rels)]
+    return out
 
 
 def digest(obj: Any) -> str:
@@ -195,11 +196,18 @@ class Ctx:
         """저작 요소만 돌려준다. 외래(foreign)·분리됨(detached) 요소의 형상·배치·재료·삭제는 거절한다(ADR-0005): IFC 가 형상의 정본이고
         코어는 그 형상을 다시 쓰지 않는다. 속성(pset.set/delete)만 편집할 수 있다."""
         r = self.eng.st.el.get(eid)
-        if r is not None and r["origin"] != "authored":
-            why = "분리됨(외부 도구가 형상을 바꿔 동결됐다)" if r["origin"] == "detached" else "외래 요소(IFC 가 정본이다)"
+        if r is not None:
+            self._frozen_check(eid, r, what)
+        return self.row(eid, kind)
+
+    @staticmethod
+    def _frozen_check(eid: str, row: dict, what: str = "형상") -> None:
+        """저작 확인의 단일 관문. 커맨드가 부르는 authored() 와, 효과를 내보내는 쓰기(put_el·rel·set_material)가 같은 검사를 거친다:
+        커맨드 하나가 확인을 빠뜨려도(S4 의 family.place, S8 의 merge.apply 가 그랬다) 동결된 요소는 바뀌지 않는다."""
+        if row["origin"] != "authored":
+            why = "분리됨(외부 도구가 형상을 바꿔 동결됐다)" if row["origin"] == "detached" else "외래 요소(IFC 가 정본이다)"
             raise DobimError("ELEMENT_FROZEN", f"{why}라 {what}을 바꿀 수 없다: {eid}", path="/id",
                              hint="속성은 pset.set / pset.delete 로 편집할 수 있다. 형상은 원본 도구에서 고쳐 다시 가져오세요")
-        return self.row(eid, kind)
 
     def rels_out(self, kind, src) -> list:
         return list(self.eng.st.out.get((kind, src), ()))
@@ -252,12 +260,22 @@ class Ctx:
         old = self.eng.st.el.get(eid)
         if old == new:
             return
+        # 동결된 요소는 바꾸거나 지울 수 없고, 저작이 아닌 요소는 커맨드로 만들 수 없다(외래·분리 요소는 가져오기만 만든다)
+        for r in (old, new):
+            if r is not None:
+                self._frozen_check(eid, r, "형상·삭제" if r is old else "생성")
         self.emit(["el", eid, old, new])
 
     def rel(self, kind: str, src: str, dst: str, present: bool) -> bool:
         cur = dst in self.eng.st.out.get((kind, src), ())
         if cur == present:
             return False
+        if present:   # 관계를 새로 맺을 때 동결된 요소가 끼면 거절한다(끊는 것은 허용: 저작 문을 지우면 분리된 호스트와의 관계도 끊긴다)
+            rk = REL_KINDS.get(kind)
+            for end, eid in (("src", src), ("dst", dst)):
+                row = self.eng.st.el.get(eid)
+                if rk is not None and end in rk.guard and row is not None:
+                    self._frozen_check(eid, row, f"관계 {kind} 의 연결")
         self.emit(["rel", kind, src, dst, int(cur), int(present)])
         return True
 
@@ -278,6 +296,7 @@ class Ctx:
         old = self.eng.ifc.get_material(eid)
         if old == name:
             return False
+        self._frozen_check(eid, self.row(eid), "재료")   # 재료는 형상과 같이 동결된다(속성셋만 편집할 수 있다)
         self.emit(["mat", eid, old, name])
         return True
 
@@ -313,18 +332,7 @@ def input_keys_of(effects: list) -> set:
     그 요소를 처음 읽게 될 뷰는 버킷(`wall` 목록)이나 관계(`on_level`)를 이미 읽고 있기 때문이다."""
     keys = set()
     for e in effects:
-        t = e[0]
-        if t == "el":
-            keys.add(("el", e[1]))
-            if e[2] is None or e[3] is None:
-                kind = (e[3] or e[2])["kind"]
-                keys.add(("bucket", kind, Q.bucket_of(e[1])))
-                keys.add(("count", kind))
-        elif t == "rel":
-            keys.add(("rel_out", e[1], e[2]))
-            keys.add(("rel_in", e[1], e[3]))
-        else:   # pset, mat
-            keys.add((t, e[1]))
+        keys |= EFFECTS[e[0]].keys(e)   # 태그별 키 계산은 kinds.EFFECTS 한 곳에 있다(att 처럼 키가 없는 태그도 거기서 정해진다)
     return keys
 
 
@@ -395,11 +403,20 @@ class Engine:
             raise
 
     def _seed_import(self, data: bytes, plan) -> None:
-        """생성 트랜잭션 안에서 외래 기반 원본과 분류 결과를 적는다. 가져오기는 로그 항목이 아니다: 프로젝트의 시작 상태(rev 0)다.
+        """생성 트랜잭션 안에서 외래 기반 원본과 분류 결과를 적는다. 가져온 상태는 프로젝트의 시작 상태(rev 0)다.
+        element/relation 테이블에 풀어 두는 것과 함께, 같은 상태를 로그 seq 0 항목(GENESIS_OP)으로도 적는다: 병합은 로그만 접어 상태를
+        알기 때문에(S8) 시작 상태가 로그에 없으면 가져온 프로젝트의 요소가 "출처 없는 속성"으로 보여 병합할 수 없었다.
+        seq 0 항목은 리비전에 세지 않고 되돌리기 스택에도 들어가지 않는다. 같은 파일을 가져온 복사본끼리는 이 항목이 같아 공통 조상이 된다.
         element.projection_hash 는 가져오는 순간의 클로저 해시이고 이후 바뀌지 않는다(변조 판정은 가져오는 순간에만 한다)."""
         c = self.conn
+        c.execute("INSERT INTO meta VALUES ('closure_format', ?)", (CLOSURE_FORMAT,))
+        sha = hashlib.sha256(data).hexdigest()
+        eff = genesis_effects(plan.rows, plan.rels)
+        c.execute("INSERT INTO op_log (seq, txn_id, actor, base_rev, ts, op, args, inverse) VALUES (0,'t0',?,0,?,?,?,?)",
+                  (self.actor, time.strftime("%Y-%m-%dT%H:%M:%S", time.gmtime()), GENESIS_OP,
+                   canon({"schema": plan.schema, "sha256": sha, "size": len(data)}), canon(invert(eff))))
         c.execute("INSERT INTO foreign_base (id, schema, size, sha256, data) VALUES (1,?,?,?,?)",
-                  (plan.schema, len(data), hashlib.sha256(data).hexdigest(), zlib.compress(data, 6)))
+                  (plan.schema, len(data), sha, zlib.compress(data, 6)))
         c.executemany("INSERT INTO element (id, kind, ifc_class, origin, family_id, params, projection_hash) VALUES (?,?,?,?,?,?,?)",
                       [(r["id"], r["kind"], r["ifc_class"], r["origin"], r["family_id"], canon(r["params"]), r.get("projection_hash"))
                        for r in plan.rows])
@@ -457,17 +474,68 @@ class Engine:
                 c.execute("ROLLBACK")
             raise
         self.head = log[-1][0] if log else 0
+        self.rejudged: list[str] = []   # 해시 형식이 바뀌어 다시 판정하며 동결된 요소 id
         self.undo_stack: list[str] = []
         self.redo_stack: list[str] = []
         for seq, txn, op, _ in log:
-            self._note_entry(op, txn)
+            if op != GENESIS_OP:   # 시작 상태 기록은 되돌리기 대상이 아니다
+                self._note_entry(op, txn)
         self.has_base = base is not None
+        if base is not None and meta.get("closure_format") != CLOSURE_FORMAT:
+            self._rejudge_import(base)
         self.ifc = IfcModel(self.project_guid_uuid, base)
         self._rebuild_ifc(log)
         self._proj_stamp: dict[str, int] = {}
         self._pending: set = set()
         self._dead_views: set = set()   # 지워진 뷰: 그래프에 남은 그 뷰의 노드를 다음 갱신 때 정리한다
         self.g = Graph(_Inputs(self))
+
+    def _rejudge_import(self, data: bytes) -> None:
+        """해시 형식(CLOSURE_FORMAT)이 바뀌었으면 가져온 프로젝트를 다시 판정한다. 가져올 때 저장한 element.projection_hash 는 그때 형식의
+        해시라서(예: S4 가 IfcTypeObject 를 참조로 접도록 정규화를 바꿨다) 새 형식으로 비교하면 모두 어긋난다.
+        원본 바이트(foreign_base)로 가져오기와 같은 판정(plan_import)을 현재 형식으로 다시 하고 해시를 갱신한다.
+        판정이 저작 → 분리로 바뀐 요소는 동결한다(안전한 쪽). 분리 → 저작으로는 되살리지 않는다(이미 외부 형상을 쥔 채 편집이 쌓였을 수 있다).
+        동결로 바뀌면 시작 상태 기록(seq 0)도 같이 고쳐 로그와 상태가 어긋나지 않게 한다. 형식 번호는 같은 트랜잭션에서 올린다."""
+        from dobim_core.foreign import plan_import
+        plan = plan_import(data)
+        by_id = {r["id"]: r for r in plan.rows}
+        c = self.conn
+        try:
+            c.execute("BEGIN IMMEDIATE")
+        except sqlite3.OperationalError as ex:
+            raise DobimError("LOCKED", f"프로젝트가 잠겨 있다: {ex}", hint="잠시 뒤 다시 시도하세요") from ex
+        try:
+            cur = c.execute("SELECT value FROM meta WHERE key='closure_format'").fetchone()
+            if cur is not None and cur[0] == CLOSURE_FORMAT:   # 다른 프로세스가 먼저 다시 판정했다
+                c.execute("COMMIT")
+                return
+            frozen = []
+            for eid, r in sorted(by_id.items()):
+                row = self.st.el.get(eid)
+                if row is None:
+                    continue   # 가져온 뒤 지워진 요소
+                c.execute("UPDATE element SET projection_hash=? WHERE id=?", (r.get("projection_hash"), eid))
+                if row["origin"] == "authored" and r["origin"] == "detached":
+                    frozen.append(eid)
+                    c.execute("UPDATE element SET origin='detached' WHERE id=?", (eid,))
+                    c.execute("DELETE FROM import_spec WHERE id=?", (eid,))
+                    self.st.apply_el(eid, row, dict(row, origin="detached"))
+                elif row["origin"] == "authored" and r.get("spec_hash"):
+                    c.execute("INSERT OR REPLACE INTO import_spec (id, spec_hash) VALUES (?,?)", (eid, r["spec_hash"]))
+            if frozen:
+                inv = json.loads(c.execute("SELECT inverse FROM op_log WHERE seq=0").fetchone()[0])
+                eff = invert(inv)
+                for e in eff:
+                    if e[0] == "el" and e[1] in frozen:
+                        e[3] = dict(e[3], origin="detached")
+                c.execute("UPDATE op_log SET inverse=? WHERE seq=0", (canon(invert(eff)),))
+            c.execute("INSERT OR REPLACE INTO meta VALUES ('closure_format', ?)", (CLOSURE_FORMAT,))
+            c.execute("COMMIT")
+        except BaseException:
+            if c.in_transaction:
+                c.execute("ROLLBACK")
+            raise
+        self.rejudged = frozen
 
     def _rebuild_ifc(self, log):
         """IFC 쪽 정본(속성셋·재료)은 로그의 효과를 순서대로 접어 최종값만 한 번에 만든다."""
@@ -514,11 +582,13 @@ class Engine:
     # ------------------------------------------------------------ 효과 적용 (유일한 상태 변경 관문)
     def _apply_effect(self, e: list, persist: bool) -> None:
         t = e[0]
-        p = self._pending
+        if t not in EFFECTS:
+            raise DobimError("INTERNAL", f"알 수 없는 효과: {t}")
+        # 건드린 그래프 입력 키는 input_keys_of 와 같은 표(kinds.EFFECTS)에서 얻는다: 따로 적으면 태그마다 어긋난다(att 가 그랬다)
+        self._pending |= EFFECTS[t].keys(e)
         if t == "el":
             _, eid, old, new = e
             self.st.apply_el(eid, old, new)
-            p.add(("el", eid))
             if new is None and old is not None and old["kind"] == "view":
                 self._dead_views.add(eid)
             try:   # IFC 쪽이 실패하면 메모리 상태도 되돌리고, IFC 는 어떤 상태인지 모르니 오염으로 표시한다
@@ -534,10 +604,6 @@ class Engine:
                 self.st.apply_el(eid, new, old)
                 self._taint(f"요소 {eid}", ex)
                 raise
-            if old is None or new is None:
-                kind = (new or old)["kind"]
-                p.add(("bucket", kind, Q.bucket_of(eid)))
-                p.add(("count", kind))
             if persist:
                 if new is None:
                     self._sql(f"요소 {eid}", "DELETE FROM element WHERE id=?", (eid,))
@@ -549,8 +615,6 @@ class Engine:
         elif t == "rel":
             _, kind, src, dst, _, new = e
             self.st.apply_rel(kind, src, dst, bool(new))
-            p.add(("rel_out", kind, src))
-            p.add(("rel_in", kind, dst))
             if persist:
                 if new:
                     self._sql(f"관계 {kind}", "INSERT OR IGNORE INTO relation (kind, src, dst) VALUES (?,?,?)", (kind, src, dst))
@@ -562,14 +626,12 @@ class Engine:
             except BaseException as ex:
                 self._taint(f"속성 {e[2]}/{e[3]}", ex)
                 raise
-            p.add(("pset", e[1]))
         elif t == "mat":
             try:
                 self.ifc.set_material(e[1], e[3])
             except BaseException as ex:
                 self._taint(f"재료 {e[1]}", ex)
                 raise
-            p.add(("mat", e[1]))
         elif t == "att":
             # new 가 있으면 되살리고(실행 취소), 없으면(지우기 쪽) 할 일이 없다: 부속은 요소 제거 때 함께 사라지고 old 가 로그에 남는다
             if e[3] is not None:
@@ -578,8 +640,6 @@ class Engine:
                 except BaseException as ex:
                     self._taint(f"부속 {e[1]}", ex)
                     raise
-        else:
-            raise DobimError("INTERNAL", f"알 수 없는 효과: {t}")
 
     def _sql(self, what: str, sql: str, params: tuple) -> None:
         """효과의 SQL 쓰기. 메모리 상태와 IFC 는 이미 바뀐 뒤라, 쓰기가 실패하면(디스크 오류 등) 메모리가 디스크와 어긋난다.
@@ -766,7 +826,7 @@ class Engine:
         self.sync()
         self._touch_pending()
         n = 0
-        for kind in ("level", "wall", "door", "ftype", "finst"):   # 타입이 인스턴스보다 먼저(인스턴스가 타입의 표현 지도를 가리킨다)
+        for kind in PROJECTED_KINDS:   # 투영 순서는 kinds.py 가 정한다(타입이 인스턴스보다 먼저: 인스턴스가 타입의 표현 지도를 가리킨다)
             for eid in sorted(self.st.by_kind.get(kind, ())):
                 if self.st.el[eid]["origin"] != "authored":
                     continue   # 외래·분리 요소의 형상은 IFC 가 정본이다: 투영하지 않는다(동결)

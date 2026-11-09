@@ -361,9 +361,9 @@ def family_place(ctx, a: FamilyPlace):
     except FamilyError as ex:
         raise _fam_error(ex) from None
     if hosted:
-        ctx.row(a.host, "wall")
+        ctx.authored(a.host, "wall", what="패밀리 인스턴스 호스팅")   # S2 의 저작 확인: 분리·외래 벽에는 놓을 수 없다
     else:
-        ctx.row(a.level, "level")
+        ctx.authored(a.level, "level", what="레벨에 패밀리 인스턴스를 놓는 것")
     ev, _ = _inst_geometry(ctx, tp, iv, a.host, a.offset, a.elevation)
     name = a.name or f"{r.id.split('.')[0][:1].upper()}-{a.id[-6:]}"
     ctx.put_el(a.id, {"kind": "finst", "ifc_class": r.ifc.class_, "origin": "authored", "family_id": r.id,
@@ -401,7 +401,7 @@ class FamilySet(A):
          args=FamilySet, since="0.2",
          examples=[{"id": EXAMPLE_FINST, "name": "현관문", "values": {"swing": "L"}, "offset": 2500}])
 def family_set(ctx, a: FamilySet):
-    r_ = ctx.row(a.id, "finst")
+    r_ = ctx.authored(a.id, "finst")
     p = dict(r_["params"])
     tp = ctx.st.el[p["type"]]["params"]
     r, plan = FE.load_recipe(tp["recipe"])

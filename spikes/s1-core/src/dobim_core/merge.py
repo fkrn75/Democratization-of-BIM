@@ -32,8 +32,9 @@ from typing import Any
 from dobim_core import queries as Q
 from dobim_core.errors import DobimError
 from dobim_core.graph import RefGraph
+from dobim_core.kinds import (ELEMENT_KINDS, NAME_MAX, NON_IFC_KINDS, REL_KINDS, class_error, id_ok as _id_ok, invert,
+                              num_ok as _num, row_params_error, text_ok as _text_ok)
 
-DUP_PAIRS_MAX_GROUP = 40  # 같은 자리 벽 중복: 이 수까지 쌍(n^2/2)으로 보고, 더 큰 묶음은 벽마다 하나씩(n)으로 보고한다(겹친 벽 1200개가 쌍 72만 개가 되는 것을 막는다)
 DUP_PAIRS_MAX_GROUP = 40  # 같은 자리 벽 중복: 이 수까지는 쌍(n^2/2)으로 보고하고, 더 큰 묶음은 벽마다 하나씩(n)으로 보고한다(겹친 벽 1200개가 쌍 72만 개가 되는 것을 막는다)
 OPS_SHOWN = 4             # 충돌 하나에 보여 주는 양쪽 op 수
 FIELDS_SHOWN = 8
@@ -60,57 +61,27 @@ def _ckey(key: str) -> str:
 
 
 # ---------------------------------------------------------------- 불변식 (commands.py 의 입력 검사와 같은 규칙. 같은지는 시험이 대조한다)
-ID_RE = re.compile(r"^[0-9A-Za-z_$]{22}$")
+# 요소 종류·관계 종류·효과 태그의 목록과 파라미터 검사는 kinds.py 가 정본이다(여기서 따로 갖지 않는다).
 PROP_RE = re.compile(r"^[A-Za-z][A-Za-z0-9_]{0,63}$")
-KIND_CLASS = {"level": "IfcBuildingStorey", "wall": "IfcWall", "door": "IfcDoor"}
-REL_KINDS = ("on_level", "joins", "hosts")
-PARAM_KEYS = {"level": ("name", "elevation"), "wall": ("name", "axis", "thickness", "height"),
-              "door": ("name", "width", "height", "sill", "offset")}
+REL_KINDS_NAMES = tuple(REL_KINDS)
 RESERVED_PSET = "DoBIM_Intent"   # 투영이 소유한 예약 속성셋: pset.set/pset.delete 가 거부하므로 로그에 있을 수 없다
-NAME_MAX = 64
-
-
-def _num(v) -> bool:
-    if type(v) is int:
-        return -(2**63) <= v < 2**63
-    return type(v) is float and isfinite(v)
-
-
-def _text_ok(v, lo=0, hi=None) -> bool:
-    return isinstance(v, str) and len(v) >= lo and (hi is None or len(v) <= hi) and "\x00" not in v
-
-
-def _id_ok(v) -> bool:
-    return isinstance(v, str) and ID_RE.match(v) is not None
+GENESIS_OP = "ifc.import"        # 가져온 시작 상태를 담는 로그 항목(seq 0). engine.GENESIS_OP 와 같아야 한다(시험이 대조한다)
 
 
 def row_error(r) -> str | None:
-    """요소 행이 커맨드가 만들 수 있는 모양인가(종류·IFC 클래스·파라미터 이름과 값). 아니면 이유."""
+    """요소 행이 커맨드가 만들 수 있는 모양인가(종류·IFC 클래스·출처·파라미터 이름과 값). 아니면 이유."""
     if not isinstance(r, dict) or set(r) != {"kind", "ifc_class", "origin", "family_id", "params"}:
         return "요소 행의 모양이 다르다"
     kind = r["kind"]
-    if kind not in KIND_CLASS or r["ifc_class"] != KIND_CLASS[kind]:
+    if kind not in ELEMENT_KINDS:
         return f"알 수 없는 요소 종류·IFC 클래스: {str(kind)[:20]}"
-    if not _text_ok(r["origin"], 0, 64) or not (r["family_id"] is None or _text_ok(r["family_id"], 0, 64)):
-        return "origin·family_id 가 올바르지 않다"
-    p = r["params"]
-    if not isinstance(p, dict) or set(p) != set(PARAM_KEYS[kind]):
-        return f"{kind} 의 파라미터 이름이 다르다"
-    for k, v in p.items():
-        if k == "name":
-            ok = _text_ok(v, 1, NAME_MAX)
-        elif k == "axis":
-            ok = (isinstance(v, list) and len(v) == 4 and all(_num(x) for x in v)
-                  and (v[2] - v[0]) ** 2 + (v[3] - v[1]) ** 2 >= 1.0)   # 벽 길이 1mm 이상(wall.create 의 규칙)
-        elif k in ("thickness", "height", "width"):
-            ok = _num(v) and v > 0
-        elif k == "sill":
-            ok = _num(v) and v >= 0
-        else:   # elevation, offset
-            ok = _num(v)
-        if not ok:
-            return f"{kind}.{k} 값이 올바르지 않다"
-    return None
+    if (m := class_error(kind, r["ifc_class"])):
+        return m
+    if r["origin"] not in ("authored", "foreign", "detached") or (r["origin"] == "foreign") != (kind == "foreign"):
+        return "origin 이 올바르지 않다"
+    if not (r["family_id"] is None or _text_ok(r["family_id"], 0, 64)):
+        return "family_id 가 올바르지 않다"
+    return row_params_error(kind, r["params"])
 
 
 def prop_error(pset, prop, value=None) -> str | None:
@@ -139,7 +110,7 @@ def effect_error(e) -> str | None:
                 return m
         return None
     if t == "rel":
-        if len(e) != 6 or e[1] not in REL_KINDS or not _id_ok(e[2]) or not _id_ok(e[3]) \
+        if len(e) != 6 or e[1] not in REL_KINDS_NAMES or not _id_ok(e[2]) or not _id_ok(e[3]) \
                 or any(type(x) is not int or x not in (0, 1) for x in (e[4], e[5])):
             return "rel 효과의 모양이 다르다(관계 종류·id·0/1)"
         return None
@@ -150,6 +121,10 @@ def effect_error(e) -> str | None:
     if t == "mat":
         if len(e) != 4 or not _id_ok(e[1]) or any(x is not None and not _text_ok(x, 1, NAME_MAX) for x in (e[2], e[3])):
             return "mat 효과의 모양이 다르다"
+        return None
+    if t == "att":   # 외래 부속 스냅숏(S2): IFC 쪽 부속일 뿐 병합 단위가 아니다. 모양만 본다
+        if len(e) != 4 or not _id_ok(e[1]) or any(x is not None and not isinstance(x, dict) for x in (e[2], e[3])):
+            return "att 효과의 모양이 다르다"
         return None
     return f"알 수 없는 효과: {str(t)[:20]}"
 
@@ -173,16 +148,59 @@ def rows_error(rows: list[tuple]) -> str | None:
 
 
 # ---------------------------------------------------------------- 로그 읽기
-LOG_SQL = "SELECT seq, txn_id, actor, base_rev, op, args, inverse FROM op_log ORDER BY seq"
+LOG_SQL = "SELECT seq, txn_id, actor, base_rev, op, args, inverse FROM op_log WHERE seq > 0 ORDER BY seq"
+GENESIS_SQL = "SELECT seq, txn_id, actor, base_rev, op, args, inverse FROM op_log WHERE seq = 0"
 
 
-def read_log(conn: sqlite3.Connection) -> tuple[str, list[tuple]]:
+class LogRows(list):
+    """로그 항목(seq 1부터)의 목록. 가져온 프로젝트의 시작 상태 기록(seq 0, GENESIS_OP)은 목록에 섞지 않고 .genesis 에 따로 둔다:
+    리비전·공통 접두 길이·되돌리기 계산이 모두 seq 1 부터 세기 때문이다. 접기(fold)만 이 기록부터 시작한다. 슬라이스는 일반 목록이 된다."""
+    genesis: tuple | None = None
+
+
+def read_rows(conn: sqlite3.Connection) -> LogRows:
+    rows = LogRows(conn.execute(LOG_SQL).fetchall())
+    g = conn.execute(GENESIS_SQL).fetchall()
+    rows.genesis = g[0] if g else None
+    return rows
+
+
+def genesis_of(rows) -> tuple | None:
+    return getattr(rows, "genesis", None)
+
+
+def genesis_error(g) -> str | None:
+    """시작 상태 기록: 요소 생성과 관계 맺기만 담는다(가져오기가 만든 상태)."""
+    if len(g) != 7 or g[0] != 0 or g[4] != GENESIS_OP or not all(isinstance(x, str) for x in (g[1], g[2], g[4], g[5], g[6])):
+        return "시작 상태 기록의 열이 올바르지 않다"
+    try:
+        inv = json.loads(g[6])
+    except ValueError:
+        return "시작 상태 기록의 JSON 이 깨졌다"
+    if not isinstance(inv, list):
+        return "시작 상태 기록의 모양이 다르다"
+    for e in inv:   # 저장된 것은 역효과다: 뒤집으면 생성(el)·맺기(rel)여야 한다
+        if (m := effect_error(e)):
+            return f"시작 상태 기록: {m}"
+        if e[0] == "el" and not (e[2] is not None and e[3] is None):
+            return "시작 상태 기록에 요소 생성이 아닌 효과가 있다"
+        if e[0] == "rel" and not (e[4] == 1 and e[5] == 0):
+            return "시작 상태 기록에 관계 맺기가 아닌 효과가 있다"
+        if e[0] not in ("el", "rel"):
+            return "시작 상태 기록에 요소·관계 외의 효과가 있다"
+    return None
+
+
+def read_log(conn: sqlite3.Connection) -> tuple[str, LogRows]:
     meta = dict(conn.execute("SELECT key, value FROM meta"))
     if meta.get("schema_version") != "1":
         raise DobimError("USAGE", "지원하지 않는 프로젝트 형식이다")
     if not isinstance(meta.get("project_uuid"), str):
         raise DobimError("IO_ERROR", "상대 프로젝트에 project_uuid 가 없다", path="/other")
-    return meta["project_uuid"], conn.execute(LOG_SQL).fetchall()
+    rows = read_rows(conn)
+    has_base = conn.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='foreign_base'").fetchone() is not None         and conn.execute("SELECT 1 FROM foreign_base").fetchone() is not None
+    rows.has_base = has_base
+    return meta["project_uuid"], rows
 
 
 def open_other(path: str | Path) -> sqlite3.Connection:
@@ -215,7 +233,7 @@ def close_other(conn: sqlite3.Connection) -> None:
             pass
 
 
-def load_other(path: str | Path) -> tuple[str, list[tuple]]:
+def load_other(path: str | Path) -> tuple[str, LogRows]:
     conn = open_other(path)
     try:
         conn.execute("BEGIN")
@@ -228,7 +246,7 @@ def load_other(path: str | Path) -> tuple[str, list[tuple]]:
                          hint="프로젝트 파일(.dobim)이 맞는지, 다른 프로그램이 잠그고 있지 않은지 확인하세요") from ex
     finally:
         close_other(conn)
-    if (m := rows_error(rows)) is not None:
+    if (m := rows_error(rows)) is not None or (genesis_of(rows) is not None and (m := genesis_error(genesis_of(rows))) is not None):
         raise DobimError("IO_ERROR", f"상대 프로젝트의 로그가 올바르지 않다: {m}", path="/other",
                          hint="프로젝트 파일이 손상됐거나 손으로 고친 것일 수 있습니다. 병합하지 않았습니다")
     return uuid_, rows
@@ -254,8 +272,10 @@ def _row_units(eid: str, row: dict):
         yield ("el", eid, "p", k), canon(v)
 
 
-def _apply(units: dict, e: list, touch: dict | None, who: tuple) -> None:
+def _apply(units: dict, e: list, touch: dict | None, who: tuple, seed: dict | None = None) -> None:
     t = e[0]
+    if t == "att":
+        return   # 외래 부속 스냅숏: IFC 쪽 부속이라 병합 단위가 아니다
 
     def mark(u):
         if touch is not None:
@@ -284,6 +304,8 @@ def _apply(units: dict, e: list, touch: dict | None, who: tuple) -> None:
     elif t == "pset":
         _, eid, pset, prop, _o, nw = e
         u = ("pset", eid, pset, prop)
+        if seed is not None and _o is not None and u not in units:
+            seed.setdefault(u, canon(_o))
         if nw is None:
             units.pop(u, None)
         else:
@@ -292,6 +314,8 @@ def _apply(units: dict, e: list, touch: dict | None, who: tuple) -> None:
     elif t == "mat":
         _, eid, _o, nw = e
         u = ("mat", eid)
+        if seed is not None and _o is not None and u not in units:
+            seed.setdefault(u, canon(_o))
         if nw is None:
             units.pop(u, None)
         else:
@@ -301,14 +325,15 @@ def _apply(units: dict, e: list, touch: dict | None, who: tuple) -> None:
         raise DobimError("INTERNAL", f"알 수 없는 효과: {t}")
 
 
-def fold(rows: list[tuple], units: dict | None = None, touch: dict | None = None) -> dict:
-    """로그 항목들의 효과를 차례로 접어 단위 사전을 만든다. touch 가 있으면 단위마다 마지막으로 건드린 (seq, 행위자, op) 를 적는다."""
-    from dobim_core.engine import invert   # 지연 import: 레지스트리 로드가 엔진(ifcopenshell)에 의존하지 않게
+def fold(rows: list[tuple], units: dict | None = None, touch: dict | None = None, seed: dict | None = None) -> dict:
+    """로그 항목들의 효과를 차례로 접어 단위 사전을 만든다. touch 가 있으면 단위마다 마지막으로 건드린 (seq, 행위자, op) 를 적는다.
+    seed 가 있으면, 접는 중 처음 만난 속성·재료 효과의 이전 값이 단위 사전에 없을 때 그 값을 seed 에 적는다: 가져온 IFC 가 원래 갖고 있던 값
+    (로그에 없는 시작 상태)이다. 이 값이 조상에 없으면 한쪽의 삭제가 다른 쪽과 같아 보여 사라진다(S8 × S2)."""
     units = {} if units is None else units
     for seq, _txn, actor, _b, op, _a, inv in rows:
         who = (seq, actor, op)
         for e in invert(json.loads(inv)):
-            _apply(units, e, touch, who)
+            _apply(units, e, touch, who, seed)
     return units
 
 
@@ -391,25 +416,38 @@ def _pu(e, k):
 def violations(view: View) -> list[dict]:
     out: list[dict] = []
     ex = view.exists
-    # 1) 무결성: 매달린 관계, 주인 없는 단위
+    # 1) 무결성: 매달린 관계, 주인 없는 단위. 관계 종류별 규칙 이름·문구는 kinds.REL_KINDS 가 정한다
     for kind, s, d in view.rels:
+        rk = REL_KINDS.get(kind)
         if s in ex and d in ex:
+            if rk is not None and not (view.kind(s) in rk.src and view.kind(d) in rk.dst):
+                out.append(_v("REL_ENDS", (s, d), "관계 양 끝의 요소 종류가 맞지 않는다", {"rel": [kind, s, d]}, disc=kind))
             continue
-        code = {"hosts": "HOST_DELETED", "joins": "JOIN_TARGET_DELETED", "on_level": "LEVEL_DELETED"}.get(kind, "REL_DANGLING")
-        names = {"HOST_DELETED": "호스트 벽이 지워졌는데 문이 그 벽에 놓여 있다", "JOIN_TARGET_DELETED": "조인 대상 벽이 지워졌다",
-                 "LEVEL_DELETED": "벽이 놓인 레벨이 지워졌다"}
-        out.append(_v(code, (s, d), names.get(code, "관계의 한쪽 끝이 없다"),
-                      {"rel": [kind, s, d], "missing": [x for x in (s, d) if x not in ex]}, disc=kind))
+        if rk is not None and rk.dangling_ok:
+            continue   # 분할 이력(succ)은 끝 요소가 지워져도 남는다
+        code, msg = (rk.violation, rk.message) if rk is not None else ("REL_DANGLING", "관계의 한쪽 끝이 없다")
+        out.append(_v(code, (s, d), msg, {"rel": [kind, s, d], "missing": [x for x in (s, d) if x not in ex]}, disc=kind))
     for e in _order(view.orphans):
         out.append(_v("ORPHAN_UNIT", (e,), "요소가 없는데 그 요소의 속성·재료·파라미터가 남아 있다"))
     hosted = {d for kind, _s, d in view.rels if kind == "hosts"}
     leveled = {w for kind, w, _d in view.rels if kind == "on_level"}
+    typed = {f for kind, f, _d in view.rels if kind == "of_type"}
+    annotated = {a for kind, a, _d in view.rels if kind == "annot_of"}
     for d in view.ids("door"):
         if d not in hosted:
             out.append(_v("HOST_MISSING", (d,), "문에 호스트 벽이 없다"))
     for w in view.ids("wall"):
         if w not in leveled:
             out.append(_v("LEVEL_MISSING", (w,), "벽에 레벨이 없다"))
+    for f in view.ids("finst"):
+        if f not in typed:
+            out.append(_v("TYPE_MISSING", (f,), "패밀리 인스턴스에 타입이 없다"))
+        if f not in hosted and f not in leveled:
+            out.append(_v("LEVEL_MISSING", (f,), "호스트 없는 패밀리 인스턴스에 레벨이 없다"))
+    for k in ("dim", "tag"):
+        for a in view.ids(k):
+            if a not in annotated:
+                out.append(_v("VIEW_MISSING", (a,), "주석에 뷰가 없다"))
     # 2) 호스팅: 문이 호스트 벽(원래 길이) 안에 있는가 (door.place/door.set 의 규칙)
     doors_on: dict[str, list] = {}
     for kind, s, d in view.rels:
@@ -499,6 +537,40 @@ def violations(view: View) -> list[dict]:
                           {"status": status},
                           focus=(_pu(d, "offset"), _pu(d, "width")) + tuple(_pu(x, "axis") for x in (w, *partners)) +
                           tuple(("rel", "joins", *sorted((w, x))) for x in partners)))
+    # 6) 호스팅된 패밀리 인스턴스(S4): 합친 호스트 벽에서 다시 평가한 개구부가 벽 안에 들어가는가(wall.set·wall.split 이 지키는 규칙과 같다)
+    for f in view.ids("finst"):
+        hs = view.inn.get(("hosts", f), [])
+        if len(hs) != 1 or hs[0] not in ex or view.kind(hs[0]) != "wall":
+            continue
+        w = hs[0]
+        try:
+            spec = g.q(Q.ifc_spec, f)
+            ax = view.p(w)["axis"]
+            length = sqrt((ax[2] - ax[0]) ** 2 + (ax[3] - ax[1]) ** 2)
+        except (KeyError, IndexError, ZeroDivisionError, TypeError, ValueError):
+            continue
+        focus = tuple(_pu(w, k) for k in ("axis", "thickness", "height")) + tuple(_pu(f, k) for k in view.p(f))
+        if spec.get("error"):
+            out.append(_v("FINST_INVALID", (f, w), "호스트 벽에서 패밀리 인스턴스를 평가할 수 없다", {"error": spec["error"]["code"]}, focus=focus))
+            continue
+        cut = spec.get("cut")
+        if cut and (spec["offset"] + cut["x"][0] < -EPS or spec["offset"] + cut["x"][1] > length + EPS
+                    or spec["elevation"] + cut["z"][0] < -EPS or spec["elevation"] + cut["z"][1] > view.p(w)["height"] + EPS):
+            out.append(_v("FINST_OUT_OF_HOST", (f, w), f"패밀리 인스턴스 개구부가 호스트 벽({length:.1f}mm) 밖으로 나간다",
+                          {"wall_length": length}, focus=focus))
+    # 7) 평면 뷰의 레벨, 뷰 이름 (view.create·view.set 의 규칙)
+    names_v: dict = {}
+    for v in view.ids("view"):
+        p = view.p(v)
+        if p.get("type") == "plan" and p.get("level") not in ex:
+            out.append(_v("VIEW_LEVEL_DELETED", (v,), "평면 뷰가 가리키는 레벨이 지워졌다", {"level": p.get("level")},
+                          focus=(_pu(v, "level"), ("el", p.get("level"), "@"))))
+        names_v.setdefault(p.get("name"), []).append(v)
+    for nm in _order(n for n in names_v if n is not None):
+        for i, v1 in enumerate(names_v[nm]):
+            for v2 in names_v[nm][i + 1:]:
+                out.append(_v("VIEW_NAME_DUPLICATE", (v1, v2), f"같은 이름의 뷰가 둘이다: {nm}", {"name": nm},
+                              focus=(_pu(v1, "name"), _pu(v2, "name"))))
     out.sort(key=lambda v: (v["rule"], v["elements"], v["disc"]))
     return out
 
@@ -653,15 +725,19 @@ def prior_base(ours_rows: list[tuple], theirs_rows: list[tuple], n: int):
 
 
 # 병합 결과·상대 쪽에 있을 수 없는 구조 위반(커맨드는 항상 지킨다). 이게 보이면 파일이 손으로 고쳐졌거나 손상된 것이다
-INTEGRITY_RULES = ("HOST_DELETED", "JOIN_TARGET_DELETED", "LEVEL_DELETED", "REL_DANGLING", "ORPHAN_UNIT", "HOST_MISSING", "LEVEL_MISSING")
+INTEGRITY_RULES = ("HOST_DELETED", "JOIN_TARGET_DELETED", "LEVEL_DELETED", "REL_DANGLING", "ORPHAN_UNIT", "HOST_MISSING", "LEVEL_MISSING",
+                   "VIEW_DELETED", "TYPE_DELETED", "REL_ENDS", "TYPE_MISSING", "VIEW_MISSING")
 
 
 def units_error(units: dict) -> str | None:
     """단위 사전이 커맨드가 만들 수 있는 모양인가: 요소 행(파라미터 완전성 포함), 속성(예약 속성셋 금지), 재료, 관계 종류."""
-    for e, r in rows_of(units).items():
+    rows_all = rows_of(units)
+    for e, r in rows_all.items():
         if m := row_error(r):
             return f"{e}: {m}"
     for u, v in units.items():
+        if u[0] in ("pset", "mat") and u[1] in rows_all and rows_all[u[1]]["kind"] in NON_IFC_KINDS:
+            return f"{u[1]}: 뷰·주석에는 속성셋·재료가 없다"
         if u[0] == "pset" and (m := prop_error(u[2], u[3], json.loads(v))):
             return f"{u[1]} {u[2]}.{u[3]}: {m}"
         if u[0] == "mat" and not _text_ok(json.loads(v), 1, NAME_MAX):
@@ -693,7 +769,6 @@ def _rename_unit(u: tuple, m: dict) -> tuple:
 
 def _created_seq(rows: list[tuple], eid: str) -> int:
     """rows 중 요소 eid 를 처음 만든(없던 것이 생긴) 로그 항목의 seq."""
-    from dobim_core.engine import invert
     for r in rows:
         for e in invert(json.loads(r[6])):
             if e[0] == "el" and e[1] == eid and e[2] is None:
@@ -717,10 +792,23 @@ def build_plan(ours_rows: list[tuple], theirs_rows: list[tuple], resolve: list[d
     res = {}
     for r in resolve or []:
         res[r["key"]] = r["take"]
+    go, gt = genesis_of(ours_rows), genesis_of(theirs_rows)
+    if go != gt:   # 가져온 프로젝트는 같은 가져오기에서 갈라진 것끼리만 병합한다(시작 상태가 다르면 조상이 없다)
+        raise DobimError("CONSTRAINT", "같은 가져오기(시작 상태)에서 갈라진 파일이 아니다", path="/other",
+                         hint="가져온 IFC 가 다르거나 한쪽이 가져오지 않은 프로젝트입니다")
+    gen = [go] if go is not None else []   # 접기는 시작 상태 기록(seq 0)부터 한다
     n = fork_count(ours_rows, theirs_rows)
-    fork_units = fold(ours_rows[:n])
+    fork_units = fold(gen + list(ours_rows[:n]))
     pb = prior_base(ours_rows, theirs_rows, n)
-    base = fork_units if pb is None else fold(pb["rows"])
+    base = fork_units if pb is None else fold(gen + list(pb["rows"]))
+    # 가져온 IFC 가 원래 갖고 있던 속성·재료(로그에 없는 시작 상태)를 한쪽이 바꾸거나 지웠다면, 그 이전 값을 조상에 넣는다.
+    # 안 그러면 한쪽의 삭제가 "조상에도 없고 상대에도 없는 값"으로 보여 병합에서 조용히 사라진다.
+    seed: dict = {}
+    fold(list(ours_rows[n:]), dict(fork_units), None, seed)
+    fold(list(theirs_rows[n:]), dict(fork_units), None, seed)
+    if seed:
+        fork_units = {**seed, **fork_units}
+        base = {**seed, **base}
     to, tt = {}, {}
     ours = fold(ours_rows[n:], dict(fork_units), to)
     theirs = fold(theirs_rows[n:], dict(fork_units), tt)
@@ -977,8 +1065,10 @@ def emit_plan(ctx, plan: Plan) -> dict:
     ours, merged = plan.ours, plan.merged
     orows, mrows = rows_of(ours), rows_of(merged)
     cnt = {"created": 0, "modified": 0, "deleted": 0, "psets": 0, "materials": 0, "relations": 0}
-    rank = {"level": 0, "wall": 1, "door": 2}   # 호스트가 먼저 생기고, 지울 때는 호스팅된 것이 먼저 사라진다(element.delete 와 같은 순서)
-    key = lambda e, rows: (rank.get(rows[e]["kind"], 9), e)  # noqa: E731
+    # 호스트·타입·뷰가 먼저 생기고, 지울 때는 의존하는 것이 먼저 사라진다(element.delete 와 같은 순서). 순서는 kinds.ELEMENT_KINDS 가 정한다
+    key = lambda e, rows: (ELEMENT_KINDS[rows[e]["kind"]].order, e)  # noqa: E731
+    for e in _order((e for e in orows if e not in mrows), key=lambda e: (-key(e, orows)[0], e)):
+        ctx.attach(e)   # 가져온 요소를 지울 때 외래 부속(타입·수량 세트·스타일 등)을 효과로 남긴다: 실행 취소가 되살린다(element.delete 와 같이 맨 먼저)
     for e in _order(mrows, key=lambda e: key(e, mrows)):
         if orows.get(e) != mrows[e]:
             cnt["created" if e not in orows else "modified"] += 1

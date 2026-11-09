@@ -216,10 +216,21 @@ def test_4_도면은_foreign을_빼고_detached의_낡은_형상을_그리지_�
         r = b.run("view.linework", {"id": F.V1, "limit": 1000}, project=p)
         assert r["ok"], r["error"]            # foreign 벽이 같은 레벨에 있어도 죽지 않는다
         res = r["result"]
-        # 낡은 W1 축선(0,0)-(6000,0) 근처 선분이 없다: detached 벽은 그리지 않는다
-        w1_stale = [ln for ln in res["items"] if abs(ln[2]) < 1 and abs(ln[4]) < 1 and ln[1] < 6001 and ln[3] <= 6001 and min(ln[1], ln[3]) >= -1]
-        assert not [ln for ln in w1_stale if abs(ln[2] - ln[4]) < 1e-6 and abs(ln[2]) <= 100], w1_stale
+        # W1 의 낡은 의도 축선 (0,0)-(6000,0), 두께 200 이면 y=±100 의 수평 선분이 나온다. detached 벽은 그리지 않으므로 그 선분이 없어야 한다.
+        # 대조(양성): 가져오기 전 저작 프로젝트의 같은 뷰에는 그 선분이 있다 — 이게 없으면 위 단언은 아무것도 검사하지 못한다.
+        def w1_edges(items):
+            return [ln for ln in items if abs(ln[2] - ln[4]) < 1e-6 and abs(abs(ln[2]) - 100) < 1e-6]
+        assert not w1_edges(res["items"]), w1_edges(res["items"])
+        b0 = S.Bench(tmp_path)
+        try:
+            _ok(b0.run("view.create", {"id": F.V1, "name": "1F 평면", "type": "plan", "level": F.LV1, "cut_height": 1200}, project="src.dobim"))
+            ref = _ok(b0.run("view.linework", {"id": F.V1, "limit": 1000}, project="src.dobim"))
+            assert w1_edges(ref["items"]), "대조군에 W1 선분이 없다"
+            assert ref["omitted"] == {"foreign": 0, "detached": 0}
+        finally:
+            b0.close()
         assert res["omitted"] == {"foreign": 1, "detached": 1}, res.get("omitted")
+        assert any("그리지 않았다" in w for w in r.get("warnings", [])), r.get("warnings")
     finally:
         b.close()
 

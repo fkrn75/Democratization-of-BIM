@@ -6,7 +6,6 @@ sqrt 와 사칙연산은 IEEE 754 로 결정적이다.
 """
 from __future__ import annotations
 
-import zlib
 from math import sqrt
 
 from dobim_core.family import spec as FS
@@ -16,14 +15,8 @@ MIN_TRIMMED = 1.0       # 조인 후 벽 길이 하한. 미달이면 조인을 �
 PARALLEL_EPS = 1e-9
 
 
-NON_IFC_KINDS = frozenset({"view", "dim", "tag"})   # IFC 로 투영하지 않는 의도 요소(뷰 정의 S3, 치수·태그 S5). 신원·속성셋·재료가 없다
-
-NB = 64  # 일람표 버킷 수. 요소 하나가 바뀌면 그 버킷만 다시 계산한다
-
-
-def bucket_of(eid: str) -> int:
-    """결정적 버킷 번호. 파이썬 hash() 는 프로세스마다 달라 쓰지 않는다."""
-    return zlib.crc32(eid.encode("ascii")) % NB
+# 요소 종류의 정본은 kinds.py 다. NON_IFC_KINDS(신원·속성셋·재료가 없는 뷰·주석), NB, bucket_of 는 거기서 가져온다
+from dobim_core.kinds import NB, NON_IFC_KINDS, bucket_of  # noqa: E402,F401
 
 
 def el(g, eid):

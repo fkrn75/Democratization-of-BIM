@@ -34,6 +34,7 @@ import ifcopenshell.util.unit as uunit
 import ifcopenshell.validate
 
 from dobim_core.errors import DobimError
+from dobim_core.kinds import FIXED_IFC_CLASS
 from dobim_core.family import ifcproj as fp
 
 def check_value(value) -> None:
@@ -50,7 +51,7 @@ def check_value(value) -> None:
 
 
 INTENT_PSET = "DoBIM_Intent"   # 투영이 소유하는 예약 속성셋. 정본(의도 저장소)에서 매번 다시 쓴다
-IFC_CLASS = {"level": "IfcBuildingStorey", "wall": "IfcWall", "door": "IfcDoor"}
+IFC_CLASS = FIXED_IFC_CLASS   # 코어가 직접 정하는 종류의 IFC 클래스(정본은 kinds.py). 패밀리·외래 요소는 행의 ifc_class 를 쓴다
 _NS = uuid.UUID("5d0b1a50-0000-4a00-8000-0d0b1a5000b1")
 
 
@@ -140,6 +141,12 @@ def skeleton_check(f):
 def detect_skeleton(f):
     """skeleton_check 의 (site, building) 만. 뼈대가 아니면 None: 외래 파일의 사이트·건물은 외래 요소다."""
     return skeleton_check(f)[0]
+
+
+# 요소 클로저·의미 해시가 쓰는 정규화(make_norm)와 클로저 구성의 형식 번호. 정규화나 클로저 구성을 바꾸면 올린다.
+# 가져올 때 저장한 element.projection_hash 가 이 형식의 해시이므로, 열 때 번호가 다르면 가져온 프로젝트를 다시 판정한다(Engine._rejudge_import).
+#   "1" S2 스파이크(IfcProduct 만 참조로 접는다)   "2" 통합(IfcTypeObject 도 참조로 접는다: 패밀리 타입, S4)
+CLOSURE_FORMAT = "2"
 
 
 def make_norm():

@@ -39,11 +39,23 @@ VIEW_TYPES = ("plan", "section", "elevation")
 
 
 # ================================================================ 범위 질의
-def all_walls(g):
+def is_drawn_wall(g, w) -> bool:
+    """도면이 그리는 벽인가: 종류가 벽이고 저작(authored)일 때만. 외래(foreign)는 형상 정보가 없고(params 에 axis 가 없다),
+    분리(detached)된 벽의 params 는 외부 도구가 형상을 바꾸기 전의 낡은 의도라 그리면 틀린 선이 나온다(ADR-0005)."""
+    row = Q.el(g, w)
+    return row is not None and row["kind"] == "wall" and row["origin"] == "authored"
+
+
+def _raw_walls(g):
+    """벽 종류 요소 전체(출처 무관)."""
     out = []
     for b in range(Q.NB):
         out.extend(Q.bucket_ids(g, "wall", b))
     return tuple(sorted(out))
+
+
+def all_walls(g):
+    return tuple(w for w in g.q(_raw_walls) if g.q(is_drawn_wall, w))
 
 
 def all_views(g):
@@ -54,7 +66,23 @@ def all_views(g):
 
 
 def level_walls(g, lv):
-    return tuple(sorted(Q.rel_in(g, "on_level", lv)))
+    # on_level 에는 외래 요소(kind foreign)와 패밀리 인스턴스(finst)도 걸린다: 그리는 벽만 남긴다
+    return tuple(w for w in sorted(Q.rel_in(g, "on_level", lv)) if g.q(is_drawn_wall, w))
+
+
+def view_omitted(g, v):
+    """뷰가 그리지 않고 생략한 모델 요소 개수 {"foreign": 외래 요소, "detached": 분리된 벽}. 생략은 조용하지 않게 응답에 알린다.
+    평면은 그 레벨에 놓인 것만, 단면·입면은 모델 전체를 센다."""
+    cfg = g.q(view_cfg, v)
+    if cfg is None:
+        return {"foreign": 0, "detached": 0}
+    if cfg[0] == "plan":
+        ids = () if cfg[1] is None else Q.rel_in(g, "on_level", cfg[1])
+        foreign = sum(1 for e in ids if (Q.el(g, e) or {}).get("kind") == "foreign")
+        detached = sum(1 for e in ids if (r := Q.el(g, e)) is not None and r["kind"] == "wall" and r["origin"] == "detached")
+        return {"foreign": foreign, "detached": detached}
+    detached = sum(1 for w in g.q(_raw_walls) if Q.el(g, w)["origin"] == "detached")
+    return {"foreign": Q.count(g, "foreign"), "detached": detached}
 
 
 def view_cfg(g, v):
@@ -123,6 +151,26 @@ def wall_range(g, w):
     return (start, end)
 
 
+def hosted_opening(g, d, elev):
+    """벽에 호스팅된 요소 하나가 벽에 내는 개구부 (u0, u1, z0, z1)(벽 지역 길이 방향 u, 절대 높이 z). 개구부가 없으면 None.
+    호스팅되는 것은 문(door: offset ± width/2, 문턱 sill)만이 아니다: 패밀리 인스턴스(finst)는 sill 이 없고 평가된 개구부 범위(cut)와
+    elevation 을 가진다(S3 가 모든 호스팅 요소를 문이라고 가정해 KeyError 로 죽던 자리). 그 밖의 종류는 개구부가 없다."""
+    row = Q.el(g, d)
+    if row is None:
+        return None
+    p = row["params"]
+    if row["kind"] == "door":
+        return (p["offset"] - p["width"] / 2.0, p["offset"] + p["width"] / 2.0, elev + p["sill"], elev + p["sill"] + p["height"])
+    if row["kind"] == "finst":
+        spec = g.q(Q.ifc_spec, d)
+        cut = spec.get("cut")
+        if not cut:
+            return None   # 평가 오류이거나 개구부 없는 인스턴스
+        return (spec["offset"] + cut["x"][0], spec["offset"] + cut["x"][1],
+                elev + spec["elevation"] + cut["z"][0], elev + spec["elevation"] + cut["z"][1])
+    return None
+
+
 def wall_openings(g, w):
     """호스팅된 문의 개구부: (u0, u1, z0, z1) 정렬 튜플. 벽 범위 안으로 자른다."""
     start, end, _ = g.q(Q.wall_trim, w)
@@ -131,11 +179,13 @@ def wall_openings(g, w):
     zb, zt = elev, elev + p["height"]
     out = []
     for d in g.q(Q.wall_hosted, w):
-        dp = Q.el(g, d)["params"]
-        u0 = max(start, dp["offset"] - dp["width"] / 2.0)
-        u1 = min(end, dp["offset"] + dp["width"] / 2.0)
-        z0 = max(zb, elev + dp["sill"])
-        z1 = min(zt, elev + dp["sill"] + dp["height"])
+        box = g.q(hosted_opening, d, elev)
+        if box is None:
+            continue
+        u0 = max(start, box[0])
+        u1 = min(end, box[1])
+        z0 = max(zb, box[2])
+        z1 = min(zt, box[3])
         if u1 - u0 > EPS and z1 - z0 > EPS:
             out.append((u0, u1, z0, z1))
     return tuple(sorted(out))
@@ -724,7 +774,7 @@ def views_depending_on(g, input_keys, vids, include_not_fresh=True):
 
 
 # 뷰 하나에 딸린 질의 노드의 함수들 (첫 인자가 뷰 id). 뷰를 지우면 이 노드들을 그래프에서 치운다.
-VIEW_SCOPED = frozenset({view_cfg, scope_walls, plan_pieces, plan_bbox, plan_nbrs, plan_wall_lines, vpieces, vbbox, vnbrs,
+VIEW_SCOPED = frozenset({view_cfg, scope_walls, view_omitted, plan_pieces, plan_bbox, plan_nbrs, plan_wall_lines, vpieces, vbbox, vnbrs,
                          vcut_rects, vedges, vwall_lines, view_lines, view_fills})
 
 
