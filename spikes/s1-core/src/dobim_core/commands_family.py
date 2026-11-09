@@ -158,14 +158,29 @@ def _recipe_of(ctx, family_id: str) -> dict:
 def _content_tid(ctx, rhash: str, tv: dict) -> str:
     """같은 레시피·타입 값의 타입 id(내용 주소). 평소에는 프로젝트 UUID 에서 파생한 결정적 id 다.
     가져온 프로젝트는 UUID 가 타입 id 의 출처가 아니다(타입은 내보내기 전 프로젝트의 UUID 로 정해졌다): 파생 id 의 타입이 없고
-    같은 내용의 기존 타입이 있으면 그것을 쓴다(없으면 같은 타입이 둘이 된다). id 가 가장 작은 것을 고른다(결정적)."""
-    tid = ctx.det_id(f"ftype:{rhash}:{FE.canon(tv)}")
-    if tid not in ctx.st.el and ctx.eng.has_base:
-        key = FE.canon(tv)
-        for other in sorted(ctx.st.by_kind.get("ftype", ())):
-            p = ctx.st.el[other]["params"]
-            if p["recipe_hash"] == rhash and FE.canon(p["type_values"]) == key:
+    같은 내용의 기존 타입이 있으면 그것을 쓴다(없으면 같은 타입이 둘이 된다). id 가 가장 작은 것을 고른다(결정적).
+    재사용 후보는 저작(authored) 타입뿐이다: 분리·외래 타입에 새 인스턴스를 달면 인스턴스는 저작인데 타입은 아니라서
+    재가져오기에서 인스턴스가 분리되고 해시가 어긋난다. 파생 id 가 비저작 요소로 이미 차 있으면 다음 파생 id 로 새 타입을 만든다."""
+    key = FE.canon(tv)
+    base = f"ftype:{rhash}:{key}"
+    tid = ctx.det_id(base)
+    st = ctx.st
+
+    def _authored_type(i: str) -> bool:
+        row = st.el[i]
+        return row["kind"] == "ftype" and row.get("origin") == "authored"
+
+    if tid in st.el and _authored_type(tid):
+        return tid
+    if ctx.eng.has_base:
+        for other in sorted(st.by_kind.get("ftype", ())):
+            p = st.el[other]["params"]
+            if _authored_type(other) and p["recipe_hash"] == rhash and FE.canon(p["type_values"]) == key:
                 return other
+    n = 0
+    while tid in st.el:   # 파생 id 가 비저작(분리·외래) 요소로 차 있다
+        n += 1
+        tid = ctx.det_id(f"{base}#{n}")
     return tid
 
 

@@ -565,6 +565,34 @@ def test_f6_가져온_패밀리_프로젝트의_두_복사본이_병합되고_�
 
 
 # ================================================================ 7. 독립 검수 결함: 분리 타입 재사용, 이차 시간
+def test_f7_분리된_타입은_family_place가_재사용하지_않고_새_저작_타입을_만든다(tmp_path):
+    b = S.Bench(tmp_path)
+    try:
+        _build(b)
+        b.export("e1.ifc", "src.dobim")
+        f = ifcopenshell.open(str(tmp_path / "e1.ifc"))
+        _type_of(f, D).Name = "tampered"                                # 문 타입의 이름만 바꾼다 → 타입 분리, 인스턴스도 함께 분리
+        f.write(str(tmp_path / "t.ifc"))
+        _ok(b.import_ifc("t.ifc", "imp.dobim"))
+        before = _origins(b, "imp.dobim")
+        assert before.get(D) == "detached" and len([i for i in before if before[i] == "detached"]) >= 2, before
+        new = "0" * 21 + "4"
+        r = _ok(b.run("family.place", {"id": new, "family": "door.single", "values": {"swing": "R"}, "host": F.W3, "offset": 1500}, project="imp.dobim"))
+        assert r["type_created"] is True and r["type"] not in before     # 분리 타입을 재사용하지 않고 저작 타입을 새로 만든다
+        assert _ok(b.run("element.get", {"id": r["type"]}, project="imp.dobim"))["origin"] == "authored"
+        assert _ok(b.run("element.get", {"id": new}, project="imp.dobim"))["origin"] == "authored"
+        # 같은 내용을 한 번 더 놓으면 방금 만든 저작 타입을 재사용한다
+        r2 = _ok(b.run("family.place", {"id": "0" * 21 + "5", "family": "door.single", "values": {"swing": "R"}, "host": F.W3, "offset": 3000}, project="imp.dobim"))
+        assert r2["type_created"] is False and r2["type"] == r["type"]
+        h = b.hashes("imp.dobim")
+        b.export("e2.ifc", "imp.dobim")
+        _ok(b.import_ifc("e2.ifc", "imp2.dobim"))
+        assert _origins(b, "imp2.dobim") == before                      # 새 인스턴스는 다시 가져와도 저작이고 분리는 처음 그대로다
+        assert S.trip(b.hashes("imp2.dobim")) == S.trip(h)
+    finally:
+        b.close()
+
+
 def _import_work(tmp_path, n: int) -> dict:
     """같은 타입·같은 층의 기둥 n개를 가져올 때 ifcopenshell 에서 쓰는 일의 양: 엔티티 비교 횟수와 역참조 결과 크기의 합."""
     from ifcopenshell.entity_instance import entity_instance_mixin as M
