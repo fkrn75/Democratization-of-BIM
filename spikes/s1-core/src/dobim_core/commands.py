@@ -177,6 +177,9 @@ def project_info(ctx, a):
            "redo_depth": len(ctx.eng.redo_stack)}
     if ctx.eng.has_base:   # 외래 IFC 를 가져온 프로젝트: 요소의 출처별 개수
         out["origins"] = {k: ctx.eng.st.origins.get(k, 0) for k in ("authored", "foreign", "detached")}
+        if ctx.eng.rejudged:   # 해시 형식이 바뀌어 다시 판정하며 동결된 요소가 있다(열 때 한 번)
+            out["rejudged_frozen"] = len(ctx.eng.rejudged)
+            ctx.warn(f"해시 형식이 바뀌어 가져온 프로젝트를 다시 판정했고 저작 요소 {len(ctx.eng.rejudged)}개를 분리(동결)했다")
     return out
 
 
