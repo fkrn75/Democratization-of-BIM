@@ -1,0 +1,429 @@
+{
+  "total": 38,
+  "caught": 38,
+  "rate": 1.0,
+  "with_hint": 31,
+  "mutants": [
+    {
+      "mutant": "0 으로 나눔",
+      "expected": "E_EXPR_MATH",
+      "level": "static",
+      "caught": true,
+      "codes": [
+        "E_EXPR_MATH"
+      ],
+      "has_hint": true,
+      "path": "/derived/bad"
+    },
+    {
+      "mutant": "IFC 속성 이름 오류",
+      "expected": "E_IFC_ATTR_UNKNOWN",
+      "level": "full",
+      "caught": true,
+      "codes": [
+        "E_IFC_ATTR_UNKNOWN"
+      ],
+      "has_hint": true,
+      "path": "/ifc/attrs/OverallWidht"
+    },
+    {
+      "mutant": "IFC 속성 종류 오류",
+      "expected": "E_IFC_ATTR_TYPE",
+      "level": "full",
+      "caught": true,
+      "codes": [
+        "E_IFC_ATTR_TYPE"
+      ],
+      "has_hint": false,
+      "path": "/ifc/attrs/OverallWidth"
+    },
+    {
+      "mutant": "IFC 요소가 아닌 클래스",
+      "expected": "E_IFC_CLASS",
+      "level": "full",
+      "caught": true,
+      "codes": [
+        "E_IFC_ATTR_UNKNOWN",
+        "E_IFC_CLASS",
+        "E_PSET_APPLICABLE"
+      ],
+      "has_hint": true,
+      "path": "/ifc/class"
+    },
+    {
+      "mutant": "IFC 클래스 없음",
+      "expected": "E_IFC_CLASS",
+      "level": "full",
+      "caught": true,
+      "codes": [
+        "E_IFC_CLASS",
+        "E_PSET_APPLICABLE"
+      ],
+      "has_hint": true,
+      "path": "/ifc/class"
+    },
+    {
+      "mutant": "PredefinedType 열거 오류",
+      "expected": "E_IFC_ENUM",
+      "level": "full",
+      "caught": true,
+      "codes": [
+        "E_IFC_ENUM"
+      ],
+      "has_hint": true,
+      "path": "/ifc/predefined"
+    },
+    {
+      "mutant": "ifc 블록 없음",
+      "expected": "E_SCHEMA",
+      "level": "static",
+      "caught": true,
+      "codes": [
+        "E_SCHEMA"
+      ],
+      "has_hint": true,
+      "path": "/ifc"
+    },
+    {
+      "mutant": "min > max",
+      "expected": "E_SCHEMA",
+      "level": "static",
+      "caught": true,
+      "codes": [
+        "E_SCHEMA"
+      ],
+      "has_hint": false,
+      "path": "/params/width"
+    },
+    {
+      "mutant": "solid id 중복",
+      "expected": "E_SOLID_ID_DUPLICATE",
+      "level": "static",
+      "caught": true,
+      "codes": [
+        "E_SOLID_ID_DUPLICATE"
+      ],
+      "has_hint": false,
+      "path": "/solids/1/id"
+    },
+    {
+      "mutant": "금지된 IFC 속성",
+      "expected": "E_IFC_ATTR_FORBIDDEN",
+      "level": "full",
+      "caught": true,
+      "codes": [
+        "E_IFC_ATTR_FORBIDDEN"
+      ],
+      "has_hint": true,
+      "path": "/ifc/attrs/GlobalId"
+    },
+    {
+      "mutant": "기본값이 범위 밖",
+      "expected": "E_SCHEMA",
+      "level": "static",
+      "caught": true,
+      "codes": [
+        "E_SCHEMA"
+      ],
+      "has_hint": false,
+      "path": "/params/width"
+    },
+    {
+      "mutant": "다른 클래스의 표준 Pset",
+      "expected": "E_PSET_APPLICABLE",
+      "level": "full",
+      "caught": true,
+      "codes": [
+        "E_PSET_APPLICABLE"
+      ],
+      "has_hint": true,
+      "path": "/psets/Pset_WindowCommon"
+    },
+    {
+      "mutant": "미정의 이름",
+      "expected": "E_UNDEFINED_NAME",
+      "level": "static",
+      "caught": true,
+      "codes": [
+        "E_UNDEFINED_NAME"
+      ],
+      "has_hint": true,
+      "path": "/derived/bad"
+    },
+    {
+      "mutant": "범위 안 제약 위반",
+      "expected": "E_CONSTRAINT",
+      "level": "static",
+      "caught": true,
+      "codes": [
+        "E_CONSTRAINT"
+      ],
+      "has_hint": true,
+      "path": "/constraints/0"
+    },
+    {
+      "mutant": "속성 접근",
+      "expected": "E_EXPR_FORBIDDEN",
+      "level": "static",
+      "caught": true,
+      "codes": [
+        "E_EXPR_FORBIDDEN"
+      ],
+      "has_hint": true,
+      "path": "/derived/bad"
+    },
+    {
+      "mutant": "스윕 법선 평행",
+      "expected": "E_SWEEP_NORMAL",
+      "level": "static",
+      "caught": true,
+      "codes": [
+        "E_SWEEP_NORMAL"
+      ],
+      "has_hint": true,
+      "path": "/solids/0/path/0"
+    },
+    {
+      "mutant": "식 구문 오류",
+      "expected": "E_EXPR_SYNTAX",
+      "level": "static",
+      "caught": true,
+      "codes": [
+        "E_EXPR_SYNTAX"
+      ],
+      "has_hint": true,
+      "path": "/derived/bad"
+    },
+    {
+      "mutant": "식이 낸 IFC 열거값 오류",
+      "expected": "E_IFC_ENUM",
+      "level": "full",
+      "caught": true,
+      "codes": [
+        "E_IFC_ENUM"
+      ],
+      "has_hint": true,
+      "path": "/ifc/attrs/OperationType"
+    },
+    {
+      "mutant": "알 수 없는 최상위 키",
+      "expected": "E_SCHEMA",
+      "level": "static",
+      "caught": true,
+      "codes": [
+        "E_SCHEMA"
+      ],
+      "has_hint": true,
+      "path": "/foo"
+    },
+    {
+      "mutant": "열거 기본값이 목록에 없음",
+      "expected": "E_SCHEMA",
+      "level": "static",
+      "caught": true,
+      "codes": [
+        "E_SCHEMA"
+      ],
+      "has_hint": false,
+      "path": "/params/swing"
+    },
+    {
+      "mutant": "예약 이름",
+      "expected": "E_NAME_RESERVED",
+      "level": "static",
+      "caught": true,
+      "codes": [
+        "E_NAME_RESERVED"
+      ],
+      "has_hint": true,
+      "path": "/derived/host_thickness"
+    },
+    {
+      "mutant": "이름 중복",
+      "expected": "E_NAME_DUPLICATE",
+      "level": "static",
+      "caught": true,
+      "codes": [
+        "E_NAME_DUPLICATE"
+      ],
+      "has_hint": true,
+      "path": "/derived/width"
+    },
+    {
+      "mutant": "자기 참조",
+      "expected": "E_CYCLE",
+      "level": "static",
+      "caught": true,
+      "codes": [
+        "E_CYCLE"
+      ],
+      "has_hint": true,
+      "path": "/derived/a"
+    },
+    {
+      "mutant": "좌표 단위 실수",
+      "expected": "E_GEOMETRY_RANGE",
+      "level": "static",
+      "caught": true,
+      "codes": [
+        "E_GEOMETRY_RANGE"
+      ],
+      "has_hint": true,
+      "path": "/solids/1/profile/u/1"
+    },
+    {
+      "mutant": "코드 실행 시도",
+      "expected": "E_EXPR_FUNC",
+      "level": "static",
+      "caught": true,
+      "codes": [
+        "E_EXPR_FUNC"
+      ],
+      "has_hint": true,
+      "path": "/derived/bad"
+    },
+    {
+      "mutant": "타입 불일치 식",
+      "expected": "E_EXPR_TYPE",
+      "level": "static",
+      "caught": true,
+      "codes": [
+        "E_EXPR_TYPE"
+      ],
+      "has_hint": false,
+      "path": "/derived/bad"
+    },
+    {
+      "mutant": "타입 속성셋이 인스턴스 참조",
+      "expected": "E_TYPE_REFERENCES_INSTANCE",
+      "level": "static",
+      "caught": true,
+      "codes": [
+        "E_TYPE_REFERENCES_INSTANCE"
+      ],
+      "has_hint": true,
+      "path": "/psets/Pset_DoorCommon/props/IsExternal"
+    },
+    {
+      "mutant": "퇴화 돌출 범위",
+      "expected": "E_DEGENERATE",
+      "level": "static",
+      "caught": true,
+      "codes": [
+        "E_DEGENERATE"
+      ],
+      "has_hint": true,
+      "path": "/solids/1/range"
+    },
+    {
+      "mutant": "퇴화 프로파일",
+      "expected": "E_DEGENERATE",
+      "level": "static",
+      "caught": true,
+      "codes": [
+        "E_DEGENERATE"
+      ],
+      "has_hint": true,
+      "path": "/solids/1/profile/u"
+    },
+    {
+      "mutant": "퇴화 호",
+      "expected": "E_DEGENERATE",
+      "level": "static",
+      "caught": true,
+      "codes": [
+        "E_DEGENERATE"
+      ],
+      "has_hint": true,
+      "path": "/plan_symbol/default/3"
+    },
+    {
+      "mutant": "파생값 순환",
+      "expected": "E_CYCLE",
+      "level": "static",
+      "caught": true,
+      "codes": [
+        "E_CYCLE"
+      ],
+      "has_hint": true,
+      "path": "/derived/a"
+    },
+    {
+      "mutant": "평면 기호 default 없음",
+      "expected": "E_PLAN_DEFAULT",
+      "level": "static",
+      "caught": true,
+      "codes": [
+        "E_PLAN_DEFAULT"
+      ],
+      "has_hint": true,
+      "path": "/plan_symbol"
+    },
+    {
+      "mutant": "평면 기호 축척 형식",
+      "expected": "E_PLAN_SCALE",
+      "level": "static",
+      "caught": true,
+      "codes": [
+        "E_PLAN_SCALE"
+      ],
+      "has_hint": true,
+      "path": "/plan_symbol/2:1"
+    },
+    {
+      "mutant": "표준 속성 값 종류 오류",
+      "expected": "E_PSET_VALUE_TYPE",
+      "level": "full",
+      "caught": true,
+      "codes": [
+        "E_PSET_VALUE_TYPE"
+      ],
+      "has_hint": false,
+      "path": "/psets/Pset_DoorCommon/props/IsExternal"
+    },
+    {
+      "mutant": "표준 속성 열거값 오류",
+      "expected": "E_PSET_ENUM",
+      "level": "full",
+      "caught": true,
+      "codes": [
+        "E_PSET_ENUM"
+      ],
+      "has_hint": true,
+      "path": "/psets/Pset_DoorCommon/props/Status"
+    },
+    {
+      "mutant": "표준 속성 이름 오류",
+      "expected": "E_PSET_PROP_UNKNOWN",
+      "level": "full",
+      "caught": true,
+      "codes": [
+        "E_PSET_PROP_UNKNOWN"
+      ],
+      "has_hint": true,
+      "path": "/psets/Pset_DoorCommon/props/FireRatng"
+    },
+    {
+      "mutant": "표준이 아닌 Pset_",
+      "expected": "E_PSET_NOT_STANDARD",
+      "level": "full",
+      "caught": true,
+      "codes": [
+        "E_PSET_NOT_STANDARD"
+      ],
+      "has_hint": true,
+      "path": "/psets/Pset_MyStuff"
+    },
+    {
+      "mutant": "호스트 없이 호스트 문맥",
+      "expected": "E_HOST_CONTEXT",
+      "level": "static",
+      "caught": true,
+      "codes": [
+        "E_HOST_CONTEXT"
+      ],
+      "has_hint": true,
+      "path": "/constraints/1/expr"
+    }
+  ]
+}

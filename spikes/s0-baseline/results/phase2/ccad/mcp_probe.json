@@ -1,0 +1,2596 @@
+{
+ "calls": [
+  {
+   "tool": "project_open",
+   "args": {
+    "path": "/out/native.ccad"
+   },
+   "sec": 0.01,
+   "isError": false,
+   "types": [
+    "text"
+   ],
+   "structured": true,
+   "chars": 292,
+   "head": "{\n  \"address\": \"\",\n  \"author\": \"\",\n  \"can_redo\": null,\n  \"can_undo\": null,\n  \"client\": \"\",\n  \"elements\": 57,\n  \"levels\": 3,\n  \"materials\": 13,\n  \"name\": \"New Project\",\n  \"number\": \"0001\",\n  \"path\": \"/"
+  },
+  {
+   "tool": "elements_move",
+   "args": {
+    "ids": [
+     101
+    ],
+    "delta": [
+     0,
+     0.6
+    ]
+   },
+   "sec": 0.01,
+   "isError": false,
+   "types": [
+    "text"
+   ],
+   "structured": true,
+   "chars": 81,
+   "head": "{\n  \"changed\": [\n    101,\n    115,\n    120,\n    121\n  ],\n  \"pinned_skipped\": []\n}"
+  },
+  {
+   "tool": "ifc_export",
+   "args": {
+    "path": "/out/mcp_e1.ifc"
+   },
+   "sec": 0.01,
+   "isError": false,
+   "types": [
+    "text"
+   ],
+   "structured": true,
+   "chars": 31,
+   "head": "{\n  \"path\": \"/out/mcp_e1.ifc\"\n}"
+  }
+ ],
+ "startup_sec": 0.29,
+ "server": [
+  "constructcad",
+  "0.9.1"
+ ],
+ "protocol": "2025-06-18",
+ "n_tools": 211,
+ "tools": [
+  {
+   "name": "project_new",
+   "annotations": {
+    "readOnlyHint": false,
+    "destructiveHint": true,
+    "idempotentHint": false,
+    "openWorldHint": false
+   },
+   "schema_bytes": 67,
+   "desc_chars": 70
+  },
+  {
+   "name": "project_open",
+   "annotations": {
+    "readOnlyHint": false,
+    "destructiveHint": true,
+    "idempotentHint": false,
+    "openWorldHint": false
+   },
+   "schema_bytes": 157,
+   "desc_chars": 132
+  },
+  {
+   "name": "project_save",
+   "annotations": {
+    "readOnlyHint": false,
+    "destructiveHint": true,
+    "idempotentHint": false,
+    "openWorldHint": false
+   },
+   "schema_bytes": 196,
+   "desc_chars": 68
+  },
+  {
+   "name": "project_info",
+   "annotations": {
+    "readOnlyHint": true,
+    "destructiveHint": false,
+    "idempotentHint": true,
+    "openWorldHint": false
+   },
+   "schema_bytes": 67,
+   "desc_chars": 52
+  },
+  {
+   "name": "project_info_set",
+   "annotations": {
+    "readOnlyHint": false,
+    "destructiveHint": false,
+    "idempotentHint": false,
+    "openWorldHint": false
+   },
+   "schema_bytes": 523,
+   "desc_chars": 52
+  },
+  {
+   "name": "undo",
+   "annotations": {
+    "readOnlyHint": false,
+    "destructiveHint": false,
+    "idempotentHint": false,
+    "openWorldHint": false
+   },
+   "schema_bytes": 67,
+   "desc_chars": 19
+  },
+  {
+   "name": "redo",
+   "annotations": {
+    "readOnlyHint": false,
+    "destructiveHint": false,
+    "idempotentHint": false,
+    "openWorldHint": false
+   },
+   "schema_bytes": 67,
+   "desc_chars": 26
+  },
+  {
+   "name": "units_get",
+   "annotations": {
+    "readOnlyHint": true,
+    "destructiveHint": false,
+    "idempotentHint": true,
+    "openWorldHint": false
+   },
+   "schema_bytes": 67,
+   "desc_chars": 80
+  },
+  {
+   "name": "units_set",
+   "annotations": {
+    "readOnlyHint": false,
+    "destructiveHint": false,
+    "idempotentHint": false,
+    "openWorldHint": false
+   },
+   "schema_bytes": 345,
+   "desc_chars": 331
+  },
+  {
+   "name": "language_set",
+   "annotations": {
+    "readOnlyHint": false,
+    "destructiveHint": false,
+    "idempotentHint": false,
+    "openWorldHint": false
+   },
+   "schema_bytes": 236,
+   "desc_chars": 134
+  },
+  {
+   "name": "ifc_import",
+   "annotations": {
+    "readOnlyHint": false,
+    "destructiveHint": true,
+    "idempotentHint": false,
+    "openWorldHint": false
+   },
+   "schema_bytes": 156,
+   "desc_chars": 137
+  },
+  {
+   "name": "skp_import",
+   "annotations": {
+    "readOnlyHint": false,
+    "destructiveHint": false,
+    "idempotentHint": false,
+    "openWorldHint": false
+   },
+   "schema_bytes": 867,
+   "desc_chars": 523
+  },
+  {
+   "name": "skp_component_load",
+   "annotations": {
+    "readOnlyHint": false,
+    "destructiveHint": false,
+    "idempotentHint": false,
+    "openWorldHint": false
+   },
+   "schema_bytes": 156,
+   "desc_chars": 250
+  },
+  {
+   "name": "ifc_export",
+   "annotations": {
+    "readOnlyHint": false,
+    "destructiveHint": true,
+    "idempotentHint": false,
+    "openWorldHint": false
+   },
+   "schema_bytes": 165,
+   "desc_chars": 27
+  },
+  {
+   "name": "sheet_export",
+   "annotations": {
+    "readOnlyHint": false,
+    "destructiveHint": true,
+    "idempotentHint": false,
+    "openWorldHint": false
+   },
+   "schema_bytes": 421,
+   "desc_chars": 110
+  },
+  {
+   "name": "view_export",
+   "annotations": {
+    "readOnlyHint": false,
+    "destructiveHint": true,
+    "idempotentHint": false,
+    "openWorldHint": false
+   },
+   "schema_bytes": 576,
+   "desc_chars": 564
+  },
+  {
+   "name": "schedule_export_csv",
+   "annotations": {
+    "readOnlyHint": false,
+    "destructiveHint": true,
+    "idempotentHint": false,
+    "openWorldHint": false
+   },
+   "schema_bytes": 313,
+   "desc_chars": 81
+  },
+  {
+   "name": "component_load",
+   "annotations": {
+    "readOnlyHint": false,
+    "destructiveHint": false,
+    "idempotentHint": false,
+    "openWorldHint": false
+   },
+   "schema_bytes": 158,
+   "desc_chars": 81
+  },
+  {
+   "name": "component_library_list",
+   "annotations": {
+    "readOnlyHint": false,
+    "destructiveHint": true,
+    "idempotentHint": false,
+    "openWorldHint": false
+   },
+   "schema_bytes": 291,
+   "desc_chars": 329
+  },
+  {
+   "name": "component_save",
+   "annotations": {
+    "readOnlyHint": false,
+    "destructiveHint": true,
+    "idempotentHint": false,
+    "openWorldHint": false
+   },
+   "schema_bytes": 293,
+   "desc_chars": 77
+  },
+  {
+   "name": "cad_import",
+   "annotations": {
+    "readOnlyHint": false,
+    "destructiveHint": false,
+    "idempotentHint": false,
+    "openWorldHint": false
+   },
+   "schema_bytes": 1723,
+   "desc_chars": 610
+  },
+  {
+   "name": "image_import",
+   "annotations": {
+    "readOnlyHint": false,
+    "destructiveHint": false,
+    "idempotentHint": false,
+    "openWorldHint": false
+   },
+   "schema_bytes": 1384,
+   "desc_chars": 585
+  },
+  {
+   "name": "cad_layers",
+   "annotations": {
+    "readOnlyHint": true,
+    "destructiveHint": false,
+    "idempotentHint": true,
+    "openWorldHint": false
+   },
+   "schema_bytes": 193,
+   "desc_chars": 139
+  },
+  {
+   "name": "cad_layers_set",
+   "annotations": {
+    "readOnlyHint": false,
+    "destructiveHint": false,
+    "idempotentHint": false,
+    "openWorldHint": false
+   },
+   "schema_bytes": 434,
+   "desc_chars": 89
+  },
+  {
+   "name": "categories_list",
+   "annotations": {
+    "readOnlyHint": true,
+    "destructiveHint": false,
+    "idempotentHint": true,
+    "openWorldHint": false
+   },
+   "schema_bytes": 67,
+   "desc_chars": 85
+  },
+  {
+   "name": "levels_list",
+   "annotations": {
+    "readOnlyHint": true,
+    "destructiveHint": false,
+    "idempotentHint": true,
+    "openWorldHint": false
+   },
+   "schema_bytes": 67,
+   "desc_chars": 55
+  },
+  {
+   "name": "types_list",
+   "annotations": {
+    "readOnlyHint": true,
+    "destructiveHint": false,
+    "idempotentHint": true,
+    "openWorldHint": false
+   },
+   "schema_bytes": 193,
+   "desc_chars": 34
+  },
+  {
+   "name": "type_get",
+   "annotations": {
+    "readOnlyHint": true,
+    "destructiveHint": false,
+    "idempotentHint": true,
+    "openWorldHint": false
+   },
+   "schema_bytes": 218,
+   "desc_chars": 95
+  },
+  {
+   "name": "elements_list",
+   "annotations": {
+    "readOnlyHint": true,
+    "destructiveHint": false,
+    "idempotentHint": true,
+    "openWorldHint": false
+   },
+   "schema_bytes": 1046,
+   "desc_chars": 171
+  },
+  {
+   "name": "element_get",
+   "annotations": {
+    "readOnlyHint": true,
+    "destructiveHint": false,
+    "idempotentHint": true,
+    "openWorldHint": false
+   },
+   "schema_bytes": 176,
+   "desc_chars": 222
+  },
+  {
+   "name": "groups_list",
+   "annotations": {
+    "readOnlyHint": true,
+    "destructiveHint": false,
+    "idempotentHint": true,
+    "openWorldHint": false
+   },
+   "schema_bytes": 67,
+   "desc_chars": 40
+  },
+  {
+   "name": "measure",
+   "annotations": {
+    "readOnlyHint": true,
+    "destructiveHint": false,
+    "idempotentHint": true,
+    "openWorldHint": false
+   },
+   "schema_bytes": 907,
+   "desc_chars": 301
+  },
+  {
+   "name": "views_list",
+   "annotations": {
+    "readOnlyHint": true,
+    "destructiveHint": false,
+    "idempotentHint": true,
+    "openWorldHint": false
+   },
+   "schema_bytes": 240,
+   "desc_chars": 111
+  },
+  {
+   "name": "view_get",
+   "annotations": {
+    "readOnlyHint": true,
+    "destructiveHint": false,
+    "idempotentHint": true,
+    "openWorldHint": false
+   },
+   "schema_bytes": 218,
+   "desc_chars": 68
+  },
+  {
+   "name": "materials_list",
+   "annotations": {
+    "readOnlyHint": true,
+    "destructiveHint": false,
+    "idempotentHint": true,
+    "openWorldHint": false
+   },
+   "schema_bytes": 67,
+   "desc_chars": 56
+  },
+  {
+   "name": "material_get",
+   "annotations": {
+    "readOnlyHint": true,
+    "destructiveHint": false,
+    "idempotentHint": true,
+    "openWorldHint": false
+   },
+   "schema_bytes": 255,
+   "desc_chars": 62
+  },
+  {
+   "name": "schedule_table",
+   "annotations": {
+    "readOnlyHint": true,
+    "destructiveHint": false,
+    "idempotentHint": true,
+    "openWorldHint": false
+   },
+   "schema_bytes": 227,
+   "desc_chars": 118
+  },
+  {
+   "name": "wall_create",
+   "annotations": {
+    "readOnlyHint": false,
+    "destructiveHint": false,
+    "idempotentHint": false,
+    "openWorldHint": false
+   },
+   "schema_bytes": 2879,
+   "desc_chars": 200
+  },
+  {
+   "name": "door_create",
+   "annotations": {
+    "readOnlyHint": false,
+    "destructiveHint": false,
+    "idempotentHint": false,
+    "openWorldHint": false
+   },
+   "schema_bytes": 1287,
+   "desc_chars": 82
+  },
+  {
+   "name": "window_create",
+   "annotations": {
+    "readOnlyHint": false,
+    "destructiveHint": false,
+    "idempotentHint": false,
+    "openWorldHint": false
+   },
+   "schema_bytes": 1287,
+   "desc_chars": 84
+  },
+  {
+   "name": "floor_create",
+   "annotations": {
+    "readOnlyHint": false,
+    "destructiveHint": false,
+    "idempotentHint": false,
+    "openWorldHint": false
+   },
+   "schema_bytes": 6619,
+   "desc_chars": 59
+  },
+  {
+   "name": "floor_opening_add",
+   "annotations": {
+    "readOnlyHint": false,
+    "destructiveHint": false,
+    "idempotentHint": false,
+    "openWorldHint": false
+   },
+   "schema_bytes": 383,
+   "desc_chars": 118
+  },
+  {
+   "name": "floor_opening_remove",
+   "annotations": {
+    "readOnlyHint": false,
+    "destructiveHint": false,
+    "idempotentHint": false,
+    "openWorldHint": false
+   },
+   "schema_bytes": 286,
+   "desc_chars": 71
+  },
+  {
+   "name": "ceiling_create",
+   "annotations": {
+    "readOnlyHint": false,
+    "destructiveHint": false,
+    "idempotentHint": false,
+    "openWorldHint": false
+   },
+   "schema_bytes": 6311,
+   "desc_chars": 70
+  },
+  {
+   "name": "roof_create",
+   "annotations": {
+    "readOnlyHint": false,
+    "destructiveHint": false,
+    "idempotentHint": false,
+    "openWorldHint": false
+   },
+   "schema_bytes": 6801,
+   "desc_chars": 126
+  },
+  {
+   "name": "roof_edge_set",
+   "annotations": {
+    "readOnlyHint": false,
+    "destructiveHint": false,
+    "idempotentHint": false,
+    "openWorldHint": false
+   },
+   "schema_bytes": 464,
+   "desc_chars": 221
+  },
+  {
+   "name": "roof_opening_remove",
+   "annotations": {
+    "readOnlyHint": false,
+    "destructiveHint": false,
+    "idempotentHint": false,
+    "openWorldHint": false
+   },
+   "schema_bytes": 285,
+   "desc_chars": 66
+  },
+  {
+   "name": "room_create",
+   "annotations": {
+    "readOnlyHint": false,
+    "destructiveHint": false,
+    "idempotentHint": false,
+    "openWorldHint": false
+   },
+   "schema_bytes": 891,
+   "desc_chars": 90
+  },
+  {
+   "name": "grid_create",
+   "annotations": {
+    "readOnlyHint": false,
+    "destructiveHint": false,
+    "idempotentHint": false,
+    "openWorldHint": false
+   },
+   "schema_bytes": 800,
+   "desc_chars": 348
+  },
+  {
+   "name": "column_create",
+   "annotations": {
+    "readOnlyHint": false,
+    "destructiveHint": false,
+    "idempotentHint": false,
+    "openWorldHint": false
+   },
+   "schema_bytes": 1721,
+   "desc_chars": 81
+  },
+  {
+   "name": "beam_create",
+   "annotations": {
+    "readOnlyHint": false,
+    "destructiveHint": false,
+    "idempotentHint": false,
+    "openWorldHint": false
+   },
+   "schema_bytes": 1674,
+   "desc_chars": 177
+  },
+  {
+   "name": "columns_at_grids",
+   "annotations": {
+    "readOnlyHint": false,
+    "destructiveHint": false,
+    "idempotentHint": false,
+    "openWorldHint": false
+   },
+   "schema_bytes": 1641,
+   "desc_chars": 179
+  },
+  {
+   "name": "beams_on_grids",
+   "annotations": {
+    "readOnlyHint": false,
+    "destructiveHint": false,
+    "idempotentHint": false,
+    "openWorldHint": false
+   },
+   "schema_bytes": 981,
+   "desc_chars": 173
+  },
+  {
+   "name": "beams_between_columns",
+   "annotations": {
+    "readOnlyHint": false,
+    "destructiveHint": false,
+    "idempotentHint": false,
+    "openWorldHint": false
+   },
+   "schema_bytes": 724,
+   "desc_chars": 141
+  },
+  {
+   "name": "slab_join_supports",
+   "annotations": {
+    "readOnlyHint": false,
+    "destructiveHint": false,
+    "idempotentHint": false,
+    "openWorldHint": false
+   },
+   "schema_bytes": 532,
+   "desc_chars": 303
+  },
+  {
+   "name": "structure_number",
+   "annotations": {
+    "readOnlyHint": false,
+    "destructiveHint": false,
+    "idempotentHint": false,
+    "openWorldHint": false
+   },
+   "schema_bytes": 563,
+   "desc_chars": 348
+  },
+  {
+   "name": "brace_create",
+   "annotations": {
+    "readOnlyHint": false,
+    "destructiveHint": false,
+    "idempotentHint": false,
+    "openWorldHint": false
+   },
+   "schema_bytes": 981,
+   "desc_chars": 153
+  },
+  {
+   "name": "braces_between_columns",
+   "annotations": {
+    "readOnlyHint": false,
+    "destructiveHint": false,
+    "idempotentHint": false,
+    "openWorldHint": false
+   },
+   "schema_bytes": 619,
+   "desc_chars": 197
+  },
+  {
+   "name": "truss_create",
+   "annotations": {
+    "readOnlyHint": false,
+    "destructiveHint": false,
+    "idempotentHint": false,
+    "openWorldHint": false
+   },
+   "schema_bytes": 2190,
+   "desc_chars": 331
+  },
+  {
+   "name": "rebar_create",
+   "annotations": {
+    "readOnlyHint": false,
+    "destructiveHint": false,
+    "idempotentHint": false,
+    "openWorldHint": false
+   },
+   "schema_bytes": 1051,
+   "desc_chars": 225
+  },
+  {
+   "name": "rebar_typical",
+   "annotations": {
+    "readOnlyHint": false,
+    "destructiveHint": false,
+    "idempotentHint": false,
+    "openWorldHint": false
+   },
+   "schema_bytes": 547,
+   "desc_chars": 312
+  },
+  {
+   "name": "analytical_model",
+   "annotations": {
+    "readOnlyHint": true,
+    "destructiveHint": false,
+    "idempotentHint": true,
+    "openWorldHint": false
+   },
+   "schema_bytes": 67,
+   "desc_chars": 260
+  },
+  {
+   "name": "analytical_export",
+   "annotations": {
+    "readOnlyHint": false,
+    "destructiveHint": true,
+    "idempotentHint": false,
+    "openWorldHint": false
+   },
+   "schema_bytes": 166,
+   "desc_chars": 77
+  },
+  {
+   "name": "footing_create",
+   "annotations": {
+    "readOnlyHint": false,
+    "destructiveHint": false,
+    "idempotentHint": false,
+    "openWorldHint": false
+   },
+   "schema_bytes": 1098,
+   "desc_chars": 96
+  },
+  {
+   "name": "strip_footing_create",
+   "annotations": {
+    "readOnlyHint": false,
+    "destructiveHint": false,
+    "idempotentHint": false,
+    "openWorldHint": false
+   },
+   "schema_bytes": 1141,
+   "desc_chars": 170
+  },
+  {
+   "name": "foundation_slab_create",
+   "annotations": {
+    "readOnlyHint": false,
+    "destructiveHint": false,
+    "idempotentHint": false,
+    "openWorldHint": false
+   },
+   "schema_bytes": 6311,
+   "desc_chars": 139
+  },
+  {
+   "name": "footings_under_columns",
+   "annotations": {
+    "readOnlyHint": false,
+    "destructiveHint": false,
+    "idempotentHint": false,
+    "openWorldHint": false
+   },
+   "schema_bytes": 854,
+   "desc_chars": 183
+  },
+  {
+   "name": "strip_footings_under_walls",
+   "annotations": {
+    "readOnlyHint": false,
+    "destructiveHint": false,
+    "idempotentHint": false,
+    "openWorldHint": false
+   },
+   "schema_bytes": 850,
+   "desc_chars": 210
+  },
+  {
+   "name": "stair_create",
+   "annotations": {
+    "readOnlyHint": false,
+    "destructiveHint": false,
+    "idempotentHint": false,
+    "openWorldHint": false
+   },
+   "schema_bytes": 3750,
+   "desc_chars": 555
+  },
+  {
+   "name": "stair_check",
+   "annotations": {
+    "readOnlyHint": true,
+    "destructiveHint": false,
+    "idempotentHint": true,
+    "openWorldHint": false
+   },
+   "schema_bytes": 182,
+   "desc_chars": 433
+  },
+  {
+   "name": "stair_railings_add",
+   "annotations": {
+    "readOnlyHint": false,
+    "destructiveHint": false,
+    "idempotentHint": false,
+    "openWorldHint": false
+   },
+   "schema_bytes": 1042,
+   "desc_chars": 188
+  },
+  {
+   "name": "railing_host_set",
+   "annotations": {
+    "readOnlyHint": false,
+    "destructiveHint": false,
+    "idempotentHint": false,
+    "openWorldHint": false
+   },
+   "schema_bytes": 708,
+   "desc_chars": 347
+  },
+  {
+   "name": "ramp_create",
+   "annotations": {
+    "readOnlyHint": false,
+    "destructiveHint": false,
+    "idempotentHint": false,
+    "openWorldHint": false
+   },
+   "schema_bytes": 2391,
+   "desc_chars": 360
+  },
+  {
+   "name": "ramp_check",
+   "annotations": {
+    "readOnlyHint": true,
+    "destructiveHint": false,
+    "idempotentHint": true,
+    "openWorldHint": false
+   },
+   "schema_bytes": 181,
+   "desc_chars": 154
+  },
+  {
+   "name": "roof_check",
+   "annotations": {
+    "readOnlyHint": true,
+    "destructiveHint": false,
+    "idempotentHint": true,
+    "openWorldHint": false
+   },
+   "schema_bytes": 181,
+   "desc_chars": 350
+  },
+  {
+   "name": "mass_create",
+   "annotations": {
+    "readOnlyHint": false,
+    "destructiveHint": false,
+    "idempotentHint": false,
+    "openWorldHint": false
+   },
+   "schema_bytes": 6933,
+   "desc_chars": 294
+  },
+  {
+   "name": "sketch_get",
+   "annotations": {
+    "readOnlyHint": true,
+    "destructiveHint": false,
+    "idempotentHint": true,
+    "openWorldHint": false
+   },
+   "schema_bytes": 176,
+   "desc_chars": 153
+  },
+  {
+   "name": "sketch_set",
+   "annotations": {
+    "readOnlyHint": false,
+    "destructiveHint": false,
+    "idempotentHint": false,
+    "openWorldHint": false
+   },
+   "schema_bytes": 5002,
+   "desc_chars": 232
+  },
+  {
+   "name": "mass_floors_set",
+   "annotations": {
+    "readOnlyHint": false,
+    "destructiveHint": false,
+    "idempotentHint": false,
+    "openWorldHint": false
+   },
+   "schema_bytes": 492,
+   "desc_chars": 151
+  },
+  {
+   "name": "mass_floors",
+   "annotations": {
+    "readOnlyHint": true,
+    "destructiveHint": false,
+    "idempotentHint": true,
+    "openWorldHint": false
+   },
+   "schema_bytes": 181,
+   "desc_chars": 134
+  },
+  {
+   "name": "mass_type_create",
+   "annotations": {
+    "readOnlyHint": false,
+    "destructiveHint": false,
+    "idempotentHint": false,
+    "openWorldHint": false
+   },
+   "schema_bytes": 277,
+   "desc_chars": 80
+  },
+  {
+   "name": "sweep_create",
+   "annotations": {
+    "readOnlyHint": false,
+    "destructiveHint": false,
+    "idempotentHint": false,
+    "openWorldHint": false
+   },
+   "schema_bytes": 1248,
+   "desc_chars": 299
+  },
+  {
+   "name": "sweep_type_create",
+   "annotations": {
+    "readOnlyHint": false,
+    "destructiveHint": false,
+    "idempotentHint": false,
+    "openWorldHint": false
+   },
+   "schema_bytes": 5403,
+   "desc_chars": 266
+  },
+  {
+   "name": "sweep_profile_set",
+   "annotations": {
+    "readOnlyHint": false,
+    "destructiveHint": false,
+    "idempotentHint": false,
+    "openWorldHint": false
+   },
+   "schema_bytes": 5259,
+   "desc_chars": 219
+  },
+  {
+   "name": "shaft_create",
+   "annotations": {
+    "readOnlyHint": false,
+    "destructiveHint": false,
+    "idempotentHint": false,
+    "openWorldHint": false
+   },
+   "schema_bytes": 6512,
+   "desc_chars": 389
+  },
+  {
+   "name": "shaft_type_create",
+   "annotations": {
+    "readOnlyHint": false,
+    "destructiveHint": false,
+    "idempotentHint": false,
+    "openWorldHint": false
+   },
+   "schema_bytes": 186,
+   "desc_chars": 78
+  },
+  {
+   "name": "mass_face_move",
+   "annotations": {
+    "readOnlyHint": false,
+    "destructiveHint": false,
+    "idempotentHint": false,
+    "openWorldHint": false
+   },
+   "schema_bytes": 556,
+   "desc_chars": 326
+  },
+  {
+   "name": "mass_walls_create",
+   "annotations": {
+    "readOnlyHint": false,
+    "destructiveHint": false,
+    "idempotentHint": false,
+    "openWorldHint": false
+   },
+   "schema_bytes": 683,
+   "desc_chars": 274
+  },
+  {
+   "name": "mass_slabs_create",
+   "annotations": {
+    "readOnlyHint": false,
+    "destructiveHint": false,
+    "idempotentHint": false,
+    "openWorldHint": false
+   },
+   "schema_bytes": 808,
+   "desc_chars": 148
+  },
+  {
+   "name": "mass_roof_create",
+   "annotations": {
+    "readOnlyHint": false,
+    "destructiveHint": false,
+    "idempotentHint": false,
+    "openWorldHint": false
+   },
+   "schema_bytes": 646,
+   "desc_chars": 120
+  },
+  {
+   "name": "ramp_type_create",
+   "annotations": {
+    "readOnlyHint": false,
+    "destructiveHint": false,
+    "idempotentHint": false,
+    "openWorldHint": false
+   },
+   "schema_bytes": 879,
+   "desc_chars": 170
+  },
+  {
+   "name": "railing_create",
+   "annotations": {
+    "readOnlyHint": false,
+    "destructiveHint": false,
+    "idempotentHint": false,
+    "openWorldHint": false
+   },
+   "schema_bytes": 995,
+   "desc_chars": 50
+  },
+  {
+   "name": "component_place",
+   "annotations": {
+    "readOnlyHint": false,
+    "destructiveHint": false,
+    "idempotentHint": false,
+    "openWorldHint": false
+   },
+   "schema_bytes": 1279,
+   "desc_chars": 280
+  },
+  {
+   "name": "pipe_create",
+   "annotations": {
+    "readOnlyHint": false,
+    "destructiveHint": false,
+    "idempotentHint": false,
+    "openWorldHint": false
+   },
+   "schema_bytes": 1779,
+   "desc_chars": 468
+  },
+  {
+   "name": "conduit_create",
+   "annotations": {
+    "readOnlyHint": false,
+    "destructiveHint": false,
+    "idempotentHint": false,
+    "openWorldHint": false
+   },
+   "schema_bytes": 1634,
+   "desc_chars": 277
+  },
+  {
+   "name": "systems_list",
+   "annotations": {
+    "readOnlyHint": true,
+    "destructiveHint": false,
+    "idempotentHint": true,
+    "openWorldHint": false
+   },
+   "schema_bytes": 67,
+   "desc_chars": 203
+  },
+  {
+   "name": "system_create",
+   "annotations": {
+    "readOnlyHint": false,
+    "destructiveHint": false,
+    "idempotentHint": false,
+    "openWorldHint": false
+   },
+   "schema_bytes": 950,
+   "desc_chars": 364
+  },
+  {
+   "name": "system_set",
+   "annotations": {
+    "readOnlyHint": false,
+    "destructiveHint": false,
+    "idempotentHint": false,
+    "openWorldHint": false
+   },
+   "schema_bytes": 288,
+   "desc_chars": 145
+  },
+  {
+   "name": "system_delete",
+   "annotations": {
+    "readOnlyHint": false,
+    "destructiveHint": true,
+    "idempotentHint": false,
+    "openWorldHint": false
+   },
+   "schema_bytes": 230,
+   "desc_chars": 85
+  },
+  {
+   "name": "system_assign",
+   "annotations": {
+    "readOnlyHint": false,
+    "destructiveHint": false,
+    "idempotentHint": false,
+    "openWorldHint": false
+   },
+   "schema_bytes": 478,
+   "desc_chars": 194
+  },
+  {
+   "name": "circuit_loads",
+   "annotations": {
+    "readOnlyHint": true,
+    "destructiveHint": false,
+    "idempotentHint": true,
+    "openWorldHint": false
+   },
+   "schema_bytes": 230,
+   "desc_chars": 156
+  },
+  {
+   "name": "mep_fittings",
+   "annotations": {
+    "readOnlyHint": true,
+    "destructiveHint": false,
+    "idempotentHint": true,
+    "openWorldHint": false
+   },
+   "schema_bytes": 348,
+   "desc_chars": 130
+  },
+  {
+   "name": "mep_connect",
+   "annotations": {
+    "readOnlyHint": false,
+    "destructiveHint": false,
+    "idempotentHint": false,
+    "openWorldHint": false
+   },
+   "schema_bytes": 522,
+   "desc_chars": 743
+  },
+  {
+   "name": "mep_sizing",
+   "annotations": {
+    "readOnlyHint": true,
+    "destructiveHint": false,
+    "idempotentHint": true,
+    "openWorldHint": false
+   },
+   "schema_bytes": 67,
+   "desc_chars": 346
+  },
+  {
+   "name": "mep_size_apply",
+   "annotations": {
+    "readOnlyHint": false,
+    "destructiveHint": false,
+    "idempotentHint": false,
+    "openWorldHint": false
+   },
+   "schema_bytes": 173,
+   "desc_chars": 169
+  },
+  {
+   "name": "elements_delete",
+   "annotations": {
+    "readOnlyHint": false,
+    "destructiveHint": true,
+    "idempotentHint": false,
+    "openWorldHint": false
+   },
+   "schema_bytes": 207,
+   "desc_chars": 82
+  },
+  {
+   "name": "elements_move",
+   "annotations": {
+    "readOnlyHint": false,
+    "destructiveHint": false,
+    "idempotentHint": false,
+    "openWorldHint": false
+   },
+   "schema_bytes": 376,
+   "desc_chars": 110
+  },
+  {
+   "name": "elements_copy",
+   "annotations": {
+    "readOnlyHint": false,
+    "destructiveHint": false,
+    "idempotentHint": false,
+    "openWorldHint": false
+   },
+   "schema_bytes": 571,
+   "desc_chars": 97
+  },
+  {
+   "name": "elements_rotate",
+   "annotations": {
+    "readOnlyHint": false,
+    "destructiveHint": false,
+    "idempotentHint": false,
+    "openWorldHint": false
+   },
+   "schema_bytes": 643,
+   "desc_chars": 138
+  },
+  {
+   "name": "elements_mirror",
+   "annotations": {
+    "readOnlyHint": false,
+    "destructiveHint": false,
+    "idempotentHint": false,
+    "openWorldHint": false
+   },
+   "schema_bytes": 724,
+   "desc_chars": 152
+  },
+  {
+   "name": "elements_pin",
+   "annotations": {
+    "readOnlyHint": false,
+    "destructiveHint": false,
+    "idempotentHint": false,
+    "openWorldHint": false
+   },
+   "schema_bytes": 299,
+   "desc_chars": 61
+  },
+  {
+   "name": "element_flip",
+   "annotations": {
+    "readOnlyHint": false,
+    "destructiveHint": false,
+    "idempotentHint": false,
+    "openWorldHint": false
+   },
+   "schema_bytes": 392,
+   "desc_chars": 97
+  },
+  {
+   "name": "elements_turn",
+   "annotations": {
+    "readOnlyHint": false,
+    "destructiveHint": false,
+    "idempotentHint": false,
+    "openWorldHint": false
+   },
+   "schema_bytes": 207,
+   "desc_chars": 217
+  },
+  {
+   "name": "elements_export",
+   "annotations": {
+    "readOnlyHint": true,
+    "destructiveHint": false,
+    "idempotentHint": true,
+    "openWorldHint": false
+   },
+   "schema_bytes": 207,
+   "desc_chars": 193
+  },
+  {
+   "name": "elements_paste",
+   "annotations": {
+    "readOnlyHint": false,
+    "destructiveHint": false,
+    "idempotentHint": false,
+    "openWorldHint": false
+   },
+   "schema_bytes": 679,
+   "desc_chars": 197
+  },
+  {
+   "name": "wall_join",
+   "annotations": {
+    "readOnlyHint": false,
+    "destructiveHint": false,
+    "idempotentHint": false,
+    "openWorldHint": false
+   },
+   "schema_bytes": 372,
+   "desc_chars": 220
+  },
+  {
+   "name": "wall_attach",
+   "annotations": {
+    "readOnlyHint": false,
+    "destructiveHint": false,
+    "idempotentHint": false,
+    "openWorldHint": false
+   },
+   "schema_bytes": 473,
+   "desc_chars": 284
+  },
+  {
+   "name": "geometry_join",
+   "annotations": {
+    "readOnlyHint": false,
+    "destructiveHint": false,
+    "idempotentHint": false,
+    "openWorldHint": false
+   },
+   "schema_bytes": 302,
+   "desc_chars": 471
+  },
+  {
+   "name": "geometry_unjoin",
+   "annotations": {
+    "readOnlyHint": false,
+    "destructiveHint": false,
+    "idempotentHint": false,
+    "openWorldHint": false
+   },
+   "schema_bytes": 302,
+   "desc_chars": 76
+  },
+  {
+   "name": "group_create",
+   "annotations": {
+    "readOnlyHint": false,
+    "destructiveHint": false,
+    "idempotentHint": false,
+    "openWorldHint": false
+   },
+   "schema_bytes": 331,
+   "desc_chars": 133
+  },
+  {
+   "name": "group_ungroup",
+   "annotations": {
+    "readOnlyHint": false,
+    "destructiveHint": false,
+    "idempotentHint": false,
+    "openWorldHint": false
+   },
+   "schema_bytes": 229,
+   "desc_chars": 43
+  },
+  {
+   "name": "trim_corner",
+   "annotations": {
+    "readOnlyHint": false,
+    "destructiveHint": false,
+    "idempotentHint": false,
+    "openWorldHint": false
+   },
+   "schema_bytes": 626,
+   "desc_chars": 200
+  },
+  {
+   "name": "trim_extend",
+   "annotations": {
+    "readOnlyHint": false,
+    "destructiveHint": false,
+    "idempotentHint": false,
+    "openWorldHint": false
+   },
+   "schema_bytes": 497,
+   "desc_chars": 180
+  },
+  {
+   "name": "element_split",
+   "annotations": {
+    "readOnlyHint": false,
+    "destructiveHint": false,
+    "idempotentHint": false,
+    "openWorldHint": false
+   },
+   "schema_bytes": 360,
+   "desc_chars": 78
+  },
+  {
+   "name": "element_offset",
+   "annotations": {
+    "readOnlyHint": false,
+    "destructiveHint": false,
+    "idempotentHint": false,
+    "openWorldHint": false
+   },
+   "schema_bytes": 346,
+   "desc_chars": 86
+  },
+  {
+   "name": "element_align",
+   "annotations": {
+    "readOnlyHint": false,
+    "destructiveHint": false,
+    "idempotentHint": false,
+    "openWorldHint": false
+   },
+   "schema_bytes": 1084,
+   "desc_chars": 547
+  },
+  {
+   "name": "element_move_end",
+   "annotations": {
+    "readOnlyHint": false,
+    "destructiveHint": false,
+    "idempotentHint": false,
+    "openWorldHint": false
+   },
+   "schema_bytes": 406,
+   "desc_chars": 63
+  },
+  {
+   "name": "grids_align_ends",
+   "annotations": {
+    "readOnlyHint": false,
+    "destructiveHint": false,
+    "idempotentHint": false,
+    "openWorldHint": false
+   },
+   "schema_bytes": 553,
+   "desc_chars": 325
+  },
+  {
+   "name": "element_set",
+   "annotations": {
+    "readOnlyHint": false,
+    "destructiveHint": false,
+    "idempotentHint": false,
+    "openWorldHint": false
+   },
+   "schema_bytes": 985,
+   "desc_chars": 367
+  },
+  {
+   "name": "elements_set",
+   "annotations": {
+    "readOnlyHint": false,
+    "destructiveHint": false,
+    "idempotentHint": false,
+    "openWorldHint": false
+   },
+   "schema_bytes": 772,
+   "desc_chars": 295
+  },
+  {
+   "name": "elements_set_type",
+   "annotations": {
+    "readOnlyHint": false,
+    "destructiveHint": false,
+    "idempotentHint": false,
+    "openWorldHint": false
+   },
+   "schema_bytes": 346,
+   "desc_chars": 75
+  },
+  {
+   "name": "dimension_create",
+   "annotations": {
+    "readOnlyHint": false,
+    "destructiveHint": false,
+    "idempotentHint": false,
+    "openWorldHint": false
+   },
+   "schema_bytes": 1596,
+   "desc_chars": 600
+  },
+  {
+   "name": "tag_move",
+   "annotations": {
+    "readOnlyHint": false,
+    "destructiveHint": false,
+    "idempotentHint": false,
+    "openWorldHint": false
+   },
+   "schema_bytes": 835,
+   "desc_chars": 276
+  },
+  {
+   "name": "dimension_chain_create",
+   "annotations": {
+    "readOnlyHint": false,
+    "destructiveHint": false,
+    "idempotentHint": false,
+    "openWorldHint": false
+   },
+   "schema_bytes": 1508,
+   "desc_chars": 455
+  },
+  {
+   "name": "dimension_ordinate_create",
+   "annotations": {
+    "readOnlyHint": false,
+    "destructiveHint": false,
+    "idempotentHint": false,
+    "openWorldHint": false
+   },
+   "schema_bytes": 1297,
+   "desc_chars": 495
+  },
+  {
+   "name": "dimension_set_value",
+   "annotations": {
+    "readOnlyHint": false,
+    "destructiveHint": false,
+    "idempotentHint": false,
+    "openWorldHint": false
+   },
+   "schema_bytes": 316,
+   "desc_chars": 244
+  },
+  {
+   "name": "text_create",
+   "annotations": {
+    "readOnlyHint": false,
+    "destructiveHint": false,
+    "idempotentHint": false,
+    "openWorldHint": false
+   },
+   "schema_bytes": 1928,
+   "desc_chars": 346
+  },
+  {
+   "name": "text_add_leader",
+   "annotations": {
+    "readOnlyHint": false,
+    "destructiveHint": false,
+    "idempotentHint": false,
+    "openWorldHint": false
+   },
+   "schema_bytes": 792,
+   "desc_chars": 28
+  },
+  {
+   "name": "text_remove_leader",
+   "annotations": {
+    "readOnlyHint": false,
+    "destructiveHint": false,
+    "idempotentHint": false,
+    "openWorldHint": false
+   },
+   "schema_bytes": 324,
+   "desc_chars": 33
+  },
+  {
+   "name": "type_set",
+   "annotations": {
+    "readOnlyHint": false,
+    "destructiveHint": false,
+    "idempotentHint": false,
+    "openWorldHint": false
+   },
+   "schema_bytes": 892,
+   "desc_chars": 321
+  },
+  {
+   "name": "type_duplicate",
+   "annotations": {
+    "readOnlyHint": false,
+    "destructiveHint": false,
+    "idempotentHint": false,
+    "openWorldHint": false
+   },
+   "schema_bytes": 554,
+   "desc_chars": 106
+  },
+  {
+   "name": "type_delete",
+   "annotations": {
+    "readOnlyHint": false,
+    "destructiveHint": true,
+    "idempotentHint": false,
+    "openWorldHint": false
+   },
+   "schema_bytes": 262,
+   "desc_chars": 73
+  },
+  {
+   "name": "component_create",
+   "annotations": {
+    "readOnlyHint": false,
+    "destructiveHint": false,
+    "idempotentHint": false,
+    "openWorldHint": false
+   },
+   "schema_bytes": 348,
+   "desc_chars": 1689
+  },
+  {
+   "name": "component_get",
+   "annotations": {
+    "readOnlyHint": true,
+    "destructiveHint": false,
+    "idempotentHint": true,
+    "openWorldHint": false
+   },
+   "schema_bytes": 238,
+   "desc_chars": 257
+  },
+  {
+   "name": "component_param_add",
+   "annotations": {
+    "readOnlyHint": false,
+    "destructiveHint": false,
+    "idempotentHint": false,
+    "openWorldHint": false
+   },
+   "schema_bytes": 749,
+   "desc_chars": 68
+  },
+  {
+   "name": "component_param_set",
+   "annotations": {
+    "readOnlyHint": false,
+    "destructiveHint": false,
+    "idempotentHint": false,
+    "openWorldHint": false
+   },
+   "schema_bytes": 780,
+   "desc_chars": 175
+  },
+  {
+   "name": "component_param_delete",
+   "annotations": {
+    "readOnlyHint": false,
+    "destructiveHint": true,
+    "idempotentHint": false,
+    "openWorldHint": false
+   },
+   "schema_bytes": 314,
+   "desc_chars": 136
+  },
+  {
+   "name": "component_ref_plane_add",
+   "annotations": {
+    "readOnlyHint": false,
+    "destructiveHint": false,
+    "idempotentHint": false,
+    "openWorldHint": false
+   },
+   "schema_bytes": 534,
+   "desc_chars": 209
+  },
+  {
+   "name": "component_ref_plane_set",
+   "annotations": {
+    "readOnlyHint": false,
+    "destructiveHint": false,
+    "idempotentHint": false,
+    "openWorldHint": false
+   },
+   "schema_bytes": 515,
+   "desc_chars": 129
+  },
+  {
+   "name": "component_ref_plane_delete",
+   "annotations": {
+    "readOnlyHint": false,
+    "destructiveHint": true,
+    "idempotentHint": false,
+    "openWorldHint": false
+   },
+   "schema_bytes": 310,
+   "desc_chars": 88
+  },
+  {
+   "name": "component_ref_line_add",
+   "annotations": {
+    "readOnlyHint": false,
+    "destructiveHint": false,
+    "idempotentHint": false,
+    "openWorldHint": false
+   },
+   "schema_bytes": 861,
+   "desc_chars": 179
+  },
+  {
+   "name": "component_ref_line_delete",
+   "annotations": {
+    "readOnlyHint": false,
+    "destructiveHint": true,
+    "idempotentHint": false,
+    "openWorldHint": false
+   },
+   "schema_bytes": 309,
+   "desc_chars": 24
+  },
+  {
+   "name": "component_dimension_add",
+   "annotations": {
+    "readOnlyHint": false,
+    "destructiveHint": false,
+    "idempotentHint": false,
+    "openWorldHint": false
+   },
+   "schema_bytes": 774,
+   "desc_chars": 272
+  },
+  {
+   "name": "component_dimension_set",
+   "annotations": {
+    "readOnlyHint": false,
+    "destructiveHint": false,
+    "idempotentHint": false,
+    "openWorldHint": false
+   },
+   "schema_bytes": 762,
+   "desc_chars": 274
+  },
+  {
+   "name": "component_dimension_delete",
+   "annotations": {
+    "readOnlyHint": false,
+    "destructiveHint": true,
+    "idempotentHint": false,
+    "openWorldHint": false
+   },
+   "schema_bytes": 350,
+   "desc_chars": 62
+  },
+  {
+   "name": "component_equal_add",
+   "annotations": {
+    "readOnlyHint": false,
+    "destructiveHint": false,
+    "idempotentHint": false,
+    "openWorldHint": false
+   },
+   "schema_bytes": 724,
+   "desc_chars": 230
+  },
+  {
+   "name": "component_equal_delete",
+   "annotations": {
+    "readOnlyHint": false,
+    "destructiveHint": true,
+    "idempotentHint": false,
+    "openWorldHint": false
+   },
+   "schema_bytes": 372,
+   "desc_chars": 67
+  },
+  {
+   "name": "component_piece_add",
+   "annotations": {
+    "readOnlyHint": false,
+    "destructiveHint": false,
+    "idempotentHint": false,
+    "openWorldHint": false
+   },
+   "schema_bytes": 8059,
+   "desc_chars": 748
+  },
+  {
+   "name": "component_piece_set",
+   "annotations": {
+    "readOnlyHint": false,
+    "destructiveHint": false,
+    "idempotentHint": false,
+    "openWorldHint": false
+   },
+   "schema_bytes": 8194,
+   "desc_chars": 192
+  },
+  {
+   "name": "component_piece_delete",
+   "annotations": {
+    "readOnlyHint": false,
+    "destructiveHint": true,
+    "idempotentHint": false,
+    "openWorldHint": false
+   },
+   "schema_bytes": 346,
+   "desc_chars": 63
+  },
+  {
+   "name": "component_connector_add",
+   "annotations": {
+    "readOnlyHint": false,
+    "destructiveHint": false,
+    "idempotentHint": false,
+    "openWorldHint": false
+   },
+   "schema_bytes": 1701,
+   "desc_chars": 245
+  },
+  {
+   "name": "component_connector_set",
+   "annotations": {
+    "readOnlyHint": false,
+    "destructiveHint": false,
+    "idempotentHint": false,
+    "openWorldHint": false
+   },
+   "schema_bytes": 1743,
+   "desc_chars": 202
+  },
+  {
+   "name": "component_connector_delete",
+   "annotations": {
+    "readOnlyHint": false,
+    "destructiveHint": true,
+    "idempotentHint": false,
+    "openWorldHint": false
+   },
+   "schema_bytes": 350,
+   "desc_chars": 34
+  },
+  {
+   "name": "material_create",
+   "annotations": {
+    "readOnlyHint": false,
+    "destructiveHint": false,
+    "idempotentHint": false,
+    "openWorldHint": false
+   },
+   "schema_bytes": 440,
+   "desc_chars": 74
+  },
+  {
+   "name": "material_duplicate",
+   "annotations": {
+    "readOnlyHint": false,
+    "destructiveHint": false,
+    "idempotentHint": false,
+    "openWorldHint": false
+   },
+   "schema_bytes": 390,
+   "desc_chars": 59
+  },
+  {
+   "name": "material_rename",
+   "annotations": {
+    "readOnlyHint": false,
+    "destructiveHint": false,
+    "idempotentHint": false,
+    "openWorldHint": false
+   },
+   "schema_bytes": 334,
+   "desc_chars": 47
+  },
+  {
+   "name": "material_set",
+   "annotations": {
+    "readOnlyHint": false,
+    "destructiveHint": false,
+    "idempotentHint": false,
+    "openWorldHint": false
+   },
+   "schema_bytes": 370,
+   "desc_chars": 181
+  },
+  {
+   "name": "material_delete",
+   "annotations": {
+    "readOnlyHint": false,
+    "destructiveHint": true,
+    "idempotentHint": false,
+    "openWorldHint": false
+   },
+   "schema_bytes": 270,
+   "desc_chars": 31
+  },
+  {
+   "name": "level_create",
+   "annotations": {
+    "readOnlyHint": false,
+    "destructiveHint": false,
+    "idempotentHint": false,
+    "openWorldHint": false
+   },
+   "schema_bytes": 423,
+   "desc_chars": 95
+  },
+  {
+   "name": "level_set",
+   "annotations": {
+    "readOnlyHint": false,
+    "destructiveHint": false,
+    "idempotentHint": false,
+    "openWorldHint": false
+   },
+   "schema_bytes": 468,
+   "desc_chars": 76
+  },
+  {
+   "name": "level_delete",
+   "annotations": {
+    "readOnlyHint": false,
+    "destructiveHint": true,
+    "idempotentHint": false,
+    "openWorldHint": false
+   },
+   "schema_bytes": 264,
+   "desc_chars": 136
+  },
+  {
+   "name": "view_create",
+   "annotations": {
+    "readOnlyHint": false,
+    "destructiveHint": false,
+    "idempotentHint": false,
+    "openWorldHint": false
+   },
+   "schema_bytes": 1807,
+   "desc_chars": 707
+  },
+  {
+   "name": "view_set",
+   "annotations": {
+    "readOnlyHint": false,
+    "destructiveHint": false,
+    "idempotentHint": false,
+    "openWorldHint": false
+   },
+   "schema_bytes": 1771,
+   "desc_chars": 230
+  },
+  {
+   "name": "view_duplicate",
+   "annotations": {
+    "readOnlyHint": false,
+    "destructiveHint": false,
+    "idempotentHint": false,
+    "openWorldHint": false
+   },
+   "schema_bytes": 262,
+   "desc_chars": 54
+  },
+  {
+   "name": "view_delete",
+   "annotations": {
+    "readOnlyHint": false,
+    "destructiveHint": true,
+    "idempotentHint": false,
+    "openWorldHint": false
+   },
+   "schema_bytes": 262,
+   "desc_chars": 75
+  },
+  {
+   "name": "sheet_place_view",
+   "annotations": {
+    "readOnlyHint": false,
+    "destructiveHint": false,
+    "idempotentHint": false,
+    "openWorldHint": false
+   },
+   "schema_bytes": 656,
+   "desc_chars": 138
+  },
+  {
+   "name": "sheet_remove_viewport",
+   "annotations": {
+    "readOnlyHint": false,
+    "destructiveHint": false,
+    "idempotentHint": false,
+    "openWorldHint": false
+   },
+   "schema_bytes": 447,
+   "desc_chars": 27
+  },
+  {
+   "name": "view_graphics_get",
+   "annotations": {
+    "readOnlyHint": true,
+    "destructiveHint": false,
+    "idempotentHint": true,
+    "openWorldHint": false
+   },
+   "schema_bytes": 599,
+   "desc_chars": 537
+  },
+  {
+   "name": "view_graphics_set",
+   "annotations": {
+    "readOnlyHint": false,
+    "destructiveHint": false,
+    "idempotentHint": false,
+    "openWorldHint": false
+   },
+   "schema_bytes": 1035,
+   "desc_chars": 271
+  },
+  {
+   "name": "element_override_set",
+   "annotations": {
+    "readOnlyHint": false,
+    "destructiveHint": false,
+    "idempotentHint": false,
+    "openWorldHint": false
+   },
+   "schema_bytes": 554,
+   "desc_chars": 263
+  },
+  {
+   "name": "element_hide_in_view",
+   "annotations": {
+    "readOnlyHint": false,
+    "destructiveHint": false,
+    "idempotentHint": false,
+    "openWorldHint": false
+   },
+   "schema_bytes": 438,
+   "desc_chars": 115
+  },
+  {
+   "name": "filters_list",
+   "annotations": {
+    "readOnlyHint": true,
+    "destructiveHint": false,
+    "idempotentHint": true,
+    "openWorldHint": false
+   },
+   "schema_bytes": 67,
+   "desc_chars": 59
+  },
+  {
+   "name": "filter_create",
+   "annotations": {
+    "readOnlyHint": false,
+    "destructiveHint": false,
+    "idempotentHint": false,
+    "openWorldHint": false
+   },
+   "schema_bytes": 1373,
+   "desc_chars": 227
+  },
+  {
+   "name": "filter_set",
+   "annotations": {
+    "readOnlyHint": false,
+    "destructiveHint": false,
+    "idempotentHint": false,
+    "openWorldHint": false
+   },
+   "schema_bytes": 1560,
+   "desc_chars": 117
+  },
+  {
+   "name": "filter_delete",
+   "annotations": {
+    "readOnlyHint": false,
+    "destructiveHint": true,
+    "idempotentHint": false,
+    "openWorldHint": false
+   },
+   "schema_bytes": 224,
+   "desc_chars": 60
+  },
+  {
+   "name": "filter_elements",
+   "annotations": {
+    "readOnlyHint": true,
+    "destructiveHint": false,
+    "idempotentHint": true,
+    "openWorldHint": false
+   },
+   "schema_bytes": 499,
+   "desc_chars": 75
+  },
+  {
+   "name": "view_filter_add",
+   "annotations": {
+    "readOnlyHint": false,
+    "destructiveHint": false,
+    "idempotentHint": false,
+    "openWorldHint": false
+   },
+   "schema_bytes": 1148,
+   "desc_chars": 204
+  },
+  {
+   "name": "view_filter_set",
+   "annotations": {
+    "readOnlyHint": false,
+    "destructiveHint": false,
+    "idempotentHint": false,
+    "openWorldHint": false
+   },
+   "schema_bytes": 1224,
+   "desc_chars": 169
+  },
+  {
+   "name": "view_filter_remove",
+   "annotations": {
+    "readOnlyHint": false,
+    "destructiveHint": false,
+    "idempotentHint": false,
+    "openWorldHint": false
+   },
+   "schema_bytes": 758,
+   "desc_chars": 52
+  },
+  {
+   "name": "view_filter_move",
+   "annotations": {
+    "readOnlyHint": false,
+    "destructiveHint": false,
+    "idempotentHint": false,
+    "openWorldHint": false
+   },
+   "schema_bytes": 873,
+   "desc_chars": 104
+  },
+  {
+   "name": "templates_list",
+   "annotations": {
+    "readOnlyHint": true,
+    "destructiveHint": false,
+    "idempotentHint": true,
+    "openWorldHint": false
+   },
+   "schema_bytes": 67,
+   "desc_chars": 124
+  },
+  {
+   "name": "template_create",
+   "annotations": {
+    "readOnlyHint": false,
+    "destructiveHint": false,
+    "idempotentHint": false,
+    "openWorldHint": false
+   },
+   "schema_bytes": 423,
+   "desc_chars": 261
+  },
+  {
+   "name": "template_set",
+   "annotations": {
+    "readOnlyHint": false,
+    "destructiveHint": false,
+    "idempotentHint": false,
+    "openWorldHint": false
+   },
+   "schema_bytes": 2019,
+   "desc_chars": 213
+  },
+  {
+   "name": "template_delete",
+   "annotations": {
+    "readOnlyHint": false,
+    "destructiveHint": true,
+    "idempotentHint": false,
+    "openWorldHint": false
+   },
+   "schema_bytes": 230,
+   "desc_chars": 91
+  },
+  {
+   "name": "view_template_apply",
+   "annotations": {
+    "readOnlyHint": false,
+    "destructiveHint": false,
+    "idempotentHint": false,
+    "openWorldHint": false
+   },
+   "schema_bytes": 480,
+   "desc_chars": 120
+  },
+  {
+   "name": "view_template_assign",
+   "annotations": {
+    "readOnlyHint": false,
+    "destructiveHint": false,
+    "idempotentHint": false,
+    "openWorldHint": false
+   },
+   "schema_bytes": 616,
+   "desc_chars": 171
+  },
+  {
+   "name": "view_temporary",
+   "annotations": {
+    "readOnlyHint": true,
+    "destructiveHint": false,
+    "idempotentHint": true,
+    "openWorldHint": false
+   },
+   "schema_bytes": 590,
+   "desc_chars": 465
+  },
+  {
+   "name": "view_temporary_apply",
+   "annotations": {
+    "readOnlyHint": false,
+    "destructiveHint": false,
+    "idempotentHint": false,
+    "openWorldHint": false
+   },
+   "schema_bytes": 218,
+   "desc_chars": 242
+  },
+  {
+   "name": "phases_list",
+   "annotations": {
+    "readOnlyHint": true,
+    "destructiveHint": false,
+    "idempotentHint": true,
+    "openWorldHint": false
+   },
+   "schema_bytes": 67,
+   "desc_chars": 126
+  },
+  {
+   "name": "phase_create",
+   "annotations": {
+    "readOnlyHint": false,
+    "destructiveHint": false,
+    "idempotentHint": false,
+    "openWorldHint": false
+   },
+   "schema_bytes": 548,
+   "desc_chars": 106
+  },
+  {
+   "name": "phase_set",
+   "annotations": {
+    "readOnlyHint": false,
+    "destructiveHint": false,
+    "idempotentHint": false,
+    "openWorldHint": false
+   },
+   "schema_bytes": 551,
+   "desc_chars": 182
+  },
+  {
+   "name": "phase_delete",
+   "annotations": {
+    "readOnlyHint": false,
+    "destructiveHint": true,
+    "idempotentHint": false,
+    "openWorldHint": false
+   },
+   "schema_bytes": 514,
+   "desc_chars": 244
+  },
+  {
+   "name": "elements_phase_set",
+   "annotations": {
+    "readOnlyHint": false,
+    "destructiveHint": false,
+    "idempotentHint": false,
+    "openWorldHint": false
+   },
+   "schema_bytes": 775,
+   "desc_chars": 268
+  },
+  {
+   "name": "elements_demolish",
+   "annotations": {
+    "readOnlyHint": false,
+    "destructiveHint": false,
+    "idempotentHint": false,
+    "openWorldHint": false
+   },
+   "schema_bytes": 740,
+   "desc_chars": 284
+  },
+  {
+   "name": "phase_creation_set",
+   "annotations": {
+    "readOnlyHint": true,
+    "destructiveHint": false,
+    "idempotentHint": true,
+    "openWorldHint": false
+   },
+   "schema_bytes": 598,
+   "desc_chars": 222
+  },
+  {
+   "name": "phase_filters_list",
+   "annotations": {
+    "readOnlyHint": true,
+    "destructiveHint": false,
+    "idempotentHint": true,
+    "openWorldHint": false
+   },
+   "schema_bytes": 67,
+   "desc_chars": 221
+  },
+  {
+   "name": "phase_filter_create",
+   "annotations": {
+    "readOnlyHint": false,
+    "destructiveHint": false,
+    "idempotentHint": false,
+    "openWorldHint": false
+   },
+   "schema_bytes": 576,
+   "desc_chars": 61
+  },
+  {
+   "name": "phase_filter_set",
+   "annotations": {
+    "readOnlyHint": false,
+    "destructiveHint": false,
+    "idempotentHint": false,
+    "openWorldHint": false
+   },
+   "schema_bytes": 741,
+   "desc_chars": 83
+  },
+  {
+   "name": "phase_filter_delete",
+   "annotations": {
+    "readOnlyHint": false,
+    "destructiveHint": true,
+    "idempotentHint": false,
+    "openWorldHint": false
+   },
+   "schema_bytes": 230,
+   "desc_chars": 113
+  },
+  {
+   "name": "phase_graphics_get",
+   "annotations": {
+    "readOnlyHint": true,
+    "destructiveHint": false,
+    "idempotentHint": true,
+    "openWorldHint": false
+   },
+   "schema_bytes": 67,
+   "desc_chars": 184
+  },
+  {
+   "name": "phase_graphics_set",
+   "annotations": {
+    "readOnlyHint": false,
+    "destructiveHint": false,
+    "idempotentHint": false,
+    "openWorldHint": false
+   },
+   "schema_bytes": 364,
+   "desc_chars": 164
+  }
+ ],
+ "list_tools_bytes": 298206,
+ "names": [
+  "analytical_export",
+  "analytical_model",
+  "beam_create",
+  "beams_between_columns",
+  "beams_on_grids",
+  "brace_create",
+  "braces_between_columns",
+  "cad_import",
+  "cad_layers",
+  "cad_layers_set",
+  "categories_list",
+  "ceiling_create",
+  "circuit_loads",
+  "column_create",
+  "columns_at_grids",
+  "component_connector_add",
+  "component_connector_delete",
+  "component_connector_set",
+  "component_create",
+  "component_dimension_add",
+  "component_dimension_delete",
+  "component_dimension_set",
+  "component_equal_add",
+  "component_equal_delete",
+  "component_get",
+  "component_library_list",
+  "component_load",
+  "component_param_add",
+  "component_param_delete",
+  "component_param_set",
+  "component_piece_add",
+  "component_piece_delete",
+  "component_piece_set",
+  "component_place",
+  "component_ref_line_add",
+  "component_ref_line_delete",
+  "component_ref_plane_add",
+  "component_ref_plane_delete",
+  "component_ref_plane_set",
+  "component_save",
+  "conduit_create",
+  "dimension_chain_create",
+  "dimension_create",
+  "dimension_ordinate_create",
+  "dimension_set_value",
+  "door_create",
+  "element_align",
+  "element_flip",
+  "element_get",
+  "element_hide_in_view",
+  "element_move_end",
+  "element_offset",
+  "element_override_set",
+  "element_set",
+  "element_split",
+  "elements_copy",
+  "elements_delete",
+  "elements_demolish",
+  "elements_export",
+  "elements_list",
+  "elements_mirror",
+  "elements_move",
+  "elements_paste",
+  "elements_phase_set",
+  "elements_pin",
+  "elements_rotate",
+  "elements_set",
+  "elements_set_type",
+  "elements_turn",
+  "filter_create",
+  "filter_delete",
+  "filter_elements",
+  "filter_set",
+  "filters_list",
+  "floor_create",
+  "floor_opening_add",
+  "floor_opening_remove",
+  "footing_create",
+  "footings_under_columns",
+  "foundation_slab_create",
+  "geometry_join",
+  "geometry_unjoin",
+  "grid_create",
+  "grids_align_ends",
+  "group_create",
+  "group_ungroup",
+  "groups_list",
+  "ifc_export",
+  "ifc_import",
+  "image_import",
+  "language_set",
+  "level_create",
+  "level_delete",
+  "level_set",
+  "levels_list",
+  "mass_create",
+  "mass_face_move",
+  "mass_floors",
+  "mass_floors_set",
+  "mass_roof_create",
+  "mass_slabs_create",
+  "mass_type_create",
+  "mass_walls_create",
+  "material_create",
+  "material_delete",
+  "material_duplicate",
+  "material_get",
+  "material_rename",
+  "material_set",
+  "materials_list",
+  "measure",
+  "mep_connect",
+  "mep_fittings",
+  "mep_size_apply",
+  "mep_sizing",
+  "phase_create",
+  "phase_creation_set",
+  "phase_delete",
+  "phase_filter_create",
+  "phase_filter_delete",
+  "phase_filter_set",
+  "phase_filters_list",
+  "phase_graphics_get",
+  "phase_graphics_set",
+  "phase_set",
+  "phases_list",
+  "pipe_create",
+  "project_info",
+  "project_info_set",
+  "project_new",
+  "project_open",
+  "project_save",
+  "railing_create",
+  "railing_host_set",
+  "ramp_check",
+  "ramp_create",
+  "ramp_type_create",
+  "rebar_create",
+  "rebar_typical",
+  "redo",
+  "roof_check",
+  "roof_create",
+  "roof_edge_set",
+  "roof_opening_remove",
+  "room_create",
+  "schedule_export_csv",
+  "schedule_table",
+  "shaft_create",
+  "shaft_type_create",
+  "sheet_export",
+  "sheet_place_view",
+  "sheet_remove_viewport",
+  "sketch_get",
+  "sketch_set",
+  "skp_component_load",
+  "skp_import",
+  "slab_join_supports",
+  "stair_check",
+  "stair_create",
+  "stair_railings_add",
+  "strip_footing_create",
+  "strip_footings_under_walls",
+  "structure_number",
+  "sweep_create",
+  "sweep_profile_set",
+  "sweep_type_create",
+  "system_assign",
+  "system_create",
+  "system_delete",
+  "system_set",
+  "systems_list",
+  "tag_move",
+  "template_create",
+  "template_delete",
+  "template_set",
+  "templates_list",
+  "text_add_leader",
+  "text_create",
+  "text_remove_leader",
+  "trim_corner",
+  "trim_extend",
+  "truss_create",
+  "type_delete",
+  "type_duplicate",
+  "type_get",
+  "type_set",
+  "types_list",
+  "undo",
+  "units_get",
+  "units_set",
+  "view_create",
+  "view_delete",
+  "view_duplicate",
+  "view_export",
+  "view_filter_add",
+  "view_filter_move",
+  "view_filter_remove",
+  "view_filter_set",
+  "view_get",
+  "view_graphics_get",
+  "view_graphics_set",
+  "view_set",
+  "view_template_apply",
+  "view_template_assign",
+  "view_temporary",
+  "view_temporary_apply",
+  "views_list",
+  "wall_attach",
+  "wall_create",
+  "wall_join",
+  "window_create"
+ ]
+}

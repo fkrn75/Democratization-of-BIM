@@ -1,0 +1,138 @@
+{
+  "model": "RA-01 (코어 범위: 레벨 2, 벽 14, 문 5)",
+  "per_view_cold_ms": {
+    "plan-1F": {
+      "ms": {
+        "n": 7,
+        "min": 1.684,
+        "p50": 2.01,
+        "p95": 3.292,
+        "max": 3.657,
+        "mean": 2.206
+      },
+      "segments": 59,
+      "by_class": {
+        "cut": 32,
+        "symbol": 27
+      },
+      "nodes": 149,
+      "recomputes": 108
+    },
+    "plan-2F": {
+      "ms": {
+        "n": 7,
+        "min": 1.56,
+        "p50": 1.613,
+        "p95": 1.806,
+        "max": 1.846,
+        "mean": 1.651
+      },
+      "segments": 46,
+      "by_class": {
+        "cut": 28,
+        "symbol": 18
+      },
+      "nodes": 147,
+      "recomputes": 107
+    },
+    "section-BB": {
+      "ms": {
+        "n": 7,
+        "min": 3.962,
+        "p50": 4.722,
+        "p95": 6.834,
+        "max": 6.896,
+        "mean": 5.104
+      },
+      "segments": 34,
+      "by_class": {
+        "cut": 20,
+        "proj": 14
+      },
+      "nodes": 380,
+      "recomputes": 238
+    },
+    "elev-N": {
+      "ms": {
+        "n": 7,
+        "min": 4.864,
+        "p50": 5.131,
+        "p95": 7.499,
+        "max": 8.445,
+        "mean": 5.563
+      },
+      "segments": 7,
+      "by_class": {
+        "proj": 7
+      },
+      "nodes": 368,
+      "recomputes": 226
+    },
+    "elev-E": {
+      "ms": {
+        "n": 7,
+        "min": 5.165,
+        "p50": 5.345,
+        "p95": 9.236,
+        "max": 10.538,
+        "mean": 6.257
+      },
+      "segments": 9,
+      "by_class": {
+        "proj": 9
+      },
+      "nodes": 368,
+      "recomputes": 226
+    },
+    "elev-S": {
+      "ms": {
+        "n": 7,
+        "min": 4.974,
+        "p50": 5.743,
+        "p95": 9.925,
+        "max": 10.317,
+        "mean": 6.733
+      },
+      "segments": 18,
+      "by_class": {
+        "proj": 18
+      },
+      "nodes": 368,
+      "recomputes": 226
+    },
+    "elev-W": {
+      "ms": {
+        "n": 7,
+        "min": 5.428,
+        "p50": 8.55,
+        "p95": 39.042,
+        "max": 51.365,
+        "mean": 13.81
+      },
+      "segments": 11,
+      "by_class": {
+        "proj": 11
+      },
+      "nodes": 368,
+      "recomputes": 226
+    }
+  },
+  "all_7_views_one_graph_ms": {
+    "n": 7,
+    "min": 23.027,
+    "p50": 26.273,
+    "p95": 27.005,
+    "max": 27.048,
+    "mean": 25.598
+  },
+  "plans_2_ms_sum_p50": 3.623,
+  "section_1_ms_p50": 4.722,
+  "elevations_4_ms_sum_p50": 24.769,
+  "note": "각 뷰마다 빈 그래프에서 계산한 시간(벽 형상 계산 포함). 선분 병합까지 포함, SVG 쓰기 제외",
+  "env": {
+    "python": "3.12.2",
+    "platform": "Windows-11-10.0.26200-SP0",
+    "machine": "AMD64"
+  },
+  "generated_at_utc": "2026-11-09T03:30:54Z"
+}

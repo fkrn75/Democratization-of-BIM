@@ -1,0 +1,15 @@
+뷰 생성 0  [{'category': 'section', 'detail': 'medium', 'id': 158, 'name': 'SEC-1', 'params': {'depth': 10.0, 'end': [6.0, 9.0], 'start': [6.0, -1.0]}, 'phase': {'id': 81, 'name': 'New Construction'}, 'phase_filter': {'id': 82, 'name': 'Show All'}, 'scale': 50, 'template': None, 'visual_style': 'shaded'}, {'category': 'elevation', 'detail': 'medium', 'id': 159, 'name': 'ELEV-S', 'params': {'direction': 'South'}, 'phase': {'id': 81, 'name': 'New Construction'}, 'phase_filter': {'id': 82, 'name': 'Show All'}, 'scale': 100, 'template': None, 'visual_style': 'shaded'}]
+before rc 0 경과 0.68 s 
+after rc 0 경과 0.68 s 
+before_plan {'bytes': 310219, 'path': 0, 'line': 2991, 'polyline': 46, 'text': 22, 'image': 0}
+after_plan {'bytes': 312077, 'path': 0, 'line': 3009, 'polyline': 46, 'text': 22, 'image': 0}
+before_section {'bytes': 239168, 'path': 0, 'line': 2333, 'polyline': 54, 'text': 6, 'image': 0}
+after_section {'bytes': 239168, 'path': 0, 'line': 2333, 'polyline': 54, 'text': 6, 'image': 0}
+plan 전후 SVG 동일? False
+section 전후 SVG 동일? False
+sheet 0 
+sheet2 0  
+{"category": "sheet", "detail": "medium", "id": 160, "name": "S-101", "params": {"number": "A102", "size": "A1", "viewports": [{"center": [250.0, 300.0], "view": 66}, {"center": [600.0, 300.0], "view": 158}]}, "phase": null, "phase_filter": null, "scale": 1, "template": null, "visual_style": "shaded
+E6 전 0 
+{"headers": ["Mark", "Type", "Width", "Height", "Level", "Wall", "Comments"], "rows": [{"cells": ["1", "DT-01", "0.90", "2.10", "1F", "E101", ""], "element": 115}, {"cells": ["2", "DT-02", "0.80", "2.10", "1F", "E105", ""], "element": 116}, {"cells": ["3", "DT-02", "0.80", "2.10", "1F", "E106", ""], "element": 117}, {"cells": ["4", "DT-02", "0.80", "2.10", "2F", "E112", ""], "element": 118}, {"cells": ["5", "DT-01", "0.90", "2.10", "2F", "E108", ""], "element": 119}], "totals": ["5", "", "", "", "", "", ""]}
+E6 E2후 0 {"headers": ["Mark", "Type", "Width", "Height", "Level", "Wall", "Comments"], "rows": [{"cells": ["1", "DT-01", "1.00", "2.10", "1F", "E101", ""], "element": 115}, {"cells": ["2", "DT-02", "0.80", "2.10", "1F", "E105", ""], "element": 116}, {"cells": ["3", "DT-02", "0.80", "2.10", "1F", "E106", ""], "element": 117}, {"cells": ["4", "DT-02", "0.80", "2.10", "2F", "E112", ""], "element": 118}, {"cells": ["5", "DT-01", "1.00", "2.10", "2F", "E108", ""], "element": 119}], "totals": ["5", "", "", "", "", "", ""]}

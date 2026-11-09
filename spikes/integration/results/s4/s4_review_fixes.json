@@ -1,0 +1,77 @@
+{
+  "wall_set_thickness_50": {
+    "result": "CONSTRAINT",
+    "rev_unchanged": true
+  },
+  "wall_set_height_2000": "CONSTRAINT",
+  "wall_set_thickness_120_allowed": "ok",
+  "legacy_broken_project": {
+    "opens": true,
+    "validate_errors": 1,
+    "reported": true,
+    "after_repair_errors": 0
+  },
+  "cache_saturation": {
+    "registers_ok": 12,
+    "of": 12,
+    "validate_errors": 0
+  },
+  "malformed_json": {
+    "nan_default": "FAMILY_INVALID",
+    "inf_max": "FAMILY_INVALID",
+    "max_1e400_int": "FAMILY_INVALID",
+    "deep_5000_file": "FAMILY_INVALID"
+  },
+  "limits": {
+    "heavy_42KB_recipe": {
+      "ok": false,
+      "codes": [
+        "E_LIMIT"
+      ],
+      "seconds": 1.35,
+      "recipe_bytes": 42235
+    },
+    "17_voids_on_one_solid": {
+      "ok": false,
+      "codes": [
+        "E_LIMIT"
+      ],
+      "seconds": 0.0
+    },
+    "16_voids_on_one_solid": {
+      "ok": true,
+      "codes": [],
+      "seconds": 0.0
+    },
+    "time_budget_0s": {
+      "codes": [
+        "E_LIMIT"
+      ]
+    }
+  },
+  "void_checks": {
+    "void_eats_all": {
+      "ok": false,
+      "codes": [
+        "E_SHAPE_VOLUME"
+      ],
+      "seconds": 5.15
+    },
+    "void_misses": {
+      "ok": false,
+      "codes": [
+        "E_VOID_MISS"
+      ],
+      "seconds": 0.0
+    },
+    "void_half_ok": {
+      "ok": true,
+      "codes": [],
+      "seconds": 5.1
+    }
+  },
+  "multi_version": {
+    "register_warned": true,
+    "placed_version": 2
+  }
+}

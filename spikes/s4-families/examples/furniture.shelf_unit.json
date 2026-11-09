@@ -1,0 +1,141 @@
+{
+  "schema": "dobim.family/1",
+  "id": "furniture.shelf_unit",
+  "version": 1,
+  "name": "선반장",
+  "ifc": {
+    "class": "IfcFurniture",
+    "type_class": "IfcFurnitureType",
+    "predefined": "SHELF"
+  },
+  "params": {
+    "board_t": {
+      "kind": "type",
+      "default": 18,
+      "min": 12,
+      "max": 30
+    },
+    "width": {
+      "kind": "instance",
+      "default": 800,
+      "min": 400,
+      "max": 1500
+    },
+    "height": {
+      "kind": "instance",
+      "default": 1800,
+      "min": 600,
+      "max": 2400
+    },
+    "depth": {
+      "kind": "instance",
+      "default": 300,
+      "min": 200,
+      "max": 600
+    },
+    "tiers": {
+      "kind": "instance",
+      "type": "int",
+      "unit": "none",
+      "default": 4,
+      "min": 1,
+      "max": 10
+    }
+  },
+  "constraints": [
+    {
+      "expr": "height > board_t*(tiers + 1) + 100",
+      "message": "단 사이 간격이 100mm 이하다"
+    }
+  ],
+  "solids": [
+    {
+      "id": "side_l",
+      "op": "extrude",
+      "plane": "yz",
+      "profile": {
+        "shape": "rect",
+        "u": [
+          "-depth/2",
+          "depth/2"
+        ],
+        "v": [
+          0,
+          "height"
+        ]
+      },
+      "range": [
+        "-width/2",
+        "-width/2 + board_t"
+      ]
+    },
+    {
+      "id": "side_r",
+      "op": "extrude",
+      "plane": "yz",
+      "profile": {
+        "shape": "rect",
+        "u": [
+          "-depth/2",
+          "depth/2"
+        ],
+        "v": [
+          0,
+          "height"
+        ]
+      },
+      "range": [
+        "width/2 - board_t",
+        "width/2"
+      ]
+    },
+    {
+      "id": "board",
+      "op": "extrude",
+      "plane": "xy",
+      "repeat": {
+        "var": "i",
+        "count": "tiers + 1"
+      },
+      "profile": {
+        "shape": "rect",
+        "u": [
+          "-width/2 + board_t",
+          "width/2 - board_t"
+        ],
+        "v": [
+          "-depth/2",
+          "depth/2"
+        ]
+      },
+      "range": [
+        "i*(height - board_t)/tiers",
+        "i*(height - board_t)/tiers + board_t"
+      ]
+    }
+  ],
+  "plan_symbol": {
+    "default": [
+      {
+        "type": "rect",
+        "u": [
+          "-width/2",
+          "width/2"
+        ],
+        "v": [
+          "-depth/2",
+          "depth/2"
+        ],
+        "style": "cut"
+      }
+    ]
+  },
+  "psets": {
+    "Pset_FurnitureTypeCommon": {
+      "on": "type",
+      "props": {
+        "IsBuiltIn": false
+      }
+    }
+  }
+}

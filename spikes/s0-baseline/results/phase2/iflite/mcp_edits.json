@@ -1,0 +1,178 @@
+[
+ {
+  "scenario": "E1",
+  "tool": "edit_element_geometry",
+  "args": "{\"operation\": {\"kind\": \"transform\", \"express_ids\": [104], \"transform\": {\"kind\": \"move\", \"delta\": [0, 0.6]}}}",
+  "sec": 0.04,
+  "isError": false,
+  "head": "Completed transform."
+ },
+ {
+  "scenario": "E1",
+  "tool": "model_save",
+  "args": "{\"file_path\": \"/out/E1.mcp.ifc\"}",
+  "sec": 0.03,
+  "isError": false,
+  "head": "Wrote 95,891 bytes to /out/E1.mcp.ifc."
+ },
+ {
+  "scenario": "E2",
+  "tool": "edit_hosted_element",
+  "args": "{\"express_id\": 608, \"patch\": {\"OverallWidth\": 1.0}}",
+  "sec": 0.04,
+  "isError": false,
+  "head": "Edited hosted element #608."
+ },
+ {
+  "scenario": "E2",
+  "tool": "edit_hosted_element",
+  "args": "{\"express_id\": 834, \"patch\": {\"OverallWidth\": 1.0}}",
+  "sec": 0.02,
+  "isError": false,
+  "head": "Edited hosted element #834."
+ },
+ {
+  "scenario": "E2",
+  "tool": "model_save",
+  "args": "{\"file_path\": \"/out/E2.mcp.ifc\"}",
+  "sec": 0.04,
+  "isError": false,
+  "head": "Wrote 98,202 bytes to /out/E2.mcp.ifc."
+ },
+ {
+  "scenario": "E3",
+  "tool": "edit_element_geometry",
+  "args": "{\"operation\": {\"kind\": \"size\", \"express_id\": 174, \"patch\": {\"kind\": \"wall\", \"Height\": 3.6}}}",
+  "sec": 0.03,
+  "isError": false,
+  "head": "Completed size."
+ },
+ {
+  "scenario": "E3",
+  "tool": "edit_element_geometry",
+  "args": "{\"operation\": {\"kind\": \"size\", \"express_id\": 448, \"patch\": {\"kind\": \"wall\", \"Height\": 3.6}}}",
+  "sec": 0.01,
+  "isError": false,
+  "head": "Completed size."
+ },
+ {
+  "scenario": "E3",
+  "tool": "edit_element_geometry",
+  "args": "{\"operation\": {\"kind\": \"size\", \"express_id\": 1422, \"patch\": {\"kind\": \"linear\", \"Depth\": 3.6}}}",
+  "sec": 0.01,
+  "isError": false,
+  "head": "Completed size."
+ },
+ {
+  "scenario": "E3",
+  "tool": "edit_element_geometry",
+  "args": "{\"operation\": {\"kind\": \"size\", \"express_id\": 104, \"patch\": {\"kind\": \"wall\", \"Height\": 3.6}}}",
+  "sec": 0.01,
+  "isError": false,
+  "head": "Completed size."
+ },
+ {
+  "scenario": "E3",
+  "tool": "edit_element_geometry",
+  "args": "{\"operation\": {\"kind\": \"size\", \"express_id\": 379, \"patch\": {\"kind\": \"wall\", \"Height\": 3.6}}}",
+  "sec": 0.01,
+  "isError": false,
+  "head": "Completed size."
+ },
+ {
+  "scenario": "E3",
+  "tool": "edit_element_geometry",
+  "args": "{\"operation\": {\"kind\": \"size\", \"express_id\": 1506, \"patch\": {\"kind\": \"linear\", \"Depth\": 3.6}}}",
+  "sec": 0.0,
+  "isError": false,
+  "head": "Completed size."
+ },
+ {
+  "scenario": "E3",
+  "tool": "edit_element_geometry",
+  "args": "{\"operation\": {\"kind\": \"size\", \"express_id\": 1534, \"patch\": {\"kind\": \"linear\", \"Depth\": 3.6}}}",
+  "sec": 0.0,
+  "isError": false,
+  "head": "Completed size."
+ },
+ {
+  "scenario": "E3",
+  "tool": "edit_element_geometry",
+  "args": "{\"operation\": {\"kind\": \"size\", \"express_id\": 1450, \"patch\": {\"kind\": \"linear\", \"Depth\": 3.6}}}",
+  "sec": 0.0,
+  "isError": false,
+  "head": "Completed size."
+ },
+ {
+  "scenario": "E3",
+  "tool": "edit_element_geometry",
+  "args": "{\"operation\": {\"kind\": \"size\", \"express_id\": 140, \"patch\": {\"kind\": \"wall\", \"Height\": 3.6}}}",
+  "sec": 0.01,
+  "isError": false,
+  "head": "Completed size."
+ },
+ {
+  "scenario": "E3",
+  "tool": "edit_element_geometry",
+  "args": "{\"operation\": {\"kind\": \"size\", \"express_id\": 414, \"patch\": {\"kind\": \"wall\", \"Height\": 3.6}}}",
+  "sec": 0.01,
+  "isError": false,
+  "head": "Completed size."
+ },
+ {
+  "scenario": "E3",
+  "tool": "edit_element_geometry",
+  "args": "{\"operation\": {\"kind\": \"size\", \"express_id\": 1394, \"patch\": {\"kind\": \"linear\", \"Depth\": 3.6}}}",
+  "sec": 0.0,
+  "isError": false,
+  "head": "Completed size."
+ },
+ {
+  "scenario": "E3",
+  "tool": "edit_element_geometry",
+  "args": "{\"operation\": {\"kind\": \"size\", \"express_id\": 1478, \"patch\": {\"kind\": \"linear\", \"Depth\": 3.6}}}",
+  "sec": 0.0,
+  "isError": false,
+  "head": "Completed size."
+ },
+ {
+  "scenario": "E3",
+  "tool": "edit_element_geometry",
+  "args": "{\"operation\": {\"kind\": \"size\", \"express_id\": 208, \"patch\": {\"kind\": \"wall\", \"Height\": 3.6}}}",
+  "sec": 0.01,
+  "isError": false,
+  "head": "Completed size."
+ },
+ {
+  "scenario": "E3",
+  "tool": "model_save",
+  "args": "{\"file_path\": \"/out/E3.mcp.ifc\"}",
+  "sec": 0.03,
+  "isError": false,
+  "head": "Wrote 95,892 bytes to /out/E3.mcp.ifc."
+ },
+ {
+  "scenario": "C4",
+  "tool": "place_door",
+  "args": "{\"host_express_id\": 104, \"params\": {\"Offset\": 8.0, \"Width\": 0.9, \"Height\": 2.1}}",
+  "sec": 0.02,
+  "isError": true,
+  "head": "The new opening overlaps opening #584 in wall #104"
+ },
+ {
+  "scenario": "C4",
+  "tool": "mutation_undo",
+  "args": "{\"n\": 1}",
+  "sec": 0.02,
+  "isError": false,
+  "head": "Undone 0 mutation(s)."
+ },
+ {
+  "scenario": "C4",
+  "tool": "model_save",
+  "args": "{\"file_path\": \"/out/C4.mcp.ifc\"}",
+  "sec": 0.04,
+  "isError": false,
+  "head": "Wrote 95,848 bytes to /out/C4.mcp.ifc."
+ }
+]

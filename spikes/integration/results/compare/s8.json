@@ -1,0 +1,167 @@
+{
+ "s8_fuzz.json": {
+  "same": 16,
+  "differ": 0,
+  "volatile": 0,
+  "only_old": 0,
+  "only_new": 0,
+  "differ_examples": [],
+  "volatile_examples": [],
+  "only_old_examples": [],
+  "only_new_examples": []
+ },
+ "s8_mutants.json": {
+  "same": 154,
+  "differ": 0,
+  "volatile": 1,
+  "only_old": 0,
+  "only_new": 0,
+  "differ_examples": [],
+  "volatile_examples": [
+   {
+    "path": "results.M2_time_order.failure_count",
+    "old": 14,
+    "new": 13
+   }
+  ],
+  "only_old_examples": [],
+  "only_new_examples": []
+ },
+ "s8_scenarios.json": {
+  "same": 822,
+  "differ": 76,
+  "volatile": 0,
+  "only_old": 0,
+  "only_new": 0,
+  "differ_examples": [
+   {
+    "path": "table[0].flows.A<-B.hashes.ifc",
+    "old": "88ae5bede19a3a2500394161cda47ca69796aa77f9a71aa40426ff665fa1",
+    "new": "9a29fea00ec1faefad032cda41efc27e6ef34273f9944d85075230ac0175"
+   },
+   {
+    "path": "table[0].flows.B<-A.hashes.ifc",
+    "old": "88ae5bede19a3a2500394161cda47ca69796aa77f9a71aa40426ff665fa1",
+    "new": "9a29fea00ec1faefad032cda41efc27e6ef34273f9944d85075230ac0175"
+   },
+   {
+    "path": "table[10].flows.A<-B.variants.spec.hashes.ifc",
+    "old": "a6518e7f86b96bcc26c7d3ceadd1e63a7e369d1c84a6e4816d5d721c10cc",
+    "new": "1c34be1d7a2216e00e91803c6b3bd01b1a466b84d428ad2102bca7ef3c16"
+   },
+   {
+    "path": "table[10].flows.A<-B.variants.swap.hashes.ifc",
+    "old": "0a9aabbf3e7031caf84bbdbbf962136e4c14ac6f8bc265946eeac9723d89",
+    "new": "8ad3558933c873766a3f888e3191ed7cc551f55a18da941dcc893c614a43"
+   },
+   {
+    "path": "table[10].flows.B<-A.variants.spec.hashes.ifc",
+    "old": "a6518e7f86b96bcc26c7d3ceadd1e63a7e369d1c84a6e4816d5d721c10cc",
+    "new": "1c34be1d7a2216e00e91803c6b3bd01b1a466b84d428ad2102bca7ef3c16"
+   },
+   {
+    "path": "table[10].flows.B<-A.variants.swap.hashes.ifc",
+    "old": "0a9aabbf3e7031caf84bbdbbf962136e4c14ac6f8bc265946eeac9723d89",
+    "new": "8ad3558933c873766a3f888e3191ed7cc551f55a18da941dcc893c614a43"
+   },
+   {
+    "path": "table[11].flows.A<-B.variants.spec.hashes.ifc",
+    "old": "9e9db9e29b3b1385764280de73f398507dbb1978058ec1c85834101aaafe",
+    "new": "f111f7ea80112201379912b676361f24a4d3dac5b65c1696540d99b86191"
+   },
+   {
+    "path": "table[11].flows.A<-B.variants.swap.hashes.ifc",
+    "old": "f3bb8d0bac972ea918d91d55a511776da9bf50fe627ca14aa5dad9b1154c",
+    "new": "1d90b9021aa70811cfa432d64106d8ab98e3028bf92dab7e36c6a721a9a5"
+   },
+   {
+    "path": "table[11].flows.B<-A.variants.spec.hashes.ifc",
+    "old": "9e9db9e29b3b1385764280de73f398507dbb1978058ec1c85834101aaafe",
+    "new": "f111f7ea80112201379912b676361f24a4d3dac5b65c1696540d99b86191"
+   },
+   {
+    "path": "table[11].flows.B<-A.variants.swap.hashes.ifc",
+    "old": "f3bb8d0bac972ea918d91d55a511776da9bf50fe627ca14aa5dad9b1154c",
+    "new": "1d90b9021aa70811cfa432d64106d8ab98e3028bf92dab7e36c6a721a9a5"
+   },
+   {
+    "path": "table[12].flows.A<-B.hashes.ifc",
+    "old": "b9785f1b9d2a937b69e88c0cb3808dc2dd2a5b5c5d5c56b8412e1e7aecb8",
+    "new": "ac0f42d44b7e93cc3193543591cd0957bd9377384d883b36077f9ad24d47"
+   },
+   {
+    "path": "table[12].flows.B<-A.hashes.ifc",
+    "old": "b9785f1b9d2a937b69e88c0cb3808dc2dd2a5b5c5d5c56b8412e1e7aecb8",
+    "new": "ac0f42d44b7e93cc3193543591cd0957bd9377384d883b36077f9ad24d47"
+   },
+   {
+    "path": "table[13].flows.A<-B.variants.spec.hashes.ifc",
+    "old": "529618880e9ce94d62b5326ba96b30829983340cdc1da106b38ca627df77",
+    "new": "a044a9e7db564e482183d699633b6a23a3d394e6da82667afbf5deb31e3b"
+   },
+   {
+    "path": "table[13].flows.A<-B.variants.swap.hashes.ifc",
+    "old": "c8cce17881a0cd2d9251fea94ee31978f58c8050bc08c30023331bf6f0e5",
+    "new": "3a2de6c4b51b283644caad80784267b9dfe12b397f86b383a49fe3632db7"
+   },
+   {
+    "path": "table[13].flows.B<-A.variants.spec.hashes.ifc",
+    "old": "529618880e9ce94d62b5326ba96b30829983340cdc1da106b38ca627df77",
+    "new": "a044a9e7db564e482183d699633b6a23a3d394e6da82667afbf5deb31e3b"
+   },
+   {
+    "path": "table[13].flows.B<-A.variants.swap.hashes.ifc",
+    "old": "c8cce17881a0cd2d9251fea94ee31978f58c8050bc08c30023331bf6f0e5",
+    "new": "3a2de6c4b51b283644caad80784267b9dfe12b397f86b383a49fe3632db7"
+   },
+   {
+    "path": "table[14].flows.A<-B.variants.spec.hashes.ifc",
+    "old": "eaa913701b47f3e82303a08946787454b9c2f8d10cbc89cdabb42df1acfa",
+    "new": "0ab9e7b2e3bde7b7940de938967a431188f1c8a7e9caa1de095b06f14738"
+   },
+   {
+    "path": "table[14].flows.A<-B.variants.swap.hashes.ifc",
+    "old": "b342f54e6d6bf78678bbcf66ac9d48333b197c101eae4f268696f7961cea",
+    "new": "03e674751000302408618a18a0bfb29053261eb9bf627dbc3de43e4c3f40"
+   },
+   {
+    "path": "table[14].flows.B<-A.variants.spec.hashes.ifc",
+    "old": "eaa913701b47f3e82303a08946787454b9c2f8d10cbc89cdabb42df1acfa",
+    "new": "0ab9e7b2e3bde7b7940de938967a431188f1c8a7e9caa1de095b06f14738"
+   },
+   {
+    "path": "table[14].flows.B<-A.variants.swap.hashes.ifc",
+    "old": "b342f54e6d6bf78678bbcf66ac9d48333b197c101eae4f268696f7961cea",
+    "new": "03e674751000302408618a18a0bfb29053261eb9bf627dbc3de43e4c3f40"
+   },
+   {
+    "path": "table[15].flows.A<-B.hashes.ifc",
+    "old": "581b38939cd4d67b1218969772b04064f09c8f69d07ec79392848fec30f4",
+    "new": "ebb4b57f99a706aff26632152e5b5b5f4fa90f48ca2142073449bb37c385"
+   },
+   {
+    "path": "table[15].flows.B<-A.hashes.ifc",
+    "old": "581b38939cd4d67b1218969772b04064f09c8f69d07ec79392848fec30f4",
+    "new": "ebb4b57f99a706aff26632152e5b5b5f4fa90f48ca2142073449bb37c385"
+   },
+   {
+    "path": "table[16].flows.A<-B.variants.spec.hashes.ifc",
+    "old": "cb62cc552a659567fe64380b55789a61a7d18a98f44277292bb15c7dcbec",
+    "new": "cbd84c4c5b975acb3603eed759774f0072d8714dd4bb539dc96884832d8d"
+   },
+   {
+    "path": "table[16].flows.A<-B.variants.swap.hashes.ifc",
+    "old": "8299fd675a3ffa48ea262f8407880c1a09677d63809ff22f0b7c9bd0ec71",
+    "new": "14c19fdfb908599ce6687f3045f3ee51b45f71febf62c858c6677997db26"
+   },
+   {
+    "path": "table[16].flows.B<-A.variants.spec.hashes.ifc",
+    "old": "cb62cc552a659567fe64380b55789a61a7d18a98f44277292bb15c7dcbec",
+    "new": "cbd84c4c5b975acb3603eed759774f0072d8714dd4bb539dc96884832d8d"
+   }
+  ],
+  "volatile_examples": [],
+  "only_old_examples": [],
+  "only_new_examples": []
+ }
+}

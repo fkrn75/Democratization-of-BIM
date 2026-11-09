@@ -1,0 +1,136 @@
+{
+ "calls": [],
+ "startup_sec": 1.65,
+ "server": [
+  "ifc-mcp",
+  "1.30.0"
+ ],
+ "protocol": "2025-11-25",
+ "tools": [
+  {
+   "name": "ifc_new",
+   "annotations": null,
+   "schema_bytes": 131
+  },
+  {
+   "name": "ifc_load",
+   "annotations": null,
+   "schema_bytes": 131
+  },
+  {
+   "name": "ifc_save",
+   "annotations": null,
+   "schema_bytes": 124
+  },
+  {
+   "name": "ifc_reset",
+   "annotations": null,
+   "schema_bytes": 67
+  },
+  {
+   "name": "ifc_summary",
+   "annotations": null,
+   "schema_bytes": 69
+  },
+  {
+   "name": "ifc_tree",
+   "annotations": null,
+   "schema_bytes": 66
+  },
+  {
+   "name": "ifc_info",
+   "annotations": null,
+   "schema_bytes": 150
+  },
+  {
+   "name": "ifc_select",
+   "annotations": null,
+   "schema_bytes": 136
+  },
+  {
+   "name": "ifc_relations",
+   "annotations": null,
+   "schema_bytes": 223
+  },
+  {
+   "name": "ifc_clash",
+   "annotations": null,
+   "schema_bytes": 363
+  },
+  {
+   "name": "ifc_contexts",
+   "annotations": null,
+   "schema_bytes": 70
+  },
+  {
+   "name": "ifc_materials",
+   "annotations": null,
+   "schema_bytes": 71
+  },
+  {
+   "name": "ifc_list",
+   "annotations": null,
+   "schema_bytes": 128
+  },
+  {
+   "name": "ifc_docs",
+   "annotations": null,
+   "schema_bytes": 158
+  },
+  {
+   "name": "ifc_edit",
+   "annotations": null,
+   "schema_bytes": 224
+  },
+  {
+   "name": "ifc_validate",
+   "annotations": null,
+   "schema_bytes": 150
+  },
+  {
+   "name": "ifc_schedule",
+   "annotations": null,
+   "schema_bytes": 172
+  },
+  {
+   "name": "ifc_cost",
+   "annotations": null,
+   "schema_bytes": 168
+  },
+  {
+   "name": "ifc_schema",
+   "annotations": null,
+   "schema_bytes": 154
+  },
+  {
+   "name": "ifc_quantify",
+   "annotations": null,
+   "schema_bytes": 203
+  },
+  {
+   "name": "ifc_shape_list",
+   "annotations": null,
+   "schema_bytes": 72
+  },
+  {
+   "name": "ifc_shape_docs",
+   "annotations": null,
+   "schema_bytes": 143
+  },
+  {
+   "name": "ifc_shape",
+   "annotations": null,
+   "schema_bytes": 204
+  },
+  {
+   "name": "ifc_plot",
+   "annotations": null,
+   "schema_bytes": 767
+  },
+  {
+   "name": "ifc_render",
+   "annotations": null,
+   "schema_bytes": 407
+  }
+ ]
+}

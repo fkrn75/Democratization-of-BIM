@@ -1,0 +1,431 @@
+{
+ "s3_cold.json": {
+  "same": 31,
+  "differ": 1,
+  "volatile": 56,
+  "only_old": 0,
+  "only_new": 0,
+  "differ_examples": [
+   {
+    "path": "generated_at_utc",
+    "old": "2026-11-08T15:23:39Z",
+    "new": "2026-11-09T03:30:54Z"
+   }
+  ],
+  "volatile_examples": [
+   {
+    "path": "all_7_views_one_graph_ms.max",
+    "old": 47.848,
+    "new": 27.048
+   },
+   {
+    "path": "all_7_views_one_graph_ms.mean",
+    "old": 21.726,
+    "new": 25.598
+   },
+   {
+    "path": "all_7_views_one_graph_ms.min",
+    "old": 15.482,
+    "new": 23.027
+   },
+   {
+    "path": "all_7_views_one_graph_ms.p50",
+    "old": 17.16,
+    "new": 26.273
+   },
+   {
+    "path": "all_7_views_one_graph_ms.p95",
+    "old": 39.909,
+    "new": 27.005
+   },
+   {
+    "path": "elevations_4_ms_sum_p50",
+    "old": 14.996,
+    "new": 24.769
+   },
+   {
+    "path": "per_view_cold_ms.elev-E.ms.max",
+    "old": 7.15,
+    "new": 10.538
+   },
+   {
+    "path": "per_view_cold_ms.elev-E.ms.mean",
+    "old": 4.352,
+    "new": 6.257
+   }
+  ],
+  "only_old_examples": [],
+  "only_new_examples": []
+ },
+ "s3_export.json": {
+  "same": 83,
+  "differ": 8,
+  "volatile": 0,
+  "only_old": 0,
+  "only_new": 0,
+  "differ_examples": [
+   {
+    "path": "files[11].bytes",
+    "old": 1520,
+    "new": 1561
+   },
+   {
+    "path": "files[13].bytes",
+    "old": 1250,
+    "new": 1290
+   },
+   {
+    "path": "files[1].bytes",
+    "old": 3594,
+    "new": 3634
+   },
+   {
+    "path": "files[3].bytes",
+    "old": 3024,
+    "new": 3064
+   },
+   {
+    "path": "files[5].bytes",
+    "old": 2721,
+    "new": 2761
+   },
+   {
+    "path": "files[7].bytes",
+    "old": 1099,
+    "new": 1139
+   },
+   {
+    "path": "files[9].bytes",
+    "old": 1171,
+    "new": 1212
+   },
+   {
+    "path": "generated_at_utc",
+    "old": "2026-11-08T15:25:56Z",
+    "new": "2026-11-09T03:44:24Z"
+   }
+  ],
+  "volatile_examples": [],
+  "only_old_examples": [],
+  "only_new_examples": []
+ },
+ "s3_fuzz.json": {
+  "same": 94,
+  "differ": 1,
+  "volatile": 8,
+  "only_old": 0,
+  "only_new": 0,
+  "differ_examples": [
+   {
+    "path": "generated_at_utc",
+    "old": "2026-11-08T17:58:11Z",
+    "new": "2026-11-09T03:36:54Z"
+   }
+  ],
+  "volatile_examples": [
+   {
+    "path": "affected_api.runs[0].seconds",
+    "old": 5.5,
+    "new": 4.0
+   },
+   {
+    "path": "affected_api.runs[1].seconds",
+    "old": 19.2,
+    "new": 13.6
+   },
+   {
+    "path": "affected_api.runs[2].seconds",
+    "old": 3.1,
+    "new": 2.4
+   },
+   {
+    "path": "affected_api.runs[3].seconds",
+    "old": 13.8,
+    "new": 11.6
+   },
+   {
+    "path": "runs[0].seconds",
+    "old": 62.9,
+    "new": 68.6
+   },
+   {
+    "path": "runs[1].seconds",
+    "old": 102.6,
+    "new": 91.5
+   },
+   {
+    "path": "runs[2].seconds",
+    "old": 83.9,
+    "new": 68.1
+   },
+   {
+    "path": "runs[3].seconds",
+    "old": 118.0,
+    "new": 90.1
+   }
+  ],
+  "only_old_examples": [],
+  "only_new_examples": []
+ },
+ "s3_ifcopenshell_compare.json": {
+  "same": 21,
+  "differ": 1,
+  "volatile": 15,
+  "only_old": 0,
+  "only_new": 0,
+  "differ_examples": [
+   {
+    "path": "generated_at_utc",
+    "old": "2026-11-08T15:25:46Z",
+    "new": "2026-11-09T03:44:24Z"
+   }
+  ],
+  "volatile_examples": [
+   {
+    "path": "ifcopenshell_draw.elevation.ms.max",
+    "old": 293.684,
+    "new": 190.114
+   },
+   {
+    "path": "ifcopenshell_draw.elevation.ms.mean",
+    "old": 289.638,
+    "new": 174.948
+   },
+   {
+    "path": "ifcopenshell_draw.elevation.ms.min",
+    "old": 284.703,
+    "new": 157.055
+   },
+   {
+    "path": "ifcopenshell_draw.elevation.ms.p50",
+    "old": 291.882,
+    "new": 183.08
+   },
+   {
+    "path": "ifcopenshell_draw.elevation.ms.p95",
+    "old": 293.423,
+    "new": 189.462
+   },
+   {
+    "path": "ifcopenshell_draw.floorplan.ms.max",
+    "old": 128.093,
+    "new": 222.778
+   },
+   {
+    "path": "ifcopenshell_draw.floorplan.ms.mean",
+    "old": 120.791,
+    "new": 145.808
+   },
+   {
+    "path": "ifcopenshell_draw.floorplan.ms.min",
+    "old": 109.786,
+    "new": 99.273
+   }
+  ],
+  "only_old_examples": [],
+  "only_new_examples": []
+ },
+ "s3_incremental.json": {
+  "same": 144,
+  "differ": 13,
+  "volatile": 79,
+  "only_old": 0,
+  "only_new": 0,
+  "differ_examples": [
+   {
+    "path": "generated_at_utc",
+    "old": "2026-11-08T17:51:21Z",
+    "new": "2026-11-09T03:31:05Z"
+   },
+   {
+    "path": "nodes_in_full_regen",
+    "old": 574,
+    "new": 594
+   },
+   {
+    "path": "nodes_recomputed_per_move.max",
+    "old": 234,
+    "new": 235
+   },
+   {
+    "path": "nodes_recomputed_per_move.mean",
+    "old": 157.625,
+    "new": 158.625
+   },
+   {
+    "path": "nodes_recomputed_per_move.min",
+    "old": 23,
+    "new": 24
+   },
+   {
+    "path": "nodes_recomputed_per_move.p50",
+    "old": 184.5,
+    "new": 185.5
+   },
+   {
+    "path": "nodes_recomputed_per_move.p95",
+    "old": 233.05,
+    "new": 234.05
+   },
+   {
+    "path": "samples[0].nodes_recomputed",
+    "old": 88,
+    "new": 89
+   },
+   {
+    "path": "samples[1].nodes_recomputed",
+    "old": 234,
+    "new": 235
+   },
+   {
+    "path": "samples[2].nodes_recomputed",
+    "old": 23,
+    "new": 24
+   },
+   {
+    "path": "samples[3].nodes_recomputed",
+    "old": 205,
+    "new": 206
+   },
+   {
+    "path": "samples[4].nodes_recomputed",
+    "old": 184,
+    "new": 185
+   },
+   {
+    "path": "samples[5].nodes_recomputed",
+    "old": 92,
+    "new": 93
+   }
+  ],
+  "volatile_examples": [
+   {
+    "path": "criterion_update_within_2s.max_total_ms",
+    "old": 27.464,
+    "new": 40.502
+   },
+   {
+    "path": "fresh_incremental_graph_all_views_ms.max",
+    "old": 85.137,
+    "new": 99.544
+   },
+   {
+    "path": "fresh_incremental_graph_all_views_ms.mean",
+    "old": 23.765,
+    "new": 29.175
+   },
+   {
+    "path": "fresh_incremental_graph_all_views_ms.min",
+    "old": 11.536,
+    "new": 21.455
+   },
+   {
+    "path": "fresh_incremental_graph_all_views_ms.p50",
+    "old": 24.434,
+    "new": 26.865
+   },
+   {
+    "path": "fresh_incremental_graph_all_views_ms.p95",
+    "old": 34.867,
+    "new": 37.942
+   },
+   {
+    "path": "full_regen_all_views_ms.max",
+    "old": 222.898,
+    "new": 263.483
+   },
+   {
+    "path": "full_regen_all_views_ms.mean",
+    "old": 143.833,
+    "new": 191.781
+   }
+  ],
+  "only_old_examples": [],
+  "only_new_examples": []
+ },
+ "s3_mutants.json": {
+  "same": 194,
+  "differ": 3,
+  "volatile": 0,
+  "only_old": 0,
+  "only_new": 0,
+  "differ_examples": [
+   {
+    "path": "generated_at_utc",
+    "old": "2026-11-08T18:06:33Z",
+    "new": "2026-11-09T03:43:15Z"
+   },
+   {
+    "path": "mutants[6].per_seed[1].diffs",
+    "old": 874,
+    "new": 878
+   },
+   {
+    "path": "mutants[6].per_seed[1].errors",
+    "old": 4,
+    "new": 0
+   }
+  ],
+  "volatile_examples": [],
+  "only_old_examples": [],
+  "only_new_examples": []
+ },
+ "s3_scale.json": {
+  "same": 37,
+  "differ": 1,
+  "volatile": 36,
+  "only_old": 0,
+  "only_new": 0,
+  "differ_examples": [
+   {
+    "path": "generated_at_utc",
+    "old": "2026-11-08T15:25:13Z",
+    "new": "2026-11-09T03:44:20Z"
+   }
+  ],
+  "volatile_examples": [
+   {
+    "path": "rows[0].cold_3_views_ms",
+    "old": 20.4,
+    "new": 20.3
+   },
+   {
+    "path": "rows[0].full_regen_ms.max",
+    "old": 166.882,
+    "new": 84.611
+   },
+   {
+    "path": "rows[0].full_regen_ms.mean",
+    "old": 95.058,
+    "new": 76.863
+   },
+   {
+    "path": "rows[0].full_regen_ms.min",
+    "old": 69.655,
+    "new": 64.394
+   },
+   {
+    "path": "rows[0].full_regen_ms.p50",
+    "old": 88.211,
+    "new": 79.567
+   },
+   {
+    "path": "rows[0].full_regen_ms.p95",
+    "old": 133.395,
+    "new": 84.553
+   },
+   {
+    "path": "rows[0].incremental_refresh_ms.max",
+    "old": 13.651,
+    "new": 10.386
+   },
+   {
+    "path": "rows[0].incremental_refresh_ms.mean",
+    "old": 8.3,
+    "new": 7.285
+   }
+  ],
+  "only_old_examples": [],
+  "only_new_examples": []
+ }
+}

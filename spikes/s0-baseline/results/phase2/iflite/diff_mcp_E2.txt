@@ -1,0 +1,7 @@
+이동한 요소 0개 / 형상 있는 요소 57개
+  체적변화 D-01 0.0945 -> 0.105
+  체적변화 D-05 0.0945 -> 0.105
+  체적변화 W-E-01 11.1456 -> 11.1016
+  체적변화 W-E-05 11.1456 -> 11.1016
+관계 보존: voids True fills True
+유효성 오류 전/후: 0 8 ['With inverse:\n    ShapeOfProduct : SET [1:?] OF IfcProduct FOR Representation\nValue:\n    ()\nNot valid\n', 'With inverse:\n    ShapeOfProduct : SET [1:?] OF IfcProduct FOR Representation\nValue:\n    ()\nNot valid\n']

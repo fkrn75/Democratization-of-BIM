@@ -1,0 +1,124 @@
+{
+ "s4_integration.json": {
+  "same": 39,
+  "differ": 0,
+  "volatile": 7,
+  "only_old": 0,
+  "only_new": 0,
+  "differ_examples": [],
+  "volatile_examples": [
+   {
+    "path": "flush_and_hash_ms",
+    "old": 149.4,
+    "new": 136.4
+   },
+   {
+    "path": "place_ms[0]",
+    "old": 12.1,
+    "new": 9.6
+   },
+   {
+    "path": "place_ms[1]",
+    "old": 7.6,
+    "new": 4.2
+   },
+   {
+    "path": "place_ms[2]",
+    "old": 12.8,
+    "new": 7.8
+   },
+   {
+    "path": "place_ms[3]",
+    "old": 7.6,
+    "new": 5.9
+   },
+   {
+    "path": "place_ms[4]",
+    "old": 7.4,
+    "new": 6.1
+   },
+   {
+    "path": "place_ms[5]",
+    "old": 15.0,
+    "new": 18.2
+   }
+  ],
+  "only_old_examples": [],
+  "only_new_examples": []
+ },
+ "s4_library.json": {
+  "same": 73,
+  "differ": 0,
+  "volatile": 4,
+  "only_old": 0,
+  "only_new": 0,
+  "differ_examples": [],
+  "volatile_examples": [
+   {
+    "path": "families[0].stats.seconds",
+    "old": 5.03,
+    "new": 6.54
+   },
+   {
+    "path": "families[1].stats.seconds",
+    "old": 5.39,
+    "new": 5.16
+   },
+   {
+    "path": "families[2].stats.seconds",
+    "old": 5.22,
+    "new": 5.31
+   },
+   {
+    "path": "families[3].stats.seconds",
+    "old": 5.95,
+    "new": 6.08
+   }
+  ],
+  "only_old_examples": [],
+  "only_new_examples": []
+ },
+ "s4_mutants.json": {
+  "same": 273,
+  "differ": 0,
+  "volatile": 0,
+  "only_old": 0,
+  "only_new": 0,
+  "differ_examples": [],
+  "volatile_examples": [],
+  "only_old_examples": [],
+  "only_new_examples": []
+ },
+ "s4_review_fixes.json": {
+  "same": 31,
+  "differ": 0,
+  "volatile": 4,
+  "only_old": 0,
+  "only_new": 0,
+  "differ_examples": [],
+  "volatile_examples": [
+   {
+    "path": "limits.17_voids_on_one_solid.seconds",
+    "old": 0.01,
+    "new": 0.0
+   },
+   {
+    "path": "limits.heavy_42KB_recipe.seconds",
+    "old": 1.49,
+    "new": 1.35
+   },
+   {
+    "path": "void_checks.void_eats_all.seconds",
+    "old": 5.03,
+    "new": 5.15
+   },
+   {
+    "path": "void_checks.void_half_ok.seconds",
+    "old": 4.7,
+    "new": 5.1
+   }
+  ],
+  "only_old_examples": [],
+  "only_new_examples": []
+ }
+}

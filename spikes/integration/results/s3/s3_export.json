@@ -1,0 +1,125 @@
+{
+  "files": [
+    {
+      "view": "plan-1F",
+      "file": "out/RA-01-core_plan-1F.svg",
+      "bytes": 4771,
+      "segments": 59,
+      "fills": 10,
+      "non_ascii_dropped": false
+    },
+    {
+      "view": "plan-1F",
+      "file": "out/RA-01-core_plan-1F.pdf",
+      "bytes": 3634,
+      "segments": 59,
+      "fills": 10,
+      "non_ascii_dropped": true
+    },
+    {
+      "view": "plan-2F",
+      "file": "out/RA-01-core_plan-2F.svg",
+      "bytes": 3967,
+      "segments": 46,
+      "fills": 9,
+      "non_ascii_dropped": false
+    },
+    {
+      "view": "plan-2F",
+      "file": "out/RA-01-core_plan-2F.pdf",
+      "bytes": 3064,
+      "segments": 46,
+      "fills": 9,
+      "non_ascii_dropped": true
+    },
+    {
+      "view": "section-BB",
+      "file": "out/RA-01-core_section-BB.svg",
+      "bytes": 3574,
+      "segments": 34,
+      "fills": 8,
+      "non_ascii_dropped": false
+    },
+    {
+      "view": "section-BB",
+      "file": "out/RA-01-core_section-BB.pdf",
+      "bytes": 2761,
+      "segments": 34,
+      "fills": 8,
+      "non_ascii_dropped": true
+    },
+    {
+      "view": "elev-N",
+      "file": "out/RA-01-core_elev-N.svg",
+      "bytes": 1279,
+      "segments": 7,
+      "fills": 0,
+      "non_ascii_dropped": false
+    },
+    {
+      "view": "elev-N",
+      "file": "out/RA-01-core_elev-N.pdf",
+      "bytes": 1139,
+      "segments": 7,
+      "fills": 0,
+      "non_ascii_dropped": true
+    },
+    {
+      "view": "elev-E",
+      "file": "out/RA-01-core_elev-E.svg",
+      "bytes": 1391,
+      "segments": 9,
+      "fills": 0,
+      "non_ascii_dropped": false
+    },
+    {
+      "view": "elev-E",
+      "file": "out/RA-01-core_elev-E.pdf",
+      "bytes": 1212,
+      "segments": 9,
+      "fills": 0,
+      "non_ascii_dropped": true
+    },
+    {
+      "view": "elev-S",
+      "file": "out/RA-01-core_elev-S.svg",
+      "bytes": 1916,
+      "segments": 18,
+      "fills": 0,
+      "non_ascii_dropped": false
+    },
+    {
+      "view": "elev-S",
+      "file": "out/RA-01-core_elev-S.pdf",
+      "bytes": 1561,
+      "segments": 18,
+      "fills": 0,
+      "non_ascii_dropped": true
+    },
+    {
+      "view": "elev-W",
+      "file": "out/RA-01-core_elev-W.svg",
+      "bytes": 1511,
+      "segments": 11,
+      "fills": 0,
+      "non_ascii_dropped": false
+    },
+    {
+      "view": "elev-W",
+      "file": "out/RA-01-core_elev-W.pdf",
+      "bytes": 1290,
+      "segments": 11,
+      "fills": 0,
+      "non_ascii_dropped": true
+    }
+  ],
+  "svg_contains_korean_text": true,
+  "pdf_korean": "한글은 '?' 로 대체(글꼴 미내장, non_ascii_dropped=true)",
+  "pdf_is_vector": true,
+  "env": {
+    "python": "3.12.2",
+    "platform": "Windows-11-10.0.26200-SP0",
+    "machine": "AMD64"
+  },
+  "generated_at_utc": "2026-11-09T03:44:24Z"
+}

@@ -1,0 +1,93 @@
+{
+ "M1": {
+  "value": 100.0,
+  "threshold": ">=99",
+  "unit": "%",
+  "pass": true,
+  "detail": []
+ },
+ "M2": {
+  "value": 100.0,
+  "threshold": "=100",
+  "unit": "% (클래스)",
+  "pass": true,
+  "detail": []
+ },
+ "M3": {
+  "value": 100.0,
+  "threshold": ">=95",
+  "unit": "%",
+  "total": 193,
+  "pass": true,
+  "detail": []
+ },
+ "M4": {
+  "value": 100.0,
+  "threshold": "=100",
+  "unit": "%",
+  "total": 26,
+  "pass": true,
+  "detail": []
+ },
+ "M5": {
+  "value": 100.0,
+  "threshold": "=100",
+  "unit": "%",
+  "total": 14,
+  "pass": true,
+  "detail": []
+ },
+ "M6": {
+  "value": 100.0,
+  "threshold": "=100 (오차<=0.5%)",
+  "unit": "% (요소)",
+  "total": 57,
+  "max_rel_err": 1.9678556256583484e-14,
+  "pass": true,
+  "detail": []
+ },
+ "M7": {
+  "value": 100.0,
+  "threshold": "기록만",
+  "unit": "%",
+  "total": 19,
+  "pass": null,
+  "detail": []
+ },
+ "M8": {
+  "value": 0,
+  "threshold": "=0",
+  "unit": "건",
+  "pass": true,
+  "warnings": 0,
+  "detail": []
+ },
+ "X1": {
+  "value": 92.98245614035088,
+  "threshold": "=100 (1mm)",
+  "unit": "% (요소)",
+  "total": 57,
+  "pass": false,
+  "detail": [
+   "0NMNry_anRwwDmM$NmdIP1 편차 0.6",
+   "25FhLtGibUvemo0wnbYUQ8 편차 0.6",
+   "2Qkn_sJh1HPvgk6rr8Rr4t 편차 0.6",
+   "3Y2ETKAITKWwOynuyfZ9lq 편차 0.6"
+  ]
+ },
+ "X2": {
+  "value": 0,
+  "threshold": "참고",
+  "unit": "건",
+  "pass": null,
+  "detail": []
+ },
+ "_meta": {
+  "ref": "RA-01.ifc",
+  "test": "results/ifcopenshell/E1.ifc",
+  "schema_ref": "IFC4",
+  "schema_test": "IFC4",
+  "n_products_ref": 74,
+  "n_products_test": 74
+ }
+}

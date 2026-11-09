@@ -1,0 +1,19 @@
+{
+  "checks": {
+    "exists": "FILE_EXISTS",
+    "garbage": "IMPORT_INVALID",
+    "ifc2x3": "UNSUPPORTED_SCHEMA",
+    "ifc2x3_project_left_behind": false,
+    "not_ifc_extension": "PATH_DENIED",
+    "outside_workspace": "PATH_DENIED"
+  },
+  "ifc2x3_sample_alias": "revit_ra01_ifc2x3",
+  "meta": {
+    "ifcdiff": "0.9.0",
+    "ifcdiff_ifcopenshell": "0.9.0.post1",
+    "ifcopenshell_core": "0.9.0.post1",
+    "platform": "Windows 11",
+    "pydantic": "2.14.3",
+    "python": "3.12.2"
+  }
+}

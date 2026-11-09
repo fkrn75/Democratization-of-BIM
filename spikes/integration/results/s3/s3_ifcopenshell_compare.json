@@ -1,0 +1,59 @@
+{
+  "model": "RA-01 코어 범위의 IFC 투영(IfcOpenShell 0.9 draw, HLR)",
+  "ifc_entities": {
+    "IfcWall": 14,
+    "IfcDoor": 5
+  },
+  "ifcopenshell_draw": {
+    "floorplan": {
+      "ms": {
+        "n": 5,
+        "min": 99.273,
+        "p50": 124.637,
+        "p95": 210.159,
+        "max": 222.778,
+        "mean": 145.808
+      },
+      "bytes": 12696,
+      "paths": 75
+    },
+    "section": {
+      "ms": {
+        "n": 5,
+        "min": 149.976,
+        "p50": 153.255,
+        "p95": 157.943,
+        "max": 158.477,
+        "mean": 153.809
+      },
+      "bytes": 21626,
+      "paths": 168
+    },
+    "elevation": {
+      "ms": {
+        "n": 5,
+        "min": 157.055,
+        "p50": 183.08,
+        "p95": 189.462,
+        "max": 190.114,
+        "mean": 174.948
+      },
+      "bytes": 18821,
+      "paths": 171
+    }
+  },
+  "plan_1F_cross_check": {
+    "tolerance_mm": 2.0,
+    "my_cut_segments": 32,
+    "ifcopenshell_segments": 80,
+    "my_lines_within_tol_of_ifcopenshell": 0.9885,
+    "ifcopenshell_lines_within_tol_of_mine": 0.9126,
+    "note": "ifcopenshell 선은 벽별 윤곽(내부 이음매·문 본체 포함)이고 내 선은 합집합 윤곽이라 두 번째 값은 이음매만큼 낮다. 내 도면은 L 모서리를 채워 코어 투영의 노치와 모서리에서 다르다"
+  },
+  "env": {
+    "python": "3.12.2",
+    "platform": "Windows-11-10.0.26200-SP0",
+    "machine": "AMD64"
+  },
+  "generated_at_utc": "2026-11-09T03:44:24Z"
+}

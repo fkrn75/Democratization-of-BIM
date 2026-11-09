@@ -1,0 +1,286 @@
+{
+  "schema": "dobim.family/1",
+  "id": "window.fixed",
+  "version": 1,
+  "name": "고정창",
+  "description": "벽에 호스팅되는 고정창. 창틀(압출 - 공극)·유리·멀리언(반복). 하단 높이(sill)는 인스턴스 매개변수.",
+  "ifc": {
+    "class": "IfcWindow",
+    "type_class": "IfcWindowType",
+    "predefined": "WINDOW",
+    "type_attrs": {
+      "PartitioningType": {
+        "expr": "'SINGLE_PANEL' if mullions == 0 else 'DOUBLE_PANEL_VERTICAL'"
+      },
+      "ParameterTakesPrecedence": false
+    },
+    "attrs": {
+      "OverallWidth": {
+        "expr": "width"
+      },
+      "OverallHeight": {
+        "expr": "height"
+      }
+    }
+  },
+  "host": {
+    "kinds": [
+      "wall"
+    ],
+    "cut": {
+      "x": [
+        "left",
+        "right"
+      ],
+      "z": [
+        "z0",
+        "z1"
+      ]
+    }
+  },
+  "params": {
+    "width": {
+      "kind": "type",
+      "default": 1200,
+      "unit": "mm",
+      "min": 500,
+      "max": 3000
+    },
+    "height": {
+      "kind": "type",
+      "default": 1200,
+      "unit": "mm",
+      "min": 400,
+      "max": 2400
+    },
+    "frame_w": {
+      "kind": "type",
+      "default": 60,
+      "unit": "mm",
+      "description": "창틀 단면 폭",
+      "min": 30,
+      "max": 120
+    },
+    "glass_t": {
+      "kind": "type",
+      "default": 24,
+      "unit": "mm",
+      "description": "유리 두께",
+      "min": 6,
+      "max": 40
+    },
+    "mullions": {
+      "kind": "type",
+      "default": 0,
+      "type": "int",
+      "unit": "none",
+      "description": "세로 멀리언 개수",
+      "min": 0,
+      "max": 3
+    },
+    "u_value": {
+      "kind": "type",
+      "default": 1.6,
+      "unit": "none",
+      "description": "열관류율 W/m2K",
+      "min": 0.5,
+      "max": 5.0
+    },
+    "is_external": {
+      "kind": "type",
+      "default": true,
+      "type": "bool"
+    },
+    "sill": {
+      "kind": "instance",
+      "default": 900,
+      "unit": "mm",
+      "description": "바닥에서 창 하단까지",
+      "min": 0,
+      "max": 1500
+    }
+  },
+  "derived": {
+    "z0": "sill",
+    "z1": "sill + height",
+    "inner_w": "width - 2*frame_w",
+    "inner_h": "height - 2*frame_w",
+    "frame_d": "min(host_thickness, 150)",
+    "glass_ratio": "inner_w*inner_h/(width*height)"
+  },
+  "refs": {
+    "left": {
+      "axis": "x",
+      "at": "-width/2"
+    },
+    "right": {
+      "axis": "x",
+      "at": "width/2"
+    }
+  },
+  "constraints": [
+    {
+      "expr": "inner_w >= 100 and inner_h >= 100",
+      "message": "유리 개구가 100mm 미만이다(frame_w 를 줄이세요)"
+    },
+    {
+      "expr": "glass_t < frame_d",
+      "message": "유리가 틀 깊이보다 두껍다"
+    }
+  ],
+  "solids": [
+    {
+      "id": "frame",
+      "op": "extrude",
+      "plane": "xz",
+      "profile": {
+        "shape": "rect",
+        "u": [
+          "left",
+          "right"
+        ],
+        "v": [
+          "z0",
+          "z1"
+        ]
+      },
+      "range": [
+        "-frame_d/2",
+        "frame_d/2"
+      ]
+    },
+    {
+      "id": "frame_hole",
+      "op": "extrude",
+      "plane": "xz",
+      "role": "void",
+      "cuts": [
+        "frame"
+      ],
+      "profile": {
+        "shape": "rect",
+        "u": [
+          "left + frame_w",
+          "right - frame_w"
+        ],
+        "v": [
+          "z0 + frame_w",
+          "z1 - frame_w"
+        ]
+      },
+      "range": [
+        "-frame_d",
+        "frame_d"
+      ]
+    },
+    {
+      "id": "glass",
+      "op": "extrude",
+      "plane": "xz",
+      "profile": {
+        "shape": "rect",
+        "u": [
+          "left + frame_w",
+          "right - frame_w"
+        ],
+        "v": [
+          "z0 + frame_w",
+          "z1 - frame_w"
+        ]
+      },
+      "range": [
+        "-glass_t/2",
+        "glass_t/2"
+      ]
+    },
+    {
+      "id": "mullion",
+      "op": "extrude",
+      "plane": "xz",
+      "repeat": {
+        "var": "i",
+        "count": "mullions"
+      },
+      "profile": {
+        "shape": "rect",
+        "u": [
+          "left + frame_w + (i + 1)*inner_w/(mullions + 1) - frame_w/4",
+          "left + frame_w + (i + 1)*inner_w/(mullions + 1) + frame_w/4"
+        ],
+        "v": [
+          "z0 + frame_w",
+          "z1 - frame_w"
+        ]
+      },
+      "range": [
+        "-frame_d/2",
+        "frame_d/2"
+      ]
+    }
+  ],
+  "plan_symbol": {
+    "default": [
+      {
+        "type": "rect",
+        "u": [
+          "left",
+          "right"
+        ],
+        "v": [
+          "-host_thickness/2",
+          "host_thickness/2"
+        ],
+        "style": "cut"
+      },
+      {
+        "type": "line",
+        "from": [
+          "left",
+          0
+        ],
+        "to": [
+          "right",
+          0
+        ]
+      }
+    ],
+    "1:200": [
+      {
+        "type": "rect",
+        "u": [
+          "left",
+          "right"
+        ],
+        "v": [
+          "-host_thickness/2",
+          "host_thickness/2"
+        ],
+        "style": "cut"
+      }
+    ]
+  },
+  "psets": {
+    "Pset_WindowCommon": {
+      "on": "type",
+      "props": {
+        "IsExternal": {
+          "expr": "is_external"
+        },
+        "ThermalTransmittance": {
+          "expr": "u_value"
+        },
+        "GlazingAreaFraction": {
+          "expr": "round(glass_ratio, 3)"
+        }
+      }
+    },
+    "DoBIM_WindowParams": {
+      "on": "instance",
+      "props": {
+        "SillHeight": {
+          "expr": "sill"
+        }
+      }
+    }
+  }
+}
