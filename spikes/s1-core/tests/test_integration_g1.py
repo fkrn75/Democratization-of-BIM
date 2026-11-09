@@ -458,3 +458,35 @@ def test_9b_병합의_검사_상수가_레지스트리와_같은_규칙이다():
     for _ in range(2000):
         v = "".join(rnd.choice(alphabet) for _ in range(rnd.choice((21, 22, 22, 22, 23))))
         assert id_ok(v) == (merge.ID_RE.match(v) is not None), repr(v)
+
+
+def test_2c_뷰_삭제_대_주석_생성과_호스트_삭제_대_패밀리_배치는_의미_충돌로_잡힌다(tmp_path):
+    b = S.Bench(tmp_path)
+    try:
+        S.build_authored(b, "anc.dobim")
+        _ok(b.run("view.create", {"id": F.V1, "name": "1F 평면", "type": "plan", "level": F.LV1, "cut_height": 1200}, project="anc.dobim"))
+    finally:
+        b.close()
+    branch(tmp_path, "anc.dobim", "a.dobim", "b.dobim")
+    fid = "0" * 21 + "1"
+    b = S.Bench(tmp_path)
+    try:
+        _ok(b.run("view.delete", {"id": F.V1}, project="a.dobim"))            # A: 뷰를 지운다
+        _ok(b.run("element.delete", {"id": F.W3}, project="a.dobim"))         # A: 호스트 벽을 지운다(문 D2 도 함께)
+        _ok(b.run("annot.dim.create", {"id": F.A1, "view": F.V1, "a": f"wall:{F.W1}#trim.start", "b": f"wall:{F.W1}#trim.end"}, project="b.dobim"))
+        _ok(b.run("family.place", {"id": fid, "family": "door.single", "values": {"swing": "R"}, "host": F.W3, "offset": 4500}, project="b.dobim"))
+        prev = b.run("merge.preview", {"other": "b.dobim"}, project="a.dobim")
+        assert prev["ok"], prev
+        types = {i["type"] for i in prev["result"]["items"]}
+        assert {"VIEW_DELETED", "HOST_DELETED"} <= types, types
+        r = b.run("merge.apply", {"other": "b.dobim"}, project="a.dobim")
+        assert not r["ok"] and r["error"]["code"] == "MERGE_CONFLICT", r
+        # 상대가 기여한 변경을 되돌리는 쪽(ours)을 고르면 합쳐지고, 결과에 매달린 관계가 없다
+        keys = [{"key": i["key"], "take": "ours"} for i in prev["result"]["items"]]
+        r = b.run("merge.apply", {"other": "b.dobim", "resolve": keys}, project="a.dobim")
+        assert r["ok"], r
+        kinds = {i["kind"] for i in _ok(b.run("element.query", {"limit": 1000}, project="a.dobim"))["items"]}
+        assert "dim" not in kinds and "finst" not in kinds and "view" not in kinds, kinds
+        assert _ok(b.run("model.validate", {}, project="a.dobim"))["errors"] == 0
+    finally:
+        b.close()
