@@ -18,18 +18,18 @@ REPO = Path(__file__).resolve().parents[2]
 PY = sys.executable
 T = "tests/test_integration_views_rt.py"
 M = [  # (이름, 파일, 옛, 새, -k 식)
-    ("M01 변조 탐지 해시 대조 제거", "viewdefs.py", 'if d["check"] != check_of(eid, kind, params):', "if False:", "위치만 or 정의만 or 바꿔치기_해시 or 해시를_지움"),
-    ("M02 파라미터 모양 검사 제거", "viewdefs.py", "if (err := K.row_params_error(kind, params)) is not None:", "if False:", "키_누락 or 키_추가 or 이름_너무_김 or 이름에_NUL"),
-    ("M03 값 범위 검사 제거", "viewdefs.py", '        {"view": _view_values, "dim": _dim_values, "tag": _tag_values}[kind](params)', "        pass", "거대_절단 or 범위_밖 or 축척 or 방위 or 절단선"),
-    ("M04 정의 크기 상한 제거", "viewdefs.py", "len(text) > MAX_DEF_CHARS", "False", "거대_텍스트"),
-    ("M05 NaN 거절 제거", "family/recipe.py", "raise _NonFinite(name)", "return 0", "NaN"),
+    ("M01 변조 탐지 해시 대조 제거", "viewdefs.py", 'if d["check"] != check_of(eid, kind, params):', "if False:", "case01 or case02 or case03 or case04 or case05"),
+    ("M02 파라미터 모양 검사 제거", "viewdefs.py", "if (err := K.row_params_error(kind, params)) is not None:", "if False:", "case11 or case12 or case21 or case22"),
+    ("M03 값 범위 검사 제거", "viewdefs.py", '        {"view": _view_values, "dim": _dim_values, "tag": _tag_values}[kind](params)', "        pass", "case15 or case16 or case17 or case19 or case20 or case27 or case28"),
+    ("M04 정의 크기 상한 제거", "viewdefs.py", "len(text) > MAX_DEF_CHARS", "False", "case44"),
+    ("M05 NaN 거절 제거", "family/recipe.py", "raise _NonFinite(name)", "return 0", "case43"),
     ("M06 정의 id 충돌 검사 제거", "foreign.py", "if eid in taken or eid in rows:", "if False:", "v4c or v4d"),
-    ("M07 같은 이름 뷰 검사 제거", "foreign.py", "if len(ids) > 1:   # 뷰 이름은", "if False:   # 뷰 이름은", "같은_이름_뷰"),
-    ("M08 평면 뷰 레벨 저작 확인 제거", "foreign.py", 'if st is not None and st != ("level", "authored"):', "if False:", "v4f or 레벨이_벽"),
-    ("M09 치수 참조 저작 확인 제거", "foreign.py", 'if st is not None and st != (rk, "authored"):', "if False:", "v4e or v4i or 참조_종류_틀림"),
+    ("M07 같은 이름 뷰 검사 제거", "foreign.py", "if len(ids) > 1:   # 뷰 이름은", "if False:   # 뷰 이름은", "case42"),
+    ("M08 평면 뷰 레벨 저작 확인 제거", "foreign.py", 'if st is not None and st != ("level", "authored"):', "if False:", "v4f or case24"),
+    ("M09 치수 참조 저작 확인 제거", "foreign.py", 'if st is not None and st != (rk, "authored"):', "if False:", "v4e or v4i or case36"),
     ("M10 태그 대상 저작 확인 제거", "foreign.py", 'elif st is not None and (st[1] != "authored" or not VD.tag_fields_ok(st[0], p["fields"])):', "elif False:", "v4i"),
-    ("M11 뷰 없는 주석 복원 거절 제거", "foreign.py", "        if v is None:\n", "        if False:\n", "없는_뷰를_가리키는 or v4f"),
-    ("M12 치수·뷰 종류 일치 확인 제거", "foreign.py", 'if ("at" in p) == (vt == "plan"):', "if False:", "치수가_단면뷰에"),
+    ("M11 뷰 없는 주석 복원 거절 제거", "foreign.py", "        if v is None:\n", "        if False:\n", "case37 or v4f"),
+    ("M12 치수·뷰 종류 일치 확인 제거", "foreign.py", 'if ("at" in p) == (vt == "plan"):', "if False:", "case32 or case33"),
     ("M13 같은 이름 속성 처리 제거", "foreign.py", "        if name in out or name in dup:", "        if False:", "v4b"),
     ("M14 속성셋 모호 거절 제거", "foreign.py", "    if len(psets) > 1:", "    if False:", "v4b"),
     ("M15 길이 단위 확인 제거", "foreign.py", "    if unit_ok:\n        _restore_defs", "    if True:\n        _restore_defs", "v4h"),
@@ -40,11 +40,13 @@ M = [  # (이름, 파일, 옛, 새, -k 식)
     ("M20 바뀐 정의만 쓰기 제거", "ifc_model.py", "        changed = {i: t for i, t in desired.items() if self._defs_text.get(i) != t}", "        changed = dict(desired)", "v6b"),
     ("M21 속성셋 GlobalId 파생 제거", "ifc_model.py", 'ps.GlobalId = derived_guid(self.project_guid, "defs:pset")', "pass", "v1c"),
     ("M22 annot_of 관계 복원 제거", "foreign.py", '            rels.add(("annot_of", eid, d["params"]["view"]))', "            pass", "v1_ or v3"),
-    ("M23 서로게이트 거절 제거", "viewdefs.py", "        if not _name_ok(params[\"name\"]):", "        if False:", "서로게이트"),
-    ("M24 방향 지문 모양 검사 제거", "viewdefs.py", "or not _dirs_ok(p[\"dirs\"]):", "or False:", "지문_모양"),
-    ("M25 정의 개수 상한 제거", "foreign.py", "if len(out) > VD.MAX_DEFS:", "if False:", None),
+    ("M23 서로게이트 거절 제거", "viewdefs.py", "        if not _name_ok(params[\"name\"]):", "        if False:", "case23"),
+    ("M24 방향 지문 모양 검사 제거", "viewdefs.py", "or not _dirs_ok(p[\"dirs\"]):", "or False:", "case35"),
+    ("M25 정의 개수 상한 제거", "foreign.py", "if len(out) >= VD.MAX_DEFS:", "if False:", "v4k"),
     ("M26 id 에 묶인 해시 제거", "viewdefs.py", 'return hashlib.sha256(canon({"id": eid, "kind": kind, "params": params}).encode("utf-8")).hexdigest()',
-     'return hashlib.sha256(canon({"kind": kind, "params": params}).encode("utf-8")).hexdigest()', "v4c or v4d or 같은_이름_뷰"),
+     'return hashlib.sha256(canon({"kind": kind, "params": params}).encode("utf-8")).hexdigest()', "case47"),
+    ("M27 치수 대상 레벨 일치 확인 제거", "foreign.py", 'elif st is not None and vt == "plan" and level_of(rk, rid) != v["params"]["level"]:', "elif False:", "case45"),
+    ("M28 태그 대상 레벨 일치 확인 제거", "foreign.py", 'elif st is not None and level_of(st[0], p["target"]) != v["params"]["level"]:', "elif False:", "case46"),
 ]
 
 
@@ -80,10 +82,13 @@ def main():
             p.write_text(orig.replace(old, new, 1), encoding="utf-8", newline="")
             try:
                 t0 = time.time()
-                r = subprocess.run([PY, "-m", "pytest", T, "-q", "-x", "-p", "no:cacheprovider", "-k", k], capture_output=True, text=True, env=env,
-                                   cwd=str(root), encoding="utf-8", timeout=1500, stdin=subprocess.DEVNULL)
-                tail = [l for l in r.stdout.splitlines() if l.startswith("FAILED") or " passed" in l or " failed" in l][-1:]
-                res.append((name, ("실패(이빨 있음)" if r.returncode != 0 else "통과(이빨 없음!)"), f"{time.time() - t0:.0f}s", tail))
+                r = subprocess.run([PY, "-m", "pytest", T, "-p", "no:cacheprovider", "-o", "addopts=", "-x", "-q", "-k", k], capture_output=True, text=True,
+                                   env=env, cwd=str(root), encoding="utf-8", timeout=1500, stdin=subprocess.DEVNULL)
+                tail = [l for l in r.stdout.splitlines() if l.startswith("FAILED") or " passed" in l or " failed" in l or "no tests ran" in l][-1:]
+                # pytest 종료 코드: 0 = 전부 통과(변이가 살아남음), 1 = 시험 실패(변이를 잡음), 5 = 고른 시험이 없음(-k 가 틀림), 그 밖 = 수집·내부 오류.
+                # 1 만 "잡음"으로 센다(2s 만에 끝난 가짜 "실패" 를 잡음으로 세지 않는다)
+                verdict = {0: "통과(이빨 없음!)", 1: "실패(이빨 있음)", 5: "시험 선택 실패(-k)"}.get(r.returncode, f"오류(종료 코드 {r.returncode})")
+                res.append((name, verdict, f"{time.time() - t0:.0f}s", tail))
             finally:
                 p.write_text(orig, encoding="utf-8", newline="")
             print(res[-1], flush=True)

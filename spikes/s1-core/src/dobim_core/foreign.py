@@ -188,11 +188,11 @@ def _read_defs(f, plan: "ImportPlan") -> dict[str, object]:
             dup.add(name)
             out.pop(name, None)
             continue
-        v = getattr(p.NominalValue, "wrappedValue", None) if p.is_a("IfcPropertySingleValue") and p.NominalValue is not None else None
-        out[name] = v if isinstance(v, str) else None
-        if len(out) > VD.MAX_DEFS:
+        if len(out) >= VD.MAX_DEFS:
             plan.warnings.append(f"뷰·주석 정의가 {VD.MAX_DEFS}개를 넘어 나머지는 읽지 않는다")
             break
+        v = getattr(p.NominalValue, "wrappedValue", None) if p.is_a("IfcPropertySingleValue") and p.NominalValue is not None else None
+        out[name] = v if isinstance(v, str) else None
     for name in sorted(dup)[:20]:
         plan.warnings.append(f"{name[:22]}: 같은 이름의 정의 속성이 둘 이상이라 되살리지 않는다")
     return out
@@ -230,6 +230,14 @@ def _restore_defs(f, rows: dict, rels: set, taken: set, plan: "ImportPlan") -> N
             return r["kind"], r["origin"]
         return ("?", "foreign") if g in taken else None
 
+    on_level = {g: lv for k, g, lv in rels if k == "on_level"}      # 벽 -> 레벨
+    host_of = {d: w for k, w, d in rels if k == "hosts"}            # 문 -> 호스트 벽
+
+    def level_of(kind, eid):   # 주석 대상이 놓인 레벨(저작 요소만 묻는다)
+        if kind == "level":
+            return eid
+        return on_level.get(host_of.get(eid) if kind == "door" else eid)
+
     ok: dict[str, dict] = {}
     for eid in sorted(e for e, d in parsed.items() if d["kind"] == "view"):
         p = parsed[eid]["params"]
@@ -256,12 +264,16 @@ def _restore_defs(f, rows: dict, rels: set, taken: set, plan: "ImportPlan") -> N
                 st = state(rid)
                 if st is not None and st != (rk, "authored"):
                     why = f"치수 참조 {k} 의 대상이 저작 {rk} 가 아니다"
+                elif st is not None and vt == "plan" and level_of(rk, rid) != v["params"]["level"]:
+                    why = f"치수 참조 {k} 의 대상이 이 평면 뷰의 레벨에 있지 않다"
         else:
             st = state(p["target"])
             if vt != "plan":
                 why = "태그는 평면 뷰에 둔다"
             elif st is not None and (st[1] != "authored" or not VD.tag_fields_ok(st[0], p["fields"])):
                 why = "태그 대상이 저작 벽·문이 아니거나 표시 필드가 맞지 않는다"
+            elif st is not None and level_of(st[0], p["target"]) != v["params"]["level"]:
+                why = "태그 대상이 이 평면 뷰의 레벨에 있지 않다"
         if why:
             skip(eid, why)
             continue

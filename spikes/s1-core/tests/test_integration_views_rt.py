@@ -403,6 +403,19 @@ def _ref_swap_nofix(f):
     _edit(f, A1, lambda d: d["params"].update(b=R("wall", F.W3, "trim.end")), fix=False)
 
 
+def _nan_forged(f):
+    """해시는 cut_height 0(정수)에 맞추고 텍스트는 NaN 으로 바꾼다(NaN 을 0 으로 읽는 구현이면 해시까지 맞아 복원돼 버린다)."""
+    _edit(f, V1, lambda d: d["params"].update(cut_height=0))
+    t = _def_props(f)[V1].NominalValue.wrappedValue
+    assert '"cut_height": 0,' in t
+    _pset_text(f, V1, t.replace('"cut_height": 0,', '"cut_height": NaN,'))
+
+
+def _padded(f):
+    """JSON 으로 멀쩡하고 해시도 맞지만 텍스트 크기가 상한을 넘는다(공백 2만 자)."""
+    _pset_text(f, VE, _def_props(f)[VE].NominalValue.wrappedValue + " " * 20_000)
+
+
 def _bad_ref_kind(f):   # 'wall:' 접두사인데 id 는 문이다
     _edit(f, A1, lambda d: d["params"].update(b=R("wall", F.D1, "trim.end")))
 
@@ -457,10 +470,16 @@ CASES = [
     # --- id 중복
     # --- 이름 중복
     ("같은_이름_뷰_둘", lambda f: _clone(f, V2, "4" + "0" * 20 + "7"), {V2, "4" + "0" * 20 + "7"}),
+    # --- 해시를 맞춘 위조(검증 단계 자체가 막아야 한다)
+    ("NaN_해시는_맞춤", _nan_forged, {V1, A1, A3, T1, T2}),
+    ("크기_상한_넘는_멀쩡한_정의", _padded, {VE}),
+    ("다른_레벨의_벽을_재는_치수", lambda f: _clone(f, A1, "6" + "0" * 20 + "4", lambda d: d["params"].update(view=V2)), {"6" + "0" * 20 + "4"}),
+    ("다른_레벨의_문에_다는_태그", lambda f: _clone(f, T1, "6" + "0" * 20 + "5", lambda d: d["params"].update(view=V2)), {"6" + "0" * 20 + "5"}),
+    ("다른_id_밑에_옮겨_붙인_정의", lambda f: _clone(f, A3, "6" + "0" * 20 + "3", None, fix=False), {"6" + "0" * 20 + "3"}),   # 해시가 id 에 묶여 있다
 ]
 
 
-@pytest.mark.parametrize("name,mutate,skipped", CASES, ids=[c[0] for c in CASES])
+@pytest.mark.parametrize("name,mutate,skipped", CASES, ids=[f"case{i:02d}_{c[0]}" for i, c in enumerate(CASES)])   # 번호 접두사: pytest 가 한글 id 를 이스케이프해 -k 로 못 고르므로
 def test_v4_변조된_정의만_되살리지_않고_가져오기는_죽지_않는다(tmp_path, name, mutate, skipped):
     b, res = _tamper(tmp_path, mutate)
     try:
@@ -619,6 +638,18 @@ def test_v4j_파일에서_참조_요소가_사라지면_고아_주석으로_복�
         b.close()
 
 
+def test_v4k_정의_개수_상한을_넘으면_나머지는_읽지_않고_경고한다(tmp_path, monkeypatch):
+    monkeypatch.setattr(VD, "MAX_DEFS", 4)
+    b, res = _tamper(tmp_path, lambda f: None)
+    try:
+        got = _ids(b, "imp.dobim", "view", "dim", "tag")
+        assert len(got) <= 4 and any("넘어" in w for w in res["warnings"]), (got, res["warnings"])
+        assert _ok(b.run("model.validate", {}, project="imp.dobim"))["errors"] == 0
+        assert set(_def_props(ifcopenshell.open(str(b.export("e2.ifc", "imp.dobim"))))) == ALL_DEFS   # 읽지 않은 정의는 파일에 남는다
+    finally:
+        b.close()
+
+
 # ================================================================ 5. 호환
 def test_v5_뷰_주석이_없는_프로젝트의_IFC는_바뀌지_않는다(tmp_path):
     """뷰를 만들었다 지워도(되돌려도) IFC 는 뷰가 없던 때와 바이트까지 같다: 속성셋을 남기지 않는다."""
@@ -669,6 +700,12 @@ def test_v5b_옛_IFC_속성셋_없음를_가져온_뒤_뷰를_더하면_내보�
         assert S.trip(b.hashes("again.dobim")) == h
     finally:
         b.close()
+    eng = Engine(tmp_path / "imp.dobim", "t", create=False)   # 정의 없는 파일에서 가져온 프로젝트를 다시 열어도(새 엔진) 같다
+    try:
+        hh = eng.hashes()
+        assert (hh["state"], hh["derived"], hh["ifc"]) == h and eng.intent_consistency() == []
+    finally:
+        eng.close()
 
 
 def test_v5c_이_변경_전에_만든_프로젝트는_그대로_열리고_뷰_정의를_내보낸다(tmp_path):
@@ -775,17 +812,20 @@ def test_v6b_뷰_주석이_많아도_내보내기와_편집이_선형이다(tmp_
             _ok(b.run("view.create", {"id": "4" + "0" * 12 + "%09d" % k, "name": f"v{k}", "type": "plan", "level": F.LV1}, project="src.dobim"))
         eng = b.env.engine("src.dobim")
         eng.flush_ifc()
+        import dobim_core.ifc_model as IM
         written = []
-        orig = eng.ifc.sync_defs
+        orig = IM.api_pset.edit_pset
 
-        def spy(desired):
-            before = dict(eng.ifc._defs_text)
-            r = orig(desired)
-            written.append(sum(1 for i, t in eng.ifc._defs_text.items() if before.get(i) != t) + sum(1 for i in before if i not in eng.ifc._defs_text))
-            return r
-        eng.ifc.sync_defs = spy
-        _ok(b.run("view.set", {"id": "4" + "0" * 12 + "%09d" % 3, "cut_height": 1111}, project="src.dobim"))
-        eng.flush_ifc()
+        def spy(f, pset, properties):   # 속성셋에 실제로 쓰는 속성 수
+            written.append(len(properties))
+            return orig(f, pset=pset, properties=properties)
+        IM.api_pset.edit_pset = spy
+        try:
+            _ok(b.run("view.set", {"id": "4" + "0" * 12 + "%09d" % 3, "cut_height": 1111}, project="src.dobim"))
+            eng.flush_ifc()
+            eng.flush_ifc()   # 바뀐 게 없으면 아무것도 쓰지 않는다
+        finally:
+            IM.api_pset.edit_pset = orig
         assert written == [1], written
     finally:
         b.close()
