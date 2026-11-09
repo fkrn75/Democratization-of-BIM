@@ -80,6 +80,11 @@ ERROR_CASES = [
     ("주석: 주석이 아닌 요소 삭제", "annot.delete", {"id": F.W1}, {}),
     ("벽 분할: 문을 가로지름", "wall.split", {"id": F.W1, "at": 1500}, {}),
     ("벽 분할: 끝 조각이 너무 짧음", "wall.split", {"id": F.W1, "at": 5999.5}, {}),
+    ("병합 상대 파일 없음", "merge.preview", {"other": "no-such.dobim"}, {}),
+    ("병합 상대 경로 거부", "merge.apply", {"other": "../escape.dobim"}, {}),
+    ("병합 해결 키 잘못(무시됨)", "merge.apply", {"other": "other.dobim", "resolve": [{"key": "SAME_FIELD:x", "take": "ours"}]}, {}),
+    ("병합 상대 리비전 고정 불일치", "merge.apply", {"other": "other.dobim", "other_rev": 1}, {}),
+    ("병합 dry-run", "merge.apply", {"other": "other.dobim"}, {"dry_run": True}),
 ]
 
 
@@ -194,6 +199,16 @@ async def run_parity(work: Path | None = None) -> dict:
         assert s.run(name, args)["ok"]
     base_hashes = s.eng.hashes()
     s.close()
+    # 병합 예시(S8)의 상대 프로젝트: 기준 프로젝트에서 갈라져 몇 가지 바꾼 복사본. 양쪽 작업 폴더에 같은 파일을 둔다(읽기 전용으로만 쓰인다)
+    other_src = work / "other_src.dobim"
+    other_src.unlink(missing_ok=True)
+    shutil.copy(base, other_src)
+    so = kit.Session(other_src, "other", create=False)
+    for name, args in (("wall.set", {"id": F.W2, "name": "병합 예시 벽"}), ("pset.set", {"id": F.D2, "pset": "Pset_DoorCommon", "prop": "FireRating", "value": "EI60"})):
+        assert so.run(name, args)["ok"]
+    so.close()
+    for w in (wa, wb):
+        shutil.copy(other_src, w / "other.dobim")
     cli = CliSide(wa)
     results, mismatches = [], []
     cmds = registry.load()
