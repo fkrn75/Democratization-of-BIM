@@ -1,0 +1,88 @@
+{
+  "kind": "env",
+  "client": "codex-desktop",
+  "exit": 0,
+  "wall_s": 19.6,
+  "usage": {
+    "input_tokens": 193123,
+    "cached_input_tokens": 182400,
+    "output_tokens": 204,
+    "reasoning_output_tokens": 0
+  },
+  "calls": [
+    {
+      "tool": "dobim_commands_search",
+      "command": null,
+      "is_error": false,
+      "result_bytes": 337,
+      "envelope_parsed": true,
+      "ok": true,
+      "items": 1,
+      "page_total": 1,
+      "result_head": null,
+      "error": null
+    },
+    {
+      "tool": "dobim_command_describe",
+      "command": null,
+      "is_error": false,
+      "result_bytes": 520,
+      "envelope_parsed": true,
+      "ok": true,
+      "items": 0,
+      "page_total": null,
+      "result_head": null,
+      "error": null
+    },
+    {
+      "tool": "dobim_query",
+      "command": "project.info",
+      "is_error": false,
+      "result_bytes": 326,
+      "envelope_parsed": true,
+      "ok": true,
+      "items": 0,
+      "page_total": null,
+      "result_head": null,
+      "error": null
+    }
+  ],
+  "final_text": "벽 개수: 3개",
+  "errors": [],
+  "other_item_types": {
+    "error": 1,
+    "agent_message": 2,
+    "mcp_tool_call": 3
+  },
+  "server_start_sec": 1.2223,
+  "initialize": {
+    "protocolVersion": "2025-06-18",
+    "clientInfo": {
+      "name": "codex-mcp-client",
+      "title": "Codex",
+      "version": "0.167.0-alpha.3.2"
+    },
+    "capabilities": [
+      "elicitation",
+      "experimental"
+    ]
+  },
+  "negotiated": "2025-06-18",
+  "tap_tool_calls": [
+    {
+      "tool": "dobim_commands_search",
+      "ms": 22.8,
+      "wire_bytes": 801
+    },
+    {
+      "tool": "dobim_command_describe",
+      "ms": 1.9,
+      "wire_bytes": 1172
+    },
+    {
+      "tool": "dobim_query",
+      "ms": 781.9,
+      "wire_bytes": 772
+    }
+  ]
+}

@@ -1,0 +1,728 @@
+{
+  "G1": {
+    "group": "G1",
+    "title": "프로젝트·모델링",
+    "exit": 0,
+    "wall_s": 40.6,
+    "tool_calls": 36,
+    "search_calls": 17,
+    "usage": {
+      "input_tokens": 390422,
+      "cached_input_tokens": 363008,
+      "output_tokens": 1059,
+      "reasoning_output_tokens": 0
+    },
+    "post_state": {
+      "g1_exists": true,
+      "counts": {
+        "level": 1,
+        "wall": 2,
+        "door": 1
+      },
+      "valid": true
+    },
+    "other_item_types": {
+      "error": 1,
+      "agent_message": 2,
+      "mcp_tool_call": 36
+    },
+    "errors": [],
+    "tool_result_bytes": [
+      691,
+      4879,
+      973,
+      1433,
+      595,
+      965,
+      876,
+      1305,
+      897,
+      881,
+      1473,
+      1339,
+      1420,
+      1139,
+      945,
+      763,
+      752,
+      315,
+      398,
+      285,
+      309,
+      309,
+      309,
+      320,
+      285,
+      343,
+      344,
+      309,
+      286,
+      271,
+      271,
+      271,
+      317,
+      401,
+      671,
+      593
+    ],
+    "protocol": {
+      "initialize": {
+        "protocolVersion": "2025-06-18",
+        "clientInfo": {
+          "name": "codex-mcp-client",
+          "title": "Codex",
+          "version": "0.167.0-alpha.3.2"
+        },
+        "capabilities": [
+          "elicitation",
+          "experimental"
+        ]
+      },
+      "negotiated": "2025-06-18",
+      "non_json_stdout_lines": 0
+    },
+    "latency": {
+      "tool_calls": 36,
+      "initialize_ms": 1114.9,
+      "median_ms": 4.1,
+      "max_ms": 590.5,
+      "slowest_tool": "dobim_execute",
+      "max_response_wire_bytes": 10186
+    },
+    "server_start_sec": 1.1222,
+    "commands": {
+      "project.new": {
+        "invoked": true,
+        "outcomes": [
+          "ok"
+        ],
+        "succeeded": true,
+        "all_defined": true,
+        "pass": true
+      },
+      "project.info": {
+        "invoked": true,
+        "outcomes": [
+          "ok"
+        ],
+        "succeeded": true,
+        "all_defined": true,
+        "pass": true
+      },
+      "commands.search": {
+        "invoked": true,
+        "outcomes": [
+          "ok"
+        ],
+        "succeeded": true,
+        "all_defined": true,
+        "pass": true
+      },
+      "commands.describe": {
+        "invoked": true,
+        "outcomes": [
+          "ok"
+        ],
+        "succeeded": true,
+        "all_defined": true,
+        "pass": true
+      },
+      "level.create": {
+        "invoked": true,
+        "outcomes": [
+          "ok"
+        ],
+        "succeeded": true,
+        "all_defined": true,
+        "pass": true
+      },
+      "wall.create": {
+        "invoked": true,
+        "outcomes": [
+          "ok"
+        ],
+        "succeeded": true,
+        "all_defined": true,
+        "pass": true
+      },
+      "wall.move": {
+        "invoked": true,
+        "outcomes": [
+          "ok"
+        ],
+        "succeeded": true,
+        "all_defined": true,
+        "pass": true
+      },
+      "wall.set": {
+        "invoked": true,
+        "outcomes": [
+          "ok"
+        ],
+        "succeeded": true,
+        "all_defined": true,
+        "pass": true
+      },
+      "join.set": {
+        "invoked": true,
+        "outcomes": [
+          "ok"
+        ],
+        "succeeded": true,
+        "all_defined": true,
+        "pass": true
+      },
+      "join.clear": {
+        "invoked": true,
+        "outcomes": [
+          "ok"
+        ],
+        "succeeded": true,
+        "all_defined": true,
+        "pass": true
+      },
+      "door.place": {
+        "invoked": true,
+        "outcomes": [
+          "ok"
+        ],
+        "succeeded": true,
+        "all_defined": true,
+        "pass": true
+      },
+      "door.set": {
+        "invoked": true,
+        "outcomes": [
+          "ok"
+        ],
+        "succeeded": true,
+        "all_defined": true,
+        "pass": true
+      },
+      "pset.set": {
+        "invoked": true,
+        "outcomes": [
+          "ok"
+        ],
+        "succeeded": true,
+        "all_defined": true,
+        "pass": true
+      },
+      "pset.delete": {
+        "invoked": true,
+        "outcomes": [
+          "ok"
+        ],
+        "succeeded": true,
+        "all_defined": true,
+        "pass": true
+      },
+      "material.set": {
+        "invoked": true,
+        "outcomes": [
+          "ok"
+        ],
+        "succeeded": true,
+        "all_defined": true,
+        "pass": true
+      },
+      "element.delete": {
+        "invoked": true,
+        "outcomes": [
+          "ok"
+        ],
+        "succeeded": true,
+        "all_defined": true,
+        "pass": true
+      }
+    },
+    "final_text_chars": 350
+  },
+  "G2": {
+    "group": "G2",
+    "title": "조회·검사",
+    "exit": 0,
+    "wall_s": 28.9,
+    "tool_calls": 21,
+    "search_calls": 11,
+    "usage": {
+      "input_tokens": 218135,
+      "cached_input_tokens": 183552,
+      "output_tokens": 640,
+      "reasoning_output_tokens": 0
+    },
+    "post_state": {
+      "rev": 10,
+      "counts": {
+        "level": 2,
+        "wall": 3,
+        "door": 2
+      }
+    },
+    "other_item_types": {
+      "error": 1,
+      "agent_message": 2,
+      "mcp_tool_call": 21
+    },
+    "errors": [],
+    "tool_result_bytes": [
+      2349,
+      1409,
+      1138,
+      576,
+      637,
+      684,
+      752,
+      1075,
+      679,
+      993,
+      595,
+      770,
+      706,
+      548,
+      398,
+      472,
+      276,
+      265,
+      769,
+      1273,
+      401
+    ],
+    "protocol": {
+      "initialize": {
+        "protocolVersion": "2025-06-18",
+        "clientInfo": {
+          "name": "codex-mcp-client",
+          "title": "Codex",
+          "version": "0.167.0-alpha.3.2"
+        },
+        "capabilities": [
+          "elicitation",
+          "experimental"
+        ]
+      },
+      "negotiated": "2025-06-18",
+      "non_json_stdout_lines": 0
+    },
+    "latency": {
+      "tool_calls": 21,
+      "initialize_ms": 1072.6,
+      "median_ms": 10.6,
+      "max_ms": 2269.9,
+      "slowest_tool": "dobim_query",
+      "max_response_wire_bytes": 4956
+    },
+    "server_start_sec": 1.0797,
+    "commands": {
+      "element.get": {
+        "invoked": true,
+        "outcomes": [
+          "ok"
+        ],
+        "succeeded": true,
+        "all_defined": true,
+        "pass": true
+      },
+      "element.query": {
+        "invoked": true,
+        "outcomes": [
+          "ok"
+        ],
+        "succeeded": true,
+        "all_defined": true,
+        "pass": true
+      },
+      "relation.list": {
+        "invoked": true,
+        "outcomes": [
+          "ok"
+        ],
+        "succeeded": true,
+        "all_defined": true,
+        "pass": true
+      },
+      "model.stats": {
+        "invoked": true,
+        "outcomes": [
+          "ok"
+        ],
+        "succeeded": true,
+        "all_defined": true,
+        "pass": true
+      },
+      "model.hash": {
+        "invoked": true,
+        "outcomes": [
+          "ok"
+        ],
+        "succeeded": true,
+        "all_defined": true,
+        "pass": true
+      },
+      "model.validate": {
+        "invoked": true,
+        "outcomes": [
+          "ok"
+        ],
+        "succeeded": true,
+        "all_defined": true,
+        "pass": true
+      },
+      "schedule.rows": {
+        "invoked": true,
+        "outcomes": [
+          "ok"
+        ],
+        "succeeded": true,
+        "all_defined": true,
+        "pass": true
+      },
+      "schedule.summary": {
+        "invoked": true,
+        "outcomes": [
+          "ok"
+        ],
+        "succeeded": true,
+        "all_defined": true,
+        "pass": true
+      },
+      "history.list": {
+        "invoked": true,
+        "outcomes": [
+          "ok"
+        ],
+        "succeeded": true,
+        "all_defined": true,
+        "pass": true
+      },
+      "project.info": {
+        "invoked": true,
+        "outcomes": [
+          "ok"
+        ],
+        "succeeded": true,
+        "all_defined": true,
+        "pass": true
+      }
+    },
+    "final_text_chars": 352
+  },
+  "G3": {
+    "group": "G3",
+    "title": "이력·내보내기(파괴적)",
+    "exit": 0,
+    "wall_s": 45.9,
+    "tool_calls": 25,
+    "search_calls": 12,
+    "usage": {
+      "input_tokens": 459034,
+      "cached_input_tokens": 430720,
+      "output_tokens": 988,
+      "reasoning_output_tokens": 0
+    },
+    "post_state": {
+      "rev": 14,
+      "counts": {
+        "level": 2,
+        "wall": 3,
+        "door": 2
+      },
+      "out_ifc_exists": true,
+      "snapshots": 2
+    },
+    "other_item_types": {
+      "error": 1,
+      "agent_message": 2,
+      "mcp_tool_call": 25
+    },
+    "errors": [],
+    "tool_result_bytes": [
+      291,
+      413,
+      932,
+      1665,
+      876,
+      816,
+      809,
+      1124,
+      937,
+      873,
+      718,
+      417,
+      1409,
+      500,
+      321,
+      340,
+      340,
+      463,
+      294,
+      326,
+      461,
+      318,
+      354,
+      482,
+      327
+    ],
+    "protocol": {
+      "initialize": {
+        "protocolVersion": "2025-06-18",
+        "clientInfo": {
+          "name": "codex-mcp-client",
+          "title": "Codex",
+          "version": "0.167.0-alpha.3.2"
+        },
+        "capabilities": [
+          "elicitation",
+          "experimental"
+        ]
+      },
+      "negotiated": "2025-06-18",
+      "non_json_stdout_lines": 0
+    },
+    "latency": {
+      "tool_calls": 25,
+      "initialize_ms": 1060.6,
+      "median_ms": 3.0,
+      "max_ms": 566.7,
+      "slowest_tool": "dobim_project",
+      "max_response_wire_bytes": 3528
+    },
+    "server_start_sec": 1.0702,
+    "commands": {
+      "wall.move": {
+        "invoked": true,
+        "outcomes": [
+          "ok"
+        ],
+        "succeeded": true,
+        "all_defined": true,
+        "pass": true
+      },
+      "history.undo": {
+        "invoked": true,
+        "outcomes": [
+          "ok"
+        ],
+        "succeeded": true,
+        "all_defined": true,
+        "pass": true
+      },
+      "history.redo": {
+        "invoked": true,
+        "outcomes": [
+          "ok"
+        ],
+        "succeeded": true,
+        "all_defined": true,
+        "pass": true
+      },
+      "ifc.export": {
+        "invoked": true,
+        "outcomes": [
+          "CONFIRM_REQUIRED",
+          "ok"
+        ],
+        "succeeded": true,
+        "all_defined": true,
+        "pass": true
+      },
+      "ifc.snapshots": {
+        "invoked": true,
+        "outcomes": [
+          "ok"
+        ],
+        "succeeded": true,
+        "all_defined": true,
+        "pass": true
+      },
+      "ifc.restore": {
+        "invoked": true,
+        "outcomes": [
+          "CONFIRM_REQUIRED",
+          "ok"
+        ],
+        "succeeded": true,
+        "all_defined": true,
+        "pass": true
+      }
+    },
+    "final_text_chars": 249
+  },
+  "G4": {
+    "group": "G4",
+    "title": "오류 코드·안전 장치",
+    "exit": 0,
+    "wall_s": 31.8,
+    "tool_calls": 18,
+    "search_calls": 5,
+    "usage": {
+      "input_tokens": 249813,
+      "cached_input_tokens": 233600,
+      "output_tokens": 834,
+      "reasoning_output_tokens": 18
+    },
+    "post_state": {
+      "rev": 10,
+      "counts": {
+        "level": 2,
+        "wall": 3,
+        "door": 2
+      },
+      "escape_file_outside_workspace": false
+    },
+    "other_item_types": {
+      "error": 1,
+      "agent_message": 2,
+      "mcp_tool_call": 18
+    },
+    "errors": [],
+    "tool_result_bytes": [
+      4879,
+      876,
+      873,
+      637,
+      417,
+      1409,
+      472,
+      360,
+      242,
+      211,
+      419,
+      204,
+      220,
+      338,
+      185,
+      190,
+      168,
+      472
+    ],
+    "protocol": {
+      "initialize": {
+        "protocolVersion": "2025-06-18",
+        "clientInfo": {
+          "name": "codex-mcp-client",
+          "title": "Codex",
+          "version": "0.167.0-alpha.3.2"
+        },
+        "capabilities": [
+          "elicitation",
+          "experimental"
+        ]
+      },
+      "negotiated": "2025-06-18",
+      "non_json_stdout_lines": 0
+    },
+    "latency": {
+      "tool_calls": 18,
+      "initialize_ms": 1079.1,
+      "median_ms": 1.9,
+      "max_ms": 575.8,
+      "slowest_tool": "dobim_project",
+      "max_response_wire_bytes": 10186
+    },
+    "server_start_sec": 1.088,
+    "g4": {
+      "a_path_denied": true,
+      "b_unknown_command": true,
+      "c_schema_invalid": true,
+      "d_risk_mismatch": true,
+      "e_rev_conflict": true,
+      "f_dry_run_ok": true,
+      "g_not_found": true,
+      "h_job": true,
+      "i_render": true
+    },
+    "commands": {},
+    "final_text_chars": 385
+  },
+  "G5": {
+    "group": "G5",
+    "title": "대량 변경 이어받기(history.affected)",
+    "exit": 0,
+    "wall_s": 26.9,
+    "tool_calls": 5,
+    "search_calls": 2,
+    "usage": {
+      "input_tokens": 202944,
+      "cached_input_tokens": 170496,
+      "output_tokens": 627,
+      "reasoning_output_tokens": 0
+    },
+    "post_state": {
+      "rev": 260,
+      "counts": {
+        "level": 2,
+        "wall": 253,
+        "door": 2
+      }
+    },
+    "other_item_types": {
+      "error": 1,
+      "agent_message": 2,
+      "mcp_tool_call": 5
+    },
+    "errors": [],
+    "tool_result_bytes": [
+      537,
+      1363,
+      5472,
+      5472,
+      4061
+    ],
+    "protocol": {
+      "initialize": {
+        "protocolVersion": "2025-06-18",
+        "clientInfo": {
+          "name": "codex-mcp-client",
+          "title": "Codex",
+          "version": "0.167.0-alpha.3.2"
+        },
+        "capabilities": [
+          "elicitation",
+          "experimental"
+        ]
+      },
+      "negotiated": "2025-06-18",
+      "non_json_stdout_lines": 0
+    },
+    "latency": {
+      "tool_calls": 5,
+      "initialize_ms": 1068.5,
+      "median_ms": 5.8,
+      "max_ms": 644.3,
+      "slowest_tool": "dobim_query",
+      "max_response_wire_bytes": 11435
+    },
+    "server_start_sec": 1.0761,
+    "g5": {
+      "pages": 3,
+      "unique_created_ids": 250,
+      "other_changed_ids": 1,
+      "expected_created": 250,
+      "complete": true,
+      "truncated_seen": true,
+      "pages_using_cursor": 2
+    },
+    "commands": {
+      "history.affected": {
+        "invoked": true,
+        "outcomes": [
+          "ok"
+        ],
+        "succeeded": true,
+        "all_defined": true,
+        "pass": true
+      }
+    },
+    "final_text_chars": 403,
+    "note": "G5 판정기를 수정(생성 id 만 센다)한 뒤 같은 원본 출력으로 다시 판정함. 프롬프트 문구는 실행 때 '(리비전 11)'이었고 이후 뜻은 같게 다듬었다"
+  },
+  "_summary": {
+    "client": "codex-desktop",
+    "commands_total": 31,
+    "commands_passed": 31,
+    "commands_with_success": 31,
+    "not_passed": [],
+    "no_success": []
+  }
+}
