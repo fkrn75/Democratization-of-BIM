@@ -249,6 +249,8 @@ def test_f2d_가져온_개구부와_타입_지정_관계의_GlobalId는_편집_�
         _ok(b.run("family.set", {"id": D, "values": {"swing": "L"}, "offset": 4000}, project="imp.dobim"))
         _ok(b.run("element.delete", {"id": WND}, project="imp.dobim"))
         _ok(b.run("history.undo", {}, project="imp.dobim"))
+        # 같은 타입의 기둥을 새로 놓아도 평면 기호 문맥을 새로 만들지 않고 파일의 것을 쓴다
+        _ok(b.run("family.place", {"id": "0" * 21 + "5", "family": "column.section", "values": {}, "level": F.LV1, "position": [3000, 1000]}, project="imp.dobim"))
         e2 = b.export("e2.ifc", "imp.dobim")
         f2 = ifcopenshell.open(str(e2))
         assert {i: _opening_of(f2, i).GlobalId for i in (D, WND)} == gid_open
@@ -404,6 +406,8 @@ def _edit_inst(f, fn):
 
 
 def _damage_huge_offset(f, info): _edit_inst(f, lambda d: d["params"].update(offset=1e300))
+def _damage_huge_offset_mid(f, info): _edit_inst(f, lambda d: d["params"].update(offset=1e12))   # JSON 상한(1e15)은 넘지 않지만 위치 상한(1e9)은 넘는다
+def _damage_values_incomplete(f, info): _edit_inst(f, lambda d: d["params"]["values"].pop(sorted(d["params"]["values"])[0]))   # 기본값으로 채워질 수 있지만 완전한 사전이 아니다
 def _damage_huge_text(f, info): _set_intent(f, f.by_guid(D), "x" * 400_000)
 def _damage_huge_value(f, info): _edit_inst(f, lambda d: d["params"]["values"].update(swing="R" * 100_000))
 def _damage_bigint(f, info): _set_intent(f, f.by_guid(D), json.dumps(_intent(f, f.by_guid(D))).replace('"offset": 4500.0', '"offset": ' + "9" * 5000))
@@ -436,7 +440,7 @@ def _damage_type_values(f, info):
     _set_intent(f, t, json.dumps(d))
 
 
-DAMAGE = [_damage_garbage, _damage_hash, _damage_huge_offset, _damage_huge_text, _damage_huge_value, _damage_bigint,
+DAMAGE = [_damage_garbage, _damage_hash, _damage_huge_offset, _damage_huge_offset_mid, _damage_values_incomplete, _damage_huge_text, _damage_huge_value, _damage_bigint,
           _damage_missing_key, _damage_extra_key, _damage_unknown_type, _damage_width_mismatch, _damage_value_range,
           _damage_unknown_value, _damage_host_to_level, _damage_nan, _damage_garbage_type, _damage_recipe_bomb,
           _damage_type_wrong_family, _damage_type_values]
@@ -457,6 +461,15 @@ def test_f4_읽을_수_없는_의도는_인스턴스를_외래로_두고_호스�
         S.trip(b.hashes("imp.dobim"))
     finally:
         b.close()
+
+
+def test_f4c_의도_텍스트_크기_상한은_파싱_전에_거절한다():
+    from dobim_core.family import restore as FR
+    big = '{"kind":"finst","pad":"' + "x" * FR.MAX_INTENT_CHARS + '"}'      # JSON 으로는 올바르지만 상한을 넘는다
+    with pytest.raises(ValueError, match="너무 크다"):
+        FR.load_intent(big)
+    assert FR.claimed_kind(big) is None
+    assert FR.claimed_kind('{"kind":"finst"}') == "finst"                     # 상한 안이면 종류를 읽는다
 
 
 def test_f4b_의도가_멀쩡해도_타입의_형상이_다르면_타입만_분리한다(tmp_path):
