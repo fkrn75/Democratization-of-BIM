@@ -37,6 +37,17 @@ from dobim_core.errors import DobimError
 from dobim_core.kinds import FIXED_IFC_CLASS
 from dobim_core.family import ifcproj as fp
 
+def _rels_of(e, inv, attr: str, rel_cls: str, rel_attr: str) -> list:
+    """e 가 rel_attr(관계의 대상 목록)에 들어 있는 rel_cls 관계들. IFC 의 역속성(attr)을 쓰면 엔진이 인덱스로 찾는다.
+    `e in r.RelatedObjects` 는 관계의 대상 목록 전체를 훑어서, 같은 관계에 요소가 N개 달리면(한 층에 포함된 요소 전부) 요소마다 O(N) 이라
+    가져오기가 이차 시간이 된다. 역속성이 없는 클래스(공간 요소 등)만 예전 방식으로 거른다."""
+    try:
+        rels = getattr(e, attr)
+    except AttributeError:
+        return [r for r in inv if r.is_a(rel_cls) and e in getattr(r, rel_attr)]
+    return [r for r in (rels or ()) if r.is_a(rel_cls)]
+
+
 def check_value(value) -> None:
     """IFC 에 안전하게 저장할 수 없는 속성 값을 쓰기 전에 거른다(NaN, inf, int64 초과, NUL, 홑서로게이트)."""
     bad = None
@@ -199,6 +210,7 @@ class Closure:
         self.f = f
         self.infra = infra
         self.val, _ = make_norm()
+        self._owners: dict[int, list] = {}   # 배치 번호 -> 그 배치를 쓰는 제품들(닫힌 파일 전용: 같은 층 배치를 N개 요소가 공유하면 요소마다 훑는 것이 이차 시간이다)
 
     def ref(self, x):
         return "@infra" if x.GlobalId in self.infra else x.GlobalId
@@ -211,7 +223,9 @@ class Closure:
         if rel is None:
             out["to"] = None
         else:
-            owners = [o for o in self.f.get_inverse(rel) if o.is_a("IfcProduct") and o.ObjectPlacement == rel]
+            owners = self._owners.get(rel.id())
+            if owners is None:
+                owners = self._owners[rel.id()] = [o for o in self.f.get_inverse(rel) if o.is_a("IfcProduct") and o.ObjectPlacement == rel]
             if len(owners) == 1 and owners[0].GlobalId not in self.infra:
                 out["to"] = {"ref": owners[0].GlobalId}
             else:
@@ -238,10 +252,10 @@ class Closure:
         out = self.shape(e)
         inv = self.f.get_inverse(e)
         if typed:
-            out["typed_by"] = sorted(r.RelatingType.GlobalId for r in inv if r.is_a("IfcRelDefinesByType") and e in r.RelatedObjects)
-        out["contained"] = sorted(self.ref(r.RelatingStructure) for r in inv
-                                  if r.is_a("IfcRelContainedInSpatialStructure") and e in r.RelatedElements)
-        out["aggregated"] = sorted(self.ref(r.RelatingObject) for r in inv if r.is_a("IfcRelAggregates") and e in r.RelatedObjects)
+            out["typed_by"] = sorted(r.RelatingType.GlobalId for r in _rels_of(e, inv, "IsTypedBy", "IfcRelDefinesByType", "RelatedObjects"))
+        out["contained"] = sorted(self.ref(r.RelatingStructure)
+                                  for r in _rels_of(e, inv, "ContainedInStructure", "IfcRelContainedInSpatialStructure", "RelatedElements"))
+        out["aggregated"] = sorted(self.ref(r.RelatingObject) for r in _rels_of(e, inv, "Decomposes", "IfcRelAggregates", "RelatedObjects"))
         # 이 요소를 뚫는 개구부들. 개구부의 형상은 채우는 문의 클로저가 소유하므로 여기서는 "누가 채우는가"만 본다(GlobalId 는 신원이라
         # 외부 도구가 바꿔도 형상이 아니다). 채우는 요소가 없는 개구부나 외래 요소가 채우는 개구부가 더해지면 벽이 달라진 것이다
         voids = []
@@ -429,6 +443,12 @@ class IfcModel:
         self.typerels: dict[str, Any] = {}
         self._typerel_gid: dict[str, str] = {}  # 타입 id -> 타입 지정 관계의 GlobalId (가져온 파일의 값을 관계를 다시 만들 때도 유지한다)
         self.type_of: dict[str, str] = {}
+        # 일괄 모드(검증용 임시 모델 전용): 층 담기·타입 관계 추가를 모았다가 flush_rels 에서 한 번에 한다. ifcopenshell 은 관계의
+        # 대상 목록에 하나를 더할 때마다 목록 전체를 다시 쓰므로(O(N)) 같은 층·타입에 N개를 하나씩 넣으면 이차 시간이다.
+        # 켜 두면 관계를 읽기 전에 flush_rels 를 불러야 한다.
+        self.defer_rels = False
+        self._pend_contain: dict[str, list] = {}   # 층 id -> 담을 요소들
+        self._pend_type: dict[str, list] = {}      # 타입 id -> 타입 관계에 더할 인스턴스들
         self.type_maps: dict[str, bool] = {}
         self.plan_ctx: Any = None
         # 복원까지 실패해 IFC 쪽이 로그와 어긋났을 수 있으면 그 이유가 들어간다. 엔진이 이 표시를 보고 로그에서
@@ -631,13 +651,12 @@ class IfcModel:
         """가져온 파일의 패밀리 타입·인스턴스가 이미 갖고 있는 투영 상태(타입 지정 관계, 표현 지도 유무)를 이어받는다.
         이어받지 않으면 첫 재투영이 타입 지정 관계를 하나 더 만든다(같은 인스턴스가 관계 두 개에 걸린다)."""
         if kind == "finst":
-            for r in self.f.get_inverse(e):
-                if r.is_a("IfcRelDefinesByType") and e in r.RelatedObjects:
-                    tid = r.RelatingType.GlobalId
-                    self.type_of[eid] = tid
-                    self.typerels.setdefault(tid, r)
-                    self._typerel_gid.setdefault(tid, r.GlobalId)
-                    break
+            for r in _rels_of(e, self.f.get_inverse(e), "IsTypedBy", "IfcRelDefinesByType", "RelatedObjects"):
+                tid = r.RelatingType.GlobalId
+                self.type_of[eid] = tid
+                self.typerels.setdefault(tid, r)
+                self._typerel_gid.setdefault(tid, r.GlobalId)
+                break
         elif kind == "ftype":
             if e.RepresentationMaps:
                 self.type_maps[eid] = True
@@ -886,10 +905,25 @@ class IfcModel:
         e = self.ents[eid]
         if self.container_of.get(eid) == level_id:
             return
+        if self.defer_rels and eid not in self.container_of:
+            self._pend_contain.setdefault(level_id, []).append(e)
+            self.container_of[eid] = level_id
+            return
+        self.flush_rels()
         if eid in self.container_of:
             api_spatial.unassign_container(f, products=[e])
         api_spatial.assign_container(f, products=[e], relating_structure=self.ents[level_id])
         self.container_of[eid] = level_id
+
+    def flush_rels(self) -> None:
+        """일괄 모드에서 모아 둔 층 담기·타입 관계 추가를 반영한다(모은 것이 없으면 아무것도 하지 않는다)."""
+        pend, self._pend_contain = self._pend_contain, {}
+        for level_id, els in pend.items():
+            api_spatial.assign_container(self.f, products=els, relating_structure=self.ents[level_id])
+        pend, self._pend_type = self._pend_type, {}
+        for tid, els in pend.items():
+            rel = self.typerels[tid]
+            rel.RelatedObjects = list(rel.RelatedObjects) + els
 
     def _project_wall(self, eid, spec):
         e = self.ents[eid]

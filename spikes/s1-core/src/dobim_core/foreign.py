@@ -271,15 +271,24 @@ def plan_import(data: bytes) -> ImportPlan:
 
     scratch = IfcModel(str(uuid.UUID(int=0)))
     projected: set[str] = set()
+    prev_kind = None
     for g in sorted(rows, key=lambda g: (ELEMENT_KINDS[rows[g]["kind"]].order, g)):
+        if rows[g]["kind"] != prev_kind:   # 종류가 바뀌면 모은 관계를 반영한다(문의 개구부는 벽이 담긴 층을 따라가는 등 아래 종류가 윗 종류의 관계를 읽는다)
+            scratch.flush_rels()
+            prev_kind = rows[g]["kind"]
+        # 호스트가 없는 패밀리 인스턴스(자립형)만 일괄로 담는다: 같은 층·타입에 N개면 관계에 하나씩 더하는 것이 이차 시간이다.
+        # 문과 호스팅 인스턴스는 개구부를 채울 때(add_filling) 담긴 층을 읽으므로 바로 반영한다
         try:
+            spec = graph.q(Q.ifc_spec, g)
+            scratch.defer_rels = rows[g]["kind"] == "finst" and not spec["host"]
             scratch.create_identity(g, rows[g]["kind"], rows[g]["ifc_class"])
-            scratch.project(g, graph.q(Q.ifc_spec, g))
+            scratch.project(g, spec)
             projected.add(g)
         except Exception as ex:   # 레시피가 그 IFC 클래스에 쓸 수 없는 속성을 요구하는 등: 의도의 투영을 만들 수 없으면 분리한다(안전한 쪽)
             rows[g]["origin"] = "detached"
             plan.detached.append({"id": g, "reasons": ["의도를 투영할 수 없다"]})
             plan.warnings.append(f"{g}: 의도를 투영할 수 없다({type(ex).__name__}: {str(ex)[:60]}) → 분리됨(동결)")
+    scratch.flush_rels()
     want, have = Closure(scratch.f, scratch.infra), Closure(f, infra)
     for g in rows:
         typed = rows[g]["kind"] == "finst"

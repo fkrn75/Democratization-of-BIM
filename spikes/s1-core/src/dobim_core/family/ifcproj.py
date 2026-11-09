@@ -136,7 +136,7 @@ def plan_context(model):
 
 def gc_plan_context(model) -> None:
     ctx = model.plan_ctx
-    if ctx is not None and not model.f.get_inverse(ctx):
+    if ctx is not None and not model.f.get_total_inverses(ctx):   # get_inverse 는 N개 표현이 참조하면 O(N)이라 개수만 센다
         model.f.remove(ctx)
         model.plan_ctx = None
 
@@ -255,8 +255,14 @@ def _type_rel(model, type_eid: str, inst_eid: str):
         rel = f.createIfcRelDefinesByType(gid, None, None, None, [e], t)
         model._typerel_gid[type_eid] = gid
         model.typerels[type_eid] = rel
-    elif e not in rel.RelatedObjects:
-        rel.RelatedObjects = list(rel.RelatedObjects) + [e]
+    elif model.type_of.get(inst_eid) != type_eid:
+        # 불변식: type_of[인스턴스] == 타입 id 이면 그 인스턴스는 타입의 관계에 들어 있다(가져올 때 이어받거나 이 함수가 넣은 것이고,
+        # 빼는 곳은 _untype 뿐이다). 관계의 대상 목록 전체를 훑는 `e not in rel.RelatedObjects` 는 같은 타입 인스턴스가 N개면
+        # 인스턴스마다 O(N) 이라 가져오기가 이차 시간이 되므로 쓰지 않는다.
+        if model.defer_rels:
+            model._pend_type.setdefault(type_eid, []).append(e)
+        else:
+            rel.RelatedObjects = list(rel.RelatedObjects) + [e]
     model.type_of[inst_eid] = type_eid
 
 
@@ -264,6 +270,7 @@ def _untype(model, inst_eid: str) -> None:
     tid = model.type_of.pop(inst_eid, None)
     if tid is None:
         return
+    model.flush_rels()
     rel = model.typerels.get(tid)
     e = model.ents[inst_eid]
     if rel is None:

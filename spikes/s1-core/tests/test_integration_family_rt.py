@@ -562,3 +562,45 @@ def test_f6_가져온_패밀리_프로젝트의_두_복사본이_병합되고_�
         assert new not in {i["id"] for i in _ok(b.run("element.query", {"kind": "finst", "limit": 50}, project="a.dobim"))["items"]}
     finally:
         b.close()
+
+
+# ================================================================ 7. 독립 검수 결함: 분리 타입 재사용, 이차 시간
+def _import_work(tmp_path, n: int) -> dict:
+    """같은 타입·같은 층의 기둥 n개를 가져올 때 ifcopenshell 에서 쓰는 일의 양: 엔티티 비교 횟수와 역참조 결과 크기의 합."""
+    from ifcopenshell.entity_instance import entity_instance_mixin as M
+    b = S.Bench(tmp_path)
+    try:
+        S.build_authored(b, "src.dobim")
+        for k in range(n):
+            _ok(b.run("family.place", {"id": "0" * 16 + "%06d" % (k + 100), "family": "column.section", "values": {}, "level": F.LV1,
+                                       "position": [k * 10, k * 7]}, project="src.dobim"))
+        b.export("e1.ifc", "src.dobim")
+        work = {"eq": 0, "inv": 0}
+        orig_eq, orig_inv = M.is_entity, ifcopenshell.file.get_inverse
+
+        def eq(self, *a, **k):
+            work["eq"] += 1
+            return orig_eq(self, *a, **k)
+
+        def inv(self, inst, *a, **k):
+            r = orig_inv(self, inst, *a, **k)
+            work["inv"] += len(r)
+            return r
+        M.is_entity, ifcopenshell.file.get_inverse = eq, inv
+        try:
+            res = _ok(b.import_ifc("e1.ifc", "imp.dobim"))
+        finally:
+            M.is_entity, ifcopenshell.file.get_inverse = orig_eq, orig_inv
+        assert res["elements"]["authored"] >= n and res["elements"]["detached"] == 0
+        return work
+    finally:
+        b.close()
+
+
+def test_f8_같은_타입_인스턴스가_많아도_가져오기_일의_양이_선형이다(tmp_path):
+    """시간 상한 없이 복잡도 회귀를 잡는다: 인스턴스를 2배로 늘리면 일의 양은 2배 근처여야 한다(이차면 4배)."""
+    small = _import_work(tmp_path / "a", 30)
+    big = _import_work(tmp_path / "b", 60)
+    for k in ("eq", "inv"):
+        base = max(small[k], 1)
+        assert big[k] / base < 2.6, (k, small, big)
