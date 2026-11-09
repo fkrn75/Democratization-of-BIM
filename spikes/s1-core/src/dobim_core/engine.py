@@ -248,6 +248,9 @@ class Ctx:
     def foreign_voids(self, eid) -> list:
         return self.eng.ifc.foreign_voids(eid) if self.eng.has_base else []
 
+    def foreign_typed(self, eid) -> list:
+        return self.eng.ifc.foreign_typed(eid) if self.eng.has_base else []
+
     def new_id(self, kind: str) -> str:
         """결정적 GlobalId. 같은 프로젝트에서 같은 순번이면 같은 값이 나온다.
         이미 있는 요소의 id 나 이번 실행이 이미 내준 id 와 겹치면 순번(n)을 올려 다음 후보를 쓴다(결정적 탐색).

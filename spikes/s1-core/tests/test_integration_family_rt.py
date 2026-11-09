@@ -632,3 +632,50 @@ def test_f8_같은_타입_인스턴스가_많아도_가져오기_일의_양이_�
     for k in ("eq", "inv"):
         base = max(small[k], 1)
         assert big[k] / base < 2.6, (k, small, big)
+
+
+# ================================================================ 8. 독립 검수 결함: 타입 GlobalId 중복, 외래 요소가 쓰는 타입 삭제
+@pytest.mark.parametrize("name,mutate", [
+    ("타입_id가_인스턴스와_같다", lambda f: setattr(_type_of(f, D), "GlobalId", D)),
+    ("타입_id가_다른_타입과_같다", lambda f: setattr(_type_of(f, D), "GlobalId", _type_of(f, WND).GlobalId)),
+])
+def test_f9_타입_GlobalId가_제품이나_다른_타입과_겹치면_IMPORT_INVALID(tmp_path, name, mutate):
+    b = S.Bench(tmp_path)
+    try:
+        _build(b)
+        b.export("e1.ifc", "src.dobim")
+        f = ifcopenshell.open(str(tmp_path / "e1.ifc"))
+        mutate(f)
+        f.write(str(tmp_path / "t.ifc"))
+        r = b.import_ifc("t.ifc", "imp.dobim")
+        assert not r["ok"] and r["error"]["code"] == "IMPORT_INVALID", r
+    finally:
+        b.close()
+
+
+def test_f10_외래_요소가_쓰는_패밀리_타입을_지우면_경고가_남는다(tmp_path):
+    b = S.Bench(tmp_path)
+    try:
+        _build(b)
+        b.export("e1.ifc", "src.dobim")
+        f = ifcopenshell.open(str(tmp_path / "e1.ifc"))
+        ext = api_root.create_entity(f, ifc_class="IfcDoor", name="extdoor")
+        t = _type_of(f, D)
+        for r in f.get_inverse(t):
+            if r.is_a("IfcRelDefinesByType"):
+                r.RelatedObjects = list(r.RelatedObjects) + [ext]
+        f.write(str(tmp_path / "t.ifc"))
+        _ok(b.import_ifc("t.ifc", "imp.dobim"))
+        # 코어 인스턴스만 쓰는 타입(창)은 경고가 없다
+        win_t = _type_of(f, WND).GlobalId
+        x = b.run("element.delete", {"id": WND}, project="imp.dobim")
+        assert x["ok"] and not x.get("warnings"), x
+        x = b.run("element.delete", {"id": win_t}, project="imp.dobim")
+        assert x["ok"] and not x.get("warnings"), x
+        # 외래 문이 붙은 문 타입: 인스턴스를 지운 뒤 타입을 지우면 외래 문의 타입 지정이 사라진다는 경고가 나온다
+        _ok(b.run("element.delete", {"id": D}, project="imp.dobim"))
+        x = b.run("element.delete", {"id": t.GlobalId}, project="imp.dobim")
+        assert x["ok"], x
+        assert any("외래 요소 1개" in w and ext.GlobalId in w for w in x["warnings"]), x
+    finally:
+        b.close()

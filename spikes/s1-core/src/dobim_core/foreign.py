@@ -191,11 +191,16 @@ def plan_import(data: bytes) -> ImportPlan:
         if g in seen:
             raise DobimError("IMPORT_INVALID", f"GlobalId 가 겹치는 요소가 있다: {g}", path="/source")
         seen.add(g)
+    types = [t for t in f.by_type("IfcTypeObject") if isinstance(getattr(t, "GlobalId", None), str)]
+    for t in types:   # 타입 객체도 같은 id 공간을 쓴다(요소 id 로 가리킨다): 제품이나 다른 타입과 겹치면 id 로 가리킬 수 없다
+        g = t.GlobalId
+        if g in seen:
+            raise DobimError("IMPORT_INVALID", f"GlobalId 가 겹치는 요소가 있다: {g}", path="/source")
+        seen.add(g)
 
     # 1) 의도 복원 후보. 문·벽·레벨은 IFC 클래스로 종류를 정하고, 패밀리(ftype/finst)는 의도가 스스로 밝힌 종류를 따른다(인스턴스도 IfcDoor 일 수 있다)
     cand: dict[str, dict] = {}
     cls_of: dict[str, str] = {}   # 패밀리 후보 GlobalId -> 파일 안의 실제 IFC 클래스(레시피의 클래스와 일치하는지 검사한다)
-    types = [t for t in f.by_type("IfcTypeObject") if isinstance(getattr(t, "GlobalId", None), str)]
     for p in [*prods, *types]:
         is_type = p.is_a("IfcTypeObject")
         pset = ue.get_pset(p, INTENT_PSET, should_inherit=False)

@@ -799,6 +799,14 @@ class IfcModel:
         return sorted(r.RelatedOpeningElement.GlobalId for r in self.f.get_inverse(e)
                       if r.is_a("IfcRelVoidsElement") and r.RelatingBuildingElement == e and r.RelatedOpeningElement.GlobalId not in own)
 
+    def foreign_typed(self, eid: str) -> list[str]:
+        """패밀리 타입에 타입 지정(IfcRelDefinesByType)으로 붙은 요소 중 코어의 패밀리 인스턴스가 아닌 것(외래)의 GlobalId.
+        타입을 지우면 이것들의 타입 지정이 사라진다."""
+        e = self.ents[eid]
+        own = {g for g, t in self.type_of.items() if t == eid}
+        return sorted({o.GlobalId for r in self.f.get_inverse(e) if r.is_a("IfcRelDefinesByType") and r.RelatingType == e
+                       for o in r.RelatedObjects if o.GlobalId not in own})
+
     def has_complex_material(self, eid: str) -> bool:
         """재료가 단일 IfcMaterial 이 아니다(층 구성·프로파일 등). 이름 하나로 되살릴 수 없어 부속 스냅숏이 맡는다."""
         m = ue.get_material(self.ents[eid], should_inherit=False)

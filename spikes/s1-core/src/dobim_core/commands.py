@@ -577,6 +577,10 @@ def element_delete(ctx, a: IdArg):
     elif r["kind"] == "ftype":
         if ctx.rels_in("of_type", a.id):
             raise DobimError("CONSTRAINT", "인스턴스가 있는 패밀리 타입은 지울 수 없다", path="/id", hint="인스턴스를 먼저 지우세요")
+        ft = ctx.foreign_typed(a.id)
+        if ft:   # 다른 도구가 이 타입에 붙인 요소: 타입이 사라지면 그 요소의 타입 지정이 조용히 사라진다(벽의 외래 개구부와 같은 경고)
+            ctx.warn(f"이 타입에 타입 지정으로 붙은 외래 요소 {len(ft)}개의 타입 지정이 타입과 함께 사라진다(실행 취소로 되살아나지 않는다): {', '.join(ft[:3])}"
+                     + (" 외" if len(ft) > 3 else ""))
     elif r["kind"] == "wall":
         fv = ctx.foreign_voids(a.id)
         if fv:   # 다른 도구가 이 벽에 뚫은 개구부는 벽과 함께 사라진다: 개구부는 형상을 가진 제품이라 실행 취소로 되살리지 않는다
