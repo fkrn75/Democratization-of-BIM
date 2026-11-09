@@ -9,6 +9,8 @@ import sqlite3
 
 import pytest
 
+import ifcopenshell
+
 from test_integration_g1 import F, S, Engine, _ok, branch, dump_hashes, make_imported
 
 FID = "0" * 21 + "1"
@@ -219,3 +221,169 @@ def test_r2e_파라미터_참조_표가_커맨드가_만든_모든_요소에서_
         assert seen == {("dim", "view", "annot_of"), ("tag", "view", "annot_of"), ("finst", "type", "of_type")}
     finally:
         e.close()
+
+
+# ================================================================ 3. 옛 형식 DB 의 다시 판정
+def _to_legacy(path, flip: str | None = None) -> None:
+    """가져온 프로젝트를 옛 형식(시작 상태 기록 seq 0 과 형식 표지가 없다)으로 되돌린다. flip 이 있으면 그 요소를 '옛 판정은 저작으로 봤다'로 만든다."""
+    c = sqlite3.connect(str(path))
+    c.execute("DELETE FROM op_log WHERE seq=0")
+    c.execute("DELETE FROM meta WHERE key='closure_format'")
+    if flip:
+        c.execute("UPDATE element SET origin='authored' WHERE id=?", (flip,))
+    c.commit()
+    c.close()
+
+
+def test_r3_옛_형식_DB에서_다시_판정이_저작을_분리로_동결해도_열린다(tmp_path):
+    info = make_imported(tmp_path)
+    path = tmp_path / info["name"]
+    _to_legacy(path, flip=info["detached"])
+    eng = Engine(path, "t", create=False)   # 예전에는 op_log seq=0 을 fetchone()[0] 으로 읽다 TypeError -> INTERNAL
+    try:
+        assert eng.rejudged == [info["detached"]]
+        assert eng.st.el[info["detached"]]["origin"] == "detached"
+    finally:
+        eng.close()
+    c = sqlite3.connect(str(path))
+    assert c.execute("SELECT origin FROM element WHERE id=?", (info["detached"],)).fetchone()[0] == "detached"
+    assert c.execute("SELECT COUNT(*) FROM op_log WHERE seq=0").fetchone()[0] == 0   # 없던 시작 상태 기록을 새로 만들지 않는다
+    assert dict(c.execute("SELECT key, value FROM meta")).get("closure_format")
+    c.close()
+    b = S.Bench(tmp_path)   # 디스패치 경로로도 열리고, 동결이 적용된다
+    try:
+        r = b.run("wall.move", {"id": info["detached"], "dx": 1}, project=info["name"])
+        assert not r["ok"] and r["error"]["code"] == "ELEMENT_FROZEN", r
+        assert _ok(b.run("wall.move", {"id": F.W3, "dx": 10}, project=info["name"]))
+    finally:
+        b.close()
+
+
+def test_r3b_옛_형식_DB는_병합할_수_없다고_알린다(tmp_path):
+    info = make_imported(tmp_path)
+    branch(tmp_path, info["name"], "a.dobim", "b.dobim")
+    _to_legacy(tmp_path / "a.dobim")
+    b = S.Bench(tmp_path)
+    try:
+        r = b.run("merge.preview", {"other": "b.dobim"}, project="a.dobim")
+        assert not r["ok"] and r["error"]["code"] == "CONSTRAINT", r
+    finally:
+        b.close()
+
+
+# ================================================================ 보강: 다시 판정 뒤 메모리의 투영 명세 해시
+def test_r3c_다시_판정한_뒤_메모리의_import_spec이_DB와_같다(tmp_path):
+    """열기 전에 읽어 둔 명세 해시가 다시 판정이 DB 를 고친 뒤에도 낡은 채로 남으면, 첫 세션과 재오픈 세션이 같은 요소를 다르게 투영한다."""
+    info = make_imported(tmp_path)
+    path = tmp_path / info["name"]
+    c = sqlite3.connect(str(path))
+    good = dict(c.execute("SELECT id, spec_hash FROM import_spec"))
+    assert good
+    c.execute("DELETE FROM meta WHERE key='closure_format'")
+    c.execute("UPDATE import_spec SET spec_hash='old-format'")
+    c.execute("UPDATE element SET projection_hash='old-format' WHERE projection_hash IS NOT NULL")
+    c.commit()
+    c.close()
+    first = Engine(path, "t", create=False)
+    try:
+        assert first._import_spec == good, "다시 판정 뒤에도 메모리의 명세 해시가 낡았다"
+        h1 = first.hashes()
+    finally:
+        first.close()
+    second = Engine(path, "t", create=False)
+    try:
+        assert second._import_spec == good
+        assert second.hashes() == h1
+    finally:
+        second.close()
+
+
+# ================================================================ 4. 다시 판정으로 동결된 요소의 동결 전 편집은 되돌리기·다시 실행으로 되살아나지 않는다
+def test_r4_다시_판정으로_동결된_요소의_동결_전_편집을_되돌려도_저작으로_되살아나지_않는다(tmp_path, monkeypatch):
+    import dobim_core.foreign as FO
+    info = make_imported(tmp_path)
+    p = info["name"]
+    b = S.Bench(tmp_path)
+    try:
+        _ok(b.run("wall.move", {"id": F.W3, "dx": 100}, project=p))   # 동결 전 편집
+    finally:
+        b.close()
+    c = sqlite3.connect(str(tmp_path / p))
+    c.execute("DELETE FROM meta WHERE key='closure_format'")   # 다음에 열 때 다시 판정한다
+    c.commit()
+    c.close()
+    orig = FO.plan_import
+
+    def flipped(data):   # 새 형식의 판정은 W3 를 분리로 본다(판정이 뒤집히는 것을 흉내)
+        pl = orig(data)
+        for r in pl.rows:
+            if r["id"] == F.W3:
+                r["origin"] = "detached"
+        return pl
+    monkeypatch.setattr(FO, "plan_import", flipped)
+    b = S.Bench(tmp_path)
+    try:
+        before = _ok(b.run("element.get", {"id": F.W3}, project=p))
+        assert before["origin"] == "detached"
+        r = b.run("history.undo", {}, project=p)
+        assert not r["ok"] and r["error"]["code"] == "ELEMENT_FROZEN", r
+        after = _ok(b.run("element.get", {"id": F.W3}, project=p))
+        assert after["origin"] == "detached" and after["params"] == before["params"]   # 거절은 아무것도 바꾸지 않았다
+        # 정상 흐름의 되돌리기는 그대로 된다: 저작 벽의 편집(스택 맨 위가 막혀 있지 않은 새 트랜잭션)
+        _ok(b.run("wall.move", {"id": F.W2, "dx": 5}, project=p))
+        _ok(b.run("history.undo", {}, project=p))
+        _ok(b.run("history.redo", {}, project=p))
+    finally:
+        b.close()
+
+
+# ================================================================ 5. 시작 상태 기록 비교에는 행위자가 들어가지 않는다
+
+def test_r5_같은_IFC를_두_사람이_따로_가져와도_병합된다(tmp_path):
+    make_imported(tmp_path, "tmp.dobim")
+    guid = "5d0b1a50-0000-4a00-8000-0d0b1a5000f3"   # 같은 프로젝트 식별자(project_uuid)를 쓴 복사본끼리만 병합한다(별도 규칙)
+    for actor, pn in (("alice", "a.dobim"), ("bob", "b.dobim")):
+        b = S.Bench(tmp_path, actor=actor)
+        try:
+            assert b.import_ifc("tampered.ifc", pn, guid=guid)["ok"]
+        finally:
+            b.close()
+    b = S.Bench(tmp_path, actor="alice")
+    try:
+        _ok(b.run("wall.move", {"id": F.W3, "dx": 100}, project="a.dobim"))
+    finally:
+        b.close()
+    b = S.Bench(tmp_path, actor="bob")
+    try:
+        _ok(b.run("wall.set", {"id": F.W2, "name": "bob"}, project="b.dobim"))
+    finally:
+        b.close()
+    b = S.Bench(tmp_path, actor="alice")
+    try:
+        prev = b.run("merge.preview", {"other": "b.dobim"}, project="a.dobim")
+        assert prev["ok"] and prev["result"]["conflict_count"] == 0, prev
+        assert b.run("merge.apply", {"other": "b.dobim"}, project="a.dobim")["ok"]
+        g = _ok(b.run("element.get", {"id": F.W2}, project="a.dobim"))
+        assert g["params"]["name"] == "bob"
+    finally:
+        b.close()
+
+
+def test_r5b_다른_IFC에서_가져온_프로젝트는_여전히_병합을_거절한다(tmp_path):
+    """행위자를 비교에서 뺀 뒤에도, 원본 바이트가 다르면 같은 시작 상태가 아니다."""
+    make_imported(tmp_path, "tmp.dobim")
+    f = ifcopenshell.open(str(tmp_path / "tampered.ifc"))
+    f.by_guid(F.W3).Name = "다른 이름"
+    f.write(str(tmp_path / "tampered2.ifc"))
+    for src, pn in (("tampered.ifc", "a.dobim"), ("tampered2.ifc", "b.dobim")):
+        b = S.Bench(tmp_path)
+        try:
+            assert b.import_ifc(src, pn)["ok"]
+        finally:
+            b.close()
+    b = S.Bench(tmp_path)
+    try:
+        r = b.run("merge.preview", {"other": "b.dobim"}, project="a.dobim")
+        assert not r["ok"] and r["error"]["code"] == "CONSTRAINT", r
+    finally:
+        b.close()

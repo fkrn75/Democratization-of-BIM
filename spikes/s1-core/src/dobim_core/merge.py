@@ -171,6 +171,12 @@ def genesis_of(rows) -> tuple | None:
     return getattr(rows, "genesis", None)
 
 
+def genesis_key(g) -> tuple | None:
+    """같은 가져오기인지 비교하는 내용: 연산 이름과 인자(원본 IFC 바이트의 sha256·크기·스키마). 누가(actor)·언제 가져왔는지는 보지 않는다:
+    같은 IFC 를 두 사람이 따로 가져와도 같은 시작 상태다."""
+    return None if g is None else (g[4], g[5])
+
+
 def genesis_error(g) -> str | None:
     """시작 상태 기록: 요소 생성과 관계 맺기만 담는다(가져오기가 만든 상태)."""
     if len(g) != 7 or g[0] != 0 or g[4] != GENESIS_OP or not all(isinstance(x, str) for x in (g[1], g[2], g[4], g[5], g[6])):
@@ -817,7 +823,7 @@ def build_plan(ours_rows: list[tuple], theirs_rows: list[tuple], resolve: list[d
     for r in resolve or []:
         res[r["key"]] = r["take"]
     go, gt = genesis_of(ours_rows), genesis_of(theirs_rows)
-    if go != gt:   # 가져온 프로젝트는 같은 가져오기에서 갈라진 것끼리만 병합한다(시작 상태가 다르면 조상이 없다)
+    if genesis_key(go) != genesis_key(gt):   # 가져온 프로젝트는 같은 가져오기에서 갈라진 것끼리만 병합한다(시작 상태가 다르면 조상이 없다)
         raise DobimError("CONSTRAINT", "같은 가져오기(시작 상태)에서 갈라진 파일이 아니다", path="/other",
                          hint="가져온 IFC 가 다르거나 한쪽이 가져오지 않은 프로젝트입니다")
     gen = [go] if go is not None else []   # 접기는 시작 상태 기록(seq 0)부터 한다
