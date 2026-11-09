@@ -387,3 +387,95 @@ def test_r5b_다른_IFC에서_가져온_프로젝트는_여전히_병합을_거�
         assert not r["ok"] and r["error"]["code"] == "CONSTRAINT", r
     finally:
         b.close()
+
+
+# ================================================================ 6. 시험의 이빨: 위조 로그와 쓰기 관문
+def _forge_entry(ws, name: str, op: str, effects: list) -> None:
+    """상대 프로젝트의 로그 끝에 커맨드로는 만들 수 없는 항목(효과 목록)을 손으로 끼워 넣는다."""
+    from dobim_core.engine import canon, invert
+    c = sqlite3.connect(str(ws / name))
+    try:
+        head = c.execute("SELECT COALESCE(MAX(seq), 0) FROM op_log").fetchone()[0]
+        c.execute("INSERT INTO op_log (seq, txn_id, actor, base_rev, ts, op, args, inverse) VALUES (?,?,?,?,?,?,?,?)",
+                  (head + 1, f"t{head + 1}", "forger", head, "2026-01-01T00:00:00", op, canon({"id": effects[0][1]}), canon(invert(effects))))
+        c.commit()
+    finally:
+        c.close()
+
+
+D9 = "9" * 22
+_FORGED_DOOR = {"kind": "door", "ifc_class": "IfcDoor", "origin": "authored", "family_id": "door.single",
+                "params": {"name": "forged", "width": 900.0, "height": 2100.0, "sill": 0.0, "offset": 1000.0}}
+
+
+def test_r6_분리_벽에_문을_호스팅하는_위조_로그는_병합_미리보기와_적용_모두_거절한다(tmp_path):
+    info = make_imported(tmp_path)
+    branch(tmp_path, info["name"], "a.dobim", "b.dobim")
+    _forge_entry(tmp_path, "b.dobim", "door.place", [["el", D9, None, _FORGED_DOOR], ["rel", "hosts", info["detached"], D9, 0, 1]])
+    b = S.Bench(tmp_path)
+    try:
+        prev = b.run("merge.preview", {"other": "b.dobim"}, project="a.dobim")   # 예전에는 "충돌 0" 으로 보였다
+        assert not prev["ok"] and prev["error"]["code"] == "ELEMENT_FROZEN", prev
+        assert info["detached"] in prev["error"]["details"]["elements"]
+        r = b.run("merge.apply", {"other": "b.dobim"}, project="a.dobim")
+        assert not r["ok"] and r["error"]["code"] == "ELEMENT_FROZEN", r
+        assert D9 not in {i["id"] for i in _ok(b.run("element.query", {"limit": 1000}, project="a.dobim"))["items"]}   # 아무것도 들어오지 않았다
+    finally:
+        b.close()
+
+
+def test_r6b_외래_요소를_만드는_위조_로그도_미리보기가_알린다(tmp_path):
+    info = make_imported(tmp_path)
+    branch(tmp_path, info["name"], "a.dobim", "b.dobim")
+    row = {"kind": "foreign", "ifc_class": "IfcWall", "origin": "foreign", "family_id": None, "params": {"name": "forged"}}
+    _forge_entry(tmp_path, "b.dobim", "wall.create", [["el", D9, None, row]])
+    b = S.Bench(tmp_path)
+    try:
+        prev = b.run("merge.preview", {"other": "b.dobim"}, project="a.dobim")
+        assert not prev["ok"] and prev["error"]["code"] == "ELEMENT_FROZEN", prev
+    finally:
+        b.close()
+
+
+def test_r6c_정상_병합은_동결_예고에_걸리지_않는다(tmp_path):
+    """분리된 벽의 속성 편집, 저작 문을 지워 분리된 호스트와의 관계를 끊는 병합은 정상이다(끊는 것·속성은 막지 않는다)."""
+    info = make_imported(tmp_path)
+    branch(tmp_path, info["name"], "a.dobim", "b.dobim")
+    b = S.Bench(tmp_path)
+    try:
+        _ok(b.run("pset.set", {"id": info["detached"], "pset": "Pset_S2", "prop": "Note", "value": "B"}, project="b.dobim"))
+        _ok(b.run("element.delete", {"id": F.D1}, project="b.dobim"))   # D1 은 분리된 W1 에 호스팅된 저작 문
+        prev = b.run("merge.preview", {"other": "b.dobim"}, project="a.dobim")
+        assert prev["ok"] and prev["result"]["conflict_count"] == 0, prev
+        assert b.run("merge.apply", {"other": "b.dobim"}, project="a.dobim")["ok"]
+    finally:
+        b.close()
+
+
+def test_r6d_쓰기_관문이_동결_요소를_스스로_막는다(tmp_path):
+    """Ctx.put_el·rel·set_material 의 저작 확인은 커맨드가 authored() 를 빠뜨려도 동결 요소를 지킨다: 커맨드를 거치지 않고 관문을 직접 부른다.
+    (커맨드 쪽 앞단 확인만으로는 관문 검사가 꺼져도 다른 시험이 모두 통과해 관문이 검증되지 않았다)"""
+    from dobim_core.engine import Ctx
+    from dobim_core.errors import DobimError
+    info = make_imported(tmp_path)
+    eng = Engine(tmp_path / info["name"], "t", create=False)
+    try:
+        ctx = Ctx(eng, eng.head + 1, "t", dry_run=True)
+        w1, d2 = info["detached"], F.D2
+        row = eng.st.el[w1]
+        assert row["origin"] == "detached" and eng.st.el[d2]["origin"] == "authored"
+
+        def frozen(fn):
+            with pytest.raises(DobimError) as ei:
+                fn()
+            assert ei.value.code == "ELEMENT_FROZEN"
+        frozen(lambda: ctx.rel("hosts", w1, d2, True))                       # 분리된 벽에 문을 호스팅
+        frozen(lambda: ctx.put_el(w1, dict(row, params=dict(row["params"], thickness=999.0))))   # 분리된 벽의 수정
+        frozen(lambda: ctx.put_el(w1, None))                                 # 삭제
+        frozen(lambda: ctx.put_el(D9, dict(_FORGED_DOOR, origin="detached")))   # 동결 요소를 새로 만들기
+        frozen(lambda: ctx.set_material(w1, "Steel"))                        # 재료(W1 의 지금 재료는 Concrete)
+        # 끊는 것과 저작 요소는 막지 않는다
+        assert ctx.rel("hosts", w1, F.D1, False) is True
+        assert not ctx.effects or ctx.effects[-1][0] == "rel"
+    finally:
+        eng.close()

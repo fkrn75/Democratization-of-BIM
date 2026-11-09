@@ -297,12 +297,25 @@ def test_6_입력_키_계산과_효과_적용이_같은_키를_낸다(tmp_path):
             ["mat", F.W1, "Concrete", "Steel"],
             ["att", F.W1, None, {"rels": []}],                     # 외래 부속 스냅숏 (S2)
         ]
-        for e in samples:
+        # 기대값은 kinds.EFFECTS 표와 독립이다(표를 바꾸면 두 계산이 함께 바뀌어 서로 같기만 해도 통과하던 틈): 키 이름과 버킷 계산을 여기서 직접 적는다
+        import zlib
+        bucket = zlib.crc32(("9" * 22).encode("ascii")) % 64   # kinds.bucket_of 의 정의(crc32 mod 64)를 따로 계산한다
+        expected = [
+            {("el", "9" * 22), ("bucket", "wall", bucket), ("count", "wall")},       # 생성: 요소 + 버킷 + 개수
+            {("el", F.W1)},                                                           # 수정: 요소뿐
+            {("rel_out", "hosts", F.W1), ("rel_in", "hosts", F.D2)},
+            {("pset", F.W1)},
+            {("mat", F.W1)},
+            set(),                                                                    # att: 파생값의 입력이 아니다
+        ]
+        assert row["kind"] == "wall" and len(expected) == len(samples)
+        for e, want in zip(samples, expected):
             eng._pending = set()
             eng._apply_effect(e, persist=False)
             applied = set(eng._pending)
             eng._pending = set()
             assert applied == input_keys_of([e]), (e[0], applied, input_keys_of([e]))
+            assert applied == want, (e[0], applied, want)
     finally:
         eng.close()
 
