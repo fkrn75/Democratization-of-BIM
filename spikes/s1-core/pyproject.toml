@@ -49,7 +49,7 @@ forbidden_modules = ["tkinter", "PyQt5", "PyQt6", "PySide2", "PySide6", "wx", "b
 name = "순수 질의는 엔진·프로토콜 계층을 모른다"
 type = "forbidden"
 source_modules = ["dobim_core.queries", "dobim_core.graph", "dobim_core.drawing", "dobim_core.drawing_export", "dobim_core.annot",
-                  "dobim_core.kinds", "dobim_core.family.spec", "dobim_core.family.evaluate", "dobim_core.family.restore"]
+                  "dobim_core.kinds", "dobim_core.family.spec", "dobim_core.family.evaluate", "dobim_core.family.restore", "dobim_core.viewdefs"]
 forbidden_modules = ["dobim_core.engine", "dobim_core.cli", "dobim_core.mcp_server", "dobim_core.dispatch", "dobim_core.ifc_model"]
 allow_indirect_imports = true
 
@@ -75,6 +75,6 @@ source_modules = ["dobim_core.commands", "dobim_core.commands_family", "dobim_co
                   "dobim_core.dispatch", "dobim_core.cli", "dobim_core.mcp_server", "dobim_core.fixture",
                   "dobim_core.paths", "dobim_core.errors", "dobim_core.drawing", "dobim_core.drawing_export", "dobim_core.annot",
                   "dobim_core.merge", "dobim_core.kinds", "dobim_core.limits", "dobim_core.family.evaluate", "dobim_core.family.expr",
-                  "dobim_core.family.recipe", "dobim_core.family.spec", "dobim_core.family.library", "dobim_core.family.restore"]
+                  "dobim_core.family.recipe", "dobim_core.family.spec", "dobim_core.family.library", "dobim_core.family.restore", "dobim_core.viewdefs"]
 forbidden_modules = ["ifcopenshell"]
 allow_indirect_imports = true

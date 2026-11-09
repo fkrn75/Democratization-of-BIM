@@ -10,6 +10,9 @@
 - 분리된 패밀리 타입의 인스턴스는 타입이 낡은 정의이므로 함께 분리한다(인스턴스를 다시 투영하면 변조된 타입의 표현 지도를 가리키게 된다).
 - 길이 단위가 밀리미터가 아니면(의도의 값은 mm 다) 후보 전체를 detached 로 둔다: 단위는 프로젝트 수준의 변경이라 요소 하나하나의 클로저에
   나타나지 않기 때문이다. 분리된 레벨이 있으면 그 위의 저작 요소가 레벨 배치를 따라 움직인다는 경고를 더한다.
+- 뷰·치수·태그(IFC 신원이 없는 의도 요소)의 정의는 프로젝트의 속성셋 DoBIM_Defs 에 실려 있다(ADR-0015). 정의마다 viewdefs.parse_def 로 검증하고(모양·범위·변조 해시),
+  가리키는 레벨·뷰·대상이 파일 안에서 어떤 상태인지 보고 되살린다. 레벨·벽·문이 저작이면 그대로, 파일에 없으면 고아로(커맨드로 지운 뒤와 같다),
+  있는데 저작이 아니면(외래·분리) 되살리지 않는다(낡은 값을 재게 된다). 되살리지 않은 정의는 파일에 그대로 남고 내보낼 때도 건드리지 않는다.
 - 뼈대(Site/Building)는 구조·이름으로 알아보고 위경도·주소 같은 비형상 속성은 보지 않는다. 뼈대의 형상이 바뀌었으면 경고한다(ifc_model.skeleton_check).
 
 이 모듈은 파일을 읽어 계획(ImportPlan)을 만들 뿐 프로젝트를 만들지 않는다. 엔진이 계획을 SQLite 에 적는다.
@@ -22,6 +25,7 @@ import re
 import uuid
 from dataclasses import dataclass, field
 
+import ifcopenshell
 import ifcopenshell.util.element as ue
 import ifcopenshell.util.unit as uunit
 
@@ -29,6 +33,8 @@ from dobim_core import queries as Q
 from dobim_core.errors import DobimError
 from dobim_core.graph import Graph
 from dobim_core.family import restore as FR
+from dobim_core import annot as AN
+from dobim_core import viewdefs as VD
 from dobim_core.kinds import ELEMENT_KINDS, FAMILY_OF_KIND, IMPORTABLE_BY_CLASS
 from dobim_core.ifc_model import (INTENT_PSET, Closure, IfcModel, closure_diff, open_ifc_bytes, skeleton_check)
 
@@ -154,6 +160,117 @@ class _Inputs:
         if t == "rel_in":
             return tuple(st.inn.get((key[1], key[2]), ()))
         raise KeyError(key)
+
+
+def _read_defs(f, plan: "ImportPlan") -> dict[str, object]:
+    """프로젝트 속성셋 DoBIM_Defs 의 속성 {이름: 텍스트(문자열이 아니면 None)}. 프로젝트가 하나가 아니거나 속성셋이 둘 이상이면 모호해서 읽지 않는다.
+    같은 이름의 속성이 둘이면 어느 쪽도 믿지 않는다(그 이름은 빠진다)."""
+    projs = f.by_type("IfcProject")
+    if len(projs) != 1:
+        return {}
+    psets = []
+    for r in projs[0].IsDefinedBy or ():
+        d = r.RelatingPropertyDefinition if r.is_a("IfcRelDefinesByProperties") else None
+        if isinstance(d, ifcopenshell.entity_instance) and d.is_a("IfcPropertySet") and d.Name == VD.DEFS_PSET:
+            psets.append(d)
+    if not psets:
+        return {}
+    if len(psets) > 1:
+        plan.warnings.append(f"속성셋 {VD.DEFS_PSET} 가 {len(psets)}개라 뷰·주석 정의를 읽지 않는다")
+        return {}
+    out: dict[str, object] = {}
+    dup: set[str] = set()
+    for p in psets[0].HasProperties or ():
+        name = getattr(p, "Name", None)
+        if not isinstance(name, str):
+            continue
+        if name in out or name in dup:
+            dup.add(name)
+            out.pop(name, None)
+            continue
+        v = getattr(p.NominalValue, "wrappedValue", None) if p.is_a("IfcPropertySingleValue") and p.NominalValue is not None else None
+        out[name] = v if isinstance(v, str) else None
+        if len(out) > VD.MAX_DEFS:
+            plan.warnings.append(f"뷰·주석 정의가 {VD.MAX_DEFS}개를 넘어 나머지는 읽지 않는다")
+            break
+    for name in sorted(dup)[:20]:
+        plan.warnings.append(f"{name[:22]}: 같은 이름의 정의 속성이 둘 이상이라 되살리지 않는다")
+    return out
+
+
+def _restore_defs(f, rows: dict, rels: set, taken: set, plan: "ImportPlan") -> None:
+    """뷰·치수·태그를 되살려 rows·rels 에 더한다(ADR-0015). rows 는 요소 판정이 끝난 상태(외래 행 포함), taken 은 파일 안의 모든 id(제품·타입·뼈대)다.
+    되살리지 못한 정의는 이유를 경고로 알리고 건너뛴다(오류로 죽지 않는다)."""
+    defs = _read_defs(f, plan)
+    if not defs:
+        return
+    skip = lambda eid, why: plan.warnings.append(f"{eid[:22]}: 뷰·주석 정의를 되살리지 않는다({why})")   # noqa: E731
+    parsed: dict[str, dict] = {}
+    for eid in sorted(defs):
+        if eid in taken or eid in rows:
+            skip(eid, "정의 id 가 요소의 GlobalId 와 겹친다")
+            continue
+        try:
+            parsed[eid] = VD.parse_def(eid, defs[eid])
+        except ValueError as ex:
+            skip(eid, str(ex)[:100])
+    names: dict[str, list] = {}
+    for eid, d in parsed.items():
+        if d["kind"] == "view":
+            names.setdefault(d["params"]["name"], []).append(eid)
+    for nm, ids in sorted(names.items()):
+        if len(ids) > 1:   # 뷰 이름은 유일해야 한다(view.create 의 규칙): 겹치면 어느 쪽이 원본인지 알 수 없다
+            for eid in ids:
+                del parsed[eid]
+                skip(eid, "같은 이름의 뷰가 더 있다")
+
+    def state(g):   # (종류, 출처) 또는 None(파일에 없다)
+        r = rows.get(g)
+        if r is not None:
+            return r["kind"], r["origin"]
+        return ("?", "foreign") if g in taken else None
+
+    ok: dict[str, dict] = {}
+    for eid in sorted(e for e, d in parsed.items() if d["kind"] == "view"):
+        p = parsed[eid]["params"]
+        if p["type"] == "plan":
+            st = state(p["level"])
+            if st is not None and st != ("level", "authored"):   # 레벨이 없으면 고아 뷰(저작 상태에서도 생긴다), 있는데 저작 레벨이 아니면 낡은 값을 쓴다
+                skip(eid, "평면 뷰가 가리키는 레벨이 저작이 아니다(분리·외래·다른 종류)")
+                continue
+        ok[eid] = parsed[eid]
+    for eid in sorted(e for e, d in parsed.items() if d["kind"] != "view"):
+        d = parsed[eid]
+        p = d["params"]
+        v = ok.get(p["view"])
+        if v is None:
+            skip(eid, "속한 뷰가 없거나 되살려지지 않았다")
+            continue
+        vt = v["params"]["type"]
+        why = None
+        if d["kind"] == "dim":
+            if ("at" in p) == (vt == "plan"):
+                why = "치수의 종류(평면·높이)가 뷰의 종류와 맞지 않는다"
+            for k in ("a", "b"):
+                rk, rid, _role = AN.parse_ref(p[k])
+                st = state(rid)
+                if st is not None and st != (rk, "authored"):
+                    why = f"치수 참조 {k} 의 대상이 저작 {rk} 가 아니다"
+        else:
+            st = state(p["target"])
+            if vt != "plan":
+                why = "태그는 평면 뷰에 둔다"
+            elif st is not None and (st[1] != "authored" or not VD.tag_fields_ok(st[0], p["fields"])):
+                why = "태그 대상이 저작 벽·문이 아니거나 표시 필드가 맞지 않는다"
+        if why:
+            skip(eid, why)
+            continue
+        ok[eid] = d
+    for eid, d in ok.items():
+        rows[eid] = {"kind": d["kind"], "ifc_class": "", "origin": "authored", "family_id": d["family_id"], "params": d["params"],
+                     "projection_hash": None}
+        if d["kind"] != "view":
+            rels.add(("annot_of", eid, d["params"]["view"]))
 
 
 def _name_of(p) -> str:
@@ -349,6 +466,12 @@ def plan_import(data: bytes) -> ImportPlan:
             continue
         rows[g] = {"kind": "foreign", "ifc_class": p.is_a(), "origin": "foreign", "family_id": None,
                    "params": {"name": _name_of(p)}, "projection_hash": None}
+    # 4b) 뷰·치수·태그(정의가 속성셋에 실려 있다, ADR-0015)
+    taken = seen | infra
+    projs = f.by_type("IfcProject")
+    if projs and isinstance(getattr(projs[0], "GlobalId", None), str):
+        taken.add(projs[0].GlobalId)
+    _restore_defs(f, rows, rels, taken, plan)
     # 5) 공간 소속(on_level): 외래·분리 요소도 층에 담긴 관계를 남긴다(레벨 삭제 검사와 element.query level 필터가 쓴다)
     for p in prods:
         g = p.GlobalId

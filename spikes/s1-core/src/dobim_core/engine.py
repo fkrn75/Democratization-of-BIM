@@ -29,6 +29,7 @@ import ifcopenshell.guid
 from dobim_core import annot as AN
 from dobim_core import drawing as D
 from dobim_core import queries as Q
+from dobim_core import viewdefs as VD
 from dobim_core.errors import DobimError, internal_error
 from dobim_core.graph import Graph, RefGraph
 from dobim_core.ifc_model import CLOSURE_FORMAT, IfcModel
@@ -501,6 +502,7 @@ class Engine:
         self._rebuild_ifc(log)
         self._proj_stamp: dict[str, int] = {}
         self._pending: set = set()
+        self._defs_cache: dict[str, tuple] = {}   # 뷰·주석 id -> (행 객체, IFC 에 적을 정의 텍스트). 행은 불변이라 같은 객체면 텍스트도 같다
         self._dead_views: set = set()   # 지워진 뷰: 그래프에 남은 그 뷰의 노드를 다음 갱신 때 정리한다
         self.g = Graph(_Inputs(self))
 
@@ -583,6 +585,10 @@ class Engine:
             gen = [row for row in log if row[0] == 0 and row[2] == GENESIS_OP]
             types = {e[1] for e in invert(json.loads(gen[0][3])) if e[0] == "el" and e[3] is not None and e[3]["kind"] == "ftype"} if gen else set()
             self.ifc.prune(types)
+            # 시작 상태 기록(seq 0)에 정의(뷰·치수·태그)로 들어 있던 id: 그 속성은 이 프로젝트가 소유한다(지금 요소가 아니면 가져온 뒤 지워졌으니 내보낼 때 지운다).
+            # 되살리지 못한 정의(손상·참조 불일치)는 여기 없으니 파일에 그대로 남는다(ADR-0015)
+            owned = {e[1] for e in invert(json.loads(gen[0][3])) if e[0] == "el" and e[3] is not None and e[3]["kind"] in VD.DEF_KINDS} if gen else set()
+            self.ifc.adopt_defs(owned)
         for (eid, pset, prop), v in sorted(psets.items(), key=lambda kv: kv[0]):
             # 외래 기반에는 가져온 속성이 이미 있으므로 삭제(None)도 적용한다. 빈 파일에서 시작하는 일반 프로젝트는 건너뛴다
             if (v is not None or base) and eid in self.ifc.ents:
@@ -881,7 +887,28 @@ class Engine:
                         raise
                     self._proj_stamp[eid] = stamp
                     n += 1
+        self._flush_defs()
         return n
+
+    def _flush_defs(self) -> None:
+        """뷰·치수·태그의 정의를 IFC 프로젝트 속성셋에 맞춘다(ADR-0015). 정의가 없으면 아무것도 하지 않는다(IFC 가 그대로다).
+        행은 불변이라 같은 객체면 텍스트를 다시 만들지 않는다. 바뀐 정의의 속성만 쓴다."""
+        old, cache = self._defs_cache, {}
+        for kind in VD.DEF_KINDS:
+            for eid in self.st.by_kind.get(kind, ()):
+                row = self.st.el[eid]
+                hit = old.get(eid)
+                cache[eid] = hit if hit is not None and hit[0] is row else (row, VD.def_text(eid, row))
+        self._defs_cache = cache
+        try:
+            self.ifc.sync_defs({eid: t for eid, (_, t) in cache.items()})
+        except BaseException as ex:
+            self._taint("정의 속성", ex)
+            try:
+                self._heal()
+            except DobimError as healing_failed:
+                raise healing_failed from ex
+            raise
 
     # ------------------------------------------------------------ 해시 (정규화된 의미 해시)
     def state_dump(self) -> dict:
@@ -921,7 +948,7 @@ class Engine:
         texts = self.ifc.intent_texts()
         for eid in sorted(self.st.el):
             if self.st.el[eid]["kind"] in Q.NON_IFC_KINDS or self.st.el[eid]["origin"] == "foreign":
-                continue   # IFC 로 투영하지 않는 요소(뷰·주석)와 의도가 없는 외래 요소
+                continue   # 요소 단위 IFC 투영이 없는 요소(뷰·주석: 정의는 아래에서 따로 본다)와 의도가 없는 외래 요소
             want = canon(self.g.q(Q.intent_of, eid))
             got = texts.get(eid)
             if self.has_base:   # 외부 도구가 쓴 의도 텍스트는 모양이 달라도 뜻이 같으면 일치로 본다
@@ -931,4 +958,7 @@ class Engine:
                     pass
             if got != want:
                 bad.append(eid)
+        want_defs = {eid: t for eid, (_, t) in self._defs_cache.items()}   # flush_ifc 가 방금 맞춘 정의 텍스트: IFC 에 실려 있는 것과 같아야 한다
+        got_defs = self.ifc.defs_texts()
+        bad += [eid for eid in sorted(want_defs) if got_defs.get(eid) != want_defs[eid]]
         return bad

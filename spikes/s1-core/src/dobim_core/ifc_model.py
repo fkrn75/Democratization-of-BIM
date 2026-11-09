@@ -36,6 +36,7 @@ import ifcopenshell.validate
 from dobim_core.errors import DobimError
 from dobim_core.kinds import FIXED_IFC_CLASS
 from dobim_core.family import ifcproj as fp
+from dobim_core.viewdefs import DEFS_PSET
 
 def _rels_of(e, inv, attr: str, rel_cls: str, rel_attr: str) -> list:
     """e 가 rel_attr(관계의 대상 목록)에 들어 있는 rel_cls 관계들. IFC 의 역속성(attr)을 쓰면 엔진이 인덱스로 찾는다.
@@ -458,6 +459,9 @@ class IfcModel:
         self.base_ents: set[str] = set()        # 가져온 파일의 엔티티를 그대로 이어받은 요소 id (아직 이 세션에서 다시 만들지 않은 것)
         self._opening_gid: dict[str, str] = {}  # 문 id -> 개구부 GlobalId (가져온 파일의 값을 다시 투영해도 유지한다)
         self.pending_styles: dict[str, list] = {}   # 지우기를 되돌린 요소 id -> 새 몸체 솔리드에 입힐 스타일 스냅숏
+        # 뷰·주석 정의(ADR-0015): IfcProject 의 속성셋 DoBIM_Defs 에서 이 모델이 소유한 속성(이름 = 요소 id)의 현재 텍스트.
+        # 소유하지 않은 속성(되살리지 않은 외래·손상 정의)은 건드리지 않는다. 정의가 하나도 없으면 속성셋도 만들지 않는다(정의 없는 프로젝트의 IFC 는 그대로다).
+        self._defs_text: dict[str, str] = {}
         if base is not None:
             self._open_base(base)
             return
@@ -1034,6 +1038,84 @@ class IfcModel:
     def semantic_hash(self) -> str:
         blob = json.dumps(self.semantic_dump(), sort_keys=True, separators=(",", ":"))
         return hashlib.sha256(blob.encode("utf-8")).hexdigest()
+
+    # ------------------------------------------------------------ 뷰·주석 정의 (ADR-0015)
+    def _defs_pset(self, create: bool):
+        """프로젝트의 DoBIM_Defs 속성셋(없고 create 가 아니면 None). 프로젝트가 정확히 하나가 아니면 None(정의를 실을 곳이 모호하다)."""
+        f = self.f
+        projs = f.by_type("IfcProject")
+        if len(projs) != 1:
+            return None
+        proj = projs[0]
+        for r in proj.IsDefinedBy or ():
+            d = r.RelatingPropertyDefinition if r.is_a("IfcRelDefinesByProperties") else None
+            if isinstance(d, ifcopenshell.entity_instance) and d.is_a("IfcPropertySet") and d.Name == DEFS_PSET:
+                return d
+        if not create:
+            return None
+        ps = api_pset.add_pset(f, product=proj, name=DEFS_PSET)
+        ps.GlobalId = derived_guid(self.project_guid, "defs:pset")   # 무작위 GlobalId 면 같은 프로젝트를 세션마다 내보낼 때 ifcdiff 가 바뀐 것으로 센다
+        for r in f.get_inverse(ps):
+            if r.is_a("IfcRelDefinesByProperties"):
+                r.GlobalId = derived_guid(self.project_guid, "defs:rel")
+        return ps
+
+    @staticmethod
+    def _text_of(p):
+        """속성(IfcPropertySingleValue)의 문자열 값(아니면 None)."""
+        if not p.is_a("IfcPropertySingleValue") or p.NominalValue is None:
+            return None
+        v = getattr(p.NominalValue, "wrappedValue", None)
+        return v if isinstance(v, str) else None
+
+    def adopt_defs(self, ids) -> None:
+        """가져온 파일에서 되살린 정의 id(ids)의 속성을 이 모델이 소유한 것으로 이어받는다(현재 텍스트를 기억한다: 같으면 다시 쓰지 않는다)."""
+        ps = self._defs_pset(False)
+        if ps is None:
+            return
+        have = {p.Name: self._text_of(p) for p in ps.HasProperties or ()}
+        for i in ids:
+            if have.get(i) is not None:
+                self._defs_text[i] = have[i]
+
+    def sync_defs(self, desired: dict[str, str]) -> bool:
+        """IFC 의 정의 속성을 desired({요소 id: 텍스트})와 같게 한다. 소유한 속성만 더하고·고치고·지운다. 바꾼 게 없으면 False.
+        마지막 소유 속성이 지워져 속성셋이 비면 속성셋도 지운다(정의가 없던 때와 같은 IFC)."""
+        removed = [i for i in self._defs_text if i not in desired]
+        changed = {i: t for i, t in desired.items() if self._defs_text.get(i) != t}
+        if not removed and not changed:
+            return False
+        ps = self._defs_pset(create=bool(changed))
+        if ps is None:   # 지울 것만 있는데 속성셋이 없다(이미 없다) 또는 프로젝트가 모호해 실을 곳이 없다
+            for i in removed:
+                self._defs_text.pop(i, None)
+            return False
+        f = self.f
+        try:
+            props = {i: None for i in removed}
+            props.update({i: f.createIfcText(t) for i, t in sorted(changed.items())})
+            api_pset.edit_pset(f, pset=ps, properties=props)
+            if not [p for p in ps.HasProperties or () if p.is_a("IfcProperty")]:
+                api_pset.remove_pset(f, product=f.by_type("IfcProject")[0], pset=ps)
+        except BaseException as ex:   # 어디까지 적용됐는지 모른다: 오염으로 표시한다(엔진이 로그에서 다시 만든다)
+            self.tainted = f"정의 속성 갱신 실패: {type(ex).__name__}: {ex}"
+            raise
+        for i in removed:
+            self._defs_text.pop(i, None)
+        self._defs_text.update(changed)
+        return True
+
+    def defs_texts(self) -> dict[str, str]:
+        """IFC 에 실려 있는 정의 텍스트(소유한 것만, 일관성 시험용)."""
+        ps = self._defs_pset(False)
+        if ps is None:
+            return {}
+        out = {}
+        for p in ps.HasProperties or ():
+            v = self._text_of(p)
+            if p.Name in self._defs_text and v is not None:
+                out[p.Name] = v
+        return out
 
     def intent_texts(self) -> dict[str, str]:
         """IFC 에 복제된 의도 (일관성 시험용)."""
