@@ -482,30 +482,24 @@ def test_r6d_쓰기_관문이_동결_요소를_스스로_막는다(tmp_path):
 
 
 # ================================================================ 7. 알려진 한계: 패밀리 인스턴스가 있는 저작 프로젝트의 IFC 왕복
-def test_r7_패밀리_인스턴스의_호스트_벽은_왕복_뒤_분리로_동결된다_알려진_한계(tmp_path):
-    """현재 동작을 고정한다(고친 것이 아니다). 패밀리 인스턴스(finst)가 놓인 저작 프로젝트를 IFC 로 내보냈다 다시 가져오면:
-      - finst 의 DoBIM_Intent 는 문·벽·레벨의 의도 모양이 아니라서 해석되지 않고(foreign.KIND_OF 가 IfcDoor 를 문으로 보지만 의도 모양이 다르다)
-        인스턴스와 그 개구부는 외래 요소가 된다.
-      - 호스트 벽의 투영 클로저에는 그 개구부(voids)가 들어 있는데, 가져오기가 의도로 다시 투영하는 벽에는 개구부가 없어 해시가 다르다.
-        그래서 호스트 벽은 '벽에 뚫린 개구부'를 이유로 분리됨(동결)이 된다. 안전한 쪽의 판정이지만 저작 프로젝트가 왕복 뒤 호스트 벽을 못 고친다.
-    고치려면 가져오기가 패밀리 타입·인스턴스의 의도를 복원해 개구부까지 의도 재투영 비교에 넣어야 한다(ADR-0013 알려진 한계, 별도 작업)."""
+def test_r7_패밀리_인스턴스의_저작_프로젝트는_왕복_뒤에도_전부_authored이고_해시가_같다(tmp_path):
+    """검수 당시에는 현재 동작(호스트 벽이 분리로 동결됨)을 알려진 한계로 고정했던 시험이다. ADR-0014 로 가져오기가 패밀리 타입·인스턴스의 의도를
+    복원하고 개구부까지 의도 재투영 비교에 넣게 되어 기대를 바꿨다: 수정하지 않은 왕복은 전부 authored 이고 해시 3종이 같다.
+    (변조 시나리오·편집·손상 의도는 test_integration_family_rt.py 가 고정한다.)"""
     b = S.Bench(tmp_path)
     try:
         S.build_authored(b, "src.dobim")
         _ok(b.run("family.place", {"id": FID, "family": "door.single", "values": {"swing": "R"}, "host": F.W3, "offset": 4500}, project="src.dobim"))
+        h0 = S.trip(b.hashes("src.dobim"))
         b.export("fam.ifc", "src.dobim")
         r = b.import_ifc("fam.ifc", "imp.dobim")
         assert r["ok"], r
-        det = {d["id"]: d["reasons"] for d in r["result"]["detached"]}
-        assert det == {F.W3: ["벽에 뚫린 개구부"]}, det           # 호스트 벽만, 그 이유로
-        assert b.ids_of("detached", "imp.dobim") == [F.W3]
-        foreign = {i["id"]: i for i in _ok(b.run("element.query", {"origin": "foreign", "limit": 50}, project="imp.dobim"))["items"]}
-        assert FID in foreign and len(foreign) == 2   # 인스턴스(IfcDoor)와 그 개구부(IfcOpeningElement)
-        # 패밀리가 없는 벽은 그대로 저작이다
+        assert r["result"]["detached"] == [] and r["result"]["elements"]["foreign"] == 0 and r["result"]["elements"]["detached"] == 0
+        assert b.ids_of("detached", "imp.dobim") == [] and b.ids_of("foreign", "imp.dobim") == []
+        assert S.trip(b.hashes("imp.dobim")) == h0
+        # 호스트 벽의 형상도 고칠 수 있다(예전에는 ELEMENT_FROZEN)
+        assert _ok(b.run("wall.move", {"id": F.W3, "dx": 10}, project="imp.dobim"))
         assert _ok(b.run("wall.move", {"id": F.W1, "dx": 10}, project="imp.dobim"))
-        # 동결의 결과: 호스트 벽의 형상은 고칠 수 없고 속성은 고칠 수 있다
-        assert b.run("wall.move", {"id": F.W3, "dx": 10}, project="imp.dobim")["error"]["code"] == "ELEMENT_FROZEN"
-        assert _ok(b.run("pset.set", {"id": F.W3, "pset": "Pset_S2", "prop": "Note", "value": "x"}, project="imp.dobim"))
         assert _ok(b.run("model.validate", {}, project="imp.dobim"))["errors"] == 0
     finally:
         b.close()
