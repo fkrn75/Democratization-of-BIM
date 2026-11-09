@@ -517,7 +517,8 @@ class Engine:
             raise DobimError("LOCKED", f"프로젝트가 잠겨 있다: {ex}", hint="잠시 뒤 다시 시도하세요") from ex
         try:
             cur = c.execute("SELECT value FROM meta WHERE key='closure_format'").fetchone()
-            if cur is not None and cur[0] == CLOSURE_FORMAT:   # 다른 프로세스가 먼저 다시 판정했다
+            if cur is not None and cur[0] == CLOSURE_FORMAT:   # 다른 프로세스가 먼저 다시 판정했다: 그 결과(동결·명세 해시)를 메모리로 가져온다
+                self._reload_judgement()
                 c.execute("COMMIT")
                 return
             frozen = []
@@ -533,20 +534,32 @@ class Engine:
                     self.st.apply_el(eid, row, dict(row, origin="detached"))
                 elif row["origin"] == "authored" and r.get("spec_hash"):
                     c.execute("INSERT OR REPLACE INTO import_spec (id, spec_hash) VALUES (?,?)", (eid, r["spec_hash"]))
-            if frozen:
-                inv = json.loads(c.execute("SELECT inverse FROM op_log WHERE seq=0").fetchone()[0])
+            g0 = c.execute("SELECT inverse FROM op_log WHERE seq=0").fetchone() if frozen else None
+            if g0 is not None:   # 옛 형식 프로젝트(시작 상태 기록이 없다)는 고칠 기록이 없다: 요소 테이블만 동결한다
+                inv = json.loads(g0[0])
                 eff = invert(inv)
                 for e in eff:
                     if e[0] == "el" and e[1] in frozen:
                         e[3] = dict(e[3], origin="detached")
                 c.execute("UPDATE op_log SET inverse=? WHERE seq=0", (canon(invert(eff)),))
             c.execute("INSERT OR REPLACE INTO meta VALUES ('closure_format', ?)", (CLOSURE_FORMAT,))
+            self._reload_judgement()   # 메모리의 명세 해시도 방금 고친 값으로(열기 전에 읽어 둔 값은 낡았다: 첫 세션과 재오픈 세션이 다르게 투영한다)
             c.execute("COMMIT")
         except BaseException:
             if c.in_transaction:
                 c.execute("ROLLBACK")
             raise
         self.rejudged = frozen
+
+    def _reload_judgement(self) -> None:
+        """DB 에 적힌 가져온 요소의 판정(출처)과 투영 명세 해시를 메모리 상태로 다시 읽는다(다시 판정한 뒤)."""
+        c = self.conn
+        for eid, origin in c.execute("SELECT id, origin FROM element").fetchall():
+            row = self.st.el.get(eid)
+            if row is not None and row["origin"] != origin:
+                self.st.apply_el(eid, row, dict(row, origin=origin))
+        if c.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='import_spec'").fetchone():
+            self._import_spec = dict(c.execute("SELECT id, spec_hash FROM import_spec"))
 
     def _rebuild_ifc(self, log):
         """IFC 쪽 정본(속성셋·재료)은 로그의 효과를 순서대로 접어 최종값만 한 번에 만든다."""
