@@ -279,6 +279,8 @@ def ifc_spec(g, e):
     row = el(g, e)
     kind = row["kind"]
     p = row["params"]
+    if kind == "foreign":   # 외래 요소는 투영하지 않는다(IFC 가 정본)
+        return {"kind": kind}
     intent = g.q(intent_of, e)
     if kind == "level":
         return {"kind": kind, "name": p["name"], "elevation": p["elevation"], "intent": intent}

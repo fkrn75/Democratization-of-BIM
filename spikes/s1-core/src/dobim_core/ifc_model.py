@@ -13,6 +13,8 @@ from __future__ import annotations
 import hashlib
 import json
 import math
+import os
+import tempfile
 import uuid
 from typing import Any
 
@@ -28,6 +30,7 @@ import ifcopenshell.api.spatial as api_spatial
 import ifcopenshell.api.unit as api_unit
 import ifcopenshell.guid
 import ifcopenshell.util.element as ue
+import ifcopenshell.util.unit as uunit
 import ifcopenshell.validate
 
 from dobim_core.errors import DobimError
@@ -56,28 +59,347 @@ def derived_guid(project_guid: str, label: str) -> str:
     return ifcopenshell.guid.compress(uuid.uuid5(_NS, f"{project_guid}/{label}").hex)
 
 
-class IfcModel:
-    def __init__(self, project_guid: str):
-        self.project_guid = project_guid
-        f = api_project.create_file(version="IFC4")
+def open_ifc_bytes(data: bytes):
+    """IFC 바이트를 파일로 연다. 임시 파일은 열자마자 지운다(외래 파일은 비공개일 수 있다)."""
+    fd, name = tempfile.mkstemp(suffix=".ifc")
+    try:
+        with os.fdopen(fd, "wb") as fh:
+            fh.write(data)
+        return ifcopenshell.open(name)
+    finally:
+        try:
+            os.unlink(name)
+        except OSError:
+            pass
+
+
+def plain(v):
+    """속성 값을 JSON 으로 안전하게 직렬화되는 값으로 바꾼다(외래 파일의 열거·참조·표 값 등). 표현할 수 없으면 문자열."""
+    if v is None or isinstance(v, (bool, int, str)):
+        return v
+    if isinstance(v, float):
+        return v if math.isfinite(v) else str(v)
+    if isinstance(v, (list, tuple)):
+        return [plain(x) for x in v]
+    if isinstance(v, dict):
+        return {str(k): plain(x) for k, x in v.items()}
+    if isinstance(v, ifcopenshell.entity_instance):
+        return f"#{v.is_a()}"
+    return str(v)
+
+
+def material_label(m) -> str | None:
+    """재료 지정의 이름표. 외래 파일은 층 구성·프로파일 같은 복합 재료를 쓰므로 종류별로 이름을 고른다."""
+    if m is None:
+        return None
+    if m.is_a("IfcMaterial"):
+        return m.Name
+    inner = getattr(m, "ForLayerSet", None) or getattr(m, "ForProfileSet", None) or m
+    for attr in ("LayerSetName", "Name"):
+        try:
+            v = getattr(inner, attr)
+        except AttributeError:
+            continue
+        if v:
+            return v
+    return inner.is_a()
+
+
+def skeleton_check(f):
+    """코어가 직접 만드는 뼈대(IfcProject "dobim" > IfcSite "Site" > IfcBuilding "Building")를 구조로 알아본다. (뼈대 | None, 경고 | None).
+    인식 기준은 구조(프로젝트·사이트·건물이 각각 하나이고 집합 사슬이 이어짐), 이름, 형상 없음, 항등 배치다.
+    위경도·주소·설명·긴 이름 같은 **비형상 속성은 보지 않는다**: 외부 도구가 사이트에 위경도만 적어도 뼈대는 뼈대다(요소 분류에 영향이 없다).
+    형상(표현·배치)이 바뀐 뼈대는 그대로 두면 아래 요소의 배치 기준이 달라지므로 보수적으로 뼈대로 보지 않고(사이트·건물은 외래 요소가 되고
+    저작 요소는 분리된다) 그 사실을 경고로 알린다. GlobalId 는 프로젝트 UUID 에서 파생돼 파일마다 달라 기준으로 쓸 수 없다."""
+    projs, sites, blds = f.by_type("IfcProject"), f.by_type("IfcSite"), f.by_type("IfcBuilding")
+    if len(projs) != 1 or len(sites) != 1 or len(blds) != 1:
+        return None, None
+    proj, site, bld = projs[0], sites[0], blds[0]
+    if proj.Name != "dobim" or site.Name != "Site" or bld.Name != "Building":
+        return None, None
+    if ue.get_aggregate(site) != proj or ue.get_aggregate(bld) != site:
+        return None, None
+
+    def identity(pl, rel_to):
+        if pl is None or pl.PlacementRelTo != rel_to:
+            return False
+        a = pl.RelativePlacement
+        try:
+            return (tuple(a.Location.Coordinates) == (0.0, 0.0, 0.0) and tuple(a.Axis.DirectionRatios) == (0.0, 0.0, 1.0)
+                    and tuple(a.RefDirection.DirectionRatios) == (1.0, 0.0, 0.0))
+        except (AttributeError, TypeError):
+            return False
+
+    if (site.Representation is not None or bld.Representation is not None
+            or not identity(site.ObjectPlacement, None) or not identity(bld.ObjectPlacement, site.ObjectPlacement)):
+        return None, ("뼈대(Site/Building)의 형상(배치 또는 표현)이 바뀌었다: 뼈대로 보지 않고 사이트·건물을 외래 요소로 둔다. "
+                      "뼈대에 매달린 요소(레벨)는 분리된다(동결)")
+    return (site, bld), None
+
+
+def detect_skeleton(f):
+    """skeleton_check 의 (site, building) 만. 뼈대가 아니면 None: 외래 파일의 사이트·건물은 외래 요소다."""
+    return skeleton_check(f)[0]
+
+
+def make_norm():
+    """STEP 번호·소유 이력을 뺀 정규화 함수 (val, ent). 의미 해시(semantic_dump)와 요소 클로저가 같은 규칙을 쓴다."""
+    memo: dict[int, Any] = {}
+
+    def val(v):
+        if isinstance(v, ifcopenshell.entity_instance):
+            return ent(v)
+        if isinstance(v, (tuple, list)):
+            out = [val(x) for x in v]
+            # 관계의 대상 목록은 집합이다. 삽입 순서가 해시에 새면 안 된다.
+            if out and all(isinstance(x, dict) and set(x) == {"ref"} for x in out):
+                out.sort(key=lambda x: x["ref"])
+            return out
+        if isinstance(v, float):
+            r = round(v, 6) + 0.0
+            return r
+        return v
+
+    def ent(e):
+        if e.is_a("IfcProduct") or e.is_a("IfcTypeObject"):
+            return {"ref": e.GlobalId}
+        k = e.id()   # 0 이면 파일에 독립 번호가 없는 값 래퍼(IfcLabel 등)다. 캐시하면 값이 섞인다
+        if k and k in memo:
+            return memo[k]
+        info = e.get_info(include_identifier=False, recursive=False)
+        out = {"t": info.pop("type")}
+        for name, v in info.items():
+            if name in ("GlobalId", "OwnerHistory"):
+                continue
+            out[name] = val(v)
+        for setattr_ in ("HasProperties", "Units"):  # IFC 에서 집합인 속성: 순서는 부산물이다
+            if setattr_ in out:
+                out[setattr_].sort(key=lambda x: json.dumps(x, sort_keys=True))
+        if k:
+            memo[k] = out
+        return out
+
+    return val, ent
+
+
+class Closure:
+    """요소 하나의 투영 클로저(ADR-0005 변조 감지용): 투영이 소유하는 부분만 정규화해 담는다.
+    형상 표현·배치·속성(이름·치수)·공간 소속·집합 소속, 문이면 개구부 관계(개구부의 형상·배치·벽), 벽이면 자기를 뚫는 개구부와 그것을 채우는
+    요소. 속성셋·재료·스타일(색)·개구부의 GlobalId 는 IFC 가 정본이거나 신원이라 뺀다(속성만 바뀌거나 색이 입혀진 요소는 분리되지 않는다). 다른 요소를 가리키는 배치·관계는 그 요소의 GlobalId 로 가리킨다(요소의 형상이 바뀐 것이 의존
+    요소의 클로저를 바꾸지 않게). 코어가 만든 뼈대(site/building)는 GlobalId 가 프로젝트마다 달라서 값으로 펼친다."""
+
+    def __init__(self, f, infra: set[str]):
         self.f = f
-        proj = api_root.create_entity(f, ifc_class="IfcProject", name="dobim")
-        # 단위는 순서를 고정해 직접 만든다. assign_unit 기본값은 프로세스마다 순서가 달라 파일 바이트가 흔들린다.
-        api_unit.assign_unit(f, units=[api_unit.add_si_unit(f, unit_type="LENGTHUNIT", prefix="MILLI"),
-                                       api_unit.add_si_unit(f, unit_type="AREAUNIT"),
-                                       api_unit.add_si_unit(f, unit_type="VOLUMEUNIT")])
-        model = api_context.add_context(f, context_type="Model")
-        self.body = api_context.add_context(f, context_type="Model", context_identifier="Body",
-                                            target_view="MODEL_VIEW", parent=model)
-        site = api_root.create_entity(f, ifc_class="IfcSite", name="Site")
-        bldg = api_root.create_entity(f, ifc_class="IfcBuilding", name="Building")
-        for e, label in ((proj, "project"), (site, "site"), (bldg, "building")):
-            e.GlobalId = derived_guid(project_guid, label)
-        site.ObjectPlacement = self._placement(None)
-        bldg.ObjectPlacement = self._placement(site.ObjectPlacement)
-        api_aggregate.assign_object(f, products=[site], relating_object=proj)
-        api_aggregate.assign_object(f, products=[bldg], relating_object=site)
-        self.building = bldg
+        self.infra = infra
+        self.val, _ = make_norm()
+
+    def ref(self, x):
+        return "@infra" if x.GlobalId in self.infra else x.GlobalId
+
+    def place(self, pl):
+        if pl is None:
+            return None
+        out = {"at": self.val(pl.RelativePlacement)}
+        rel = pl.PlacementRelTo
+        if rel is None:
+            out["to"] = None
+        else:
+            owners = [o for o in self.f.get_inverse(rel) if o.is_a("IfcProduct") and o.ObjectPlacement == rel]
+            if len(owners) == 1 and owners[0].GlobalId not in self.infra:
+                out["to"] = {"ref": owners[0].GlobalId}
+            else:
+                out["to"] = self.place(rel)
+        return out
+
+    def shape(self, e, skip=("GlobalId", "OwnerHistory", "ObjectPlacement")):
+        info = e.get_info(include_identifier=False, recursive=False)
+        t = info.pop("type")
+        return {"t": t, "attrs": {k: self.val(v) for k, v in info.items() if k not in skip}, "placement": self.place(e.ObjectPlacement)}
+
+    def of(self, e) -> dict:
+        out = self.shape(e)
+        inv = self.f.get_inverse(e)
+        out["contained"] = sorted(self.ref(r.RelatingStructure) for r in inv
+                                  if r.is_a("IfcRelContainedInSpatialStructure") and e in r.RelatedElements)
+        out["aggregated"] = sorted(self.ref(r.RelatingObject) for r in inv if r.is_a("IfcRelAggregates") and e in r.RelatedObjects)
+        # 이 요소를 뚫는 개구부들. 개구부의 형상은 채우는 문의 클로저가 소유하므로 여기서는 "누가 채우는가"만 본다(GlobalId 는 신원이라
+        # 외부 도구가 바꿔도 형상이 아니다). 채우는 요소가 없는 개구부나 외래 요소가 채우는 개구부가 더해지면 벽이 달라진 것이다
+        voids = []
+        for r in inv:
+            if r.is_a("IfcRelVoidsElement") and r.RelatingBuildingElement == e:
+                op = r.RelatedOpeningElement
+                voids.append({"filler": sorted(self.ref(x.RelatedBuildingElement) for x in self.f.get_inverse(op)
+                                               if x.is_a("IfcRelFillsElement"))})
+        if voids:
+            out["voids"] = sorted(voids, key=lambda x: json.dumps(x, sort_keys=True))
+        fills = [r for r in inv if r.is_a("IfcRelFillsElement") and r.RelatedBuildingElement == e]
+        if fills:
+            ops = []
+            for r in fills:
+                op = r.RelatingOpeningElement
+                d = self.shape(op)
+                d["voids"] = sorted(self.ref(v.RelatingBuildingElement) for v in self.f.get_inverse(op) if v.is_a("IfcRelVoidsElement"))
+                ops.append(d)
+            out["opening"] = sorted(ops, key=lambda x: json.dumps(x, sort_keys=True))
+        return out
+
+    def digest(self, e) -> tuple[str, dict]:
+        c = self.of(e)
+        blob = json.dumps(c, sort_keys=True, separators=(",", ":"))
+        return hashlib.sha256(blob.encode("utf-8")).hexdigest(), c
+
+
+def closure_diff(a: dict, b: dict) -> list[str]:
+    """두 클로저가 어느 부분에서 다른지(분리 사유)."""
+    out = []
+    for k in sorted(set(a) | set(b)):
+        if a.get(k) == b.get(k):
+            continue
+        if k == "attrs":
+            out += [f"속성 {n}" for n in sorted(set(a[k]) | set(b[k])) if a[k].get(n) != b[k].get(n)]
+        elif k == "placement":
+            out.append("배치")
+        elif k == "opening":
+            out.append("개구부 관계")
+        elif k == "voids":
+            out.append("벽에 뚫린 개구부")
+        else:
+            out.append({"t": "클래스", "contained": "공간 소속", "aggregated": "집합 소속"}.get(k, k))
+    return out
+
+
+def opening_guid(door_id: str) -> str:
+    """저작 문의 개구부 GlobalId: 문 id 만의 결정적 함수다. 프로젝트 UUID 에 기대지 않으므로 내보낸 파일을 다른 프로젝트로 가져와
+    다시 투영해도(또는 삭제·실행 취소로 개구부를 다시 만들어도) 같은 값이 나온다(S2)."""
+    return ifcopenshell.guid.compress(uuid.uuid5(_NS, f"opening:{door_id}").hex)
+
+
+# ---------------------------------------------------------------- 외래 부속 스냅숏 (S2)
+# 저작 요소를 지우면 remove_product 가 요소에 매달린 외래 관계(타입 지정, 수량 세트, 분류, 문서, 복합 재료, 그룹 등)를 함께 없앤다.
+# 실행 취소가 이를 되돌리려면 지우기 전에 그 관계를 효과("att")로 로그에 적어야 한다. 아래는 그 스냅숏(JSON 트리)과 복원이다.
+# 코어가 직접 만들고 지우거나 다른 효과(pset·mat)가 기록하는 관계(공간 소속, 집합, 개구부, 일반 속성셋, 단순 재료)는 뺀다.
+_CORE_RELS = ("IfcRelContainedInSpatialStructure", "IfcRelAggregates", "IfcRelFillsElement", "IfcRelVoidsElement")
+
+
+def _is_core_rel(r) -> bool:
+    if any(r.is_a(c) for c in _CORE_RELS):
+        return True
+    if r.is_a("IfcRelDefinesByProperties"):
+        d = r.RelatingPropertyDefinition
+        return isinstance(d, ifcopenshell.entity_instance) and d.is_a("IfcPropertySet")
+    if r.is_a("IfcRelAssociatesMaterial"):
+        return r.RelatingMaterial.is_a("IfcMaterial")
+    return False
+
+
+def _tree(f, v, me, top=False):
+    """속성 값을 JSON 트리로. me = 지우는 요소({"self"}), 다른 제품은 {"p": GlobalId}, 다른 요소도 쓰는 루트 객체는 {"g": GlobalId} 참조,
+    다른 곳에서 쓰는 비루트 객체는 "s" 표시를 단 채 펼친다(복원 때 같은 내용의 기존 객체를 쓴다). top=True 는 이 객체를 반드시 펼친다."""
+    if v is None or isinstance(v, (bool, int, str)):
+        return v
+    if isinstance(v, float):
+        return v if math.isfinite(v) else None
+    if isinstance(v, (tuple, list)):
+        return [_tree(f, x, me) for x in v]
+    if not isinstance(v, ifcopenshell.entity_instance):
+        return str(v)
+    if me is not None and v == me:
+        return {"self": 1}
+    if v.id() == 0:   # 파일에 독립 번호가 없는 값 래퍼(IfcLabel 등)
+        return {"w": v.is_a(), "v": _tree(f, v.wrappedValue, me)}
+    if v.is_a("IfcProduct"):
+        return {"p": v.GlobalId}
+    rooted = hasattr(v, "GlobalId")
+    shared = len({i.id() for i in f.get_inverse(v)}) > 1
+    if shared and rooted and not top:
+        return {"g": v.GlobalId}
+    info = v.get_info(include_identifier=False, recursive=False)
+    t = info.pop("type")
+    d: dict = {"t": t, "a": {k: _tree(f, x, me) for k, x in info.items() if k not in ("GlobalId", "OwnerHistory")}}
+    if rooted:
+        d["gid"] = v.GlobalId
+    elif shared:
+        d["s"] = 1
+    return d
+
+
+def _strip_flags(t):
+    if isinstance(t, list):
+        return [_strip_flags(x) for x in t]
+    if isinstance(t, dict):
+        return {k: _strip_flags(x) for k, x in t.items() if k != "s"}
+    return t
+
+
+class _Missing(Exception):
+    """복원할 때 가리키는 제품이 아직 없다(같은 트랜잭션에서 함께 지워진 요소). 해당 항목만 건너뛴다."""
+
+
+class _Restorer:
+    def __init__(self, f, me):
+        self.f, self.me = f, me
+        self._idx: dict[str, dict[str, Any]] = {}
+
+    def _equal(self, cls: str, t: dict, orphan_only: bool):
+        """같은 내용의 기존 객체. 다른 요소가 쓰던 것(공유)이면 어느 것이든, 이 요소만 쓰던 것이면 지우기가 남긴 고아(참조 없음)만 쓴다
+        (ifcopenshell 의 재료 지정 해제는 층 구성 같은 하위 객체를 지우지 않고 남긴다: 되살릴 때 중복을 만들지 않는다)."""
+        idx = self._idx.get(cls)
+        if idx is None:
+            idx = self._idx[cls] = {}
+            for e in self.f.by_type(cls, include_subtypes=False):
+                idx.setdefault(json.dumps(_strip_flags(_tree(self.f, e, None)), sort_keys=True), []).append(e)
+        for e in idx.get(json.dumps(_strip_flags(t), sort_keys=True), ()):
+            if not orphan_only or not self.f.get_inverse(e):
+                return e
+        return None
+
+    def build(self, t):
+        f = self.f
+        if isinstance(t, list):
+            out = []
+            for x in t:
+                try:
+                    out.append(self.build(x))
+                except _Missing:
+                    continue   # 목록의 한 항목만 없으면 그 항목을 뺀다
+            return out
+        if not isinstance(t, dict):
+            return t
+        if "self" in t:
+            return self.me
+        if "p" in t or "g" in t:
+            try:
+                return f.by_guid(t.get("p") or t["g"])
+            except RuntimeError:
+                raise _Missing() from None
+        if "w" in t:
+            return f.create_entity(t["w"], self.build(t["v"]))
+        cls = t["t"]
+        if t.get("gid"):
+            try:
+                return f.by_guid(t["gid"])
+            except RuntimeError:
+                pass
+        if not t.get("gid"):
+            ex = self._equal(cls, t, orphan_only=not t.get("s"))
+            if ex is not None:
+                return ex
+        kw = {k: self.build(v) for k, v in t["a"].items()}
+        if t.get("gid"):
+            kw["GlobalId"] = t["gid"]
+        return f.create_entity(cls, **kw)
+
+
+def _has_self(t) -> bool:
+    if isinstance(t, list):
+        return any(_has_self(x) for x in t)
+    return isinstance(t, dict) and "self" in t
+
+
+class IfcModel:
+    def __init__(self, project_guid: str, base: bytes | None = None):
+        self.project_guid = project_guid
+        self.base_mode = base is not None
         self.ents: dict[str, Any] = {}
         self.openings: dict[str, Any] = {}      # 문 id -> 개구부 엔티티 (투영 소유)
         self.container_of: dict[str, str] = {}  # 요소 id -> 현재 담긴 층 id (투영 상태)
@@ -91,6 +413,113 @@ class IfcModel:
         # 복원까지 실패해 IFC 쪽이 로그와 어긋났을 수 있으면 그 이유가 들어간다. 엔진이 이 표시를 보고 로그에서
         # 투영을 다시 만든다(만들지 못하면 쓰기를 거부한다). 예외를 삼키고 넘어가는 일은 없어야 한다.
         self.tainted: str | None = None
+        self.infra: set[str] = set()            # 코어가 만든 뼈대(site/building)의 GlobalId: 요소가 아니다
+        self.base_ents: set[str] = set()        # 가져온 파일의 엔티티를 그대로 이어받은 요소 id (아직 이 세션에서 다시 만들지 않은 것)
+        self._opening_gid: dict[str, str] = {}  # 문 id -> 개구부 GlobalId (가져온 파일의 값을 다시 투영해도 유지한다)
+        self.pending_styles: dict[str, list] = {}   # 지우기를 되돌린 요소 id -> 새 몸체 솔리드에 입힐 스타일 스냅숏
+        if base is not None:
+            self._open_base(base)
+            return
+        f = api_project.create_file(version="IFC4")
+        self.f = f
+        proj = api_root.create_entity(f, ifc_class="IfcProject", name="dobim")
+        # 단위는 순서를 고정해 직접 만든다. assign_unit 기본값은 프로세스마다 순서가 달라 파일 바이트가 흔들린다.
+        api_unit.assign_unit(f, units=[api_unit.add_si_unit(f, unit_type="LENGTHUNIT", prefix="MILLI"),
+                                       api_unit.add_si_unit(f, unit_type="AREAUNIT"),
+                                       api_unit.add_si_unit(f, unit_type="VOLUMEUNIT")])
+        model = api_context.add_context(f, context_type="Model")
+        self._body = api_context.add_context(f, context_type="Model", context_identifier="Body",
+                                             target_view="MODEL_VIEW", parent=model)
+        site = api_root.create_entity(f, ifc_class="IfcSite", name="Site")
+        bldg = api_root.create_entity(f, ifc_class="IfcBuilding", name="Building")
+        for e, label in ((proj, "project"), (site, "site"), (bldg, "building")):
+            e.GlobalId = derived_guid(project_guid, label)
+        site.ObjectPlacement = self._placement(None)
+        bldg.ObjectPlacement = self._placement(site.ObjectPlacement)
+        api_aggregate.assign_object(f, products=[site], relating_object=proj)
+        api_aggregate.assign_object(f, products=[bldg], relating_object=site)
+        self.building = bldg
+        self.infra = {site.GlobalId, bldg.GlobalId}
+
+    # ------------------------------------------------------------ 외래 기반 (S2)
+    def _open_base(self, data: bytes) -> None:
+        """가져온 파일을 작업 사본으로 연다. 요소는 GlobalId 로 찾아 쓰고(create_identity), 파일 자체는 건드리지 않는다."""
+        self.f = open_ifc_bytes(data)
+        self._body = None
+        sk = detect_skeleton(self.f)
+        if sk is not None:
+            self.infra = {sk[0].GlobalId, sk[1].GlobalId}
+        blds = self.f.by_type("IfcBuilding")
+        self.building = sk[1] if sk is not None else (blds[0] if blds else None)
+        self._by_gid = {e.GlobalId: e for e in self.f.by_type("IfcProduct")}
+        for m in self.f.by_type("IfcMaterial"):
+            self._mats.setdefault(m.Name, m)
+
+    @property
+    def body(self):
+        """투영이 쓰는 Body 하위 컨텍스트. 외래 파일이면 처음 필요할 때 찾거나 만든다."""
+        if self._body is None:
+            f = self.f
+            for c in f.by_type("IfcGeometricRepresentationSubContext"):
+                if c.ContextIdentifier == "Body" and c.ContextType == "Model" and c.TargetView == "MODEL_VIEW":
+                    self._body = c
+                    break
+            else:
+                parents = [c for c in f.by_type("IfcGeometricRepresentationContext")
+                           if not c.is_a("IfcGeometricRepresentationSubContext") and c.ContextType == "Model"]
+                parent = parents[0] if parents else api_context.add_context(f, context_type="Model")
+                self._body = api_context.add_context(f, context_type="Model", context_identifier="Body",
+                                                     target_view="MODEL_VIEW", parent=parent)
+        return self._body
+
+    def require_authoring(self) -> None:
+        """외래 기반 파일에 저작 요소를 새로 만들 수 있는지(건물이 있고 단위가 mm). 투영 값이 mm 이기 때문이다."""
+        if self.building is None:
+            raise DobimError("UNSUPPORTED", "건물(IfcBuilding)이 없는 파일에는 저작 요소를 추가할 수 없다")
+        try:
+            scale = uunit.calculate_unit_scale(self.f)
+        except Exception:
+            scale = None
+        if scale is None or abs(scale - 0.001) > 1e-9:
+            raise DobimError("UNSUPPORTED", "길이 단위가 밀리미터가 아닌 파일에는 저작 요소를 추가할 수 없다")
+
+    def prune(self) -> None:
+        """가져온 뒤 지워진 저작 요소의 엔티티를 작업 사본에서 없앤다(요소·뼈대·저작 문의 개구부가 아닌 제품)."""
+        keep = set(self.ents) | self.infra | {o.GlobalId for o in self.openings.values()}
+        gone = [g for g in self._by_gid if g not in keep]
+        mats = []
+        for g in sorted(gone, key=lambda g: (not self._by_gid[g].is_a("IfcOpeningElement"), g)):
+            try:
+                e = self.f.by_guid(g)
+            except RuntimeError:
+                continue
+            if e.is_a("IfcOpeningElement"):
+                api_feature.remove_feature(self.f, feature=e)
+            else:
+                m = ue.get_material(e, should_inherit=False)
+                if m is not None:
+                    mats.append(m)
+                self._remove_product(e)
+        for m in mats:   # 지운 요소만 쓰던 재료는 세션 안에서 지울 때와 같이 없앤다(다시 열어도 같은 해시)
+            try:
+                self._gc_material(m)
+            except RuntimeError:
+                pass   # 이미 지워졌다
+        for g in gone:   # 지운 엔티티를 가리키는 낡은 참조가 남으면 지우기를 되돌릴 때 이미 지워진 엔티티를 이어받는다
+            self._by_gid.pop(g, None)
+
+    def _remove_product(self, e) -> None:
+        """제품을 지우고, 그 때문에 대상이 비게 된 외래 관계(분류·문서·그룹 등)도 지운다(빈 관계는 IFC 로 유효하지 않다)."""
+        f = self.f
+        rels = [r.id() for r in f.get_inverse(e) if r.is_a("IfcRelationship") and not _is_core_rel(r)] if self.base_mode else []
+        api_root.remove_product(f, product=e)
+        for i in rels:
+            try:
+                r = f.by_id(i)
+            except RuntimeError:
+                continue
+            if any(isinstance(v, tuple) and not v and k.startswith("Related") for k, v in r.get_info(recursive=False).items()):
+                ue.remove_deep2(f, r)
 
     # ------------------------------------------------------------ 저수준 도우미
     def _placement(self, rel_to, origin=(0.0, 0.0, 0.0), xdir=(1.0, 0.0, 0.0)):
@@ -129,16 +558,60 @@ class IfcModel:
         if shape is None:
             rep = f.createIfcShapeRepresentation(self.body, "Body", "SweptSolid", [solid])
             product.Representation = f.createIfcProductDefinitionShape(None, None, [rep])
+            self._restore_style(product, solid)
             return
         rep = shape.Representations[0]
         old = list(rep.Items)
         rep.Items = [solid]
+        # 외부 도구가 몸체에 붙인 스타일(색)·레이어 지정은 새 솔리드로 옮긴다: 외형은 의도가 정한 형상이 아니라 요소가 가진 속성이다.
+        # 형상이 실제로 바뀌어 다시 투영해도 스타일은 유지한다(항목이 여럿이면 첫 스타일만, 나머지는 버린다)
+        moved = False
+        for o in old:
+            for st in list(o.StyledByItem or ()):
+                if moved:
+                    ue.remove_deep2(f, st)
+                else:
+                    st.Item = solid
+                    moved = True
+            for lay in [x for x in f.get_inverse(o) if x.is_a("IfcPresentationLayerAssignment")]:
+                lay.AssignedItems = tuple(solid if x == o else x for x in lay.AssignedItems)
         for o in old:
             ue.remove_deep2(f, o)
+        if not moved:
+            self._restore_style(product, solid)
+
+    def _restore_style(self, product, solid) -> None:
+        """지우기를 되돌린 요소의 스타일 스냅숏이 있으면 새 솔리드에 입힌다(요소가 처음 투영될 때 한 번)."""
+        pend = self.pending_styles.pop(product.GlobalId, None)
+        if not pend:
+            return
+        rs = _Restorer(self.f, None)
+        item = pend[0]
+        styles = rs.build(item["styles"])
+        if styles:
+            self.f.createIfcStyledItem(solid, styles, item.get("name"))
 
     # ------------------------------------------------------------ 신원 (즉시)
     def create_identity(self, eid: str, kind: str, ifc_class: str | None = None) -> None:
         f = self.f
+        if self.base_mode:
+            e = self._by_gid.get(eid)
+            if e is not None:   # 가져온 파일에 이미 있는 요소: 새로 만들지 않고 이어받는다
+                self.kinds[eid] = kind
+                self.ents[eid] = e
+                self.base_ents.add(eid)
+                c = ue.get_container(e, should_get_direct=True)
+                if c is not None:
+                    self.container_of[eid] = c.GlobalId
+                if kind == "door":
+                    for r in f.get_inverse(e):
+                        if r.is_a("IfcRelFillsElement") and r.RelatedBuildingElement == e:
+                            self.openings[eid] = r.RelatingOpeningElement
+                            self._opening_gid[eid] = r.RelatingOpeningElement.GlobalId
+                return
+            if kind == "foreign":
+                raise DobimError("INTERNAL", f"가져온 파일에 외래 요소가 없다: {eid}")
+            self.require_authoring()
         e = api_root.create_entity(f, ifc_class=IFC_CLASS.get(kind) or ifc_class)
         self.kinds[eid] = kind
         e.GlobalId = eid
@@ -167,11 +640,87 @@ class IfcModel:
             fp.unproject_inst(self, eid)
         elif kind == "ftype":
             fp.unproject_type(self, eid)
-        api_root.remove_product(f, product=e)   # 실패하면 ents 가 그대로라 상태가 설명 가능하다(순서: 지운 뒤에 목록에서 뺀다)
+        self._remove_product(e)   # 실패하면 ents 가 그대로라 상태가 설명 가능하다(순서: 지운 뒤에 목록에서 뺀다)
         self.ents.pop(eid)
         self.kinds.pop(eid, None)
         self.container_of.pop(eid, None)
+        self.base_ents.discard(eid)
+        self._opening_gid.pop(eid, None)
+        self.pending_styles.pop(eid, None)
+        if self.base_mode:
+            self._by_gid.pop(eid, None)   # 지운 엔티티를 실행 취소가 이어받지 않게
         return sorted(lost)
+
+    # ------------------------------------------------------------ 외래 부속 (S2)
+    def capture_attachments(self, eid: str) -> dict | None:
+        """지우기 전에 요소에 매달린 외래 부속(타입·수량 세트·분류·복합 재료 등의 관계, 몸체 스타일, 개구부 GlobalId)을 JSON 으로 뜬다.
+        외래 기반 프로젝트에서만 의미가 있다. 없으면 None."""
+        if not self.base_mode:
+            return None
+        f, e = self.f, self.ents[eid]
+        rels = [_tree(f, r, e, top=True) for r in f.get_inverse(e) if r.is_a("IfcRelationship") and not _is_core_rel(r)]
+        out: dict = {}
+        if rels:
+            out["rels"] = sorted(rels, key=lambda t: json.dumps(t, sort_keys=True))
+        styles = []
+        if e.Representation is not None:
+            for shape in e.Representation.Representations or ():
+                for it in shape.Items or ():
+                    for st in it.StyledByItem or ():
+                        styles.append({"name": st.Name, "styles": [_tree(f, x, e) for x in st.Styles]})
+        if styles:
+            out["styles"] = styles
+        op = self.openings.get(eid)
+        if op is not None and op.GlobalId != opening_guid(eid):
+            out["opening_gid"] = op.GlobalId
+        return out or None
+
+    def restore_attachments(self, eid: str, blob: dict) -> None:
+        """capture_attachments 가 뜬 부속을 되살린다(지우기를 되돌릴 때). 관계는 바로, 스타일은 몸체가 투영될 때 입힌다."""
+        f, e = self.f, self.ents[eid]
+        rs = _Restorer(f, e)
+        for t in blob.get("rels", ()):
+            try:
+                self._restore_rel(rs, e, t)
+            except _Missing:
+                continue   # 가리키는 제품이 아직 없다: 그 제품의 부속이 되살아날 때 이 관계가 함께 만들어진다
+        if blob.get("styles"):
+            self.pending_styles[eid] = blob["styles"]
+        if blob.get("opening_gid"):
+            self._opening_gid[eid] = blob["opening_gid"]
+
+    def _restore_rel(self, rs, e, t: dict) -> None:
+        f = self.f
+        try:
+            ex = f.by_guid(t["gid"])
+        except RuntimeError:
+            ex = None
+        if ex is not None:   # 다른 요소와 공유하던 관계가 남아 있다: 이 요소를 대상에 되돌려 넣는다
+            for k, v in t["a"].items():
+                if not _has_self(v):
+                    continue
+                cur = getattr(ex, k)
+                if isinstance(v, list):
+                    if e not in (cur or ()):
+                        setattr(ex, k, list(cur or ()) + [e])
+                elif cur != e:
+                    setattr(ex, k, e)
+            return
+        kw = {k: rs.build(v) for k, v in t["a"].items()}
+        kw["GlobalId"] = t["gid"]
+        f.create_entity(t["t"], **kw)
+
+    def foreign_voids(self, eid: str) -> list[str]:
+        """벽을 뚫는 개구부 중 코어가 만들지 않은 것(외래)의 GlobalId. 벽을 지우면 이것들도 함께 지워진다."""
+        e = self.ents[eid]
+        own = {o.GlobalId for o in self.openings.values()}
+        return sorted(r.RelatedOpeningElement.GlobalId for r in self.f.get_inverse(e)
+                      if r.is_a("IfcRelVoidsElement") and r.RelatingBuildingElement == e and r.RelatedOpeningElement.GlobalId not in own)
+
+    def has_complex_material(self, eid: str) -> bool:
+        """재료가 단일 IfcMaterial 이 아니다(층 구성·프로파일 등). 이름 하나로 되살릴 수 없어 부속 스냅숏이 맡는다."""
+        m = ue.get_material(self.ents[eid], should_inherit=False)
+        return m is not None and not m.is_a("IfcMaterial")
 
     # ------------------------------------------------------------ 속성셋·재료 (정본)
     def get_psets(self, eid: str) -> dict:
@@ -179,12 +728,11 @@ class IfcModel:
         for name, props in ue.get_psets(self.ents[eid], psets_only=True, should_inherit=False).items():
             if name == INTENT_PSET:
                 continue
-            out[name] = {k: v for k, v in props.items() if k != "id"}
+            out[name] = {k: plain(v) for k, v in props.items() if k != "id"}
         return out
 
     def get_material(self, eid: str) -> str | None:
-        m = ue.get_material(self.ents[eid])
-        return m.Name if m is not None else None
+        return material_label(ue.get_material(self.ents[eid], should_inherit=False))
 
     def set_prop(self, eid: str, pset: str, prop: str, value) -> None:
         """속성 하나를 쓴다. 실패하면 원래 값으로 복원하고 예외를 다시 던진다(삭제 뒤 실패해도 속성이 사라지지 않는다).
@@ -200,6 +748,8 @@ class IfcModel:
             old = None
         else:
             ps = f.by_id(cur["id"])
+            if any(r.is_a("IfcRelDefinesByProperties") and len(r.RelatedObjects) > 1 for r in f.get_inverse(ps)):
+                raise DobimError("UNSUPPORTED", f"여러 요소가 공유하는 속성셋은 고칠 수 없다: {pset}", path="/pset")
             old = cur.get(prop)
         # edit_pset 은 기존 속성의 타입을 따라 값을 강제 변환한다(1 다음 2.5 가 2 로 저장). 타입이 바뀌면
         # 속성을 먼저 지우고 새로 만들어 저장값이 입력과 정확히 같게 한다.
@@ -229,7 +779,7 @@ class IfcModel:
     def set_material(self, eid: str, name: str | None) -> None:
         f = self.f
         e = self.ents[eid]
-        cur = ue.get_material(e)
+        cur = ue.get_material(e, should_inherit=False)
         if name is None:
             if cur is not None:
                 api_material.unassign_material(f, products=[e])
@@ -245,7 +795,7 @@ class IfcModel:
 
     def _gc_material(self, mat) -> None:
         """사용처가 없는 재료는 지운다. 재료 목록이 상태의 함수가 되어야 취소 후 해시가 복원된다."""
-        if not self.f.get_inverse(mat):
+        if mat.is_a("IfcMaterial") and not self.f.get_inverse(mat):
             self._mats.pop(mat.Name, None)
             api_material.remove_material(self.f, material=mat)
 
@@ -314,10 +864,19 @@ class IfcModel:
         w2, t2 = spec["width"] / 2.0, spec["wall_thickness"] / 2.0
         rect = [(-w2, -t2), (w2, -t2), (w2, t2), (-w2, t2)]
         self._set_body(e, self._solid(rect, spec["height"]))
-        # 개구부는 투영이 소유한다: 문이 바뀌면 다시 만들고, 문 id 에서 결정적 GlobalId 를 얻는다.
+        # 개구부는 투영이 소유한다. 이미 있고 이 문·벽과 이어져 있으면 제자리에서 고쳐 GlobalId·붙은 속성을 유지한다(외부 도구가 GlobalId 를
+        # 바꿨어도 그대로 둔다). 없으면 새로 만든다: GlobalId 는 되돌린 지우기가 남긴 값, 없으면 문 id 에서 결정적으로 얻는다.
+        op = self.openings.get(eid)
+        if op is not None and op.Representation is not None and any(
+                r.is_a("IfcRelVoidsElement") and r.RelatingBuildingElement == wall for r in f.get_inverse(op)) and any(
+                r.is_a("IfcRelFillsElement") and r.RelatedBuildingElement == e for r in f.get_inverse(op)):
+            op.Name = spec["name"] + "-opening"
+            self._place(op, wall.ObjectPlacement, origin, (1.0, 0.0, 0.0))
+            self._set_body(op, self._solid(rect, spec["height"]))
+            return
         self._unproject_door(eid)
         op = api_root.create_entity(f, ifc_class="IfcOpeningElement")
-        op.GlobalId = derived_guid(self.project_guid, f"opening:{eid}")
+        op.GlobalId = self._opening_gid.get(eid) or opening_guid(eid)
         op.Name = spec["name"] + "-opening"
         self._place(op, wall.ObjectPlacement, origin, (1.0, 0.0, 0.0))
         op.Representation = f.createIfcProductDefinitionShape(None, None, [
@@ -325,44 +884,12 @@ class IfcModel:
         api_feature.add_feature(f, feature=op, element=wall)
         api_feature.add_filling(f, opening=op, element=e)
         self.openings[eid] = op
+        self._opening_gid[eid] = op.GlobalId
 
     # ------------------------------------------------------------ 의미 해시·검증·내보내기
     def semantic_dump(self) -> list:
         """STEP 번호와 무작위 GlobalId 를 뺀 정규화 덤프. OS·실행 순서와 무관해야 한다 (S0 발견 7)."""
-        memo: dict[int, Any] = {}
-
-        def val(v):
-            if isinstance(v, ifcopenshell.entity_instance):
-                return ent(v)
-            if isinstance(v, (tuple, list)):
-                out = [val(x) for x in v]
-                # 관계의 대상 목록은 집합이다. 삽입 순서가 해시에 새면 안 된다.
-                if out and all(isinstance(x, dict) and set(x) == {"ref"} for x in out):
-                    out.sort(key=lambda x: x["ref"])
-                return out
-            if isinstance(v, float):
-                r = round(v, 6) + 0.0
-                return r
-            return v
-
-        def ent(e):
-            if e.is_a("IfcProduct") or e.is_a("IfcTypeObject"):
-                return {"ref": e.GlobalId}
-            k = e.id()   # 0 이면 파일에 독립 번호가 없는 값 래퍼(IfcLabel 등)다. 캐시하면 값이 섞인다
-            if k and k in memo:
-                return memo[k]
-            info = e.get_info(include_identifier=False, recursive=False)
-            out = {"t": info.pop("type")}
-            for name, v in info.items():
-                if name in ("GlobalId", "OwnerHistory"):
-                    continue
-                out[name] = val(v)
-            for setattr_ in ("HasProperties", "Units"):  # IFC 에서 집합인 속성: 순서는 부산물이다
-                if setattr_ in out:
-                    out[setattr_].sort(key=lambda x: json.dumps(x, sort_keys=True))
-            if k:
-                memo[k] = out
-            return out
+        val, ent = make_norm()
 
         f = self.f
         prods = []
@@ -379,6 +906,23 @@ class IfcModel:
         rels.sort()
         others = [json.dumps(ent(e), sort_keys=True, separators=(",", ":"))
                   for t in ("IfcProject", "IfcMaterial") for e in f.by_type(t)]
+        # S2: 몸체에 입힌 스타일(요소별), 어느 요소에도 속하지 않은 스타일, 타입 객체, 수량 세트. 비어 있으면 아무것도 더하지 않는다
+        # (코어가 직접 만든 모델의 해시는 그대로다)
+        reached: set[int] = set()
+        for e in f.by_type("IfcProduct"):
+            if e.Representation is None:
+                continue
+            for shape in e.Representation.Representations or ():
+                for it in shape.Items or ():
+                    for st in it.StyledByItem or ():
+                        reached.add(st.id())
+                        others.append(json.dumps({"styled": e.GlobalId, "name": st.Name, "styles": val(st.Styles)},
+                                                 sort_keys=True, separators=(",", ":")))
+        for st in f.by_type("IfcStyledItem"):
+            if st.id() not in reached:
+                others.append(json.dumps({"styled_other": {"name": st.Name, "styles": val(st.Styles)}}, sort_keys=True, separators=(",", ":")))
+        for t in ("IfcTypeObject", "IfcElementQuantity"):
+            others.extend(json.dumps(ent(e), sort_keys=True, separators=(",", ":")) for e in f.by_type(t))
         others.sort()
         return [prods, rels, others]
 

@@ -155,9 +155,12 @@ class Empty(A):
          args=Empty, examples=[{}], idempotent=True)
 def project_info(ctx, a):
     g = ctx.g
-    return {"project_uuid": ctx.eng.project_guid_uuid, "rev": ctx.eng.rev, "schema_version": "1",
-            "counts": g.q(Q.model_stats), "undo_depth": len(ctx.eng.undo_stack),
-            "redo_depth": len(ctx.eng.redo_stack)}
+    out = {"project_uuid": ctx.eng.project_guid_uuid, "rev": ctx.eng.rev, "schema_version": "1",
+           "counts": g.q(Q.model_stats), "undo_depth": len(ctx.eng.undo_stack),
+           "redo_depth": len(ctx.eng.redo_stack)}
+    if ctx.eng.has_base:   # 외래 IFC 를 가져온 프로젝트: 요소의 출처별 개수
+        out["origins"] = {k: ctx.eng.st.origins.get(k, 0) for k in ("authored", "foreign", "detached")}
+    return out
 
 
 class Search(A):
@@ -226,7 +229,7 @@ class WallCreate(A):
          examples=[{"level": F.LV1, "axis": [0, 4000, 6000, 4000], "thickness": 200}])
 def wall_create(ctx, a: WallCreate):
     _fresh_id(ctx, a, "wall")
-    ctx.row(a.level, "level")
+    ctx.authored(a.level, "level", what="레벨에 벽을 추가하는 것")
     if _axis_len2(a.axis) < 1.0:
         raise DobimError("CONSTRAINT", "벽 길이는 1mm 이상이어야 한다", path="/axis")
     a.name = a.name or f"W-{a.id[-6:]}"
@@ -245,7 +248,7 @@ class WallMove(A):
 @command("wall.move", kind="mutation", risk="write", group="model.wall", summary="벽을 평행 이동한다",
          args=WallMove, since="0.1", examples=[{"id": F.W1, "dx": 600, "dy": 0}])
 def wall_move(ctx, a: WallMove):
-    r = ctx.row(a.id, "wall")
+    r = ctx.authored(a.id, "wall")
     x1, y1, x2, y2 = r["params"]["axis"]
     p = dict(r["params"], axis=[x1 + a.dx, y1 + a.dy, x2 + a.dx, y2 + a.dy])
     ctx.put_el(a.id, dict(r, params=p))
@@ -270,7 +273,7 @@ class WallSet(A):
 @command("wall.set", kind="mutation", risk="write", group="model.wall", summary="벽 속성 변경",
          args=WallSet, since="0.1", examples=[{"id": F.W1, "thickness": 250}])
 def wall_set(ctx, a: WallSet):
-    r = ctx.row(a.id, "wall")
+    r = ctx.authored(a.id, "wall")
     p = dict(r["params"])
     for k in ("name", "thickness", "height"):
         if getattr(a, k) is not None:
@@ -301,7 +304,7 @@ class JoinArgs(A):
 def _join_pair(ctx, x: JoinArgs):
     if x.a == x.b:
         raise DobimError("CONSTRAINT", "같은 벽끼리는 조인할 수 없다", path="/b")
-    ra, rb = ctx.row(x.a, "wall"), ctx.row(x.b, "wall")
+    ra, rb = ctx.authored(x.a, "wall", what="조인"), ctx.authored(x.b, "wall", what="조인")
     return ra, rb, min(x.a, x.b), max(x.a, x.b)
 
 
@@ -476,7 +479,7 @@ def _fits(ctx, host, offset, width):
          examples=[{"host": F.W2, "offset": 2000, "width": 900, "height": 2100}])
 def door_place(ctx, a: DoorPlace):
     _fresh_id(ctx, a, "door")
-    ctx.row(a.host, "wall")
+    ctx.authored(a.host, "wall", what="문 호스팅")
     _fits(ctx, a.host, a.offset, a.width)
     a.name = a.name or f"D-{a.id[-6:]}"
     ctx.put_el(a.id, row("door", "IfcDoor", "door.single", {
@@ -504,7 +507,7 @@ class DoorSet(A):
 @command("door.set", kind="mutation", risk="write", group="model.door", summary="문 속성 변경",
          args=DoorSet, since="0.1", examples=[{"id": F.D1, "width": 1000}])
 def door_set(ctx, a: DoorSet):
-    r = ctx.row(a.id, "door")
+    r = ctx.authored(a.id, "door")
     p = dict(r["params"])
     for k in ("name", "width", "height", "sill", "offset"):
         if getattr(a, k) is not None:
@@ -529,10 +532,12 @@ def _cascade_view_annots(ctx, vid) -> list:
 
 
 def _delete_one(ctx, eid):
+    ctx.attach(eid)   # 외래 부속(타입·수량 세트·분류·스타일 등)을 지우기 전에 효과로 남긴다: 실행 취소가 되살린다
     for pset, props in sorted(ctx.psets(eid).items()):   # IFC 안의 삽입 순서에 기대지 않는다(로그 결정성)
         for prop in sorted(props):
             ctx.set_prop(eid, pset, prop, None)
-    ctx.set_material(eid, None)
+    if not ctx.complex_material(eid):   # 층 구성 같은 복합 재료는 이름 하나로 되살릴 수 없어 부속 스냅숏이 맡는다
+        ctx.set_material(eid, None)
     for kind in ("joins", "on_level", "hosts", "annot_of", "of_type"):
         for dst in ctx.rels_out(kind, eid):
             ctx.rel(kind, eid, dst, False)
@@ -544,7 +549,7 @@ def _delete_one(ctx, eid):
 @command("element.delete", kind="mutation", risk="write", group="model", summary="요소 삭제(벽이면 문 포함)",
          args=IdArg, since="0.1", examples=[{"id": F.D2}])
 def element_delete(ctx, a: IdArg):
-    r = ctx.row(a.id)
+    r = ctx.authored(a.id, what="삭제")
     gone = [a.id]
     if r["kind"] == "level":
         if ctx.rels_in("on_level", a.id):
@@ -553,7 +558,12 @@ def element_delete(ctx, a: IdArg):
         if ctx.rels_in("of_type", a.id):
             raise DobimError("CONSTRAINT", "인스턴스가 있는 패밀리 타입은 지울 수 없다", path="/id", hint="인스턴스를 먼저 지우세요")
     elif r["kind"] == "wall":
+        fv = ctx.foreign_voids(a.id)
+        if fv:   # 다른 도구가 이 벽에 뚫은 개구부는 벽과 함께 사라진다: 개구부는 형상을 가진 제품이라 실행 취소로 되살리지 않는다
+            ctx.warn(f"이 벽을 뚫는 외래 개구부 {len(fv)}개가 벽과 함께 지워진다(실행 취소로 되살아나지 않는다): {', '.join(fv[:3])}"
+                     + (" 외" if len(fv) > 3 else ""))
         for d in ctx.rels_out("hosts", a.id):
+            ctx.authored(d, what="호스팅된 문의 삭제")
             _delete_one(ctx, d)
             gone.append(d)
     elif r["kind"] == "view":
@@ -604,7 +614,7 @@ class MatSet(A):
 @command("material.set", kind="mutation", risk="write", group="model.pset", summary="재료 지정",
          args=MatSet, since="0.1", examples=[{"id": F.W1, "name": "Concrete"}])
 def material_set(ctx, a: MatSet):
-    ctx.row(a.id)
+    ctx.authored(a.id, what="재료 지정")
     return {"changed": ctx.set_material(a.id, a.name)}
 
 
@@ -645,6 +655,9 @@ def element_get(ctx, a: ElementGet):
     out = {"id": a.id, "kind": r["kind"], "ifc_class": r["ifc_class"], "origin": r["origin"],
            "family_id": r["family_id"], "params": params, "material": ctx.material(a.id),
            "relations": relations, "relations_total": len(rel_all)}
+    if r["origin"] != "authored":
+        ctx.warn("외래 요소(IFC 가 정본)다: 형상은 동결돼 있고 속성만 편집할 수 있다" if r["origin"] == "foreign" else
+                 "분리됨: 외부 도구가 형상을 바꿔 동결됐다. params·derived 는 마지막 의도(낡은 값)이고 실제 형상은 IFC 에 있다. 속성만 편집할 수 있다")
     if r["kind"] == "wall":
         start, end, status = ctx.g.q(Q.wall_trim, a.id)
         out["derived"] = {"trim_start": start, "trim_end": end, "length": end - start, "status": status}
@@ -683,7 +696,8 @@ def element_get(ctx, a: ElementGet):
 
 
 class ElementQuery(A):
-    kind: Literal["level", "wall", "door", "view", "dim", "tag", "ftype", "finst"] | None = None
+    kind: Literal["level", "wall", "door", "view", "dim", "tag", "ftype", "finst", "foreign"] | None = None
+    origin: Literal["authored", "foreign", "detached"] | None = Field(None, description="출처: authored=의도가 정본, foreign=IFC 가 정본, detached=외부 도구가 형상을 바꿔 동결됨")
     level: Id | None = None
     name_contains: str | None = Field(None, max_length=64)
     limit: int = Field(100, ge=1, le=1000, description="최대 개수. 응답 크기 상한에 걸리면 이보다 적게 돌려주고 page.truncated 로 알린다")
@@ -699,13 +713,16 @@ def element_query(ctx, a: ElementQuery):
     hits = []
     for eid in ids:
         r = st.el[eid]
+        if a.origin and r["origin"] != a.origin:
+            continue
         if a.level and not (eid == a.level or a.level in st.out.get(("on_level", eid), ())):
             continue
         if a.name_contains and a.name_contains.lower() not in r["params"]["name"].lower():
             continue
         hits.append(eid)
     start = 0 if after is None else next((i for i, e in enumerate(hits) if e > after), len(hits))
-    window = [{"id": e, "kind": st.el[e]["kind"], "name": st.el[e]["params"]["name"]} for e in hits[start:start + a.limit]]
+    window = [{"id": e, "kind": st.el[e]["kind"], "name": st.el[e]["params"]["name"],
+               **({"origin": st.el[e]["origin"]} if st.el[e]["origin"] != "authored" else {})} for e in hits[start:start + a.limit]]
     items, cut = _fit(window, cursor_of=lambda i: _enc_cursor(window[i]["id"]))
     nxt = _enc_cursor(items[-1]["id"]) if start + len(items) < len(hits) else None
     return {"items": items, "page": _page(nxt, len(hits), cut)}
@@ -1847,6 +1864,42 @@ def ifc_export(ctx, a: IfcExport):
         _drop_snapshot(p, snap, ctx.eng.workspace)   # 쓰지 못했으면 방금 만든 스냅숏은 필요 없다(재시도마다 쌓이지 않게)
         raise
     return {"path": p.name, "bytes": p.stat().st_size, "rev": ctx.eng.rev, "snapshot": snap}
+
+
+class IfcImport(A):
+    source: str = Field(max_length=260, description="작업 폴더 안의 IFC4 파일(.ifc). 읽기만 한다")
+    path: str = Field(max_length=260, description="새로 만들 프로젝트(.dobim) 경로. 이미 있으면 FILE_EXISTS")
+    guid: str | None = Field(None, max_length=36, description="프로젝트 UUID. 생략하면 무작위")
+
+
+@command("ifc.import", kind="session", risk="write", group="io", summary="외래 IFC4 를 새 프로젝트로 가져온다: 요소를 authored·foreign·detached 로 분류하고 원본을 외래 기반으로 보존",
+         args=IfcImport, needs_project=False,
+         examples=[{"source": "import-example.ifc", "path": "imported-example.dobim", "guid": "5d0b1a50-0000-4a00-8000-0d0b1a5000f3"}])
+def ifc_import(env, a: IfcImport):
+    """새 프로젝트를 만든다(project.new 와 같다: 기존 프로젝트에 합치지 않는다). DoBIM_Intent 가 있고 투영이 들어온 형상과 같은 요소는
+    authored, 의도가 있지만 형상이 다르면 detached(동결, 경고), 의도가 없거나 해석할 수 없으면 foreign. 원본 바이트는 SQLite 에 보존한다."""
+    from dobim_core.engine import Engine
+    from dobim_core.foreign import plan_import
+    src = resolve_in_workspace(env.workspace, a.source, must_exist=True)
+    if src.suffix.lower() != ".ifc":
+        raise DobimError("PATH_DENIED", f"가져올 파일은 .ifc 여야 한다: {src.name}", path="/source")
+    dst = resolve_in_workspace(env.workspace, a.path)
+    if dst.exists():
+        raise DobimError("FILE_EXISTS", f"이미 있는 파일이다: {dst.name}", path="/path")
+    try:
+        data = src.read_bytes()
+    except OSError as ex:
+        raise _io_error(src, ex) from ex
+    plan = plan_import(data)
+    eng = Engine.create_imported(dst, data, plan, env.actor, guid=a.guid)
+    try:
+        counts = plan.counts()
+        shown = [{"id": d["id"], "reasons": d["reasons"][:4]} for d in plan.detached[:20]]
+        return {"path": dst.name, "rev": eng.rev, "project_uuid": eng.project_guid_uuid, "schema": plan.schema, "bytes": len(data),
+                "elements": counts, "skeleton": plan.skeleton, "detached": shown, "detached_total": len(plan.detached),
+                "warnings": [w[:240] for w in plan.warnings[:20]], "warnings_total": len(plan.warnings)}
+    finally:
+        eng.close()
 
 
 class SnapshotList(A):

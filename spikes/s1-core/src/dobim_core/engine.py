@@ -9,6 +9,7 @@
     ["rel",  kind, src, dst, old(0|1), new(0|1)]
     ["pset", id, pset, prop, old|null, new|null]
     ["mat",  id, old_name|null, new_name|null]
+    ["att",  id, old_blob|null, new_blob|null]    외래 부속 스냅숏(S2): 지우기 직전에 old 를 적고, 실행 취소가 new 로 되살린다
 """
 from __future__ import annotations
 
@@ -19,6 +20,7 @@ import secrets
 import sqlite3
 import time
 import uuid
+import zlib
 from pathlib import Path
 from typing import Any
 
@@ -45,13 +47,16 @@ CREATE TABLE op_log (
   seq INTEGER PRIMARY KEY, txn_id TEXT NOT NULL, actor TEXT NOT NULL, base_rev INTEGER NOT NULL,
   ts TEXT NOT NULL, op TEXT NOT NULL, args TEXT NOT NULL, inverse TEXT NOT NULL);
 CREATE INDEX op_log_txn ON op_log (txn_id);
+CREATE TABLE foreign_base (id INTEGER PRIMARY KEY CHECK (id = 1), schema TEXT NOT NULL, size INTEGER NOT NULL,
+  sha256 TEXT NOT NULL, data BLOB NOT NULL);
+CREATE TABLE import_spec (id TEXT PRIMARY KEY, spec_hash TEXT NOT NULL);
 """
 
 
 # ---------------------------------------------------------------- 효과
 def invert_effect(e: list) -> list:
     t = e[0]
-    if t == "el" or t == "mat":
+    if t == "el" or t == "mat" or t == "att":
         return [t, e[1], e[3], e[2]]
     return [t, e[1], e[2], e[3], e[5], e[4]]
 
@@ -89,8 +94,13 @@ class State:
         self.bucket: dict[tuple, list] = {}
         self.count: dict[str, int] = {}
         self.by_kind: dict[str, set] = {}
+        self.origins: dict[str, int] = {}   # authored / foreign / detached 별 요소 수
 
     def apply_el(self, eid, old, new):
+        if old is not None:
+            self.origins[old["origin"]] -= 1
+        if new is not None:
+            self.origins[new["origin"]] = self.origins.get(new["origin"], 0) + 1
         if old is None:
             kind = new["kind"]
             bisect.insort(self.bucket.setdefault((kind, Q.bucket_of(eid)), []), eid)
@@ -181,6 +191,16 @@ class Ctx:
             raise DobimError("NOT_FOUND", f"{kind or '요소'} 를 찾을 수 없다: {eid}", path="/id")
         return r
 
+    def authored(self, eid: str, kind: str | None = None, *, what: str = "형상") -> dict:
+        """저작 요소만 돌려준다. 외래(foreign)·분리됨(detached) 요소의 형상·배치·재료·삭제는 거절한다(ADR-0005): IFC 가 형상의 정본이고
+        코어는 그 형상을 다시 쓰지 않는다. 속성(pset.set/delete)만 편집할 수 있다."""
+        r = self.eng.st.el.get(eid)
+        if r is not None and r["origin"] != "authored":
+            why = "분리됨(외부 도구가 형상을 바꿔 동결됐다)" if r["origin"] == "detached" else "외래 요소(IFC 가 정본이다)"
+            raise DobimError("ELEMENT_FROZEN", f"{why}라 {what}을 바꿀 수 없다: {eid}", path="/id",
+                             hint="속성은 pset.set / pset.delete 로 편집할 수 있다. 형상은 원본 도구에서 고쳐 다시 가져오세요")
+        return self.row(eid, kind)
+
     def rels_out(self, kind, src) -> list:
         return list(self.eng.st.out.get((kind, src), ()))
 
@@ -202,6 +222,12 @@ class Ctx:
     def det_id(self, label: str) -> str:
         """라벨에서 결정적으로 얻는 GlobalId(같은 프로젝트·같은 라벨이면 같은 값). 내용 주소 id 에 쓴다."""
         return ifcopenshell.guid.compress(uuid.uuid5(uuid.UUID(self.eng.project_guid_uuid), label).hex)
+
+    def complex_material(self, eid) -> bool:
+        return self.eng.has_base and self.eng.ifc.has_complex_material(eid)
+
+    def foreign_voids(self, eid) -> list:
+        return self.eng.ifc.foreign_voids(eid) if self.eng.has_base else []
 
     def new_id(self, kind: str) -> str:
         """결정적 GlobalId. 같은 프로젝트에서 같은 순번이면 같은 값이 나온다.
@@ -254,6 +280,14 @@ class Ctx:
             return False
         self.emit(["mat", eid, old, name])
         return True
+
+    def attach(self, eid: str) -> None:
+        """지울 요소의 외래 부속을 스냅숏 효과로 남긴다(외래 기반 프로젝트만). 없으면 아무것도 하지 않는다."""
+        if not self.eng.has_base:
+            return
+        blob = self.eng.ifc.capture_attachments(eid)
+        if blob:
+            self.emit(["att", eid, blob, None])
 
     def warn(self, msg: str) -> None:
         self.warnings.append(msg)
@@ -317,7 +351,7 @@ def affected_of(effects: list) -> dict:
 
 class Engine:
     def __init__(self, path: str | Path, actor: str = "py", *, create: bool = False, guid: str | None = None,
-                 busy_ms: int = 5000, synchronous: str = "NORMAL", eager_t0: bool = True):
+                 busy_ms: int = 5000, synchronous: str = "NORMAL", eager_t0: bool = True, seed=None):
         self.path = str(path)
         self.actor = actor
         self.eager_t0 = eager_t0
@@ -327,10 +361,14 @@ class Engine:
         self.conn = sqlite3.connect(self.path, isolation_level=None, timeout=busy_ms / 1000.0)
         self.conn.execute(f"PRAGMA busy_timeout={int(busy_ms)}")
         self.conn.execute("PRAGMA foreign_keys=OFF")
-        if create:
-            self._create_schema(guid)
-        self.conn.execute(f"PRAGMA synchronous={synchronous}")
-        self._load()
+        try:
+            if create:
+                self._create_schema(guid, seed)
+            self.conn.execute(f"PRAGMA synchronous={synchronous}")
+            self._load()
+        except BaseException:
+            self.conn.close()   # 만들다 실패한 연결을 쥐고 있으면 호출자가 파일을 치우지 못한다(윈도)
+            raise
 
     # ------------------------------------------------------------ 생성·열기
     @classmethod
@@ -340,7 +378,37 @@ class Engine:
             raise DobimError("FILE_EXISTS", f"이미 있는 파일이다: {p.name}", path="/path")
         return cls(p, actor, create=True, guid=guid, **kw)
 
-    def _create_schema(self, guid):
+    @classmethod
+    def create_imported(cls, path, data: bytes, plan, actor="py", guid=None, **kw) -> "Engine":
+        """외래 IFC(data)를 기반으로 새 프로젝트를 만든다. plan 은 foreign.plan_import 의 분류 결과다."""
+        p = Path(path)
+        if p.exists():
+            raise DobimError("FILE_EXISTS", f"이미 있는 파일이다: {p.name}", path="/path")
+        try:
+            return cls(p, actor, create=True, guid=guid, seed=(data, plan), **kw)
+        except BaseException:
+            for suffix in ("", "-wal", "-shm", "-journal"):   # 반쯤 만든 프로젝트 파일을 남기지 않는다
+                try:
+                    Path(str(p) + suffix).unlink(missing_ok=True)
+                except OSError:
+                    pass
+            raise
+
+    def _seed_import(self, data: bytes, plan) -> None:
+        """생성 트랜잭션 안에서 외래 기반 원본과 분류 결과를 적는다. 가져오기는 로그 항목이 아니다: 프로젝트의 시작 상태(rev 0)다.
+        element.projection_hash 는 가져오는 순간의 클로저 해시이고 이후 바뀌지 않는다(변조 판정은 가져오는 순간에만 한다)."""
+        c = self.conn
+        c.execute("INSERT INTO foreign_base (id, schema, size, sha256, data) VALUES (1,?,?,?,?)",
+                  (plan.schema, len(data), hashlib.sha256(data).hexdigest(), zlib.compress(data, 6)))
+        c.executemany("INSERT INTO element (id, kind, ifc_class, origin, family_id, params, projection_hash) VALUES (?,?,?,?,?,?,?)",
+                      [(r["id"], r["kind"], r["ifc_class"], r["origin"], r["family_id"], canon(r["params"]), r.get("projection_hash"))
+                       for r in plan.rows])
+        c.executemany("INSERT INTO relation (kind, src, dst) VALUES (?,?,?)", plan.rels)
+        # 저작 요소의 가져올 때 투영 명세 해시: 명세가 그대로면 첫 투영에서 들어온 엔티티를 그대로 둔다(스타일 등 외래 부속 보존)
+        c.executemany("INSERT INTO import_spec (id, spec_hash) VALUES (?,?)",
+                      [(r["id"], r["spec_hash"]) for r in plan.rows if r.get("spec_hash")])
+
+    def _create_schema(self, guid, seed=None):
         c = self.conn
         c.execute("PRAGMA journal_mode=WAL")
         c.execute("BEGIN IMMEDIATE")
@@ -351,6 +419,12 @@ class Engine:
         c.executemany("INSERT INTO meta VALUES (?,?)", [
             ("schema_version", SCHEMA_VERSION), ("project_uuid", str(u)),
             ("confirm_secret", secrets.token_hex(16))])
+        if seed is not None:
+            try:
+                self._seed_import(*seed)
+            except BaseException:
+                c.execute("ROLLBACK")
+                raise
         c.execute("COMMIT")
 
     def _load(self):
@@ -370,6 +444,13 @@ class Engine:
             for kind, src, dst in c.execute("SELECT kind, src, dst FROM relation"):
                 self.st.apply_rel(kind, src, dst, True)
             log = c.execute("SELECT seq, txn_id, op, inverse FROM op_log ORDER BY seq").fetchall()
+            base = None
+            self._import_spec: dict[str, str] = {}
+            if c.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='foreign_base'").fetchone():
+                row = c.execute("SELECT data FROM foreign_base WHERE id=1").fetchone()
+                base = zlib.decompress(row[0]) if row else None
+                if c.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='import_spec'").fetchone():
+                    self._import_spec = dict(c.execute("SELECT id, spec_hash FROM import_spec"))
             c.execute("COMMIT")
         except Exception:
             if c.in_transaction:
@@ -380,7 +461,8 @@ class Engine:
         self.redo_stack: list[str] = []
         for seq, txn, op, _ in log:
             self._note_entry(op, txn)
-        self.ifc = IfcModel(self.project_guid_uuid)
+        self.has_base = base is not None
+        self.ifc = IfcModel(self.project_guid_uuid, base)
         self._rebuild_ifc(log)
         self._proj_stamp: dict[str, int] = {}
         self._pending: set = set()
@@ -397,14 +479,18 @@ class Engine:
                     psets[(e[1], e[2], e[3])] = e[5]
                 elif e[0] == "mat":
                     mats[e[1]] = e[3]
+        base = self.ifc.base_mode
         for eid in sorted(self.st.el):
             if self.st.el[eid]["kind"] not in Q.NON_IFC_KINDS:
                 self.ifc.create_identity(eid, self.st.el[eid]["kind"], self.st.el[eid]["ifc_class"])
+        if base:
+            self.ifc.prune()
         for (eid, pset, prop), v in sorted(psets.items(), key=lambda kv: kv[0]):
-            if v is not None and eid in self.ifc.ents:
+            # 외래 기반에는 가져온 속성이 이미 있으므로 삭제(None)도 적용한다. 빈 파일에서 시작하는 일반 프로젝트는 건너뛴다
+            if (v is not None or base) and eid in self.ifc.ents:
                 self.ifc.set_prop(eid, pset, prop, v)
         for eid, name in sorted(mats.items()):
-            if name is not None and eid in self.ifc.ents:
+            if (name is not None or base) and eid in self.ifc.ents:
                 self.ifc.set_material(eid, name)
 
     def close(self):
@@ -457,9 +543,9 @@ class Engine:
                     self._sql(f"요소 {eid}", "DELETE FROM element WHERE id=?", (eid,))
                 else:
                     self._sql(f"요소 {eid}",
-                              "INSERT OR REPLACE INTO element (id, kind, ifc_class, origin, family_id, params) "
-                              "VALUES (?,?,?,?,?,?)",
-                              (eid, new["kind"], new["ifc_class"], new["origin"], new["family_id"], canon(new["params"])))
+                              "INSERT OR REPLACE INTO element (id, kind, ifc_class, origin, family_id, params, projection_hash) "
+                              "VALUES (?,?,?,?,?,?, (SELECT projection_hash FROM element WHERE id=?))",   # 가져올 때의 해시는 유지한다
+                              (eid, new["kind"], new["ifc_class"], new["origin"], new["family_id"], canon(new["params"]), eid))
         elif t == "rel":
             _, kind, src, dst, _, new = e
             self.st.apply_rel(kind, src, dst, bool(new))
@@ -484,6 +570,14 @@ class Engine:
                 self._taint(f"재료 {e[1]}", ex)
                 raise
             p.add(("mat", e[1]))
+        elif t == "att":
+            # new 가 있으면 되살리고(실행 취소), 없으면(지우기 쪽) 할 일이 없다: 부속은 요소 제거 때 함께 사라지고 old 가 로그에 남는다
+            if e[3] is not None:
+                try:
+                    self.ifc.restore_attachments(e[1], e[3])
+                except BaseException as ex:
+                    self._taint(f"부속 {e[1]}", ex)
+                    raise
         else:
             raise DobimError("INTERNAL", f"알 수 없는 효과: {t}")
 
@@ -674,9 +768,17 @@ class Engine:
         n = 0
         for kind in ("level", "wall", "door", "ftype", "finst"):   # 타입이 인스턴스보다 먼저(인스턴스가 타입의 표현 지도를 가리킨다)
             for eid in sorted(self.st.by_kind.get(kind, ())):
+                if self.st.el[eid]["origin"] != "authored":
+                    continue   # 외래·분리 요소의 형상은 IFC 가 정본이다: 투영하지 않는다(동결)
                 spec = self.g.q(Q.ifc_spec, eid)
                 stamp = self.g.nodes[(Q.ifc_spec, eid)].changed
                 if self._proj_stamp.get(eid) != stamp:
+                    # 가져온 뒤 이 세션에서 한 번도 투영하지 않았고 명세가 가져올 때와 같으면, 들어온 엔티티가 이미 그 투영이다(가져오기가
+                    # 클로저 해시로 확인했다). 다시 투영하면 외부 도구가 붙인 스타일·개구부 신원처럼 의도 밖의 부분이 사라지므로 그대로 둔다.
+                    if (self.ifc.base_mode and eid not in self._proj_stamp and eid in self.ifc.base_ents
+                            and self._import_spec.get(eid) == digest(spec)):
+                        self._proj_stamp[eid] = stamp
+                        continue
                     try:
                         self.ifc.project(eid, spec)
                     except BaseException as ex:
@@ -728,9 +830,15 @@ class Engine:
         bad = []
         texts = self.ifc.intent_texts()
         for eid in sorted(self.st.el):
-            if self.st.el[eid]["kind"] in Q.NON_IFC_KINDS:
-                continue
+            if self.st.el[eid]["kind"] in Q.NON_IFC_KINDS or self.st.el[eid]["origin"] == "foreign":
+                continue   # IFC 로 투영하지 않는 요소(뷰·주석)와 의도가 없는 외래 요소
             want = canon(self.g.q(Q.intent_of, eid))
-            if texts.get(eid) != want:
+            got = texts.get(eid)
+            if self.has_base:   # 외부 도구가 쓴 의도 텍스트는 모양이 달라도 뜻이 같으면 일치로 본다
+                try:
+                    got = canon(json.loads(got))
+                except (TypeError, ValueError):
+                    pass
+            if got != want:
                 bad.append(eid)
         return bad

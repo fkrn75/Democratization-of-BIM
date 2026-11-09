@@ -1,0 +1,43 @@
+{
+  "collected": 266,
+  "command": "pytest -q -rs --durations=5 (느린 시험 포함) (spikes/s1-core)",
+  "environment": {
+    "DOBIM_IFCDIFF_PYTHON": "설정함",
+    "DOBIM_REVIT_DIR": "설정함(로컬 비공개 표본)"
+  },
+  "errors": 0,
+  "exit_code": 0,
+  "failed": 0,
+  "passed": 266,
+  "platform": "Windows 11",
+  "pytest_summary_line": null,
+  "python": "3.12.2",
+  "s1_baseline_tests": 228,
+  "s2_tests": 38,
+  "s2_tests_passed": 38,
+  "skipped": 0,
+  "skipped_reasons": [],
+  "slowest_s": [
+    {
+      "seconds": 317.5,
+      "test": "test_slow::test_패리티_C_모든_커맨드의_CLI_MCP_결과가_같다"
+    },
+    {
+      "seconds": 316.3,
+      "test": "test_slow::test_변이를_심으면_시험이_잡아낸다[M10]"
+    },
+    {
+      "seconds": 289.6,
+      "test": "test_review4::test_IFC_호출_실패_주입_격자_전체"
+    },
+    {
+      "seconds": 280.8,
+      "test": "test_slow::test_변이를_심으면_시험이_잡아낸다[M08]"
+    },
+    {
+      "seconds": 255.9,
+      "test": "test_slow::test_변이를_심으면_시험이_잡아낸다[M05]"
+    }
+  ],
+  "wall_seconds": 2758
+}
