@@ -467,6 +467,18 @@ CASES = [
     ("없는_치수_대상은_고아로_복원", lambda f: _edit(f, A3, lambda d: d["params"].update(b=R("wall", "Y" * 22, "axis.end"))), set()),
     ("없는_레벨의_평면뷰는_고아_뷰로_복원", lambda f: _edit(f, V2, lambda d: d["params"].update(level="X" * 22)), set()),
     ("참조_바꿔치기_해시도_맞춤", lambda f: _edit(f, A1, lambda d: d["params"].update(b=R("wall", F.W3, "trim.end"))), set()),   # 다른 저작 벽: 정의 전체를 맞게 다시 쓴 위조는 막지 못한다(ADR-0015)
+    # --- 참조 대상이 같은 파일의 다른 정의 id 인 위조(해시를 맞춰도 종류 검사가 막아야 한다: 정의 id 는 요소 종류가 아니다)
+    ("태그_대상이_뷰_id", lambda f: _edit(f, T1, lambda d: d["params"].update(target=V1)), {T1}),
+    ("태그_대상이_치수_id", lambda f: _edit(f, T1, lambda d: d["params"].update(target=A1)), {T1}),
+    ("태그_대상이_다른_태그_id", lambda f: _edit(f, T1, lambda d: d["params"].update(target=T2)), {T1}),
+    ("태그_대상이_자기_id", lambda f: _edit(f, T2, lambda d: d["params"].update(target=T2)), {T2}),
+    ("치수_참조가_뷰_id", lambda f: _edit(f, A1, lambda d: d["params"].update(a=R("wall", V1, "axis.start"))), {A1}),
+    ("치수_참조가_태그_id를_레벨로", lambda f: _edit(f, A2, lambda d: d["params"].update(a=R("level", T1, "elevation"))), {A2}),
+    ("치수_참조가_태그_id를_벽으로", lambda f: _edit(f, A3, lambda d: d["params"].update(a=R("wall", T1, "axis.start"))), {A3}),
+    ("치수_자기_참조", lambda f: _edit(f, A1, lambda d: d["params"].update(b=R("wall", A1, "axis.end"))), {A1}),
+    ("평면뷰의_레벨이_다른_뷰_id", lambda f: _edit(f, V1, lambda d: d["params"].update(level=V2)), {V1, A1, A3, T1, T2}),
+    ("평면뷰의_레벨이_치수_id", lambda f: _edit(f, V1, lambda d: d["params"].update(level=A1)), {V1, A1, A3, T1, T2}),
+    ("평면뷰의_레벨이_자기_id", lambda f: _edit(f, V1, lambda d: d["params"].update(level=V1)), {V1, A1, A3, T1, T2}),
     # --- id 중복
     # --- 이름 중복
     ("같은_이름_뷰_둘", lambda f: _clone(f, V2, "4" + "0" * 20 + "7"), {V2, "4" + "0" * 20 + "7"}),
@@ -832,5 +844,149 @@ def test_v6b_뷰_주석이_많아도_내보내기와_편집이_선형이다(tmp_
         finally:
             IM.api_pset.edit_pset = orig
         assert written == [1], written
+    finally:
+        b.close()
+
+
+# ================================================================ 7. 검수 보강: 정의 id 를 가리키는 참조·덮어쓰기·요소 보호
+@pytest.mark.parametrize("name", ["tag_view", "dim_view", "dim_self", "plan_level_view", "plan_level_dim", "tag_tag"])
+def test_v4l_정의_id를_가리키는_위조는_복원되지_않아_도면과_해시가_죽지_않는다(tmp_path, name):
+    muts = {
+        "tag_view": lambda f: _edit(f, T1, lambda d: d["params"].update(target=V1)),
+        "dim_view": lambda f: _edit(f, A1, lambda d: d["params"].update(a=R("wall", V1, "axis.start"))),
+        "dim_self": lambda f: _edit(f, A1, lambda d: d["params"].update(b=R("wall", A1, "axis.end"))),
+        "plan_level_view": lambda f: _edit(f, V1, lambda d: d["params"].update(level=V2)),
+        "plan_level_dim": lambda f: _edit(f, V1, lambda d: d["params"].update(level=A1)),
+        "tag_tag": lambda f: _edit(f, T1, lambda d: d["params"].update(target=T2)),
+    }
+    b, res = _tamper(tmp_path, muts[name])
+    try:
+        # INTERNAL 오류 0: 가져온 직후 해시·검사·도면·내보내기가 결정적으로 끝난다
+        for call, args in (("model.hash", {}), ("annot.check", {}), ("model.validate", {}), ("view.list", {}),
+                           ("view.linework", {"id": V2})):
+            r = b.run(call, args, project="imp.dobim")
+            assert r["ok"], (name, call, r.get("error"))
+        b.export("o2.ifc", "imp.dobim")
+        assert any("뷰·주석 정의를 되살리지 않는다" in w for w in res["warnings"]), res["warnings"]
+    finally:
+        b.close()
+    eng = Engine(tmp_path / "imp.dobim", "t", create=False)   # 상태가 SQLite 에 저장돼 있으니 다시 열어도 같아야 한다
+    try:
+        assert eng.hashes()["state"]
+    finally:
+        eng.close()
+
+
+def test_v4m_저장된_상태에_잘못된_참조가_이미_있어도_도면과_주석_해석은_터지지_않는다(tmp_path):
+    """이 수정 전 버전이 만든 프로젝트 방어: 종류가 어긋난 참조를 직접 심어도 결정적으로 고아·빈 뷰가 된다(INTERNAL 0)."""
+    from dobim_core import annot as AN
+    from dobim_core import drawing as DR
+    from dobim_core.engine import Ctx
+
+    b = S.Bench(tmp_path)
+    try:
+        _build(b)
+        eng = b.env.engine("src.dobim")
+        st = eng.st
+        a1, v1, t1 = st.el[A1], st.el[V1], st.el[T1]
+        st.apply_el(A1, a1, dict(a1, params=dict(a1["params"], a=R("wall", V1, "axis.start"))))       # 벽 참조가 뷰를 가리킨다
+        st.apply_el(T1, t1, dict(t1, params=dict(t1["params"], target=V1)))                           # 태그 대상이 뷰다
+        st.apply_el(V1, v1, dict(v1, params=dict(v1["params"], level=A3)))                            # 평면 뷰의 레벨이 치수다
+        g = Ctx(eng, eng.head + 1, "t", True).fresh()
+        assert g.q(AN.dim_flags, A1) == ()                              # KeyError 'axis' 이던 곳
+        assert g.q(AN.dim_value, A1)[0] == "orphan"
+        assert g.q(AN.tag_text, T1)[0] == "orphan"
+        assert g.q(DR.view_cfg, V1)[1] is None                         # 레벨이 아니면 고아 뷰(KeyError 'elevation' 이던 곳)
+        AN.annot_bundle(g)
+    finally:
+        b.close()
+
+
+def test_v5f_되살리지_않은_정의와_같은_id로_뷰를_만들면_경고하고_덮어쓰며_어떤_되돌리기_경로에서도_원본이_돌아온다(tmp_path):
+    """결정(ADR-0015): 거절하지 않고 덮어쓰되 경고한다. 새 정의가 사라지면(삭제·되돌리기) 파일의 외부 정의가 돌아온다."""
+    b, _res = _tamper(tmp_path, lambda f: _edit(f, V2, lambda d: d["params"].update(name="zz"), fix=False))
+    try:
+        assert V2 not in _ids(b, "imp.dobim", "view")
+        h0 = S.trip(b.hashes("imp.dobim"))
+        e0 = b.export("x0.ifc", "imp.dobim")
+        orig = _def_props(ifcopenshell.open(str(e0)))[V2].NominalValue.wrappedValue
+        r = b.run("view.create", {"id": V2, "name": "new2", "type": "plan", "level": F.LV2}, project="imp.dobim")
+        assert r["ok"] and any("덮어쓴다" in w for w in r["warnings"]), r
+        new_text = _def_props(ifcopenshell.open(str(b.export("x1.ifc", "imp.dobim"))))[V2].NominalValue.wrappedValue
+        assert new_text != orig and '"new2"' in new_text
+        # 지우면 원본이 돌아온다
+        _ok(b.run("element.delete", {"id": V2}, project="imp.dobim"))
+        assert _def_props(ifcopenshell.open(str(b.export("x2.ifc", "imp.dobim"))))[V2].NominalValue.wrappedValue == orig
+        # 되돌리기 두 번 = 처음과 같다(해시 3종·내보낸 바이트)
+        _ok(b.run("history.undo", {}, project="imp.dobim"))
+        assert '"new2"' in _def_props(ifcopenshell.open(str(b.export("x3.ifc", "imp.dobim"))))[V2].NominalValue.wrappedValue
+        _ok(b.run("history.undo", {}, project="imp.dobim"))
+        assert S.trip(b.hashes("imp.dobim")) == h0
+        assert b.export("x4.ifc", "imp.dobim").read_bytes() == e0.read_bytes()
+        # 다시하기도 같은 길이다
+        _ok(b.run("history.redo", {}, project="imp.dobim"))
+        x5 = b.export("x5.ifc", "imp.dobim").read_bytes()
+        assert '"new2"' in _def_props(ifcopenshell.open(str(tmp_path / "x5.ifc")))[V2].NominalValue.wrappedValue
+        h1 = S.trip(b.hashes("imp.dobim"))
+    finally:
+        b.close()
+    eng = Engine(tmp_path / "imp.dobim", "t", create=False)   # 재오픈해도 같다(로그에서 다시 만든 IFC)
+    try:
+        hh = eng.hashes()
+        assert (hh["state"], hh["derived"], hh["ifc"]) == h1
+    finally:
+        eng.close()
+    b2 = S.Bench(tmp_path)
+    try:
+        assert b2.export("x6.ifc", "imp.dobim").read_bytes() == x5
+    finally:
+        b2.close()
+
+
+def test_v5g_값_타입이_다른_외부_속성도_덮어쓴_뒤_되돌리면_원본으로_돌아온다(tmp_path):
+    def mut(f):
+        _def_props(f)[VE].NominalValue = f.createIfcReal(1.5)    # 문자열이 아닌 외부 속성
+    b, _res = _tamper(tmp_path, mut)
+    try:
+        assert VE not in _ids(b, "imp.dobim", "view")
+        e0 = b.export("x0.ifc", "imp.dobim")
+        _ok(b.run("view.create", {"id": VE, "name": "새 입면", "type": "elevation", "dir": "N"}, project="imp.dobim"))
+        _ok(b.run("history.undo", {}, project="imp.dobim"))
+        e1 = b.export("x1.ifc", "imp.dobim")
+        v = _def_props(ifcopenshell.open(str(e1)))[VE].NominalValue
+        assert v.is_a("IfcReal") and v.wrappedValue == 1.5
+        assert e0.read_bytes() == e1.read_bytes()
+    finally:
+        b.close()
+
+
+_ZERO = ("products_added", "products_deleted", "products_changed", "relationships_removed", "other_added", "other_removed")
+
+
+def test_v7_뷰_주석_편집은_정의_속성셋_밖의_IFC를_바꾸지_않는다(tmp_path):
+    """요소 보호: 뷰·치수·태그를 만들고 고치는 어떤 편집도 제품·타입·관계·재료·단위를 바꾸지 않는다(strict ifcdiff).
+    정의가 모두 없어지면 속성셋도 사라져 편집 전과 IFC 가 완전히 같다."""
+    b = S.Bench(tmp_path)
+    try:
+        S.build_authored(b, "src.dobim")
+        r = lambda n, a: _ok(b.run(n, a, project="src.dobim"))   # noqa: E731
+        r("family.place", {"id": FD, "family": "door.single", "values": {"swing": "R"}, "host": F.W3, "offset": 4500})
+        a = b.export("a.ifc", "src.dobim")
+        r("view.create", {"id": V1, "name": "1F", "type": "plan", "level": F.LV1})
+        r("view.create", {"id": VS, "name": "A-A", "type": "section", "p1": [0, 2000], "p2": [6000, 2000], "depth": 8000})
+        r("annot.dim.create", {"id": A1, "view": V1, "a": R("wall", F.W1, "trim.start"), "b": R("wall", F.W1, "trim.end")})
+        r("annot.dim.create", {"id": A2, "view": VS, "a": R("level", F.LV1, "elevation"), "b": R("level", F.LV2, "elevation")})
+        r("annot.tag.create", {"id": T1, "view": V1, "target": F.D1})
+        for i in range(3):
+            r("view.set", {"id": V1, "cut_height": 1000 + i * 100})
+        c = b.export("c.ifc", "src.dobim")
+        d = ifcdiff_check.strict_diff(str(a), str(c))
+        # 속성셋을 프로젝트에 거는 관계 객체 하나만 늘어난다: 제품·타입·재료·단위·그 밖의 객체는 그대로
+        assert {k: d[k] for k in _ZERO} == dict.fromkeys(_ZERO, 0), d
+        assert d["relationships_added"] == 1, d
+        for eid in (T1, A1, A2, VS, V1):   # 정의를 모두 지우면 속성셋도 사라져 처음 IFC 와 같다
+            r("element.delete", {"id": eid})
+        c3 = b.export("c3.ifc", "src.dobim")
+        assert ifcdiff_check.strict_diff(str(a), str(c3))["total"] == 0
     finally:
         b.close()

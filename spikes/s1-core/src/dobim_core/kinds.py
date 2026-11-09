@@ -164,6 +164,8 @@ class ElementKind(NamedTuple):
     refs: tuple = ()             # 파라미터 안의 id 참조: (파라미터 이름, 형태 "id"|"ref", 같은 뜻을 담는 관계 이름 또는 None).
                                  # "id" = 값이 요소 id, "ref" = 주석 참조 문자열 "종류:id#역할". 관계 이름이 있으면 이 요소에서 나가는 그 관계의 끝이 값과 같아야 한다.
                                  # 병합이 id 를 새로 매길 때 이 표로 params 안의 참조를 함께 옮기고, model.validate 가 관계와의 어긋남을 잡는다
+    ref_kinds: tuple = ()        # 참조 대상이 가져야 할 요소 종류: (파라미터 이름, (종류, ...)). "ref" 형태(주석 참조)는 문자열 안의 종류를 따르므로 여기 없다.
+                                 # 가져오기가 파일에서 복원한 참조를 검사하는 한 곳이다(정의 id·고아·외래를 이 종류로 잘못 받아들이지 않게)
 
 
 ELEMENT_KINDS: dict[str, ElementKind] = {k.name: k for k in (
@@ -173,9 +175,11 @@ ELEMENT_KINDS: dict[str, ElementKind] = {k.name: k for k in (
     ElementKind("ftype", True, None, True, 3, _ftype_params),
     ElementKind("finst", True, None, True, 4, _finst_params, geometric=True, refs=(("type", "id", "of_type"),)),
     ElementKind("foreign", True, None, False, 5, _foreign_params),
-    ElementKind("view", False, None, False, 6, _view_params, refs=(("level", "id", None),)),   # 평면 뷰만 level 이 있다
-    ElementKind("dim", False, None, False, 7, _dim_params, refs=(("view", "id", "annot_of"), ("a", "ref", None), ("b", "ref", None))),
-    ElementKind("tag", False, None, False, 7, _tag_params, refs=(("view", "id", "annot_of"), ("target", "id", None))),
+    ElementKind("view", False, None, False, 6, _view_params, refs=(("level", "id", None),), ref_kinds=(("level", ("level",)),)),   # 평면 뷰만 level 이 있다
+    ElementKind("dim", False, None, False, 7, _dim_params, refs=(("view", "id", "annot_of"), ("a", "ref", None), ("b", "ref", None)),
+                ref_kinds=(("view", ("view",)),)),
+    ElementKind("tag", False, None, False, 7, _tag_params, refs=(("view", "id", "annot_of"), ("target", "id", None)),
+                ref_kinds=(("view", ("view",)), ("target", ("wall", "door")))),
 )}
 
 NON_IFC_KINDS = frozenset(k for k, v in ELEMENT_KINDS.items() if not v.ifc)      # 신원·속성셋·재료가 없는 의도 요소(뷰 정의, 치수·태그)
@@ -217,6 +221,16 @@ def param_ref_targets(kind: str, params) -> list:
     if k is None or not isinstance(params, dict):
         return []
     return [(name, rel, params[name] if isinstance(params[name], str) else None) for name, _f, rel in k.refs if rel and name in params]
+
+
+def ref_kind_error(kind: str, name: str, target_kind) -> str | None:
+    """kind 요소의 파라미터 name 이 target_kind 종류의 요소를 가리켜도 되는가(안 되면 문장). 표에 없는 파라미터는 검사하지 않는다.
+    target_kind 가 None 이면 요소가 아닌 것(파일에 없거나 정의 속성 등)이다."""
+    k = ELEMENT_KINDS.get(kind)
+    for n, kinds in (k.ref_kinds if k else ()):
+        if n == name and target_kind not in kinds:
+            return f"{kind}.{name} 은 {'·'.join(kinds)} 를 가리켜야 한다(대상: {target_kind or '요소 아님'})"
+    return None
 
 
 def order_of(kind: str) -> int:

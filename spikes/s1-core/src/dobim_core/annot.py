@@ -235,7 +235,8 @@ def dim_flags(g, d):
             continue
         kind, eid, role = pr
         cand = []
-        if Q.el(g, eid) is not None:
+        tgt = Q.el(g, eid)
+        if tgt is not None and tgt["kind"] == kind:   # 참조 종류와 다른 요소(예전 데이터의 잘못된 참조)는 고아로 해석되니 방향도 보지 않는다
             if kind == "wall":
                 cand.append(eid)
                 if role in END_ROLES:

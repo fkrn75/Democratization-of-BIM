@@ -96,7 +96,8 @@ def view_cfg(g, v):
     t, scale = p["type"], p["scale"]
     if t == "plan":
         lv = p["level"]
-        if Q.el(g, lv) is None:
+        lrow = Q.el(g, lv)
+        if lrow is None or lrow["kind"] != "level":   # 없거나 레벨이 아닌 요소(예전 데이터의 잘못된 참조)면 고아 뷰로 그린다(터지지 않게)
             return ("plan", None, 0.0, 0.0, scale)
         _, elev = g.q(Q.level_info, lv)
         return ("plan", lv, elev + p["cut_height"], p["view_depth"], scale)

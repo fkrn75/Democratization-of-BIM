@@ -34,6 +34,7 @@ from dobim_core.errors import DobimError
 from dobim_core.graph import Graph
 from dobim_core.family import restore as FR
 from dobim_core import annot as AN
+from dobim_core import kinds as K
 from dobim_core import viewdefs as VD
 from dobim_core.kinds import ELEMENT_KINDS, FAMILY_OF_KIND, IMPORTABLE_BY_CLASS
 from dobim_core.ifc_model import (INTENT_PSET, Closure, IfcModel, closure_diff, open_ifc_bytes, skeleton_check)
@@ -228,7 +229,11 @@ def _restore_defs(f, rows: dict, rels: set, taken: set, plan: "ImportPlan") -> N
         r = rows.get(g)
         if r is not None:
             return r["kind"], r["origin"]
-        return ("?", "foreign") if g in taken else None
+        if g in taken:
+            return ("?", "foreign")
+        if g in defs:   # 같은 파일의 정의 id(되살려지든 아니든): 존재하지만 요소 종류가 아니다. 고아(없음)로 보면 종류 검사를 건너뛰어 위조 참조가 통과한다
+            return ("def", "def")
+        return None
 
     on_level = {g: lv for k, g, lv in rels if k == "on_level"}      # 벽 -> 레벨
     host_of = {d: w for k, w, d in rels if k == "hosts"}            # 문 -> 호스트 벽
@@ -243,7 +248,7 @@ def _restore_defs(f, rows: dict, rels: set, taken: set, plan: "ImportPlan") -> N
         p = parsed[eid]["params"]
         if p["type"] == "plan":
             st = state(p["level"])
-            if st is not None and st != ("level", "authored"):   # 레벨이 없으면 고아 뷰(저작 상태에서도 생긴다), 있는데 저작 레벨이 아니면 낡은 값을 쓴다
+            if st is not None and (K.ref_kind_error("view", "level", st[0]) or st[1] != "authored"):   # 레벨이 없으면 고아 뷰(저작 상태에서도 생긴다), 있는데 저작 레벨이 아니면(분리·외래·다른 종류·정의 id) 낡은 값을 쓴다
                 skip(eid, "평면 뷰가 가리키는 레벨이 저작이 아니다(분리·외래·다른 종류)")
                 continue
         ok[eid] = parsed[eid]
@@ -270,7 +275,7 @@ def _restore_defs(f, rows: dict, rels: set, taken: set, plan: "ImportPlan") -> N
             st = state(p["target"])
             if vt != "plan":
                 why = "태그는 평면 뷰에 둔다"
-            elif st is not None and (st[1] != "authored" or not VD.tag_fields_ok(st[0], p["fields"])):
+            elif st is not None and (K.ref_kind_error("tag", "target", st[0]) or st[1] != "authored" or not VD.tag_fields_ok(st[0], p["fields"])):
                 why = "태그 대상이 저작 벽·문이 아니거나 표시 필드가 맞지 않는다"
             elif st is not None and level_of(st[0], p["target"]) != v["params"]["level"]:
                 why = "태그 대상이 이 평면 뷰의 레벨에 있지 않다"
