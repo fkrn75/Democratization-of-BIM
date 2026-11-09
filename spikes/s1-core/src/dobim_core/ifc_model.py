@@ -641,6 +641,7 @@ class IfcModel:
             for d, o in list(self.openings.items()):
                 if o.id() == op:
                     self._unproject_door(d)
+                    self.base_ents.discard(d)   # 개구부를 잃었다: 가져온 엔티티가 그대로 유효하다는 가정(투영 건너뛰기)이 깨졌으니 다시 투영해야 한다
                     lost.append(d)
         kind = self.kinds.get(eid)
         if kind == "finst":

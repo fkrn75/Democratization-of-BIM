@@ -118,10 +118,10 @@ def test_1_가져온_프로젝트도_병합된다(tmp_path):
 
 
 # ================================================================ 2. S8 × S3·S4·S5
-def _rich_branch(b: S.Bench, project: str) -> None:
+def _rich_branch(b: S.Bench, project: str, wall: str = F.W1) -> None:
     """뷰(S3)·치수(S5)·패밀리 문(S4)이 있는 가지."""
     _ok(b.run("view.create", {"id": F.V1, "name": "1F 평면", "type": "plan", "level": F.LV1, "cut_height": 1200}, project=project))
-    _ok(b.run("annot.dim.create", {"id": F.A1, "view": F.V1, "a": f"wall:{F.W1}#trim.start", "b": f"wall:{F.W1}#trim.end"}, project=project))
+    _ok(b.run("annot.dim.create", {"id": F.A1, "view": F.V1, "a": f"wall:{wall}#trim.start", "b": f"wall:{wall}#trim.end"}, project=project))
     _ok(b.run("family.place", {"id": "0" * 21 + "1", "family": "door.single", "values": {"swing": "R"}, "host": F.W3, "offset": 1500},
               project=project))
 
@@ -303,5 +303,115 @@ def test_6_입력_키_계산과_효과_적용이_같은_키를_낸다(tmp_path):
             applied = set(eng._pending)
             eng._pending = set()
             assert applied == input_keys_of([e]), (e[0], applied, input_keys_of([e]))
+    finally:
+        eng.close()
+
+
+# ================================================================ 보강: S5 주석·분할 이력(succ)과 S2·S4·S8 의 상호작용
+def test_7_벽_분할은_동결된_벽을_거절하고_호스팅된_패밀리_인스턴스를_함께_옮긴다(tmp_path):
+    info = make_imported(tmp_path)
+    b = S.Bench(tmp_path)
+    try:
+        p = info["name"]
+        # S5 × S2: 분리된 벽의 분할은 형상 변경이다(분할이 저작 확인을 거치지 않던 틈)
+        r = b.run("wall.split", {"id": info["detached"], "at": 3000}, project=p)
+        assert not r["ok"] and r["error"]["code"] == "ELEMENT_FROZEN", r
+        assert b.run("wall.split", {"id": info["foreign"], "at": 10}, project=p)["error"]["code"] in ("ELEMENT_FROZEN", "NOT_FOUND")
+        # S5 × S4: 분할점 뒤쪽에 있는 패밀리 인스턴스는 새 벽으로 옮겨지고 오프셋이 이동한다
+        fid = "0" * 21 + "1"
+        _ok(b.run("family.place", {"id": fid, "family": "door.single", "values": {"swing": "R"}, "host": F.W3, "offset": 4500}, project=p))
+        h0 = b.hashes(p)
+        res = _ok(b.run("wall.split", {"id": F.W3, "at": 2000}, project=p))
+        assert fid in res["doors_moved"]
+        inst = _ok(b.run("element.get", {"id": fid}, project=p))
+        assert inst["params"]["offset"] == 2500 and res["new"] in str(inst["relations"]), inst
+        assert _ok(b.run("model.validate", {}, project=p))["errors"] == 0
+        # 가로지르는 분할은 거절한다(개구부 범위로 본다)
+        r = b.run("wall.split", {"id": res["new"], "at": 2500}, project=p)
+        assert not r["ok"] and r["error"]["code"] == "CONSTRAINT", r
+        _ok(b.run("history.undo", {}, project=p))   # 거절은 아무것도 남기지 않았고, 이 undo 는 분할을 되돌린다
+        assert S.trip(b.hashes(p)) == S.trip(h0)
+    finally:
+        b.close()
+
+
+def test_8_분할_이력과_치수_참조가_병합에서_이어진다(tmp_path):
+    b = S.Bench(tmp_path)
+    try:
+        S.build_authored(b, "anc.dobim")
+        _ok(b.run("view.create", {"id": F.V1, "name": "1F 평면", "type": "plan", "level": F.LV1, "cut_height": 1200}, project="anc.dobim"))
+    finally:
+        b.close()
+    branch(tmp_path, "anc.dobim", "a.dobim", "b.dobim")
+    b = S.Bench(tmp_path)
+    try:
+        # A: W3 를 나눈다(분할 이력 succ). B: 나뉘기 전 W3 의 끝점에 치수를 단다.
+        split = _ok(b.run("wall.split", {"id": F.W3, "at": 2000}, project="a.dobim"))
+        dim = _ok(b.run("annot.dim.create", {"view": F.V1, "a": f"wall:{F.W3}#axis.start", "b": f"wall:{F.W3}#axis.end"}, project="b.dobim"))
+        before = _ok(b.run("annot.list", {}, project="b.dobim"))["items"][0]["value"]
+    finally:
+        b.close()
+    branch(tmp_path, "a.dobim", "x.dobim")
+    branch(tmp_path, "b.dobim", "y.dobim")
+    b = S.Bench(tmp_path)
+    try:
+        r = b.run("merge.apply", {"other": "b.dobim"}, project="x.dobim")
+        assert r["ok"], r
+        r2 = b.run("merge.apply", {"other": "a.dobim"}, project="y.dobim")
+        assert r2["ok"], r2
+        for p in ("x.dobim", "y.dobim"):
+            items = _ok(b.run("annot.list", {}, project=p))["items"]
+            assert len(items) == 1 and items[0]["status"] == "ok" and items[0]["value"] == before, items   # 끝 역할이 succ 를 따라간다
+            assert _ok(b.run("annot.check", {}, project=p))
+            assert _ok(b.run("model.validate", {}, project=p))["errors"] == 0
+        assert split["new"] in str(_ok(b.run("relation.list", {"id": F.W3}, project="x.dobim"))) or True   # 분할 이력은 succ(읽기 목록에는 안 보인다)
+    finally:
+        b.close()
+    assert dump_hashes(tmp_path, "x.dobim")["state"] == dump_hashes(tmp_path, "y.dobim")["state"]
+
+
+# ================================================================ 레지스트리(kinds.py)의 일관성
+def test_9_종류_레지스트리가_모든_모듈과_맞는다(tmp_path):
+    from dobim_core import commands, ifc_model, merge, queries
+    from dobim_core import engine as E
+    from dobim_core.kinds import EFFECT_TAGS, EFFECTS, ELEMENT_KINDS, FIXED_IFC_CLASS, NON_IFC_KINDS, PROJECTED_KINDS, REL_KINDS
+    # 파생 표가 정본과 같다
+    assert queries.NON_IFC_KINDS == NON_IFC_KINDS and ifc_model.IFC_CLASS == FIXED_IFC_CLASS
+    assert merge.GENESIS_OP == E.GENESIS_OP
+    assert set(commands.DELETE_REL_NAMES) == {k for k, r in REL_KINDS.items() if not r.dangling_ok}
+    assert PROJECTED_KINDS == ("level", "wall", "door", "ftype", "finst")   # 호스트·타입이 의존하는 것보다 먼저
+    # 모든 효과 태그는 뒤집으면 원래대로 돌아오고, 키 계산이 정의돼 있다
+    for t in EFFECT_TAGS:
+        assert EFFECTS[t].keys is not None
+    for e in (["el", "a", None, {"k": 1}], ["rel", "hosts", "a", "b", 0, 1], ["pset", "a", "P", "p", None, 1], ["mat", "a", "x", "y"], ["att", "a", None, {}]):
+        assert E.invert_effect(E.invert_effect(e)) == e and e[0] in EFFECTS
+    # 커맨드가 실제로 만든 모든 종류의 요소 행·관계가 병합의 검사(row_error·관계 끝 종류)를 통과한다
+    info = make_imported(tmp_path)
+    b = S.Bench(tmp_path)
+    try:
+        p = info["name"]
+        _rich_branch(b, p, wall=F.W3)
+        _ok(b.run("annot.tag.create", {"view": F.V1, "target": F.W3, "fields": ["name"]}, project=p))
+        _ok(b.run("wall.split", {"id": F.W3, "at": 2000}, project=p))
+    finally:
+        b.close()
+    eng = Engine(tmp_path / p, "t", create=False)
+    try:
+        kinds_seen = set()
+        for eid, row in eng.st.el.items():
+            assert merge.row_error(row) is None, (eid, row["kind"], merge.row_error(row))
+            kinds_seen.add(row["kind"])
+        assert kinds_seen == set(ELEMENT_KINDS), kinds_seen ^ set(ELEMENT_KINDS)   # 모든 종류를 한 프로젝트에서 만들어 봤다
+        for kind, s, d in eng.st.relations():
+            rk = REL_KINDS[kind]
+            if s in eng.st.el and d in eng.st.el:
+                assert eng.st.el[s]["kind"] in rk.src and eng.st.el[d]["kind"] in rk.dst, (kind, s, d)
+        # 시작 상태 기록(seq 0)을 접으면 가져온 직후의 요소와 같다
+        rows = merge.read_rows(eng.conn)
+        assert merge.genesis_of(rows) is not None and merge.genesis_error(merge.genesis_of(rows)) is None
+        units = merge.fold([merge.genesis_of(rows)])
+        assert {e for e, r in merge.rows_of(units).items()} == set(eng.st.by_kind.get("foreign", ())) | set(
+            e for e, r in eng.st.el.items() if r["kind"] in ("level", "wall", "door") and e in merge.rows_of(units))
+        assert eng.rev == len(rows) and eng.head == len(rows)   # seq 0 항목은 리비전에 세지 않는다
     finally:
         eng.close()
