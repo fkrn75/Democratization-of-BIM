@@ -1,0 +1,36 @@
+{
+ "측정 대상": "RA-01(s0, 988 삼각형, 51 요소) 1280x800, 등각 뷰. 시간은 삼각형 추출(ifcopenshell.geom) 포함 총합",
+ "후보": [
+  {
+   "이름": "자체 numpy z-버퍼 (dobim_render, 채택)",
+   "라이선스": "자체 코드 MPL-2.0 + numpy BSD-3 (+ ifcopenshell LGPL-3.0 은 추출 전용)",
+   "추가 의존": "없음(코어 의존성에 이미 numpy 가 딸려 옴)",
+   "Windows": {"s0_RA-01_초": "약 0.85~1.15 (추출 0.3 + 래스터 0.6)", "결정성": "같은 입력 같은 픽셀(반복·스레드 1/4 동일)"},
+   "Linux": {"s0_RA-01_초": "약 0.5~1.2", "결정성": "Windows 와 픽셀·PNG·ID 버퍼 해시 모두 일치"},
+   "기능": "평면 음영 + 특징선 + 요소 ID 버퍼. 모든 값이 정수 양자화 -> 골든 비교 가능",
+   "한계": "공면 겹침 면(지붕 슬래브 위 보 윗면)에서 z-충돌 점선. 안티에일리어싱 없음. 큰 모델은 파이썬 삼각형 루프라 느려짐(미측정, 대형 IFC 필요)"
+  },
+  {
+   "이름": "wgpu-py 0.33 (BSD-2) 오프스크린, 소프트웨어 어댑터",
+   "추가 의존": "wgpu + rendercanvas(+cffi) 휠. Linux 소프트웨어 어댑터는 시스템 패키지 mesa-vulkan-drivers + libvulkan1 필요",
+   "Windows": {"어댑터": "Microsoft Basic Render Driver(WARP) via D3D12", "초": 3.0, "비고": "장치·파이프라인 초기화 포함. 실제 GPU(RTX 4060 Vulkan)는 4.8초(첫 장치 초기화 비용)"},
+   "Linux(Debian slim 컨테이너)": {"어댑터": "llvmpipe (LLVM 19.1.7) via Vulkan(lavapipe)", "초": 3.45},
+   "결정성": "어댑터마다 픽셀 해시가 다르다(GPU/WARP/lavapipe 세 값 모두 다름). 자체 렌더러와 면 색 98.5% 일치(허용오차 3, 나머지는 경계·특징선)",
+   "한계": "mesa-vulkan-drivers 가 libx11·libxcb·libdrm·libwayland 등 14개 GUI/디스플레이 계열 시스템 패키지를 끌고 옴 -> 코어 기본 이미지에 넣을 수 없고 선택 이미지에만. 어댑터별 비결정"
+  },
+  {
+   "이름": "VTK 9.3.1 vtk-osmesa 휠 (BSD-3, Mesa 번들)",
+   "추가 의존": "vtk-osmesa 휠(약 250MB 다운로드, wheels.vtk.org 별도 인덱스). 시스템 GL 패키지 불필요(Mesa 동봉)",
+   "Linux(Debian slim 컨테이너)": {"렌더창": "vtkOSOpenGLRenderWindow, llvmpipe(Mesa 22.3.2) OpenGL 4.5", "렌더초": 0.115, "추출_포함_초": "약 0.6"},
+   "Windows": "미시험: OSMesa 휠은 Linux 전용. 일반 vtk 휠은 OpenGL 3.2 컨텍스트가 필요해 GPU 없는 Windows 에서 동작을 보장할 수 없음(이 PC 는 GPU 가 있어 헤드리스 근사 시험 불가)",
+   "결정성": "반복 결정성·교차 OS 일치는 미확인(Windows 경로가 없어 교차 비교 불가)",
+   "한계": "특징선·요소 ID 버퍼는 직접 구현 필요. 250MB 의존"
+  },
+  {
+   "이름": "pyrender+OSMesa / trimesh",
+   "결과": "시험하지 않음. pyrender 는 PyOpenGL + 시스템 libOSMesa 필요(Linux 전용), 유지보수 정체. trimesh 는 렌더에 pyglet(GUI)을 요구. 자체 z-버퍼와 VTK-OSMesa 가 이미 같은 목적을 충족"
+  }
+ ],
+ "결론": "CPU 3D 기본 경로 = 자체 numpy z-버퍼(두 OS 에서 비트 단위로 같은 PNG, 1~2초). wgpu 소프트웨어 어댑터와 VTK-OSMesa 는 '선택' 경로로만: 어댑터·플랫폼에 따라 픽셀이 다르다.",
+ "원자료": "wgpu: tools/wgpu_probe.py, VTK: tools/vtk_probe.py, 컨테이너 실행: tools/candidates_linux.sh"
+}

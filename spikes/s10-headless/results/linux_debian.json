@@ -1,0 +1,464 @@
+{
+ "dockerfile": "docker/Dockerfile",
+ "env_probe": [
+  "PRETTY_NAME=\"Debian GNU/Linux 13 (trixie)\"",
+  "NAME=\"Debian GNU/Linux\"",
+  "Python 3.12.16",
+  "92",
+  "(GUI/GL 패키지 없음)",
+  "DISPLAY=[] WAYLAND_DISPLAY=[]",
+  "app",
+  "OSError: [Errno 101] Network is unreachable"
+ ],
+ "image": "dobim-s10-clean:tmp",
+ "suite": {
+  "gui_scan": {
+   "display_env": {},
+   "gui_distributions_found": [],
+   "installed_distributions": [
+    "annotated-types",
+    "anyio",
+    "attrs",
+    "cffi",
+    "click",
+    "cryptography",
+    "dobim-core",
+    "h11",
+    "httpcore2",
+    "httpx2",
+    "idna",
+    "ifcopenshell",
+    "iniconfig",
+    "isodate",
+    "jsonschema",
+    "jsonschema-specifications",
+    "lark",
+    "mcp",
+    "mcp-types",
+    "numpy",
+    "opentelemetry-api",
+    "packaging",
+    "pip",
+    "pluggy",
+    "pycparser",
+    "pydantic",
+    "pydantic_core",
+    "pygments",
+    "pyjwt",
+    "pyparsing",
+    "pytest",
+    "python-dateutil",
+    "python-multipart",
+    "referencing",
+    "rpds-py",
+    "shapely",
+    "sse-starlette",
+    "starlette",
+    "truststore",
+    "typing-inspection",
+    "typing_extensions",
+    "tzdata",
+    "uvicorn"
+   ],
+   "ldd_gui_libs_flagged": {
+    "libEGL.so.1": [
+     "ifcopenshell/ifcopenshell_geometry_igs",
+     "ifcopenshell/ifcopenshell_geometry_stp",
+     "ifcopenshell/libTKDEIGES"
+    ],
+    "libGL.so.1": [
+     "ifcopenshell/ifcopenshell_geometry_igs",
+     "ifcopenshell/ifcopenshell_geometry_stp",
+     "ifcopenshell/libTKDEIGES"
+    ]
+   },
+   "ldd_libs": [
+    "ifcopenshell_document_rdb.so",
+    "ifcopenshell_geometry_kernel_opencascade.so",
+    "ifcopenshell_parse_schema_ifc2x3.so",
+    "ifcopenshell_parse_schema_ifc4.so",
+    "ifcopenshell_parse_schema_ifc4x3_add2.so",
+    "libEGL.so.1",
+    "libGL.so.1",
+    "libGeneratedSaxParser.so",
+    "libMathMLSolver.so",
+    "libOpenCOLLADABaseUtils.so",
+    "libOpenCOLLADAFramework.so",
+    "libOpenCOLLADASaxFrameworkLoader.so",
+    "libOpenCOLLADAStreamWriter.so",
+    "libTKBO.so.7.8",
+    "libTKBRep.so.7.8",
+    "libTKBool.so.7.8",
+    "libTKCAF.so.7.8",
+    "libTKCDF.so.7.8",
+    "libTKDE.so.7.8",
+    "libTKDEIGES.so.7.8",
+    "libTKDESTEP.so.7.8",
+    "libTKFillet.so.7.8",
+    "libTKG2d.so.7.8",
+    "libTKG3d.so.7.8",
+    "libTKGeomAlgo.so.7.8",
+    "libTKGeomBase.so.7.8",
+    "libTKHLR.so.7.8",
+    "libTKLCAF.so.7.8",
+    "libTKMath.so.7.8",
+    "libTKMesh.so.7.8",
+    "libTKOffset.so.7.8",
+    "libTKPrim.so.7.8",
+    "libTKService.so.7.8",
+    "libTKShHealing.so.7.8",
+    "libTKTopAlgo.so.7.8",
+    "libTKV3d.so.7.8",
+    "libTKVCAF.so.7.8",
+    "libTKXCAF.so.7.8",
+    "libTKXSBase.so.7.8",
+    "libTKernel.so.7.8",
+    "libUTF.so",
+    "libboost_program_options.so.1.86.0",
+    "libbuffer.so",
+    "libc.so.6",
+    "libdl.so.2",
+    "libftoa.so",
+    "libgcc_s.so.1",
+    "libgeos-d1e818bb.so.3.14.1",
+    "libgeos_c-ac38a227.so.1.20.5",
+    "libgfortran-83c28eba-468e71e5.so.5.0.0",
+    "libgmp.so.10",
+    "libifcopenshell.geometry.so",
+    "libifcopenshell.geometry.writer.so",
+    "libifcopenshell.parse.so",
+    "libifcopenshell.plugin.so",
+    "libm.so.6",
+    "libmanifold.so.3",
+    "libmpfr.so.4",
+    "libpcre.so.1",
+    "libpcreposix.so.0",
+    "libpthread.so.0",
+    "libquadmath-2284e583-a9307bba.so.0.0.0",
+    "librt.so.1",
+    "libscipy_openblas64_-f48b354e.so",
+    "libsqlite3.so.0",
+    "libstdc++.so.6",
+    "libxml2.so.2",
+    "libz.so.1",
+    "linux-vdso.so.1",
+    "statically"
+   ],
+   "ldd_not_found": [
+    "libEGL.so.1",
+    "libGL.so.1"
+   ],
+   "loaded_gui_libs_after_render": [],
+   "tkinter_error": "ImportError",
+   "tkinter_importable": false
+  },
+  "platform": {
+   "cpu_count": 16,
+   "ifcopenshell": "0.9.0.post1",
+   "machine": "x86_64",
+   "numpy": "2.5.4",
+   "python": "3.12.16",
+   "release": "6.6.114.1-microsoft-standard-WSL2",
+   "system": "Linux"
+  },
+  "ra01": {
+   "exit": 0,
+   "json": {
+    "all_stdout_json_only": true,
+    "child_calls": [
+     {
+      "argv": [
+       "run",
+       "project.new",
+       "path=ra01.dobim"
+      ],
+      "exit": 0,
+      "seconds": 1.15,
+      "stderr_bytes": 0,
+      "stdout_bytes": 318,
+      "stdout_json_only": true
+     },
+     {
+      "argv": [
+       "script",
+       "ra01.jsonl",
+       "-p"
+      ],
+      "exit": 0,
+      "seconds": 1.498,
+      "stderr_bytes": 0,
+      "stdout_bytes": 4716,
+      "stdout_json_only": true
+     },
+     {
+      "argv": [
+       "run",
+       "model.stats",
+       "-p"
+      ],
+      "exit": 0,
+      "seconds": 1.322,
+      "stderr_bytes": 0,
+      "stdout_bytes": 403,
+      "stdout_json_only": true
+     },
+     {
+      "argv": [
+       "run",
+       "model.validate",
+       "-p"
+      ],
+      "exit": 0,
+      "seconds": 8.534,
+      "stderr_bytes": 0,
+      "stdout_bytes": 277,
+      "stdout_json_only": true
+     },
+     {
+      "argv": [
+       "run",
+       "ifc.export",
+       "-p"
+      ],
+      "exit": 6,
+      "seconds": 1.326,
+      "stderr_bytes": 0,
+      "stdout_bytes": 465,
+      "stdout_json_only": true
+     },
+     {
+      "argv": [
+       "run",
+       "ifc.export",
+       "-p"
+      ],
+      "exit": 0,
+      "seconds": 1.089,
+      "stderr_bytes": 0,
+      "stdout_bytes": 296,
+      "stdout_json_only": true
+     },
+     {
+      "argv": [
+       "run",
+       "model.hash",
+       "-p"
+      ],
+      "exit": 0,
+      "seconds": 1.086,
+      "stderr_bytes": 0,
+      "stdout_bytes": 473,
+      "stdout_json_only": true
+     }
+    ],
+    "hashes": {
+     "derived": "9569372e9b849e39441c74de8bf5f1ab9588886cdee4e9e9cf4ade026fa60dbe",
+     "ifc": "9ffc85e9f0b8a4b87e071b4ba835112d6b26c15def5c206cd676b8bfb47350ca",
+     "rev": 76,
+     "state": "3f315184fc601b9a2d08fd011cd0cf9c8fe0dc08d79781a98a32684ed189fee1"
+    },
+    "ifc_file": {
+     "bytes": 35204,
+     "counts": {
+      "IfcBuilding": 1,
+      "IfcBuildingStorey": 2,
+      "IfcDoor": 5,
+      "IfcOpeningElement": 5,
+      "IfcProject": 1,
+      "IfcPropertySet": 40,
+      "IfcRelAggregates": 3,
+      "IfcRelAssociatesMaterial": 2,
+      "IfcRelContainedInSpatialStructure": 2,
+      "IfcRelDefinesByProperties": 40,
+      "IfcRelFillsElement": 5,
+      "IfcRelVoidsElement": 5,
+      "IfcSite": 1,
+      "IfcWall": 14
+     },
+     "data_sha256": "f05c5d6c71bcb4107df01b54839bc6e57900aafb97e9252989c090a2e3a7b53b",
+     "globalid_sha256": "917cb68afcec95b5fde8409fcee26c8581f7ace20612bcb79bc19a99a2f99a0d",
+     "ifcopenshell": "0.9.0.post1",
+     "schema": "IFC4",
+     "sha256": "a3babb120ba3c503b1073728d50adcb787dba44e265398ad867192f61f226eef",
+     "sha256_lf": "a3babb120ba3c503b1073728d50adcb787dba44e265398ad867192f61f226eef"
+    },
+    "ok": true,
+    "platform": {
+     "machine": "x86_64",
+     "python": "3.12.16",
+     "system": "Linux"
+    },
+    "spec_counts_ok": true,
+    "stats": {
+     "door": 5,
+     "level": 2,
+     "wall": 14
+    },
+    "steps": {
+     "ifc.export": {
+      "bytes": 35204,
+      "exit": 0
+     },
+     "ifc.export.preview": {
+      "exit": 6
+     },
+     "model.hash": {
+      "exit": 0
+     },
+     "model.stats": {
+      "exit": 0
+     },
+     "model.validate": {
+      "errors": 0,
+      "exit": 0,
+      "warnings": 0
+     },
+     "project.new": {
+      "exit": 0,
+      "rev": 0
+     },
+     "script": {
+      "commands": 76,
+      "exit": 0,
+      "rev": 76
+     }
+    },
+    "wall_seconds": 16.331
+   },
+   "seconds": 16.49,
+   "stdout_is_single_json": true,
+   "stdout_lines": 1
+  },
+  "render": [
+   {
+    "deterministic_repeat": true,
+    "file": "RA-01.ifc",
+    "info_first": {
+     "elements": 51,
+     "height": 800,
+     "id_buffer_sha256": "7239152de370f142bd9c0e2e60ff7d32fc2a70c616e7902f90fa43422570aaff",
+     "mesh_sha256": "d27ffb58fe03445880aa7a0cea5f0dfc136749c2738bab9a607b6f354cc382ec",
+     "pixel_sha256": "ae87d60ae58bab07915dd799eef58324a6e4f564d4b59b542afe04445b07d60d",
+     "png_bytes": 20428,
+     "png_sha256": "a328ca6d57f50c62f1cb18d2c176585ef3734f542b54fc2019cb29685d3c7f86",
+     "seconds": {
+      "geometry": 0.272,
+      "png": 0.049,
+      "raster": 0.862,
+      "total": 1.183
+     },
+     "stats": {
+      "covered_pixels": 425963,
+      "edge_pixels": 14616,
+      "height": 800,
+      "triangles": 988,
+      "triangles_drawn": 407,
+      "view": "iso",
+      "width": 1280
+     },
+     "triangles": 988,
+     "view": "iso",
+     "visible_elements": 24,
+     "width": 1280
+    },
+    "label": "s0_RA-01",
+    "repeats": 3,
+    "seconds_total": {
+     "max": 1.602,
+     "median": 1.183,
+     "min": 1.132
+    },
+    "threads4_same_mesh": true,
+    "threads4_same_pixels": true,
+    "width": 1280
+   },
+   {
+    "deterministic_repeat": true,
+    "file": "ra01.ifc",
+    "info_first": {
+     "elements": 19,
+     "height": 800,
+     "id_buffer_sha256": "0596f610acb283f491ad260e13b5bf9c4fdf92048ae9821ac0fc5103ffd6f151",
+     "mesh_sha256": "7c1c67ee2e2b5dc8b2228863c0ee5f0991f8cdee1b3929f66f8993a6a26e0840",
+     "pixel_sha256": "37807191cf25a11ff0e2c70840b817eaefb87a5ccaa52b90165bc90f56a37104",
+     "png_bytes": 18682,
+     "png_sha256": "50fb0405a4da3f10db5ce79983cf0b5b6753b721cd2b4f584f8dad4bd3abc2b0",
+     "seconds": {
+      "geometry": 0.103,
+      "png": 0.021,
+      "raster": 0.564,
+      "total": 0.688
+     },
+     "stats": {
+      "covered_pixels": 432876,
+      "edge_pixels": 11523,
+      "height": 800,
+      "triangles": 308,
+      "triangles_drawn": 159,
+      "view": "iso",
+      "width": 1280
+     },
+     "triangles": 308,
+     "view": "iso",
+     "visible_elements": 16,
+     "width": 1280
+    },
+    "label": "core_ra01",
+    "repeats": 3,
+    "seconds_total": {
+     "max": 0.688,
+     "median": 0.479,
+     "min": 0.387
+    },
+    "threads4_same_mesh": true,
+    "threads4_same_pixels": true,
+    "width": 1280
+   },
+   {
+    "deterministic_repeat": true,
+    "file": "Building-Architecture.ifc",
+    "info_first": {
+     "elements": 12,
+     "height": 800,
+     "id_buffer_sha256": "a24410141b76476dc55f2914ed8e3599ab06692b41e2e93b816a4843dd61e3ce",
+     "mesh_sha256": "5e911867616eb0d3e53814b495d1b968ad4337cf8d6da4777e881ccc59f4d6db",
+     "pixel_sha256": "68c7bcb75b6b8c7f48ec972b3db49eb3700cb8ec4691d0f94825f2429fc33df5",
+     "png_bytes": 11880,
+     "png_sha256": "316eac774550829d475789f2a15fbadbc4484907cf5dbc18e84a82b0fea1a31c",
+     "seconds": {
+      "geometry": 0.332,
+      "png": 0.021,
+      "raster": 0.252,
+      "total": 0.605
+     },
+     "stats": {
+      "covered_pixels": 39030,
+      "edge_pixels": 7325,
+      "height": 800,
+      "triangles": 1127,
+      "triangles_drawn": 234,
+      "view": "iso",
+      "width": 1280
+     },
+     "triangles": 1127,
+     "view": "iso",
+     "visible_elements": 9,
+     "width": 1280
+    },
+    "label": "foreign_Building-Architecture",
+    "repeats": 3,
+    "seconds_total": {
+     "max": 0.654,
+     "median": 0.605,
+     "min": 0.551
+    },
+    "threads4_same_mesh": true,
+    "threads4_same_pixels": true,
+    "width": 1280
+   }
+  ],
+  "render_synthetic_cube_pixel_sha256": "a97eb414f82c8f84089314888936bf6d7972956406d14308982e29e537beafaf"
+ },
+ "suite_exit": 0,
+ "suite_stdout_lines": 1
+}

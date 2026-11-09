@@ -1,0 +1,15 @@
+# S10: Ubuntu 24.04 판. 파이썬은 apt 의 python3(3.12) + venv 를 쓰고, GUI·GL 패키지는 설치하지 않는다(--no-install-recommends).
+FROM ubuntu:24.04
+ENV DEBIAN_FRONTEND=noninteractive
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends python3 python3-venv python3-pip ca-certificates \
+ && rm -rf /var/lib/apt/lists/*
+COPY s1-core /opt/dobim/s1-core
+RUN python3 -m venv /opt/venv \
+ && /opt/venv/bin/pip install --no-cache-dir --disable-pip-version-check "/opt/dobim/s1-core[validate]" \
+ && useradd -m app
+COPY s10 /opt/dobim/s10
+COPY s0 /opt/dobim/s0
+ENV PATH=/opt/venv/bin:$PATH PYTHONDONTWRITEBYTECODE=1
+USER app
+WORKDIR /work

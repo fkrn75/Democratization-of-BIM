@@ -1,0 +1,21 @@
+{
+ "note": "Windows 새 venv 와 Linux(Debian·Ubuntu) 컨테이너에서 같은 값이 나온 기준값. 코어 코드가 바뀌면 hashes 도 바뀐다(의도된 변경이면 갱신)",
+ "ra01": {
+  "data_sha256": "f05c5d6c71bcb4107df01b54839bc6e57900aafb97e9252989c090a2e3a7b53b",
+  "globalid_sha256": "917cb68afcec95b5fde8409fcee26c8581f7ace20612bcb79bc19a99a2f99a0d",
+  "hashes": {
+   "derived": "9569372e9b849e39441c74de8bf5f1ab9588886cdee4e9e9cf4ade026fa60dbe",
+   "ifc": "9ffc85e9f0b8a4b87e071b4ba835112d6b26c15def5c206cd676b8bfb47350ca",
+   "rev": 76,
+   "state": "3f315184fc601b9a2d08fd011cd0cf9c8fe0dc08d79781a98a32684ed189fee1"
+  }
+ },
+ "render": {
+  "cube_pixel_sha256": "a97eb414f82c8f84089314888936bf6d7972956406d14308982e29e537beafaf",
+  "s0_ra01": {
+   "mesh_sha256": "d27ffb58fe03445880aa7a0cea5f0dfc136749c2738bab9a607b6f354cc382ec",
+   "pixel_sha256": "ae87d60ae58bab07915dd799eef58324a6e4f564d4b59b542afe04445b07d60d",
+   "png_sha256": "a328ca6d57f50c62f1cb18d2c176585ef3734f542b54fc2019cb29685d3c7f86"
+  }
+ }
+}

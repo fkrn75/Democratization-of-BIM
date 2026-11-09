@@ -1,0 +1,218 @@
+{
+ "all_equal": {
+  "id_buffer_sha256(s0_RA-01)": true,
+  "ifc_data_sha256(정규화)": true,
+  "ifc_product_globalid_sha256": true,
+  "mesh_sha256(s0_RA-01)": true,
+  "pixel_sha256(core_ra01)": true,
+  "pixel_sha256(foreign_BA)": true,
+  "pixel_sha256(s0_RA-01)": true,
+  "png_sha256(s0_RA-01)": true,
+  "semantic_hashes(state,derived,ifc)": true,
+  "synthetic_cube_pixel_sha256": true
+ },
+ "environments": {
+  "debian": {
+   "child_call_seconds": {
+    "run:ifc.export": 1.089,
+    "run:model.hash": 1.086,
+    "run:model.stats": 1.322,
+    "run:model.validate": 8.534,
+    "run:project.new": 1.15,
+    "script:ra01.jsonl": 1.498
+   },
+   "display_env": {},
+   "gui_distributions_found": [],
+   "ldd_gui_libs_flagged": {
+    "libEGL.so.1": [
+     "ifcopenshell/ifcopenshell_geometry_igs",
+     "ifcopenshell/ifcopenshell_geometry_stp",
+     "ifcopenshell/libTKDEIGES"
+    ],
+    "libGL.so.1": [
+     "ifcopenshell/ifcopenshell_geometry_igs",
+     "ifcopenshell/ifcopenshell_geometry_stp",
+     "ifcopenshell/libTKDEIGES"
+    ]
+   },
+   "ldd_not_found": [
+    "libEGL.so.1",
+    "libGL.so.1"
+   ],
+   "loaded_gui_libs_after_render": [],
+   "platform": {
+    "cpu_count": 16,
+    "ifcopenshell": "0.9.0.post1",
+    "machine": "x86_64",
+    "numpy": "2.5.4",
+    "python": "3.12.16",
+    "release": "6.6.114.1-microsoft-standard-WSL2",
+    "system": "Linux"
+   },
+   "ra01_exit": 0,
+   "ra01_ok": true,
+   "ra01_stdout_single_json": true,
+   "ra01_wall_seconds_total": 16.331,
+   "render_deterministic_repeat": {
+    "core_ra01": true,
+    "foreign_Building-Architecture": true,
+    "s0_RA-01": true
+   },
+   "render_seconds_max": {
+    "core_ra01": 0.688,
+    "foreign_Building-Architecture": 0.654,
+    "s0_RA-01": 1.602
+   },
+   "render_seconds_median": {
+    "core_ra01": 0.479,
+    "foreign_Building-Architecture": 0.605,
+    "s0_RA-01": 1.183
+   },
+   "render_threads4_same_pixels": {
+    "core_ra01": true,
+    "foreign_Building-Architecture": true,
+    "s0_RA-01": true
+   },
+   "tkinter_importable": false
+  },
+  "ubuntu": {
+   "child_call_seconds": {
+    "run:ifc.export": 0.999,
+    "run:model.hash": 0.882,
+    "run:model.stats": 1.454,
+    "run:model.validate": 6.067,
+    "run:project.new": 0.974,
+    "script:ra01.jsonl": 1.225
+   },
+   "display_env": {},
+   "gui_distributions_found": [],
+   "ldd_gui_libs_flagged": {
+    "libEGL.so.1": [
+     "ifcopenshell/ifcopenshell_geometry_igs",
+     "ifcopenshell/ifcopenshell_geometry_stp",
+     "ifcopenshell/libTKDEIGES"
+    ],
+    "libGL.so.1": [
+     "ifcopenshell/ifcopenshell_geometry_igs",
+     "ifcopenshell/ifcopenshell_geometry_stp",
+     "ifcopenshell/libTKDEIGES"
+    ]
+   },
+   "ldd_not_found": [
+    "libEGL.so.1",
+    "libGL.so.1"
+   ],
+   "loaded_gui_libs_after_render": [],
+   "platform": {
+    "cpu_count": 16,
+    "ifcopenshell": "0.9.0.post1",
+    "machine": "x86_64",
+    "numpy": "2.5.4",
+    "python": "3.12.3",
+    "release": "6.6.114.1-microsoft-standard-WSL2",
+    "system": "Linux"
+   },
+   "ra01_exit": 0,
+   "ra01_ok": true,
+   "ra01_stdout_single_json": true,
+   "ra01_wall_seconds_total": 12.885,
+   "render_deterministic_repeat": {
+    "core_ra01": true,
+    "foreign_Building-Architecture": true,
+    "s0_RA-01": true
+   },
+   "render_seconds_max": {
+    "core_ra01": 0.356,
+    "foreign_Building-Architecture": 0.626,
+    "s0_RA-01": 0.737
+   },
+   "render_seconds_median": {
+    "core_ra01": 0.335,
+    "foreign_Building-Architecture": 0.562,
+    "s0_RA-01": 0.561
+   },
+   "render_threads4_same_pixels": {
+    "core_ra01": true,
+    "foreign_Building-Architecture": true,
+    "s0_RA-01": true
+   },
+   "tkinter_importable": false
+  },
+  "windows": {
+   "child_call_seconds": {
+    "run:ifc.export": 2.01,
+    "run:model.hash": 1.973,
+    "run:model.stats": 1.733,
+    "run:model.validate": 6.265,
+    "run:project.new": 1.546,
+    "script:ra01.jsonl": 1.915
+   },
+   "display_env": {},
+   "gui_distributions_found": [],
+   "ldd_gui_libs_flagged": null,
+   "ldd_not_found": null,
+   "loaded_gui_libs_after_render": null,
+   "platform": {
+    "cpu_count": 16,
+    "ifcopenshell": "0.9.0.post1",
+    "machine": "AMD64",
+    "numpy": "2.5.4",
+    "python": "3.12.2",
+    "release": "11",
+    "system": "Windows"
+   },
+   "ra01_exit": 0,
+   "ra01_ok": true,
+   "ra01_stdout_single_json": true,
+   "ra01_wall_seconds_total": 17.929,
+   "render_deterministic_repeat": {
+    "core_ra01": true,
+    "foreign_Building-Architecture": true,
+    "s0_RA-01": true
+   },
+   "render_seconds_max": {
+    "core_ra01": 0.691,
+    "foreign_Building-Architecture": 1.153,
+    "s0_RA-01": 1.352
+   },
+   "render_seconds_median": {
+    "core_ra01": 0.683,
+    "foreign_Building-Architecture": 1.057,
+    "s0_RA-01": 1.293
+   },
+   "render_threads4_same_pixels": {
+    "core_ra01": true,
+    "foreign_Building-Architecture": true,
+    "s0_RA-01": true
+   },
+   "tkinter_importable": true
+  }
+ },
+ "ifc_raw_bytes": {
+  "debian": 35204,
+  "ubuntu": 35204,
+  "windows": 35857
+ },
+ "linux_env_probe": {
+  "debian": [
+   "PRETTY_NAME=\"Debian GNU/Linux 13 (trixie)\"",
+   "NAME=\"Debian GNU/Linux\"",
+   "Python 3.12.16",
+   "92",
+   "(GUI/GL 패키지 없음)",
+   "DISPLAY=[] WAYLAND_DISPLAY=[]",
+   "app",
+   "OSError: [Errno 101] Network is unreachable"
+  ],
+  "ubuntu": [
+   "PRETTY_NAME=\"Ubuntu 24.04.5 LTS\"",
+   "NAME=\"Ubuntu\"",
+   "Python 3.12.3",
+   "121",
+   "(GUI/GL 패키지 없음)",
+   "DISPLAY=[] WAYLAND_DISPLAY=[]",
+   "app",
+   "OSError: [Errno 101] Network is unreachable"
+  ]
+ }
+}
