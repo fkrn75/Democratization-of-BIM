@@ -666,7 +666,9 @@ class IfcModel:
         if not self.base_mode:
             return None
         f, e = self.f, self.ents[eid]
-        rels = [_tree(f, r, e, top=True) for r in f.get_inverse(e) if r.is_a("IfcRelationship") and not _is_core_rel(r)]
+        own_type_rel = self.typerels.get(self.type_of.get(eid)) if self.kinds.get(eid) == "finst" else None   # 패밀리 인스턴스의 타입 관계는 투영 소유다
+        rels = [_tree(f, r, e, top=True) for r in f.get_inverse(e)
+                if r.is_a("IfcRelationship") and not _is_core_rel(r) and (own_type_rel is None or r.id() != own_type_rel.id())]
         out: dict = {}
         if rels:
             out["rels"] = sorted(rels, key=lambda t: json.dumps(t, sort_keys=True))

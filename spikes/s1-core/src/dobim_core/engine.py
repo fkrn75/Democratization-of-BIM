@@ -243,7 +243,7 @@ class Ctx:
         return ifcopenshell.guid.compress(uuid.uuid5(uuid.UUID(self.eng.project_guid_uuid), label).hex)
 
     def complex_material(self, eid) -> bool:
-        return self.eng.has_base and self.eng.ifc.has_complex_material(eid)
+        return self.eng.has_base and self._in_ifc(eid) and self.eng.ifc.has_complex_material(eid)
 
     def foreign_voids(self, eid) -> list:
         return self.eng.ifc.foreign_voids(eid) if self.eng.has_base else []
@@ -313,7 +313,7 @@ class Ctx:
 
     def attach(self, eid: str) -> None:
         """지울 요소의 외래 부속을 스냅숏 효과로 남긴다(외래 기반 프로젝트만). 없으면 아무것도 하지 않는다."""
-        if not self.eng.has_base:
+        if not self.eng.has_base or not self._in_ifc(eid):   # 뷰·치수·태그 같은 비 IFC 요소는 IFC 신원이 없어 부속도 없다(종류 레지스트리로 판단)
             return
         blob = self.eng.ifc.capture_attachments(eid)
         if blob:
