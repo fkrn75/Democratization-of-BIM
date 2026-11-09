@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <title>DoBIM S7 셸</title>
+  <style>body{font-family:sans-serif;margin:2rem}pre{background:#f4f4f4;padding:1rem;white-space:pre-wrap}</style>
+</head>
+<body>
+  <h1>DoBIM S7 최소 셸</h1>
+  <p>동결 코어(사이드카)가 응답하는지 확인한다.</p>
+  <button id="go">코어 호출 (dobim list)</button>
+  <pre id="out">(아직 호출 전)</pre>
+  <script>
+    document.getElementById("go").addEventListener("click", async () => {
+      const out = document.getElementById("out");
+      try {
+        out.textContent = await window.__TAURI__.core.invoke("core_list");
+      } catch (e) { out.textContent = "오류: " + e; }
+    });
+  </script>
+</body>
+</html>
