@@ -1,0 +1,113 @@
+{
+  "all_ok": true,
+  "families": [
+    {
+      "family": "door.single",
+      "ok": true,
+      "checks": {
+        "schema": "pass",
+        "references": "pass",
+        "values": "pass",
+        "geometry": "pass",
+        "ifc_schema": "pass",
+        "psets_standard": "pass",
+        "ifc_projection": "pass",
+        "geometry_shape": "pass",
+        "psets_values": "pass"
+      },
+      "errors": [],
+      "warnings": [],
+      "stats": {
+        "samples": 30,
+        "ifc_validate_errors": 0,
+        "ifc_bytes": 65736,
+        "ifc_entities": 857,
+        "recipe_json_bytes": 3655,
+        "meshes_ok": 7,
+        "seconds": 5.03
+      },
+      "recipe_bytes": 3468
+    },
+    {
+      "family": "window.fixed",
+      "ok": true,
+      "checks": {
+        "schema": "pass",
+        "references": "pass",
+        "values": "pass",
+        "geometry": "pass",
+        "ifc_schema": "pass",
+        "psets_standard": "pass",
+        "ifc_projection": "pass",
+        "geometry_shape": "pass",
+        "psets_values": "pass"
+      },
+      "errors": [],
+      "warnings": [],
+      "stats": {
+        "samples": 62,
+        "ifc_validate_errors": 0,
+        "ifc_bytes": 60842,
+        "ifc_entities": 724,
+        "recipe_json_bytes": 3770,
+        "meshes_ok": 7,
+        "seconds": 5.39
+      },
+      "recipe_bytes": 3556
+    },
+    {
+      "family": "column.section",
+      "ok": true,
+      "checks": {
+        "schema": "pass",
+        "references": "pass",
+        "values": "pass",
+        "geometry": "pass",
+        "ifc_schema": "pass",
+        "psets_standard": "pass",
+        "ifc_projection": "pass",
+        "geometry_shape": "pass",
+        "psets_values": "pass"
+      },
+      "errors": [],
+      "warnings": [],
+      "stats": {
+        "samples": 26,
+        "ifc_validate_errors": 0,
+        "ifc_bytes": 44996,
+        "ifc_entities": 438,
+        "recipe_json_bytes": 3364,
+        "meshes_ok": 7,
+        "seconds": 5.22
+      },
+      "recipe_bytes": 3102
+    },
+    {
+      "family": "wardrobe.builtin",
+      "ok": true,
+      "checks": {
+        "schema": "pass",
+        "references": "pass",
+        "values": "pass",
+        "geometry": "pass",
+        "ifc_schema": "pass",
+        "psets_standard": "pass",
+        "ifc_projection": "pass",
+        "geometry_shape": "pass",
+        "psets_values": "pass"
+      },
+      "errors": [],
+      "warnings": [],
+      "stats": {
+        "samples": 75,
+        "ifc_validate_errors": 0,
+        "ifc_bytes": 92795,
+        "ifc_entities": 1382,
+        "recipe_json_bytes": 4890,
+        "meshes_ok": 7,
+        "seconds": 5.95
+      },
+      "recipe_bytes": 4566
+    }
+  ]
+}

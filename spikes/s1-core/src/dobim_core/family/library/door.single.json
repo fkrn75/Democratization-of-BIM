@@ -1,0 +1,283 @@
+{
+  "schema": "dobim.family/1",
+  "id": "door.single",
+  "version": 1,
+  "name": "외여닫이문",
+  "description": "벽에 호스팅되는 외여닫이문. 문틀(스윕)과 문짝(압출), 열림 방향(L/R)에 따라 뒤집히는 평면 기호.",
+  "ifc": {
+    "class": "IfcDoor",
+    "type_class": "IfcDoorType",
+    "predefined": "DOOR",
+    "type_attrs": {
+      "OperationType": "NOTDEFINED",
+      "ParameterTakesPrecedence": false
+    },
+    "attrs": {
+      "OverallWidth": {
+        "expr": "width"
+      },
+      "OverallHeight": {
+        "expr": "height"
+      },
+      "OperationType": {
+        "expr": "'SINGLE_SWING_LEFT' if swing == 'L' else 'SINGLE_SWING_RIGHT'"
+      }
+    }
+  },
+  "host": {
+    "kinds": [
+      "wall"
+    ],
+    "cut": {
+      "x": [
+        "left",
+        "right"
+      ],
+      "z": [
+        0,
+        "height"
+      ]
+    }
+  },
+  "params": {
+    "width": {
+      "kind": "type",
+      "default": 900,
+      "unit": "mm",
+      "description": "개구부 폭(문틀 바깥)",
+      "min": 600,
+      "max": 1500
+    },
+    "height": {
+      "kind": "type",
+      "default": 2100,
+      "unit": "mm",
+      "description": "개구부 높이",
+      "min": 1800,
+      "max": 2700
+    },
+    "frame_w": {
+      "kind": "type",
+      "default": 50,
+      "unit": "mm",
+      "description": "문틀 단면 폭",
+      "min": 30,
+      "max": 100
+    },
+    "leaf_t": {
+      "kind": "type",
+      "default": 40,
+      "unit": "mm",
+      "description": "문짝 두께",
+      "min": 30,
+      "max": 60
+    },
+    "fire_rating": {
+      "kind": "type",
+      "default": "NONE",
+      "type": "enum",
+      "values": [
+        "NONE",
+        "EI30",
+        "EI60"
+      ],
+      "description": "방화 등급"
+    },
+    "is_external": {
+      "kind": "type",
+      "default": false,
+      "type": "bool",
+      "description": "외부 문 여부"
+    },
+    "swing": {
+      "kind": "instance",
+      "default": "L",
+      "type": "enum",
+      "values": [
+        "L",
+        "R"
+      ],
+      "description": "경첩 위치(L=왼쪽)"
+    }
+  },
+  "derived": {
+    "leaf_w": "width - 2*frame_w",
+    "leaf_h": "height - frame_w",
+    "fx0": "-width/2 + frame_w/2",
+    "fx1": "width/2 - frame_w/2",
+    "fz1": "height - frame_w/2",
+    "hinge_x": "(-width/2 + frame_w) if swing == 'L' else (width/2 - frame_w)"
+  },
+  "refs": {
+    "left": {
+      "axis": "x",
+      "at": "-width/2"
+    },
+    "right": {
+      "axis": "x",
+      "at": "width/2"
+    }
+  },
+  "constraints": [
+    {
+      "expr": "leaf_w >= 300",
+      "message": "문짝 폭이 300mm 미만이다(width 를 키우거나 frame_w 를 줄이세요)"
+    },
+    {
+      "expr": "host_thickness >= leaf_t + 20",
+      "message": "벽이 문짝 두께보다 20mm 이상 두꺼워야 한다"
+    }
+  ],
+  "solids": [
+    {
+      "id": "frame",
+      "op": "sweep",
+      "normal": "y",
+      "closed": false,
+      "path": [
+        [
+          "fx0",
+          0,
+          0
+        ],
+        [
+          "fx0",
+          0,
+          "fz1"
+        ],
+        [
+          "fx1",
+          0,
+          "fz1"
+        ],
+        [
+          "fx1",
+          0,
+          0
+        ]
+      ],
+      "profile": {
+        "shape": "rect",
+        "w": "frame_w",
+        "h": "host_thickness"
+      }
+    },
+    {
+      "id": "leaf",
+      "op": "extrude",
+      "plane": "xz",
+      "profile": {
+        "shape": "rect",
+        "u": [
+          "-leaf_w/2",
+          "leaf_w/2"
+        ],
+        "v": [
+          0,
+          "leaf_h"
+        ]
+      },
+      "range": [
+        "-leaf_t/2",
+        "leaf_t/2"
+      ]
+    }
+  ],
+  "plan_symbol": {
+    "default": [
+      {
+        "type": "rect",
+        "u": [
+          "left",
+          "left + frame_w"
+        ],
+        "v": [
+          "-host_thickness/2",
+          "host_thickness/2"
+        ],
+        "style": "cut"
+      },
+      {
+        "type": "rect",
+        "u": [
+          "right - frame_w",
+          "right"
+        ],
+        "v": [
+          "-host_thickness/2",
+          "host_thickness/2"
+        ],
+        "style": "cut"
+      },
+      {
+        "type": "line",
+        "from": [
+          "hinge_x",
+          0
+        ],
+        "to": [
+          "hinge_x",
+          "leaf_w"
+        ]
+      },
+      {
+        "type": "arc",
+        "center": [
+          "hinge_x",
+          0
+        ],
+        "radius": "leaf_w",
+        "start": "0 if swing == 'L' else 90",
+        "end": "90 if swing == 'L' else 180",
+        "style": "projection"
+      }
+    ],
+    "1:200": [
+      {
+        "type": "line",
+        "from": [
+          "hinge_x",
+          0
+        ],
+        "to": [
+          "hinge_x",
+          "leaf_w"
+        ]
+      },
+      {
+        "type": "arc",
+        "center": [
+          "hinge_x",
+          0
+        ],
+        "radius": "leaf_w",
+        "start": "0 if swing == 'L' else 90",
+        "end": "90 if swing == 'L' else 180"
+      }
+    ]
+  },
+  "psets": {
+    "Pset_DoorCommon": {
+      "on": "type",
+      "props": {
+        "IsExternal": {
+          "expr": "is_external"
+        },
+        "FireRating": {
+          "expr": "fire_rating"
+        },
+        "HandicapAccessible": {
+          "expr": "width >= 900"
+        }
+      }
+    },
+    "DoBIM_DoorParams": {
+      "on": "instance",
+      "props": {
+        "Swing": {
+          "expr": "swing"
+        }
+      }
+    }
+  }
+}

@@ -28,10 +28,13 @@ SRC = str(HERE.parent / "src")
 _EXP = ("ifc.export", {"path": "export-example.ifc"}, True)   # True = 파괴적 커맨드의 확인 토큰 2단계
 _V1 = ("view.create", {"id": F.V1, "name": "1F 평면", "type": "plan", "level": F.LV1, "cut_height": 1200})   # S3: 뷰가 있어야 하는 예시의 준비
 _A1 = ("annot.dim.create", {"id": F.A1, "view": F.V1, "a": f"wall:{F.W1}#trim.start", "b": f"wall:{F.W1}#trim.end"})   # S5: 주석이 있어야 하는 예시의 준비
+# family.set 예시는 이미 놓인 인스턴스를 고친다: 같은 id 로 family.place 예시(첫 번째)를 먼저 실행한다
+_FAMILY_PRE = ("family.place", {"id": "0" * 21 + "1", "family": "door.single", "values": {"swing": "R"}, "host": F.W3, "offset": 1500})
 PRE = {"history.redo": [("history.undo", {})], "ifc.restore": [_EXP, _EXP], "ifc.snapshots": [_EXP, _EXP],
        "view.set": [_V1], "view.delete": [_V1], "view.list": [_V1], "view.linework": [_V1], "view.export": [_V1], "view.affected": [_V1],
        "annot.dim.create": [_V1], "annot.tag.create": [_V1], "annot.rebind": [_V1, _A1], "annot.delete": [_V1, _A1],
-       "annot.list": [_V1, _A1], "annot.check": [_V1, _A1]}
+       "annot.list": [_V1, _A1], "annot.check": [_V1, _A1],
+       "family.set": [_FAMILY_PRE]}
 ERROR_CASES = [
     ("없는 커맨드", "no.such.command", {}, {}),
     ("스키마 오류(타입)", "wall.move", {"id": F.W1, "dx": "abc"}, {}),

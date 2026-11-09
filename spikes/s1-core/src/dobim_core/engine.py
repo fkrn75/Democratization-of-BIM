@@ -199,6 +199,10 @@ class Ctx:
     def material(self, eid):
         return self.eng.ifc.get_material(eid) if self._in_ifc(eid) else None
 
+    def det_id(self, label: str) -> str:
+        """라벨에서 결정적으로 얻는 GlobalId(같은 프로젝트·같은 라벨이면 같은 값). 내용 주소 id 에 쓴다."""
+        return ifcopenshell.guid.compress(uuid.uuid5(uuid.UUID(self.eng.project_guid_uuid), label).hex)
+
     def new_id(self, kind: str) -> str:
         """결정적 GlobalId. 같은 프로젝트에서 같은 순번이면 같은 값이 나온다.
         이미 있는 요소의 id 나 이번 실행이 이미 내준 id 와 겹치면 순번(n)을 올려 다음 후보를 쓴다(결정적 탐색).
@@ -395,7 +399,7 @@ class Engine:
                     mats[e[1]] = e[3]
         for eid in sorted(self.st.el):
             if self.st.el[eid]["kind"] not in Q.NON_IFC_KINDS:
-                self.ifc.create_identity(eid, self.st.el[eid]["kind"])
+                self.ifc.create_identity(eid, self.st.el[eid]["kind"], self.st.el[eid]["ifc_class"])
         for (eid, pset, prop), v in sorted(psets.items(), key=lambda kv: kv[0]):
             if v is not None and eid in self.ifc.ents:
                 self.ifc.set_prop(eid, pset, prop, v)
@@ -435,7 +439,7 @@ class Engine:
                 if (new or old)["kind"] in Q.NON_IFC_KINDS:
                     pass   # 뷰 정의 같은 비 IFC 요소는 신원이 없다
                 elif old is None:
-                    self.ifc.create_identity(eid, new["kind"])
+                    self.ifc.create_identity(eid, new["kind"], new["ifc_class"])
                 elif new is None:
                     for d in self.ifc.remove_identity(eid):   # 벽과 함께 개구부를 잃은 문은 다시 투영해야 한다
                         self._proj_stamp.pop(d, None)
@@ -668,7 +672,7 @@ class Engine:
         self.sync()
         self._touch_pending()
         n = 0
-        for kind in ("level", "wall", "door"):
+        for kind in ("level", "wall", "door", "ftype", "finst"):   # 타입이 인스턴스보다 먼저(인스턴스가 타입의 표현 지도를 가리킨다)
             for eid in sorted(self.st.by_kind.get(kind, ())):
                 spec = self.g.q(Q.ifc_spec, eid)
                 stamp = self.g.nodes[(Q.ifc_spec, eid)].changed

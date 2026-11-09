@@ -1,0 +1,63 @@
+{
+  "place_ms": [
+    12.1,
+    7.6,
+    12.8,
+    7.6,
+    7.4,
+    15.0
+  ],
+  "flush_and_hash_ms": 149.4,
+  "model_validate_errors": 0,
+  "intent_consistency_bad": [],
+  "derived_incremental_equals_reference": true,
+  "undo_restores_hashes": {
+    "state": true,
+    "derived": true,
+    "ifc": true
+  },
+  "redo_restores_hashes": {
+    "state": true,
+    "derived": true,
+    "ifc": true
+  },
+  "reopen_equal": true,
+  "ifc_types": [
+    "IfcColumnType",
+    "IfcColumnType",
+    "IfcDoorType",
+    "IfcFurnitureType",
+    "IfcWindowType"
+  ],
+  "ifc_type_counts": {
+    "IfcDoorType": 1,
+    "IfcWindowType": 1,
+    "IfcColumnType": 2,
+    "IfcFurnitureType": 1,
+    "IfcDoor": 4,
+    "IfcWindow": 1,
+    "IfcColumn": 2,
+    "IfcFurniture": 1,
+    "IfcOpeningElement": 5,
+    "IfcRepresentationMap": 10,
+    "IfcMappedItem": 8,
+    "IfcRelDefinesByType": 5
+  },
+  "ifc_file_bytes": 68904,
+  "recipe_intent_bytes_in_ifc_per_type": {
+    "단면 선택 기둥 4e8cfd": 3366,
+    "단면 선택 기둥 c4a1fb": 3370,
+    "외여닫이문 9148f6": 3819,
+    "고정창 697f85": 3843,
+    "붙박이장 683250": 4756
+  },
+  "recipe_intent_total_bytes": 19154,
+  "ifc_without_intent_bytes_estimate": 49750,
+  "recipe_roundtrip_equals_library": {
+    "단면 선택 기둥 4e8cfd": true,
+    "단면 선택 기둥 c4a1fb": true,
+    "외여닫이문 9148f6": true,
+    "고정창 697f85": true,
+    "붙박이장 683250": true
+  }
+}

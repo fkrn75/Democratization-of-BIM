@@ -6,6 +6,7 @@ from __future__ import annotations
 EXIT_CODES: dict[str, int] = {
     "CONSTRAINT": 1,
     "MERGE_CONFLICT": 1,    # 병합 충돌이 남아 합치지 않았다(S8): merge.preview 의 충돌 키로 명시적으로 해결해야 한다
+    "FAMILY_INVALID": 1,    # 패밀리 레시피·값이 검증을 통과하지 못했다(S4). details.issues 에 경로·이유·힌트가 있다
     "NOTHING_TO_UNDO": 1,
     "NOTHING_TO_REDO": 1,
     "FILE_EXISTS": 1,
