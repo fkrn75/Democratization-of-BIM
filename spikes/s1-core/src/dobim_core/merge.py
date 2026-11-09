@@ -1032,6 +1032,11 @@ def build_plan(ours_rows: list[tuple], theirs_rows: list[tuple], resolve: list[d
     # 실행해도 변경 없음이 되게 하려는 것이고, 호출한 쪽에는 경고로 알린다.
     plan.unused = [k for k in _order(res) if k not in used and k not in open_keys] if plan.semantic_checked else []
     plan.merged = merged
+    if plan.semantic_checked and (hits := frozen_hits(ours, merged)):
+        # 적용(emit_plan)은 쓰기 관문에서 같은 이유로 거절한다. 미리보기가 "충돌 0"으로 보이다가 적용에서 처음 거절되지 않도록 여기서 미리 알린다
+        raise DobimError("ELEMENT_FROZEN", f"상대 변경이 동결된(외래·분리) 요소를 바꾼다: {', '.join(hits[:3])}{' 외' if len(hits) > 3 else ''}",
+                         path="/other", details={"elements": hits[:10]},
+                         hint="커맨드로는 만들 수 없는 로그입니다. 동결된 요소는 호스팅·조인·배치·형상·재료를 바꿀 수 없습니다. 병합하지 않았습니다")
 
     # ---- 3) 보고서
     conflicts = []
@@ -1087,6 +1092,25 @@ def build_plan(ours_rows: list[tuple], theirs_rows: list[tuple], resolve: list[d
 def rows_of(units: dict) -> dict:
     return {e: {"kind": r["kind"], "ifc_class": r["ifc_class"], "origin": r["origin"], "family_id": r["family_id"], "params": r["params"]}
             for e, r in View(units).rows.items() if "kind" in r}
+
+
+def frozen_hits(ours: dict, merged: dict) -> list[str]:
+    """ours -> merged 로 가는 변경 중 동결된(외래·분리) 요소를 건드리는 것의 요소 id(정렬). emit_plan 이 쓰기 관문(Ctx.put_el·rel·set_material)에서
+    거절하는 것과 같은 규칙을 미리 본다: 동결 요소의 생성·수정·삭제, 동결 요소가 낀 관계 맺기(kinds.REL_KINDS[..].guard), 동결 요소의 재료."""
+    orows, mrows = rows_of(ours), rows_of(merged)
+    bad: set[str] = set()
+    for e in set(orows) | set(mrows):
+        if orows.get(e) != mrows.get(e) and any(r is not None and r["origin"] != "authored" for r in (orows.get(e), mrows.get(e))):
+            bad.add(e)
+    for u in set(merged) - set(ours):
+        if u[0] == "mat" and (r := mrows.get(u[1]) or orows.get(u[1])) is not None and r["origin"] != "authored":
+            bad.add(u[1])
+        if u[0] == "rel" and (rk := REL_KINDS.get(u[1])) is not None:   # 새로 맺는 관계만(끊는 것은 막지 않는다)
+            for end, eid in (("src", u[2]), ("dst", u[3])):
+                r = mrows.get(eid) or orows.get(eid)
+                if end in rk.guard and r is not None and r["origin"] != "authored":
+                    bad.add(eid)
+    return _order(bad)
 
 
 def emit_plan(ctx, plan: Plan) -> dict:
