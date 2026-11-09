@@ -27,7 +27,7 @@ M = [  # (이름, 파일, 옛, 새, -k 식)
     ("M07 같은 이름 뷰 검사 제거", "foreign.py", "if len(ids) > 1:   # 뷰 이름은", "if False:   # 뷰 이름은", "case42"),
     ("M08 평면 뷰 레벨 저작 확인 제거", "foreign.py", 'if st is not None and st != ("level", "authored"):', "if False:", "v4f or case24"),
     ("M09 치수 참조 저작 확인 제거", "foreign.py", 'if st is not None and st != (rk, "authored"):', "if False:", "v4e or v4i or case36"),
-    ("M10 태그 대상 저작 확인 제거", "foreign.py", 'elif st is not None and (st[1] != "authored" or not VD.tag_fields_ok(st[0], p["fields"])):', "elif False:", "v4i"),
+    ("M10 태그 대상 저작 확인 제거", "foreign.py", 'elif st is not None and (st[1] != "authored" or not VD.tag_fields_ok(st[0], p["fields"])):', "elif False:", "v4e"),
     ("M11 뷰 없는 주석 복원 거절 제거", "foreign.py", "        if v is None:\n", "        if False:\n", "case37 or v4f"),
     ("M12 치수·뷰 종류 일치 확인 제거", "foreign.py", 'if ("at" in p) == (vt == "plan"):', "if False:", "case32 or case33"),
     ("M13 같은 이름 속성 처리 제거", "foreign.py", "        if name in out or name in dup:", "        if False:", "v4b"),

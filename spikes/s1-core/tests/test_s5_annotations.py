@@ -92,18 +92,23 @@ def test_치수_생성은_잘못된_참조를_구조화_오류로_거절한다(p
     assert s.eng.st.by_kind.get("dim", set()) == set()          # 거절된 것은 아무것도 남기지 않는다
 
 
-def test_주석은_값을_저장하지_않고_IFC로_투영하지_않는다(pv):
+def test_주석은_값을_저장하지_않고_요소로_투영하지_않는다(pv):
+    """ADR-0015 로 기대가 바뀌었다: 예전에는 주석이 IFC 해시를 바꾸지 않았다. 지금은 정의(값이 아니라 참조·위치)가 프로젝트 속성셋에 실려
+    IFC 해시가 바뀌지만, 요소(제품)의 투영은 그대로이고 주석을 지우면 해시가 원래대로 돌아온다."""
     s = pv
     before = s.eng.hashes()
+    prods = lambda: s.eng.ifc.semantic_dump()[0]   # noqa: E731  (IfcProduct·타입 목록)
+    prods_before = prods()
     d = dim(s, R("wall", F.W1, "axis.start"), R("wall", F.W1, "axis.end"))
     t = s.run("annot.tag.create", {"view": F.V1, "target": F.D1})["result"]["id"]
     after = s.eng.hashes()
-    assert after["ifc"] == before["ifc"]                                   # 투영하지 않는다: IFC 해시 불변
+    assert after["ifc"] != before["ifc"] and prods() == prods_before      # 정의만 IFC 에 실린다: 요소 투영은 그대로
     assert after["state"] != before["state"] and after["derived"] != before["derived"]
     assert "value" not in s.eng.st.el[d]["params"] and "text" not in s.eng.st.el[t]["params"]   # 값은 파생
     assert s.run("pset.set", {"id": d, "pset": "Pset_X", "prop": "p", "value": 1})["error"]["code"] == "CONSTRAINT"
     assert s.run("annot.delete", {"id": d})["ok"] and s.run("annot.delete", {"id": t})["ok"]
     assert s.eng.hashes()["derived"] == before["derived"]                  # 주석이 없으면 파생 해시 키도 없다(기존 해시 그대로)
+    assert s.eng.hashes()["ifc"] == before["ifc"]                          # 주석을 지우면 IFC 도 원래대로
     assert s.run("annot.delete", {"id": F.W1})["error"]["code"] == "CONSTRAINT"      # 주석이 아닌 요소는 못 지운다
     assert s.run("model.stats", {})["result"]["counts"] == {"level": 2, "wall": 3, "door": 2}   # 주석은 요소 개수에 안 들어간다
 

@@ -49,16 +49,22 @@ def test_뷰_생성_검증_수정_삭제_취소(base):
     assert [i["id"] for i in lst] == [v]
 
 
-def test_뷰는_IFC_투영과_모델_개수를_바꾸지_않는다(base):
+def test_뷰는_요소_투영과_모델_개수를_바꾸지_않고_정의만_IFC에_싣는다(base):
+    """ADR-0015 로 기대가 바뀌었다: 예전에는 뷰가 IFC 해시를 전혀 바꾸지 않았다(IFC 에 뷰가 없었다). 지금은 뷰 정의가 프로젝트 속성셋에 실려
+    IFC 해시가 바뀌지만, 요소(제품)의 투영은 그대로이고 뷰를 지우면 해시가 원래대로 돌아온다(속성셋도 사라진다)."""
     before = base.eng.hashes()
+    prods = lambda: base.eng.ifc.semantic_dump()[0]   # noqa: E731  (IfcProduct·타입 목록)
+    prods_before = prods()
     stats = base.run("model.stats", {})["result"]
     v = _mk(base, name="P", type="plan", level=F.LV1)
     after = base.eng.hashes()
-    assert after["ifc"] == before["ifc"]                                  # IFC 에는 뷰가 없다
-    assert after["state"] != before["state"]                              # 의도 저장소에는 있다
+    assert after["ifc"] != before["ifc"]                                  # 정의가 IFC 속성셋에 실린다
+    assert prods() == prods_before                                        # 요소(제품) 투영은 그대로다
+    assert after["state"] != before["state"]                              # 의도 저장소에도 있다
     assert base.run("model.stats", {})["result"]["counts"] == stats["counts"]
     assert base.run("pset.set", {"id": v, "pset": "Pset_X", "prop": "p", "value": 1})["error"]["code"] == "CONSTRAINT"
     assert base.run("element.delete", {"id": v})["ok"]
+    assert base.eng.hashes()["ifc"] == before["ifc"]                      # 지우면 IFC 가 원래대로(속성셋도 없다)
     assert base.eng.intent_consistency() == []
 
 

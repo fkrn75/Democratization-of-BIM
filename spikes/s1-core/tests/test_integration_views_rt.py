@@ -554,14 +554,19 @@ def test_v4d_정의_id가_벽_id와_겹치면_그_정의만_빠지고_벽은_저
         b.close()
 
 
-def test_v4e_참조_요소가_분리되면_그_요소를_재는_치수만_복원하지_않는다(tmp_path):
+def test_v4e_참조_요소가_분리되면_그_요소를_재는_치수와_다는_태그만_복원하지_않는다(tmp_path):
     """벽 W1 의 배치를 바꿔 W1 이 분리되면 W1 의 양 끝을 재는 치수 A1 은 낡은 값을 재게 되므로 복원하지 않는다. 문 D1 은 벽을 따라가 저작이다."""
-    b, res = _tamper(tmp_path, _move_wall)
+    tag_w1 = "6" + "0" * 20 + "6"
+
+    def mut(f):
+        _clone(f, T2, tag_w1, lambda d: d["params"].update(target=F.W1))   # 벽 W1 에 다는 태그(W1 은 같은 레벨이라 레벨 검사는 통과한다)
+        _move_wall(f)
+    b, res = _tamper(tmp_path, mut)
     try:
         org = _origins(b, "imp.dobim")
         assert org.get(F.W1) == "detached"
-        assert _ids(b, "imp.dobim", "view", "dim", "tag") == ALL_DEFS - {A1}
-        assert any("치수 참조" in w for w in res["warnings"])
+        assert _ids(b, "imp.dobim", "view", "dim", "tag") == ALL_DEFS - {A1}          # A1 과 W1 의 태그가 빠진다
+        assert any("치수 참조" in w for w in res["warnings"]) and any("태그 대상" in w for w in res["warnings"])
         assert _ok(b.run("model.validate", {}, project="imp.dobim"))["errors"] == 0
         assert A1 in _def_props(ifcopenshell.open(str(b.export("e2.ifc", "imp.dobim"))))
     finally:
