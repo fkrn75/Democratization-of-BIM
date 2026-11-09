@@ -326,6 +326,10 @@ class Ctx:
     def warn(self, msg: str) -> None:
         self.warnings.append(msg)
 
+    def external_def(self, eid: str) -> bool:
+        """가져온 파일에 이 id 의 뷰·주석 정의가 외부 것(되살리지 않은 것)으로 실려 있는가. 새로 만들면 그 속성을 덮어쓴다(ADR-0015)."""
+        return self.eng.has_base and self.eng.ifc.has_ext_def(eid)
+
     # ---- 이력
     def peek_undo(self) -> str:
         if not self.eng.undo_stack:

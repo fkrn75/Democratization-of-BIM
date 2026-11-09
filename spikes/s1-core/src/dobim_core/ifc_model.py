@@ -462,6 +462,9 @@ class IfcModel:
         # 뷰·주석 정의(ADR-0015): IfcProject 의 속성셋 DoBIM_Defs 에서 이 모델이 소유한 속성(이름 = 요소 id)의 현재 텍스트.
         # 소유하지 않은 속성(되살리지 않은 외래·손상 정의)은 건드리지 않는다. 정의가 하나도 없으면 속성셋도 만들지 않는다(정의 없는 프로젝트의 IFC 는 그대로다).
         self._defs_text: dict[str, str] = {}
+        # 가져온 파일에 있던, 이 모델이 소유하지 않은 정의 속성의 원본: {이름: (값 타입 이름, 값) | None(단일값 속성이 아니라 복원 불가)}.
+        # 같은 id 의 정의를 새로 만들면 이 속성을 덮어쓰고, 그 정의가 사라지면(지우기·되돌리기) 원본을 되돌려 놓는다 → 경로와 무관하게 결과가 같다.
+        self._ext_defs: dict[str, tuple | None] = {}
         if base is not None:
             self._open_base(base)
             return
@@ -1077,6 +1080,20 @@ class IfcModel:
         for i in ids:
             if have.get(i) is not None:
                 self._defs_text[i] = have[i]
+        names = [getattr(p, "Name", None) for p in ps.HasProperties or ()]
+        for p in ps.HasProperties or ():
+            n = getattr(p, "Name", None)
+            if not isinstance(n, str) or n in self._defs_text or names.count(n) != 1:   # 이름이 겹치는 속성은 어느 쪽이 원본인지 몰라 되돌리지 않는다
+                continue
+            if p.is_a("IfcPropertySingleValue"):
+                nv = p.NominalValue
+                self._ext_defs[n] = (nv.is_a(), nv.wrappedValue) if nv is not None else (None, None)
+            else:
+                self._ext_defs[n] = None
+
+    def has_ext_def(self, eid: str) -> bool:
+        """가져온 파일에 이 id 의 정의 속성이 외부 것으로 있는가(새 정의를 만들면 덮어쓰게 된다)."""
+        return eid in self._ext_defs and eid not in self._defs_text
 
     def sync_defs(self, desired: dict[str, str]) -> bool:
         """IFC 의 정의 속성을 desired({요소 id: 텍스트})와 같게 한다. 소유한 속성만 더하고·고치고·지운다. 바꾼 게 없으면 False.
@@ -1092,9 +1109,14 @@ class IfcModel:
             return False
         f = self.f
         try:
-            props = {i: None for i in removed}
+            restore = [i for i in removed if self._ext_defs.get(i) is not None]   # 덮어썼던 외부 정의: 지우지 않고 원본으로 되돌린다
+            props = {i: None for i in removed if i not in restore}
             props.update({i: f.createIfcText(t) for i, t in sorted(changed.items())})
             api_pset.edit_pset(f, pset=ps, properties=props)
+            for p in ps.HasProperties or ():
+                if getattr(p, "Name", None) in restore and p.is_a("IfcPropertySingleValue"):
+                    tname, val = self._ext_defs[p.Name]
+                    p.NominalValue = None if tname is None else f.create_entity(tname, val)
             if not [p for p in ps.HasProperties or () if p.is_a("IfcProperty")]:
                 api_pset.remove_pset(f, product=f.by_type("IfcProject")[0], pset=ps)
         except BaseException as ex:   # 어디까지 적용됐는지 모른다: 오염으로 표시한다(엔진이 로그에서 다시 만든다)
