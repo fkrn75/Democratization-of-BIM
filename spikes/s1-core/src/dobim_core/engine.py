@@ -576,7 +576,10 @@ class Engine:
             if self.st.el[eid]["kind"] not in Q.NON_IFC_KINDS:
                 self.ifc.create_identity(eid, self.st.el[eid]["kind"], self.st.el[eid]["ifc_class"])
         if base:
-            self.ifc.prune()
+            # 시작 상태 기록(seq 0)에 패밀리 타입으로 들어 있던 id: 지금 요소가 아니면 가져온 뒤 지워진 타입이다(제품과 달리 타입은 색인으로 알 수 없다)
+            gen = [row for row in log if row[0] == 0 and row[2] == GENESIS_OP]
+            types = {e[1] for e in invert(json.loads(gen[0][3])) if e[0] == "el" and e[3] is not None and e[3]["kind"] == "ftype"} if gen else set()
+            self.ifc.prune(types)
         for (eid, pset, prop), v in sorted(psets.items(), key=lambda kv: kv[0]):
             # 외래 기반에는 가져온 속성이 이미 있으므로 삭제(None)도 적용한다. 빈 파일에서 시작하는 일반 프로젝트는 건너뛴다
             if (v is not None or base) and eid in self.ifc.ents:

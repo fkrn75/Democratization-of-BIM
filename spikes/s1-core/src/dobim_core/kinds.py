@@ -182,7 +182,8 @@ NON_IFC_KINDS = frozenset(k for k, v in ELEMENT_KINDS.items() if not v.ifc)     
 PROJECTED_KINDS = tuple(k.name for k in sorted(ELEMENT_KINDS.values(), key=lambda k: (k.order, k.name)) if k.projected)
 FIXED_IFC_CLASS = {k: v.ifc_class for k, v in ELEMENT_KINDS.items() if v.ifc_class}   # 코어가 직접 정하는 IFC 클래스
 KIND_NAMES = tuple(ELEMENT_KINDS)
-# 의도 복원(S2 가져오기)이 해석하는 종류: IFC 클래스 -> 종류. 패밀리·뷰·주석은 의도 모양이 달라 외래로 둔다(알려진 한계)
+# 의도 복원(S2 가져오기)이 IFC 클래스로 종류를 정하는 것: IFC 클래스 -> 종류. 패밀리 타입·인스턴스(ftype/finst)는 클래스가 레시피마다 달라 의도가 스스로 밝힌
+# 종류를 따른다(family.restore, ADR-0014). 뷰·주석은 IFC 신원이 없어 IFC 에서 복원할 수 없다(알려진 한계)
 IMPORTABLE_BY_CLASS = {"IfcBuildingStorey": "level", "IfcWall": "wall", "IfcDoor": "door"}
 FAMILY_OF_KIND = {"level": "level.basic", "wall": "wall.basic", "door": "door.single"}
 

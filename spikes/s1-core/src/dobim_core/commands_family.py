@@ -155,6 +155,20 @@ def _recipe_of(ctx, family_id: str) -> dict:
     return data
 
 
+def _content_tid(ctx, rhash: str, tv: dict) -> str:
+    """같은 레시피·타입 값의 타입 id(내용 주소). 평소에는 프로젝트 UUID 에서 파생한 결정적 id 다.
+    가져온 프로젝트는 UUID 가 타입 id 의 출처가 아니다(타입은 내보내기 전 프로젝트의 UUID 로 정해졌다): 파생 id 의 타입이 없고
+    같은 내용의 기존 타입이 있으면 그것을 쓴다(없으면 같은 타입이 둘이 된다). id 가 가장 작은 것을 고른다(결정적)."""
+    tid = ctx.det_id(f"ftype:{rhash}:{FE.canon(tv)}")
+    if tid not in ctx.st.el and ctx.eng.has_base:
+        key = FE.canon(tv)
+        for other in sorted(ctx.st.by_kind.get("ftype", ())):
+            p = ctx.st.el[other]["params"]
+            if p["recipe_hash"] == rhash and FE.canon(p["type_values"]) == key:
+                return other
+    return tid
+
+
 def _make_type(ctx, tid: str, recipe: dict, r, plan, tv: dict, name: str | None) -> None:
     rhash = FS.recipe_hash_of(recipe)
     try:
@@ -202,7 +216,7 @@ def family_register(ctx, a: FamilyRegister):
         raise _fam_error(ex) from None
     rhash = FS.recipe_hash_of(data)
     explicit = a.id is not None
-    tid = a.id or ctx.det_id(f"ftype:{rhash}:{FE.canon(tv)}")
+    tid = a.id or _content_tid(ctx, rhash, tv)
     if tid in ctx.st.el:
         if explicit or ctx.st.el[tid]["kind"] != "ftype":
             raise DobimError("CONSTRAINT", f"이미 있는 id 다: {tid}", path="/id")
@@ -313,15 +327,7 @@ def check_hosted_fit(ctx, wall_id: str, old_wp: dict, new_wp: dict) -> None:
 
 
 def _inst_params(a_name, tid, values, ev, hosted, offset, position, rotation, elevation) -> dict:
-    p: dict = {"name": a_name, "type": tid, "values": values, "rotation": rotation, "elevation": elevation}
-    if hosted:
-        cut = ev["cut"]
-        p["offset"] = offset
-        p["width"] = (cut["x"][1] - cut["x"][0]) if cut else 0.0
-        p["height"] = (cut["z"][1] - cut["z"][0]) if cut else 0.0
-    else:
-        p["position"] = list(position)
-    return p
+    return FS.inst_params(a_name, tid, values, ev, hosted, offset, position, rotation, elevation)   # 정본은 family.spec (가져오기가 같은 식으로 대조한다)
 
 
 EXAMPLE_FINST = "0" * 21 + "1"   # IFC GlobalId 첫 글자는 0~3 만 유효하다; family.place 예시가 만들고 family.set 예시가 고치는 인스턴스 id(예시는 이름순으로 한 프로젝트에서 실행된다)
@@ -347,7 +353,7 @@ def family_place(ctx, a: FamilyPlace):
         except FamilyError as ex:
             raise _fam_error(ex) from None
         rhash = FS.recipe_hash_of(recipe)
-        tid = ctx.det_id(f"ftype:{rhash}:{FE.canon(tv)}")
+        tid = _content_tid(ctx, rhash, tv)
         made = tid not in ctx.st.el
         if made:
             _make_type(ctx, tid, recipe, r, plan, tv, None)

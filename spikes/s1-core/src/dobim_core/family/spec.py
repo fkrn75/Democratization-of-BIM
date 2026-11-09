@@ -96,3 +96,17 @@ def finst_spec(tp: dict, ip: dict, type_id: str, host_id: str | None, level_id: 
             "wall_thickness": host["host_thickness"] if host else None,
             "body": e["body"], "plan": e["plan"]["default"],
             "same_body": e["body_hash"] == t["body_hash"], "same_plan": e["plan_hash"] == t["plan_hash"]}
+
+
+def inst_params(name, tid, values, ev, hosted, offset, position, rotation, elevation) -> dict:
+    """인스턴스 행의 params. family.place/family.set 이 쓰는 것이 정본이고, 가져오기가 의도를 복원할 때 같은 식으로 다시 계산해 대조한다
+    (width/height 는 평가한 개구부에서 나오는 파생값이라 의도 텍스트의 값이 평가와 다르면 손상으로 본다)."""
+    p: dict = {"name": name, "type": tid, "values": values, "rotation": rotation, "elevation": elevation}
+    if hosted:
+        cut = ev["cut"]
+        p["offset"] = offset
+        p["width"] = (cut["x"][1] - cut["x"][0]) if cut else 0.0
+        p["height"] = (cut["z"][1] - cut["z"][0]) if cut else 0.0
+    else:
+        p["position"] = list(position)
+    return p

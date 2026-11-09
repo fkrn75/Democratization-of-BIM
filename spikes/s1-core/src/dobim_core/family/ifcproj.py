@@ -237,7 +237,7 @@ def unproject_type(model, eid: str) -> None:
         return
     model.type_maps.pop(eid, None)
     _clear_type_maps(model, t)
-    model.typerels.pop(eid, None)
+    model.typerels.pop(eid, None)   # 관계의 GlobalId(_typerel_gid)는 남겨 둔다: 지운 타입을 되돌리면 같은 값으로 다시 만든다
     gc_plan_context(model)
 
 
@@ -249,7 +249,11 @@ def _type_rel(model, type_eid: str, inst_eid: str):
     e = model.ents[inst_eid]
     rel = model.typerels.get(type_eid)
     if rel is None:
-        rel = f.createIfcRelDefinesByType(ifcopenshell.guid.new(), None, None, None, [e], t)
+        # GlobalId 는 이미 정해진 값(가져온 파일의 것)을 유지하고, 없으면 타입 id 에서 결정적으로 파생한다(무작위면 같은 프로젝트를 다른 세션에서
+        # 내보낼 때마다 ifcdiff 가 이 관계를 바뀐 것으로 본다)
+        gid = model._typerel_gid.get(type_eid) or model.derived_guid_for(f"typerel:{type_eid}")
+        rel = f.createIfcRelDefinesByType(gid, None, None, None, [e], t)
+        model._typerel_gid[type_eid] = gid
         model.typerels[type_eid] = rel
     elif e not in rel.RelatedObjects:
         rel.RelatedObjects = list(rel.RelatedObjects) + [e]
@@ -327,7 +331,9 @@ def project_inst(model, eid: str, spec: dict) -> None:
         t2 = spec["wall_thickness"] / 2.0
         item = {"k": "extrude", "plane": "xz", "profile": {"shape": "rect", "u": cx, "v": cz}, "range": [-t2, t2]}
         op = api_root.create_entity(f, ifc_class="IfcOpeningElement")
-        op.GlobalId = model.derived_guid_for(f"opening:{eid}")
+        # 개구부 GlobalId: 이미 정해진 값(가져온 파일의 것, 지우기를 되돌린 것)을 유지하고, 없으면 프로젝트에서 결정적으로 파생한다
+        op.GlobalId = model._opening_gid.get(eid) or model.derived_guid_for(f"opening:{eid}")
+        model._opening_gid[eid] = op.GlobalId
         op.Name = spec["name"] + "-opening"
         model._place(op, wall.ObjectPlacement, (spec["offset"], 0.0, spec["elevation"]), (1.0, 0.0, 0.0))
         op.Representation = f.createIfcProductDefinitionShape(None, None, [

@@ -223,9 +223,22 @@ class Closure:
         t = info.pop("type")
         return {"t": t, "attrs": {k: self.val(v) for k, v in info.items() if k not in skip}, "placement": self.place(e.ObjectPlacement)}
 
-    def of(self, e) -> dict:
+    def type_of_entity(self, e) -> dict:
+        """패밀리 타입(IfcTypeObject)의 클로저: 이름·속성·표현 지도(형상)만 본다. 타입에 붙은 속성셋(HasPropertySets)은 IFC 가 정본이라 뺀다
+        (DoBIM_Intent 도 속성셋이다). 타입은 배치가 없다."""
+        info = e.get_info(include_identifier=False, recursive=False)
+        t = info.pop("type")
+        return {"t": t, "attrs": {k: self.val(v) for k, v in info.items() if k not in ("GlobalId", "OwnerHistory", "HasPropertySets")}}
+
+    def of(self, e, typed: bool = False) -> dict:
+        """typed=True 는 패밀리 인스턴스(finst): 투영이 소유하는 타입 지정(IfcRelDefinesByType)도 클로저에 넣는다. 문·벽·레벨은 넣지 않는다
+        (외부 도구가 타입을 붙여도 형상이 아니므로 분리하지 않는다)."""
+        if e.is_a("IfcTypeObject"):
+            return self.type_of_entity(e)
         out = self.shape(e)
         inv = self.f.get_inverse(e)
+        if typed:
+            out["typed_by"] = sorted(r.RelatingType.GlobalId for r in inv if r.is_a("IfcRelDefinesByType") and e in r.RelatedObjects)
         out["contained"] = sorted(self.ref(r.RelatingStructure) for r in inv
                                   if r.is_a("IfcRelContainedInSpatialStructure") and e in r.RelatedElements)
         out["aggregated"] = sorted(self.ref(r.RelatingObject) for r in inv if r.is_a("IfcRelAggregates") and e in r.RelatedObjects)
@@ -250,8 +263,8 @@ class Closure:
             out["opening"] = sorted(ops, key=lambda x: json.dumps(x, sort_keys=True))
         return out
 
-    def digest(self, e) -> tuple[str, dict]:
-        c = self.of(e)
+    def digest(self, e, typed: bool = False) -> tuple[str, dict]:
+        c = self.of(e, typed)
         blob = json.dumps(c, sort_keys=True, separators=(",", ":"))
         return hashlib.sha256(blob.encode("utf-8")).hexdigest(), c
 
@@ -271,7 +284,7 @@ def closure_diff(a: dict, b: dict) -> list[str]:
         elif k == "voids":
             out.append("벽에 뚫린 개구부")
         else:
-            out.append({"t": "클래스", "contained": "공간 소속", "aggregated": "집합 소속"}.get(k, k))
+            out.append({"t": "클래스", "contained": "공간 소속", "aggregated": "집합 소속", "typed_by": "타입 지정"}.get(k, k))
     return out
 
 
@@ -414,6 +427,7 @@ class IfcModel:
         # 패밀리 투영 상태(S4): 요소 종류, 타입별 IfcRelDefinesByType, 인스턴스의 타입, 평면 문맥(필요할 때만 만든다)
         self.kinds: dict[str, str] = {}
         self.typerels: dict[str, Any] = {}
+        self._typerel_gid: dict[str, str] = {}  # 타입 id -> 타입 지정 관계의 GlobalId (가져온 파일의 값을 관계를 다시 만들 때도 유지한다)
         self.type_of: dict[str, str] = {}
         self.type_maps: dict[str, bool] = {}
         self.plan_ctx: Any = None
@@ -459,8 +473,16 @@ class IfcModel:
         blds = self.f.by_type("IfcBuilding")
         self.building = sk[1] if sk is not None else (blds[0] if blds else None)
         self._by_gid = {e.GlobalId: e for e in self.f.by_type("IfcProduct")}
+        # 패밀리 타입(IfcTypeObject): 가져오기가 의도를 복원한 타입(ftype)만 요소가 된다. 요소가 아닌 타입은 파일에 그대로 남아야 하므로
+        # 제품 색인(_by_gid, prune 이 요소 아닌 것을 지운다)과 따로 둔다
+        self._types_by_gid = {e.GlobalId: e for e in self.f.by_type("IfcTypeObject") if getattr(e, "GlobalId", None)}
         for m in self.f.by_type("IfcMaterial"):
             self._mats.setdefault(m.Name, m)
+        # 평면 기호 문맥('Plan' 하위 문맥 FootPrint): 파일에 이미 있으면 그것을 쓴다(패밀리 투영이 중복해서 만들지 않게)
+        for c in self.f.by_type("IfcGeometricRepresentationSubContext"):
+            if c.ContextType == "Plan" and c.ContextIdentifier == "FootPrint" and c.TargetView == "PLAN_VIEW":
+                self.plan_ctx = c
+                break
 
     @property
     def body(self):
@@ -490,8 +512,10 @@ class IfcModel:
         if scale is None or abs(scale - 0.001) > 1e-9:
             raise DobimError("UNSUPPORTED", "길이 단위가 밀리미터가 아닌 파일에는 저작 요소를 추가할 수 없다")
 
-    def prune(self) -> None:
-        """가져온 뒤 지워진 저작 요소의 엔티티를 작업 사본에서 없앤다(요소·뼈대·저작 문의 개구부가 아닌 제품)."""
+    def prune(self, import_types: frozenset | set = frozenset()) -> None:
+        """가져온 뒤 지워진 저작 요소의 엔티티를 작업 사본에서 없앤다(요소·뼈대·저작 문의 개구부가 아닌 제품).
+        import_types = 시작 상태 기록(seq 0)에 요소(ftype)로 들어 있던 패밀리 타입의 id: 지금 요소가 아니면 지워진 것이다.
+        요소로 들어오지 않은 타입(외래 타입)은 제품이 아니므로 건드리지 않는다."""
         keep = set(self.ents) | self.infra | {o.GlobalId for o in self.openings.values()}
         gone = [g for g in self._by_gid if g not in keep]
         mats = []
@@ -514,6 +538,10 @@ class IfcModel:
                 pass   # 이미 지워졌다
         for g in gone:   # 지운 엔티티를 가리키는 낡은 참조가 남으면 지우기를 되돌릴 때 이미 지워진 엔티티를 이어받는다
             self._by_gid.pop(g, None)
+        for g in sorted(import_types - set(self.ents)):   # 제품(인스턴스)을 먼저 지운 뒤라 타입에 매달린 지정 관계는 비어 있다
+            t = self._types_by_gid.pop(g, None)
+            if t is not None:
+                self._remove_product(t)
 
     def _remove_product(self, e) -> None:
         """제품을 지우고, 그 때문에 대상이 비게 된 외래 관계(분류·문서·그룹 등)도 지운다(빈 관계는 IFC 로 유효하지 않다)."""
@@ -599,22 +627,44 @@ class IfcModel:
             self.f.createIfcStyledItem(solid, styles, item.get("name"))
 
     # ------------------------------------------------------------ 신원 (즉시)
+    def _adopt_family_state(self, eid: str, kind: str, e) -> None:
+        """가져온 파일의 패밀리 타입·인스턴스가 이미 갖고 있는 투영 상태(타입 지정 관계, 표현 지도 유무)를 이어받는다.
+        이어받지 않으면 첫 재투영이 타입 지정 관계를 하나 더 만든다(같은 인스턴스가 관계 두 개에 걸린다)."""
+        if kind == "finst":
+            for r in self.f.get_inverse(e):
+                if r.is_a("IfcRelDefinesByType") and e in r.RelatedObjects:
+                    tid = r.RelatingType.GlobalId
+                    self.type_of[eid] = tid
+                    self.typerels.setdefault(tid, r)
+                    self._typerel_gid.setdefault(tid, r.GlobalId)
+                    break
+        elif kind == "ftype":
+            if e.RepresentationMaps:
+                self.type_maps[eid] = True
+            for r in self.f.get_inverse(e):
+                if r.is_a("IfcRelDefinesByType") and r.RelatingType == e:
+                    self.typerels.setdefault(eid, r)
+                    self._typerel_gid.setdefault(eid, r.GlobalId)
+                    break
+
     def create_identity(self, eid: str, kind: str, ifc_class: str | None = None) -> None:
         f = self.f
         if self.base_mode:
-            e = self._by_gid.get(eid)
+            e = (self._types_by_gid if kind == "ftype" else self._by_gid).get(eid)
             if e is not None:   # 가져온 파일에 이미 있는 요소: 새로 만들지 않고 이어받는다
                 self.kinds[eid] = kind
                 self.ents[eid] = e
                 self.base_ents.add(eid)
-                c = ue.get_container(e, should_get_direct=True)
-                if c is not None:
-                    self.container_of[eid] = c.GlobalId
-                if kind == "door":
+                if kind != "ftype":
+                    c = ue.get_container(e, should_get_direct=True)
+                    if c is not None:
+                        self.container_of[eid] = c.GlobalId
+                if kind in ("door", "finst"):
                     for r in f.get_inverse(e):
                         if r.is_a("IfcRelFillsElement") and r.RelatedBuildingElement == e:
                             self.openings[eid] = r.RelatingOpeningElement
                             self._opening_gid[eid] = r.RelatingOpeningElement.GlobalId
+                self._adopt_family_state(eid, kind, e)
                 return
             if kind == "foreign":
                 raise DobimError("INTERNAL", f"가져온 파일에 외래 요소가 없다: {eid}")
@@ -657,6 +707,7 @@ class IfcModel:
         self.pending_styles.pop(eid, None)
         if self.base_mode:
             self._by_gid.pop(eid, None)   # 지운 엔티티를 실행 취소가 이어받지 않게
+            self._types_by_gid.pop(eid, None)
         return sorted(lost)
 
     # ------------------------------------------------------------ 외래 부속 (S2)
@@ -666,14 +717,16 @@ class IfcModel:
         if not self.base_mode:
             return None
         f, e = self.f, self.ents[eid]
-        own_type_rel = self.typerels.get(self.type_of.get(eid)) if self.kinds.get(eid) == "finst" else None   # 패밀리 인스턴스의 타입 관계는 투영 소유다
+        kind = self.kinds.get(eid)
+        # 패밀리 인스턴스의 타입 지정 관계와 패밀리 타입 자신의 지정 관계(인스턴스를 모은 것)는 투영 소유다
+        own_type_rel = self.typerels.get(self.type_of.get(eid)) if kind == "finst" else self.typerels.get(eid) if kind == "ftype" else None
         rels = [_tree(f, r, e, top=True) for r in f.get_inverse(e)
                 if r.is_a("IfcRelationship") and not _is_core_rel(r) and (own_type_rel is None or r.id() != own_type_rel.id())]
         out: dict = {}
         if rels:
             out["rels"] = sorted(rels, key=lambda t: json.dumps(t, sort_keys=True))
         styles = []
-        if e.Representation is not None:
+        if not e.is_a("IfcTypeObject") and e.Representation is not None:   # 타입 객체는 몸체 표현이 아니라 표현 지도를 가진다(투영이 다시 만든다)
             for shape in e.Representation.Representations or ():
                 for it in shape.Items or ():
                     for st in it.StyledByItem or ():

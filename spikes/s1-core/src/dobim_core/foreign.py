@@ -2,10 +2,12 @@
 """외래 IFC 가져오기 계획 (S2, ADR-0005): 들어온 파일의 요소를 authored / foreign / detached 로 분류한다.
 
 분류 규칙(요소 = 코어 뼈대가 아닌 IfcProduct):
-- DoBIM_Intent 가 있고, 현재 코어 스키마로 해석되고(레벨·벽·문), 가리키는 대상(레벨·호스트·조인 상대)이 있으면 의도를 복원해 후보가 된다.
+- DoBIM_Intent 가 있고, 현재 코어 스키마로 해석되고(레벨·벽·문, 패밀리 타입·인스턴스: ADR-0014), 가리키는 대상(레벨·호스트·조인 상대, 인스턴스의 타입)이
+  있으면 의도를 복원해 후보가 된다. 패밀리 후보는 레시피·값을 S4 의 규칙으로 평가해 일관될 때만 후보가 된다(family.restore).
 - 후보의 의도를 새 IFC 모델에 다시 투영해, 요소 단위 투영 클로저 해시(ifc_model.Closure)를 들어온 요소의 해시와 비교한다.
   같으면 authored(의도가 형상의 정본), 다르면 detached(들어온 형상을 그대로 동결, 마지막 의도는 낡은 사본으로 남는다).
-- 후보가 아니면 foreign(IFC 가 형상의 정본, 속성만 편집).
+- 후보가 아니면 foreign(IFC 가 형상의 정본, 속성만 편집). 패밀리 타입(IfcTypeObject)은 후보일 때만 요소(ftype)가 되고, 아니면 요소가 아닌 채 파일에 남는다.
+- 분리된 패밀리 타입의 인스턴스는 타입이 낡은 정의이므로 함께 분리한다(인스턴스를 다시 투영하면 변조된 타입의 표현 지도를 가리키게 된다).
 - 길이 단위가 밀리미터가 아니면(의도의 값은 mm 다) 후보 전체를 detached 로 둔다: 단위는 프로젝트 수준의 변경이라 요소 하나하나의 클로저에
   나타나지 않기 때문이다. 분리된 레벨이 있으면 그 위의 저작 요소가 레벨 배치를 따라 움직인다는 경고를 더한다.
 - 뼈대(Site/Building)는 구조·이름으로 알아보고 위경도·주소 같은 비형상 속성은 보지 않는다. 뼈대의 형상이 바뀌었으면 경고한다(ifc_model.skeleton_check).
@@ -26,7 +28,8 @@ import ifcopenshell.util.unit as uunit
 from dobim_core import queries as Q
 from dobim_core.errors import DobimError
 from dobim_core.graph import Graph
-from dobim_core.kinds import FAMILY_OF_KIND, IMPORTABLE_BY_CLASS
+from dobim_core.family import restore as FR
+from dobim_core.kinds import ELEMENT_KINDS, FAMILY_OF_KIND, IMPORTABLE_BY_CLASS
 from dobim_core.ifc_model import (INTENT_PSET, Closure, IfcModel, closure_diff, open_ifc_bytes, skeleton_check)
 
 MAX_IMPORT_BYTES = 256 * 1024 * 1024
@@ -116,6 +119,26 @@ def _parse_intent(kind: str, text: str) -> dict:
     return res
 
 
+def _finst_dependency_error(g: str, it: dict, cand: dict, cls_of: dict) -> str | None:
+    """패밀리 인스턴스 후보가 가리키는 타입·호스트·레벨이 후보로 있고, 레시피로 평가해 의도가 일관된지 확인한다(없거나 어긋나면 이유 문장)."""
+    t = cand.get(it["type"])
+    if t is None or t["kind"] != "ftype":
+        return "패밀리 타입이 없다"
+    host = cand.get(it["host"]) if "host" in it else None
+    if "host" in it:
+        if host is None or host["kind"] != "wall":
+            return "호스트 벽이 없다"
+    elif cand.get(it["level"], {}).get("kind") != "level":
+        return "레벨 참조가 없다"
+    try:
+        cls = FR.check_finst(it, {"params": t["params"], "family_id": t["family_id"]}, host["params"] if host else None)
+    except (ValueError, TypeError, KeyError, ArithmeticError, RecursionError) as ex:
+        return f"패밀리 값이 일관되지 않다({str(ex)[:60]})"
+    if cls_of[g] != cls:
+        return f"IFC 클래스({cls_of[g]})가 레시피의 클래스({cls})와 다르다"
+    return None
+
+
 class _Inputs:
     """계획 단계의 그래프 입력(요소 행과 관계만 있으면 투영 명세를 계산할 수 있다)."""
 
@@ -169,19 +192,32 @@ def plan_import(data: bytes) -> ImportPlan:
             raise DobimError("IMPORT_INVALID", f"GlobalId 가 겹치는 요소가 있다: {g}", path="/source")
         seen.add(g)
 
-    # 1) 의도 복원 후보
+    # 1) 의도 복원 후보. 문·벽·레벨은 IFC 클래스로 종류를 정하고, 패밀리(ftype/finst)는 의도가 스스로 밝힌 종류를 따른다(인스턴스도 IfcDoor 일 수 있다)
     cand: dict[str, dict] = {}
-    for p in prods:
-        kind = KIND_OF.get(p.is_a())
-        if kind is None:
-            continue
+    cls_of: dict[str, str] = {}   # 패밀리 후보 GlobalId -> 파일 안의 실제 IFC 클래스(레시피의 클래스와 일치하는지 검사한다)
+    types = [t for t in f.by_type("IfcTypeObject") if isinstance(getattr(t, "GlobalId", None), str)]
+    for p in [*prods, *types]:
+        is_type = p.is_a("IfcTypeObject")
         pset = ue.get_pset(p, INTENT_PSET, should_inherit=False)
         text = pset.get("Intent") if pset else None
         if not isinstance(text, str):
             continue
+        claimed = FR.claimed_kind(text)
+        kind = claimed if claimed in ("ftype", "finst") else KIND_OF.get(p.is_a())
+        if is_type and kind != "ftype":
+            continue   # 타입 객체는 패밀리 타입 의도만 본다(그 밖의 타입은 요소가 아니라 파일에 그대로 남는다)
+        if kind is None:
+            continue
         try:
-            cand[p.GlobalId] = _parse_intent(kind, text)
-        except (ValueError, TypeError, KeyError, ArithmeticError) as ex:   # 넘침(OverflowError)도 해석 실패다
+            if kind in ("ftype", "finst"):
+                if not _ID.match(p.GlobalId):
+                    raise ValueError("GlobalId 가 22자 형식이 아니다")
+                d = FR.load_intent(text)
+                cand[p.GlobalId] = FR.parse_ftype(d) if kind == "ftype" else FR.parse_finst(d)
+                cls_of[p.GlobalId] = p.is_a()
+            else:
+                cand[p.GlobalId] = _parse_intent(kind, text)
+        except (ValueError, TypeError, KeyError, ArithmeticError, RecursionError) as ex:   # 넘침(OverflowError)도 해석 실패다
             plan.warnings.append(f"{p.GlobalId}: DoBIM_Intent 를 해석할 수 없어 외래로 둔다({str(ex)[:80]})")
     # 2) 가리키는 대상이 있는 것만 남긴다(고정점)
     changed = True
@@ -199,6 +235,11 @@ def plan_import(data: bytes) -> ImportPlan:
             elif it["kind"] == "door":
                 if cand.get(it["host"], {}).get("kind") != "wall":
                     bad = "호스트 벽이 없다"
+            elif it["kind"] == "ftype":
+                if cls_of[g] != it["ifc_class"]:
+                    bad = f"IFC 클래스({cls_of[g]})가 레시피의 타입 클래스({it['ifc_class']})와 다르다"
+            elif it["kind"] == "finst":
+                bad = _finst_dependency_error(g, it, cand, cls_of)
             if bad:
                 del cand[g]
                 plan.warnings.append(f"{g}: 의도의 {bad} → 외래로 둔다")
@@ -208,13 +249,19 @@ def plan_import(data: bytes) -> ImportPlan:
     rows: dict[str, dict] = {}
     rels: set[tuple] = set()
     for g, it in cand.items():
-        cls = {"level": "IfcBuildingStorey", "wall": "IfcWall", "door": "IfcDoor"}[it["kind"]]
-        rows[g] = {"kind": it["kind"], "ifc_class": cls, "origin": "authored", "family_id": FAMILY[it["kind"]], "params": it["params"]}
+        if it["kind"] in ("ftype", "finst"):
+            rows[g] = {"kind": it["kind"], "ifc_class": cls_of[g], "origin": "authored", "family_id": it["family_id"], "params": it["params"]}
+        else:
+            cls = {"level": "IfcBuildingStorey", "wall": "IfcWall", "door": "IfcDoor"}[it["kind"]]
+            rows[g] = {"kind": it["kind"], "ifc_class": cls, "origin": "authored", "family_id": FAMILY[it["kind"]], "params": it["params"]}
         if it["kind"] == "wall":
             rels.add(("on_level", g, it["level"]))
             rels.update(("joins", min(g, j), max(g, j)) for j in it["joins"])
         elif it["kind"] == "door":
             rels.add(("hosts", it["host"], g))
+        elif it["kind"] == "finst":
+            rels.add(("of_type", g, it["type"]))
+            rels.add(("hosts", it["host"], g) if "host" in it else ("on_level", g, it["level"]))
     st = State()
     for g, r in rows.items():
         st.apply_el(g, None, r)
@@ -223,20 +270,36 @@ def plan_import(data: bytes) -> ImportPlan:
     graph = Graph(_Inputs(st))
 
     scratch = IfcModel(str(uuid.UUID(int=0)))
-    order = {"level": 0, "wall": 1, "door": 2}
-    for g in sorted(rows, key=lambda g: (order[rows[g]["kind"]], g)):
-        scratch.create_identity(g, rows[g]["kind"])
-        scratch.project(g, graph.q(Q.ifc_spec, g))
+    projected: set[str] = set()
+    for g in sorted(rows, key=lambda g: (ELEMENT_KINDS[rows[g]["kind"]].order, g)):
+        try:
+            scratch.create_identity(g, rows[g]["kind"], rows[g]["ifc_class"])
+            scratch.project(g, graph.q(Q.ifc_spec, g))
+            projected.add(g)
+        except Exception as ex:   # 레시피가 그 IFC 클래스에 쓸 수 없는 속성을 요구하는 등: 의도의 투영을 만들 수 없으면 분리한다(안전한 쪽)
+            rows[g]["origin"] = "detached"
+            plan.detached.append({"id": g, "reasons": ["의도를 투영할 수 없다"]})
+            plan.warnings.append(f"{g}: 의도를 투영할 수 없다({type(ex).__name__}: {str(ex)[:60]}) → 분리됨(동결)")
     want, have = Closure(scratch.f, scratch.infra), Closure(f, infra)
     for g in rows:
-        w_hash, w_c = want.digest(scratch.ents[g])
-        h_hash, h_c = have.digest(f.by_guid(g))
-        if w_hash != h_hash:
-            reasons = closure_diff(w_c, h_c)
-            rows[g]["origin"] = "detached"
-            plan.detached.append({"id": g, "reasons": reasons})
-            plan.warnings.append(f"{g}: 들어온 형상이 의도의 투영과 다르다({', '.join(reasons[:4])}) → 분리됨(동결)")
+        typed = rows[g]["kind"] == "finst"
+        h_hash, h_c = have.digest(f.by_guid(g), typed)
+        if g in projected:
+            w_hash, w_c = want.digest(scratch.ents[g], typed)
+            if w_hash != h_hash:
+                reasons = closure_diff(w_c, h_c)
+                rows[g]["origin"] = "detached"
+                plan.detached.append({"id": g, "reasons": reasons})
+                plan.warnings.append(f"{g}: 들어온 형상이 의도의 투영과 다르다({', '.join(reasons[:4])}) → 분리됨(동결)")
         rows[g]["projection_hash"] = h_hash
+    # 분리된 패밀리 타입의 인스턴스는 함께 분리한다: 타입이 낡은 정의라 인스턴스를 다시 투영하면 변조된 표현 지도를 가리킨다
+    for g in sorted(rows):
+        r = rows[g]
+        if r["kind"] == "finst" and r["origin"] == "authored" and rows[r["params"]["type"]]["origin"] != "authored":
+            r["origin"] = "detached"
+            plan.detached.append({"id": g, "reasons": ["패밀리 타입이 분리됨"]})
+            plan.warnings.append(f"{g}: 패밀리 타입 {r['params']['type']} 가 분리돼 인스턴스도 분리됨(동결)")
+    for g in rows:
         if rows[g]["origin"] == "authored":   # 가져온 뒤 명세가 이 값 그대로면 첫 투영에서 들어온 엔티티를 그대로 둔다(engine.flush_ifc)
             rows[g]["spec_hash"] = digest(graph.q(Q.ifc_spec, g))
     # 길이 단위: 의도의 값은 mm 다. 단위 표기만 바뀐 파일은 요소 클로저가 같아 보이므로 후보 전체를 분리한다
@@ -257,9 +320,9 @@ def plan_import(data: bytes) -> ImportPlan:
                 plan.warnings.append(f"길이 단위가 밀리미터가 아니다: 의도의 값(mm)을 해석할 수 없어 의도가 있는 요소 {n}개를 모두 분리했다(동결)")
 
     # 4) 외래 요소
-    owned: set[str] = set()   # 저작 문의 개구부는 문 클로저에 속한다: 요소 행을 만들지 않는다
+    owned: set[str] = set()   # 저작 문·패밀리 인스턴스의 개구부는 그 요소의 클로저에 속한다: 요소 행을 만들지 않는다
     for g, r in rows.items():
-        if r["origin"] == "authored" and r["kind"] == "door":
+        if r["origin"] == "authored" and r["kind"] in ("door", "finst"):
             for rel in f.get_inverse(f.by_guid(g)):
                 if rel.is_a("IfcRelFillsElement") and rel.RelatedBuildingElement == f.by_guid(g):
                     owned.add(rel.RelatingOpeningElement.GlobalId)
