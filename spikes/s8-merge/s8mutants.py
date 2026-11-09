@@ -63,7 +63,7 @@ def install(name: str) -> None:
         M.violations = lambda view: []
     elif name == "M7_fold_skips_history":
         orig = M.fold
-        M.fold = lambda rows, units=None, touch=None: orig([r for r in rows if not r[4].startswith("history.")], units, touch)
+        M.fold = lambda rows, units=None, touch=None, seed=None: orig([r for r in rows if not r[4].startswith("history.")], units, touch, seed)   # seed: 통합에서 fold 에 더해진 인자(가져온 IFC 값 시드)도 그대로 넘겨 변이의 의도(이력 항목 무시)만 남긴다
     elif name == "M8_fork_zero":
         M.fork_count = lambda a, b: 0
     elif name == "M9_fork_ours_len":

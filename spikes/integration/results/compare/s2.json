@@ -1,0 +1,125 @@
+{
+ "s2_rejections.json": {
+  "same": 10,
+  "differ": 1,
+  "volatile": 0,
+  "only_old": 2,
+  "only_new": 0,
+  "differ_examples": [
+   {
+    "path": "ifc2x3_sample_alias",
+    "old": "revit_ra01_ifc2x3",
+    "new": null
+   }
+  ],
+  "volatile_examples": [],
+  "only_old_examples": [
+   "checks.ifc2x3",
+   "checks.ifc2x3_project_left_behind"
+  ],
+  "only_new_examples": []
+ },
+ "s2_review_fixes.json": {
+  "same": 183,
+  "differ": 0,
+  "volatile": 6,
+  "only_old": 0,
+  "only_new": 0,
+  "differ_examples": [],
+  "volatile_examples": [
+   {
+    "path": "r1_style_preserved.elapsed_s",
+    "old": 9.9,
+    "new": 9.2
+   },
+   {
+    "path": "r2_delete_undo_attachments.elapsed_s",
+    "old": 14.3,
+    "new": 15.1
+   },
+   {
+    "path": "r3_skeleton.elapsed_s",
+    "old": 4.6,
+    "new": 5.1
+   },
+   {
+    "path": "r4_opening_identity.elapsed_s",
+    "old": 2.5,
+    "new": 2.6
+   },
+   {
+    "path": "r6_misses.elapsed_s",
+    "old": 0.8,
+    "new": 0.6
+   },
+   {
+    "path": "r8_more_tampers.elapsed_s",
+    "old": 0.5,
+    "new": 0.4
+   }
+  ],
+  "only_old_examples": [],
+  "only_new_examples": []
+ },
+ "s2_t1_t2_ba.json": {
+  "same": 98,
+  "differ": 0,
+  "volatile": 2,
+  "only_old": 0,
+  "only_new": 0,
+  "differ_examples": [],
+  "volatile_examples": [
+   {
+    "path": "t1.elapsed_s",
+    "old": 15.1,
+    "new": 39.0
+   },
+   {
+    "path": "t2.elapsed_s",
+    "old": 16.2,
+    "new": 28.0
+   }
+  ],
+  "only_old_examples": [],
+  "only_new_examples": []
+ },
+ "s2_t4_authored_roundtrip.json": {
+  "same": 35,
+  "differ": 0,
+  "volatile": 1,
+  "only_old": 0,
+  "only_new": 0,
+  "differ_examples": [],
+  "volatile_examples": [
+   {
+    "path": "elapsed_s",
+    "old": 10.1,
+    "new": 12.9
+   }
+  ],
+  "only_old_examples": [],
+  "only_new_examples": []
+ },
+ "s2_t5_tamper.json": {
+  "same": 72,
+  "differ": 0,
+  "volatile": 2,
+  "only_old": 0,
+  "only_new": 0,
+  "differ_examples": [],
+  "volatile_examples": [
+   {
+    "path": "t5.elapsed_s",
+    "old": 10.1,
+    "new": 9.5
+   },
+   {
+    "path": "t5b.elapsed_s",
+    "old": 0.3,
+    "new": 0.2
+   }
+  ],
+  "only_old_examples": [],
+  "only_new_examples": []
+ }
+}

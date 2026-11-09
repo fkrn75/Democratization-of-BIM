@@ -1,0 +1,305 @@
+{
+  "model": "RA-01 (코어 범위)",
+  "views": [
+    "plan-1F",
+    "plan-2F",
+    "section-BB",
+    "elev-N",
+    "elev-E",
+    "elev-S",
+    "elev-W"
+  ],
+  "moves": 40,
+  "criterion_update_within_2s": {
+    "limit_ms": 2000,
+    "max_total_ms": 40.502,
+    "pass": true
+  },
+  "total_ms_mutate_plus_refresh_all_7_views": {
+    "n": 40,
+    "min": 2.604,
+    "p50": 18.686,
+    "p95": 30.864,
+    "max": 40.502,
+    "mean": 18.4
+  },
+  "mutate_ms": {
+    "n": 40,
+    "min": 1.531,
+    "p50": 2.098,
+    "p95": 6.247,
+    "max": 12.202,
+    "mean": 2.781
+  },
+  "refresh_all_views_ms": {
+    "n": 40,
+    "min": 0.824,
+    "p50": 15.913,
+    "p95": 28.822,
+    "max": 38.35,
+    "mean": 15.618
+  },
+  "max_single_view_refresh_ms": {
+    "n": 40,
+    "min": 0.241,
+    "p50": 3.576,
+    "p95": 12.377,
+    "max": 22.393,
+    "mean": 4.76
+  },
+  "full_regen_all_views_ms": {
+    "n": 40,
+    "min": 156.743,
+    "p50": 188.525,
+    "p95": 237.648,
+    "max": 263.483,
+    "mean": 191.781
+  },
+  "fresh_incremental_graph_all_views_ms": {
+    "n": 40,
+    "min": 21.455,
+    "p50": 26.865,
+    "p95": 37.942,
+    "max": 99.544,
+    "mean": 29.175
+  },
+  "speedup_vs_full_regen_p50": 12.61,
+  "nodes_recomputed_per_move": {
+    "n": 40,
+    "min": 24,
+    "p50": 185.5,
+    "p95": 234.05,
+    "max": 235,
+    "mean": 158.625
+  },
+  "nodes_in_full_regen": 594,
+  "views_changed_per_move": {
+    "n": 40,
+    "min": 0,
+    "p50": 3.0,
+    "p95": 4.0,
+    "max": 4,
+    "mean": 2.75
+  },
+  "line_match": {
+    "tolerance_mm": 0.01,
+    "min_count_ratio_over_all_moves_and_views": 1.0,
+    "min_length_ratio": 1.0,
+    "moves_exactly_equal_in_all_views": 40,
+    "pass_ge_99pct": true
+  },
+  "undo": {
+    "moves_restored_exactly": 40,
+    "of": 40,
+    "undo_plus_refresh_ms": {
+      "n": 40,
+      "min": 2.636,
+      "p50": 17.764,
+      "p95": 52.565,
+      "max": 109.883,
+      "mean": 22.628
+    }
+  },
+  "affected_view_api": {
+    "covers_all_changed_views_every_move": true,
+    "mean_views_reported": 6,
+    "mean_views_actually_changed": 2.75
+  },
+  "samples": [
+    {
+      "wall": "1000000000000000000001",
+      "dx": -200.0,
+      "dy": 0.0,
+      "mutate_ms": 2.0186000037938356,
+      "refresh_all_views_ms": 10.08820001152344,
+      "total_ms": 12.106800015317276,
+      "max_single_view_ms": 2.8448000084608793,
+      "nodes_recomputed": 89,
+      "views_stale_after_move": 6,
+      "views_changed": [
+        "plan-1F",
+        "elev-S"
+      ],
+      "views_affected_api": [
+        "1F 평면",
+        "B-B 단면",
+        "남측 입면",
+        "동측 입면",
+        "북측 입면",
+        "서측 입면"
+      ],
+      "affected_api_covers_changed": true,
+      "full_regen_all_views_ms": 178.18290001014248,
+      "fresh_incremental_graph_all_views_ms": 27.509400009876117,
+      "min_match_ratio": 1.0,
+      "min_length_ratio": 1.0,
+      "exact_equal_all_views": true,
+      "undo_ms": 20.98400000249967,
+      "undo_restores_original_exact": true
+    },
+    {
+      "wall": "1000000000000000000002",
+      "dx": 600.0,
+      "dy": 200.0,
+      "mutate_ms": 2.0989000040572137,
+      "refresh_all_views_ms": 16.859700001077726,
+      "total_ms": 18.95860000513494,
+      "max_single_view_ms": 3.929500002413988,
+      "nodes_recomputed": 235,
+      "views_stale_after_move": 6,
+      "views_changed": [
+        "plan-1F",
+        "section-BB",
+        "elev-N",
+        "elev-S"
+      ],
+      "views_affected_api": [
+        "1F 평면",
+        "B-B 단면",
+        "남측 입면",
+        "동측 입면",
+        "북측 입면",
+        "서측 입면"
+      ],
+      "affected_api_covers_changed": true,
+      "full_regen_all_views_ms": 171.68080000556074,
+      "fresh_incremental_graph_all_views_ms": 28.151600010460243,
+      "min_match_ratio": 1.0,
+      "min_length_ratio": 1.0,
+      "exact_equal_all_views": true,
+      "undo_ms": 22.272400005022064,
+      "undo_restores_original_exact": true
+    },
+    {
+      "wall": "1000000000000000000003",
+      "dx": 1000.0,
+      "dy": 0.0,
+      "mutate_ms": 1.7917000222951174,
+      "refresh_all_views_ms": 0.8239999879151583,
+      "total_ms": 2.6157000102102757,
+      "max_single_view_ms": 0.24140000459738076,
+      "nodes_recomputed": 24,
+      "views_stale_after_move": 6,
+      "views_changed": [],
+      "views_affected_api": [
+        "1F 평면",
+        "B-B 단면",
+        "남측 입면",
+        "동측 입면",
+        "북측 입면",
+        "서측 입면"
+      ],
+      "affected_api_covers_changed": true,
+      "full_regen_all_views_ms": 192.5271999789402,
+      "fresh_incremental_graph_all_views_ms": 32.24749999935739,
+      "min_match_ratio": 1.0,
+      "min_length_ratio": 1.0,
+      "exact_equal_all_views": true,
+      "undo_ms": 3.0052999791223556,
+      "undo_restores_original_exact": true
+    },
+    {
+      "wall": "1000000000000000000004",
+      "dx": 600.0,
+      "dy": 200.0,
+      "mutate_ms": 1.723399996990338,
+      "refresh_all_views_ms": 16.41750000999309,
+      "total_ms": 18.14090000698343,
+      "max_single_view_ms": 3.7283000128809363,
+      "nodes_recomputed": 206,
+      "views_stale_after_move": 6,
+      "views_changed": [
+        "plan-1F",
+        "section-BB",
+        "elev-N",
+        "elev-S"
+      ],
+      "views_affected_api": [
+        "1F 평면",
+        "B-B 단면",
+        "남측 입면",
+        "동측 입면",
+        "북측 입면",
+        "서측 입면"
+      ],
+      "affected_api_covers_changed": true,
+      "full_regen_all_views_ms": 186.36589997913688,
+      "fresh_incremental_graph_all_views_ms": 99.54369999468327,
+      "min_match_ratio": 1.0,
+      "min_length_ratio": 1.0,
+      "exact_equal_all_views": true,
+      "undo_ms": 19.42699999199249,
+      "undo_restores_original_exact": true
+    },
+    {
+      "wall": "1000000000000000000005",
+      "dx": -200.0,
+      "dy": 0.0,
+      "mutate_ms": 2.9705999768339097,
+      "refresh_all_views_ms": 14.19829999213107,
+      "total_ms": 17.16889996896498,
+      "max_single_view_ms": 2.990500011947006,
+      "nodes_recomputed": 185,
+      "views_stale_after_move": 6,
+      "views_changed": [
+        "plan-1F",
+        "section-BB",
+        "elev-S"
+      ],
+      "views_affected_api": [
+        "1F 평면",
+        "B-B 단면",
+        "남측 입면",
+        "동측 입면",
+        "북측 입면",
+        "서측 입면"
+      ],
+      "affected_api_covers_changed": true,
+      "full_regen_all_views_ms": 158.53700001025572,
+      "fresh_incremental_graph_all_views_ms": 22.59879998746328,
+      "min_match_ratio": 1.0,
+      "min_length_ratio": 1.0,
+      "exact_equal_all_views": true,
+      "undo_ms": 22.400699992431328,
+      "undo_restores_original_exact": true
+    },
+    {
+      "wall": "1000000000000000000006",
+      "dx": 600.0,
+      "dy": 0.0,
+      "mutate_ms": 2.166999998735264,
+      "refresh_all_views_ms": 12.095300015062094,
+      "total_ms": 14.262300013797358,
+      "max_single_view_ms": 3.0752000166103244,
+      "nodes_recomputed": 93,
+      "views_stale_after_move": 6,
+      "views_changed": [
+        "plan-1F",
+        "section-BB",
+        "elev-S"
+      ],
+      "views_affected_api": [
+        "1F 평면",
+        "B-B 단면",
+        "남측 입면",
+        "동측 입면",
+        "북측 입면",
+        "서측 입면"
+      ],
+      "affected_api_covers_changed": true,
+      "full_regen_all_views_ms": 177.34729999210685,
+      "fresh_incremental_graph_all_views_ms": 27.354199992259964,
+      "min_match_ratio": 1.0,
+      "min_length_ratio": 1.0,
+      "exact_equal_all_views": true,
+      "undo_ms": 15.991500025847927,
+      "undo_restores_original_exact": true
+    }
+  ],
+  "env": {
+    "python": "3.12.2",
+    "platform": "Windows-11-10.0.26200-SP0",
+    "machine": "AMD64"
+  },
+  "generated_at_utc": "2026-11-09T03:31:05Z"
+}

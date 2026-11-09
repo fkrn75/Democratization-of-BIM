@@ -1,0 +1,159 @@
+{
+ "s5_fuzz.json": {
+  "same": 246,
+  "differ": 0,
+  "volatile": 7,
+  "only_old": 0,
+  "only_new": 0,
+  "differ_examples": [],
+  "volatile_examples": [
+   {
+    "path": "runs[0].stats.sec",
+    "old": 137.23,
+    "new": 142.01
+   },
+   {
+    "path": "runs[1].stats.sec",
+    "old": 83.63,
+    "new": 67.56
+   },
+   {
+    "path": "runs[2].stats.sec",
+    "old": 119.85,
+    "new": 96.44
+   },
+   {
+    "path": "runs[3].stats.sec",
+    "old": 131.82,
+    "new": 99.28
+   },
+   {
+    "path": "runs[4].stats.sec",
+    "old": 115.35,
+    "new": 92.16
+   },
+   {
+    "path": "runs[5].stats.sec",
+    "old": 104.52,
+    "new": 88.51
+   },
+   {
+    "path": "totals.sec",
+    "old": 692.4,
+    "new": 585.9599999999999
+   }
+  ],
+  "only_old_examples": [],
+  "only_new_examples": []
+ },
+ "s5_mutants.json": {
+  "same": 204,
+  "differ": 1,
+  "volatile": 14,
+  "only_old": 0,
+  "only_new": 0,
+  "differ_examples": [
+   {
+    "path": "mutants[11].how.err",
+    "old": "RuntimeError: Instance #7102 not found",
+    "new": "RuntimeError: Instance #6893 not found"
+   }
+  ],
+  "volatile_examples": [
+   {
+    "path": "mutants[0].sec",
+    "old": 13.7,
+    "new": 10.3
+   },
+   {
+    "path": "mutants[10].sec",
+    "old": 54.1,
+    "new": 56.6
+   },
+   {
+    "path": "mutants[11].sec",
+    "old": 53.1,
+    "new": 55.9
+   },
+   {
+    "path": "mutants[12].sec",
+    "old": 65.6,
+    "new": 65.4
+   },
+   {
+    "path": "mutants[13].sec",
+    "old": 25.0,
+    "new": 23.9
+   },
+   {
+    "path": "mutants[14].sec",
+    "old": 254.7,
+    "new": 225.9
+   },
+   {
+    "path": "mutants[1].sec",
+    "old": 0.6,
+    "new": 0.3
+   },
+   {
+    "path": "mutants[3].sec",
+    "old": 76.6,
+    "new": 61.9
+   }
+  ],
+  "only_old_examples": [],
+  "only_new_examples": []
+ },
+ "s5_scenarios.json": {
+  "same": 272,
+  "differ": 0,
+  "volatile": 20,
+  "only_old": 0,
+  "only_new": 0,
+  "differ_examples": [],
+  "volatile_examples": [
+   {
+    "path": "scenarios[0].recompute.edit_ms",
+    "old": 1.07,
+    "new": 1.99
+   },
+   {
+    "path": "scenarios[0].recompute.refresh_ms",
+    "old": 0.56,
+    "new": 1.17
+   },
+   {
+    "path": "scenarios[10].recompute.edit_ms",
+    "old": 1.7,
+    "new": 3.75
+   },
+   {
+    "path": "scenarios[10].recompute.refresh_ms",
+    "old": 0.23,
+    "new": 0.56
+   },
+   {
+    "path": "scenarios[11].recompute.edit_ms",
+    "old": 0.94,
+    "new": 1.59
+   },
+   {
+    "path": "scenarios[11].recompute.refresh_ms",
+    "old": 0.41,
+    "new": 0.83
+   },
+   {
+    "path": "scenarios[1].recompute.edit_ms",
+    "old": 2.47,
+    "new": 5.02
+   },
+   {
+    "path": "scenarios[1].recompute.refresh_ms",
+    "old": 0.56,
+    "new": 1.1
+   }
+  ],
+  "only_old_examples": [],
+  "only_new_examples": []
+ }
+}
