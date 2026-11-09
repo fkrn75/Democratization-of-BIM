@@ -1,0 +1,7 @@
+# BimCraft 브라우저판 격리 시험 이미지: 헤드리스 Chromium(Debian 패키지) + puppeteer-core(버전 고정, --ignore-scripts). 앱은 읽기 전용 마운트.
+FROM node@sha256:5ec23b7c622b00547753bc6ffd78085dd868a68aeb41c8e0a1418f033e13d96d
+RUN apt-get update && apt-get install -y --no-install-recommends chromium python3 fonts-noto-cjk && rm -rf /var/lib/apt/lists/*  && useradd -m -u 10001 tester && mkdir -p /opt/pp /out && chown -R tester /opt/pp /out
+USER 10001
+WORKDIR /opt/pp
+RUN npm init -y >/dev/null && npm install --ignore-scripts --save-exact --no-audit --no-fund puppeteer-core@24.9.0 2>&1 | tail -2 && cp package-lock.json /opt/pp/lock.copy.json
+WORKDIR /out

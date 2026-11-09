@@ -1,0 +1,106 @@
+{
+ "M1": {
+  "value": 100.0,
+  "threshold": ">=99",
+  "unit": "%",
+  "pass": true,
+  "detail": []
+ },
+ "M2": {
+  "value": 100.0,
+  "threshold": "=100",
+  "unit": "% (클래스)",
+  "pass": true,
+  "detail": []
+ },
+ "M3": {
+  "value": 100.0,
+  "threshold": ">=95",
+  "unit": "%",
+  "total": 193,
+  "pass": true,
+  "detail": []
+ },
+ "M4": {
+  "value": 100.0,
+  "threshold": "=100",
+  "unit": "%",
+  "total": 26,
+  "pass": true,
+  "detail": []
+ },
+ "M5": {
+  "value": 100.0,
+  "threshold": "=100",
+  "unit": "%",
+  "total": 14,
+  "pass": true,
+  "detail": []
+ },
+ "M6": {
+  "value": 77.19298245614036,
+  "threshold": "=100 (오차<=0.5%)",
+  "unit": "% (요소)",
+  "total": 57,
+  "max_rel_err": 0.10335917312661509,
+  "pass": false,
+  "detail": [
+   "06j3reGVjO6e1bGgGxbqSO REF=8.448000 TEST=9.216000000000008 err=0.09090909090908678",
+   "1N3Lq$r_jMWvF$JdsilU2j REF=8.448000 TEST=9.216000000000001 err=0.09090909090909098",
+   "2t_3uBgsbSvAdRWwYg4tbH REF=0.607200 TEST=0.6624000000000073 err=0.09090909090909705",
+   "1zCNdybhrS3BERfRW1zGef REF=11.289600 TEST=12.441600000000028 err=0.10204081632653601",
+   "2NmRKe4gXS2g7DSKbN8oJ1 REF=2.366400 TEST=2.5967999999999924 err=0.09736308316429267",
+   "0bbvQJpMjSWhcT9r2H0kfg REF=2.402700 TEST=2.6363999999999974 err=0.09726557622674087",
+   "04Ry4$uL9HLB6WVkfGzqQQ REF=0.528000 TEST=0.576 err=0.09090909090909101",
+   "0Dbhk7yXTSEvJRMBjdyITy REF=0.528000 TEST=0.5759999999999998 err=0.09090909090909126"
+  ]
+ },
+ "M7": {
+  "value": 100.0,
+  "threshold": "기록만",
+  "unit": "%",
+  "total": 19,
+  "pass": null,
+  "detail": []
+ },
+ "M8": {
+  "value": 0,
+  "threshold": "=0",
+  "unit": "건",
+  "pass": true,
+  "warnings": 0,
+  "detail": []
+ },
+ "X1": {
+  "value": 21.05263157894737,
+  "threshold": "=100 (1mm)",
+  "unit": "% (요소)",
+  "total": 57,
+  "pass": false,
+  "detail": [
+   "06j3reGVjO6e1bGgGxbqSO 편차 0.15000000000000013",
+   "1N3Lq$r_jMWvF$JdsilU2j 편차 0.15000000000000013",
+   "06XEMC$KPHOAshs$hQsRXg 편차 0.3000000000000007",
+   "3AIUj2D2bKRvKrfxzbkhcL 편차 0.3000000000000007",
+   "2t_3uBgsbSvAdRWwYg4tbH 편차 0.15000000000000013",
+   "3RGPgszznRu8YwRggppIcs 편차 0.3000000000000007",
+   "3rDBOQJjvKfPwVWBoRC5Cr 편차 0.3000000000000007",
+   "1zCNdybhrS3BERfRW1zGef 편차 0.15000000000000013"
+  ]
+ },
+ "X2": {
+  "value": 0,
+  "threshold": "참고",
+  "unit": "건",
+  "pass": null,
+  "detail": []
+ },
+ "_meta": {
+  "ref": "RA-01.ifc",
+  "test": "results/ifcopenshell/E3.ifc",
+  "schema_ref": "IFC4",
+  "schema_test": "IFC4",
+  "n_products_ref": 74,
+  "n_products_test": 74
+ }
+}

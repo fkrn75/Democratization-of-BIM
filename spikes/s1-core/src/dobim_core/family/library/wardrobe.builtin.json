@@ -1,0 +1,370 @@
+{
+  "schema": "dobim.family/1",
+  "id": "wardrobe.builtin",
+  "version": 1,
+  "name": "붙박이장",
+  "description": "자립형 붙박이장(IfcFurniture, USERDEFINED). 치수·선반 수·문짝 수는 인스턴스 매개변수라 인스턴스마다 형상이 다르다.",
+  "ifc": {
+    "class": "IfcFurniture",
+    "type_class": "IfcFurnitureType",
+    "predefined": "USERDEFINED",
+    "type_attrs": {
+      "ElementType": "BuiltInWardrobe"
+    },
+    "attrs": {
+      "ObjectType": "BuiltInWardrobe"
+    }
+  },
+  "params": {
+    "panel_t": {
+      "kind": "type",
+      "default": 18,
+      "unit": "mm",
+      "description": "패널 두께",
+      "min": 12,
+      "max": 30
+    },
+    "plinth_h": {
+      "kind": "type",
+      "default": 100,
+      "unit": "mm",
+      "description": "걸레받이 높이(0 이면 없음)",
+      "min": 0,
+      "max": 200
+    },
+    "door_t": {
+      "kind": "type",
+      "default": 18,
+      "unit": "mm",
+      "description": "문짝 두께",
+      "min": 12,
+      "max": 30
+    },
+    "width": {
+      "kind": "instance",
+      "default": 1800,
+      "unit": "mm",
+      "min": 600,
+      "max": 4000
+    },
+    "height": {
+      "kind": "instance",
+      "default": 2400,
+      "unit": "mm",
+      "min": 1800,
+      "max": 2700
+    },
+    "depth": {
+      "kind": "instance",
+      "default": 600,
+      "unit": "mm",
+      "min": 300,
+      "max": 900
+    },
+    "shelves": {
+      "kind": "instance",
+      "default": 3,
+      "type": "int",
+      "unit": "none",
+      "description": "내부 선반 수",
+      "min": 0,
+      "max": 10
+    },
+    "leaves": {
+      "kind": "instance",
+      "default": 2,
+      "type": "int",
+      "unit": "none",
+      "description": "희망 문짝 수(폭에 맞게 leaf_n 으로 보정된다)",
+      "min": 1,
+      "max": 4
+    }
+  },
+  "derived": {
+    "inner_h": "height - plinth_h - 2*panel_t",
+    "leaf_n": "clamp(leaves, ceil(width/1000), floor(width/300))",
+    "leaf_w": "width/leaf_n"
+  },
+  "constraints": [
+    {
+      "expr": "inner_h > 300",
+      "message": "내부 높이가 300mm 이하다"
+    },
+    {
+      "expr": "leaf_w >= 300 and leaf_w <= 1000",
+      "message": "문짝 한 장의 폭이 300~1000mm 를 벗어난다(leaves 를 조정하세요)"
+    }
+  ],
+  "solids": [
+    {
+      "id": "side_l",
+      "op": "extrude",
+      "plane": "yz",
+      "profile": {
+        "shape": "rect",
+        "u": [
+          "-depth/2",
+          "depth/2"
+        ],
+        "v": [
+          "plinth_h",
+          "height"
+        ]
+      },
+      "range": [
+        "-width/2",
+        "-width/2 + panel_t"
+      ]
+    },
+    {
+      "id": "side_r",
+      "op": "extrude",
+      "plane": "yz",
+      "profile": {
+        "shape": "rect",
+        "u": [
+          "-depth/2",
+          "depth/2"
+        ],
+        "v": [
+          "plinth_h",
+          "height"
+        ]
+      },
+      "range": [
+        "width/2 - panel_t",
+        "width/2"
+      ]
+    },
+    {
+      "id": "top",
+      "op": "extrude",
+      "plane": "xy",
+      "profile": {
+        "shape": "rect",
+        "u": [
+          "-width/2 + panel_t",
+          "width/2 - panel_t"
+        ],
+        "v": [
+          "-depth/2",
+          "depth/2"
+        ]
+      },
+      "range": [
+        "height - panel_t",
+        "height"
+      ]
+    },
+    {
+      "id": "bottom",
+      "op": "extrude",
+      "plane": "xy",
+      "profile": {
+        "shape": "rect",
+        "u": [
+          "-width/2 + panel_t",
+          "width/2 - panel_t"
+        ],
+        "v": [
+          "-depth/2",
+          "depth/2"
+        ]
+      },
+      "range": [
+        "plinth_h",
+        "plinth_h + panel_t"
+      ]
+    },
+    {
+      "id": "back",
+      "op": "extrude",
+      "plane": "xz",
+      "profile": {
+        "shape": "rect",
+        "u": [
+          "-width/2 + panel_t",
+          "width/2 - panel_t"
+        ],
+        "v": [
+          "plinth_h + panel_t",
+          "height - panel_t"
+        ]
+      },
+      "range": [
+        "-depth/2",
+        "-depth/2 + 6"
+      ]
+    },
+    {
+      "id": "plinth",
+      "op": "extrude",
+      "plane": "xy",
+      "when": "plinth_h > 0",
+      "profile": {
+        "shape": "rect",
+        "u": [
+          "-width/2 + panel_t",
+          "width/2 - panel_t"
+        ],
+        "v": [
+          "-depth/2 + 60",
+          "depth/2 - 60"
+        ]
+      },
+      "range": [
+        0,
+        "plinth_h"
+      ]
+    },
+    {
+      "id": "shelf",
+      "op": "extrude",
+      "plane": "xy",
+      "repeat": {
+        "var": "i",
+        "count": "shelves"
+      },
+      "profile": {
+        "shape": "rect",
+        "u": [
+          "-width/2 + panel_t",
+          "width/2 - panel_t"
+        ],
+        "v": [
+          "-depth/2 + 6",
+          "depth/2 - 20"
+        ]
+      },
+      "range": [
+        "plinth_h + panel_t + (i + 1)*inner_h/(shelves + 1) - panel_t/2",
+        "plinth_h + panel_t + (i + 1)*inner_h/(shelves + 1) + panel_t/2"
+      ]
+    },
+    {
+      "id": "door",
+      "op": "extrude",
+      "plane": "xz",
+      "repeat": {
+        "var": "k",
+        "count": "leaf_n"
+      },
+      "profile": {
+        "shape": "rect",
+        "u": [
+          "-width/2 + k*leaf_w + 2",
+          "-width/2 + (k + 1)*leaf_w - 2"
+        ],
+        "v": [
+          "plinth_h + 2",
+          "height - 2"
+        ]
+      },
+      "range": [
+        "depth/2",
+        "depth/2 + door_t"
+      ]
+    },
+    {
+      "id": "handle_recess",
+      "op": "extrude",
+      "plane": "xz",
+      "role": "void",
+      "cuts": [
+        "door"
+      ],
+      "repeat": {
+        "var": "k",
+        "count": "leaf_n"
+      },
+      "profile": {
+        "shape": "rect",
+        "u": [
+          "-width/2 + (k + 1)*leaf_w - 40",
+          "-width/2 + (k + 1)*leaf_w - 20"
+        ],
+        "v": [
+          1000,
+          1200
+        ]
+      },
+      "range": [
+        "depth/2 + door_t - 4",
+        "depth/2 + door_t + 1"
+      ]
+    }
+  ],
+  "plan_symbol": {
+    "default": [
+      {
+        "type": "rect",
+        "u": [
+          "-width/2",
+          "width/2"
+        ],
+        "v": [
+          "-depth/2",
+          "depth/2"
+        ],
+        "style": "cut"
+      },
+      {
+        "type": "line",
+        "from": [
+          "-width/2",
+          "-depth/2"
+        ],
+        "to": [
+          "width/2",
+          "depth/2"
+        ],
+        "style": "hidden"
+      },
+      {
+        "type": "line",
+        "from": [
+          "-width/2",
+          "depth/2"
+        ],
+        "to": [
+          "width/2",
+          "-depth/2"
+        ],
+        "style": "hidden"
+      }
+    ],
+    "1:200": [
+      {
+        "type": "rect",
+        "u": [
+          "-width/2",
+          "width/2"
+        ],
+        "v": [
+          "-depth/2",
+          "depth/2"
+        ],
+        "style": "cut"
+      }
+    ]
+  },
+  "psets": {
+    "Pset_FurnitureTypeCommon": {
+      "on": "type",
+      "props": {
+        "IsBuiltIn": true
+      }
+    },
+    "DoBIM_FurnitureParams": {
+      "on": "instance",
+      "props": {
+        "Shelves": {
+          "expr": "shelves"
+        },
+        "Leaves": {
+          "expr": "leaf_n"
+        }
+      }
+    }
+  }
+}

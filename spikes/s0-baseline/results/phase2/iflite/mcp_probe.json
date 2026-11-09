@@ -1,0 +1,649 @@
+{
+ "calls": [
+  {
+   "tool": "query_entities",
+   "args": {
+    "type": "IfcWall",
+    "limit": 2
+   },
+   "sec": 0.01,
+   "isError": false,
+   "chars": 155,
+   "head": "Found 14 matching entities (showing 2).\n  • IfcWall #104 'W-E-01' GlobalId=3Y2ETKAITKWwOynuyfZ9lq\n  • IfcWall #140 'W-E-02' GlobalId=06j3reGVjO6e1bGgGxbqSO"
+  }
+ ],
+ "startup_sec": 1.44,
+ "server": [
+  "ifc-lite",
+  "0.29.0"
+ ],
+ "n_tools": 125,
+ "tools": [
+  {
+   "name": "model_info",
+   "annotations": null,
+   "schema_bytes": 173
+  },
+  {
+   "name": "model_list",
+   "annotations": null,
+   "schema_bytes": 67
+  },
+  {
+   "name": "model_load",
+   "annotations": null,
+   "schema_bytes": 284
+  },
+  {
+   "name": "model_unload",
+   "annotations": null,
+   "schema_bytes": 159
+  },
+  {
+   "name": "schema_describe",
+   "annotations": null,
+   "schema_bytes": 292
+  },
+  {
+   "name": "query_entities",
+   "annotations": null,
+   "schema_bytes": 1328
+  },
+  {
+   "name": "count_entities",
+   "annotations": null,
+   "schema_bytes": 197
+  },
+  {
+   "name": "get_entity",
+   "annotations": null,
+   "schema_bytes": 458
+  },
+  {
+   "name": "get_entities_bulk",
+   "annotations": null,
+   "schema_bytes": 345
+  },
+  {
+   "name": "spatial_hierarchy",
+   "annotations": null,
+   "schema_bytes": 233
+  },
+  {
+   "name": "containment_chain",
+   "annotations": null,
+   "schema_bytes": 165
+  },
+  {
+   "name": "relationships",
+   "annotations": null,
+   "schema_bytes": 165
+  },
+  {
+   "name": "properties_unique",
+   "annotations": null,
+   "schema_bytes": 227
+  },
+  {
+   "name": "materials_list",
+   "annotations": null,
+   "schema_bytes": 97
+  },
+  {
+   "name": "classifications_list",
+   "annotations": null,
+   "schema_bytes": 97
+  },
+  {
+   "name": "georeferencing",
+   "annotations": null,
+   "schema_bytes": 97
+  },
+  {
+   "name": "units",
+   "annotations": null,
+   "schema_bytes": 97
+  },
+  {
+   "name": "query_rooms",
+   "annotations": null,
+   "schema_bytes": 464
+  },
+  {
+   "name": "geometry_get",
+   "annotations": null,
+   "schema_bytes": 366
+  },
+  {
+   "name": "geometry_bbox",
+   "annotations": null,
+   "schema_bytes": 291
+  },
+  {
+   "name": "geometry_volume",
+   "annotations": null,
+   "schema_bytes": 291
+  },
+  {
+   "name": "geometry_area",
+   "annotations": null,
+   "schema_bytes": 291
+  },
+  {
+   "name": "raycast",
+   "annotations": null,
+   "schema_bytes": 253
+  },
+  {
+   "name": "clash_check",
+   "annotations": null,
+   "schema_bytes": 660
+  },
+  {
+   "name": "clash_matrix",
+   "annotations": null,
+   "schema_bytes": 344
+  },
+  {
+   "name": "ids_validate",
+   "annotations": null,
+   "schema_bytes": 340
+  },
+  {
+   "name": "ids_explain",
+   "annotations": null,
+   "schema_bytes": 217
+  },
+  {
+   "name": "model_audit",
+   "annotations": null,
+   "schema_bytes": 97
+  },
+  {
+   "name": "gherkin_check",
+   "annotations": null,
+   "schema_bytes": 97
+  },
+  {
+   "name": "check_rules",
+   "annotations": null,
+   "schema_bytes": 249
+  },
+  {
+   "name": "review_findings",
+   "annotations": null,
+   "schema_bytes": 510
+  },
+  {
+   "name": "place_opening",
+   "annotations": null,
+   "schema_bytes": 1029
+  },
+  {
+   "name": "place_door",
+   "annotations": null,
+   "schema_bytes": 1271
+  },
+  {
+   "name": "place_window",
+   "annotations": null,
+   "schema_bytes": 1292
+  },
+  {
+   "name": "place_curtain_wall",
+   "annotations": null,
+   "schema_bytes": 1514
+  },
+  {
+   "name": "place_grid",
+   "annotations": null,
+   "schema_bytes": 1847
+  },
+  {
+   "name": "place_grid_column",
+   "annotations": null,
+   "schema_bytes": 1410
+  },
+  {
+   "name": "edit_hosted_element",
+   "annotations": null,
+   "schema_bytes": 604
+  },
+  {
+   "name": "duplicate_element",
+   "annotations": null,
+   "schema_bytes": 360
+  },
+  {
+   "name": "copy_elements",
+   "annotations": null,
+   "schema_bytes": 711
+  },
+  {
+   "name": "array_elements",
+   "annotations": null,
+   "schema_bytes": 873
+  },
+  {
+   "name": "edit_element_geometry",
+   "annotations": null,
+   "schema_bytes": 4569
+  },
+  {
+   "name": "room_command",
+   "annotations": null,
+   "schema_bytes": 2289
+  },
+  {
+   "name": "join_walls",
+   "annotations": null,
+   "schema_bytes": 839
+  },
+  {
+   "name": "entity_set_property",
+   "annotations": null,
+   "schema_bytes": 697
+  },
+  {
+   "name": "entity_delete_property",
+   "annotations": null,
+   "schema_bytes": 523
+  },
+  {
+   "name": "entity_set_attribute",
+   "annotations": null,
+   "schema_bytes": 589
+  },
+  {
+   "name": "entity_create",
+   "annotations": null,
+   "schema_bytes": 578
+  },
+  {
+   "name": "entity_delete",
+   "annotations": null,
+   "schema_bytes": 437
+  },
+  {
+   "name": "mutation_batch",
+   "annotations": null,
+   "schema_bytes": 406
+  },
+  {
+   "name": "mutation_diff",
+   "annotations": null,
+   "schema_bytes": 97
+  },
+  {
+   "name": "mutation_undo",
+   "annotations": null,
+   "schema_bytes": 151
+  },
+  {
+   "name": "model_save",
+   "annotations": null,
+   "schema_bytes": 261
+  },
+  {
+   "name": "bcf_topic_list",
+   "annotations": null,
+   "schema_bytes": 95
+  },
+  {
+   "name": "bcf_topic_create",
+   "annotations": null,
+   "schema_bytes": 431
+  },
+  {
+   "name": "bcf_topic_update",
+   "annotations": null,
+   "schema_bytes": 270
+  },
+  {
+   "name": "bcf_topic_close",
+   "annotations": null,
+   "schema_bytes": 177
+  },
+  {
+   "name": "bcf_viewpoint_create",
+   "annotations": null,
+   "schema_bytes": 187
+  },
+  {
+   "name": "bcf_export",
+   "annotations": null,
+   "schema_bytes": 125
+  },
+  {
+   "name": "bcf_publications_list",
+   "annotations": null,
+   "schema_bytes": 321
+  },
+  {
+   "name": "bcf_publication_check",
+   "annotations": null,
+   "schema_bytes": 979
+  },
+  {
+   "name": "bcf_publication_reconcile",
+   "annotations": null,
+   "schema_bytes": 333
+  },
+  {
+   "name": "bcf_publication_confirm_absent",
+   "annotations": null,
+   "schema_bytes": 199
+  },
+  {
+   "name": "bsdd_search",
+   "annotations": null,
+   "schema_bytes": 117
+  },
+  {
+   "name": "bsdd_class",
+   "annotations": null,
+   "schema_bytes": 123
+  },
+  {
+   "name": "bsdd_property_sets",
+   "annotations": null,
+   "schema_bytes": 123
+  },
+  {
+   "name": "bsdd_match",
+   "annotations": null,
+   "schema_bytes": 165
+  },
+  {
+   "name": "model_diff",
+   "annotations": null,
+   "schema_bytes": 2429
+  },
+  {
+   "name": "quantity_diff",
+   "annotations": null,
+   "schema_bytes": 321
+  },
+  {
+   "name": "export_ifc",
+   "annotations": null,
+   "schema_bytes": 454
+  },
+  {
+   "name": "export_csv",
+   "annotations": null,
+   "schema_bytes": 369
+  },
+  {
+   "name": "export_json",
+   "annotations": null,
+   "schema_bytes": 258
+  },
+  {
+   "name": "export_glb",
+   "annotations": null,
+   "schema_bytes": 248
+  },
+  {
+   "name": "export_obj",
+   "annotations": null,
+   "schema_bytes": 248
+  },
+  {
+   "name": "export_ifcx",
+   "annotations": null,
+   "schema_bytes": 283
+  },
+  {
+   "name": "export_usd",
+   "annotations": null,
+   "schema_bytes": 157
+  },
+  {
+   "name": "export_pdf_report",
+   "annotations": null,
+   "schema_bytes": 130
+  },
+  {
+   "name": "viewer_open",
+   "annotations": null,
+   "schema_bytes": 292
+  },
+  {
+   "name": "viewer_close",
+   "annotations": null,
+   "schema_bytes": 49
+  },
+  {
+   "name": "viewer_status",
+   "annotations": null,
+   "schema_bytes": 49
+  },
+  {
+   "name": "viewer_colorize",
+   "annotations": null,
+   "schema_bytes": 534
+  },
+  {
+   "name": "viewer_isolate",
+   "annotations": null,
+   "schema_bytes": 319
+  },
+  {
+   "name": "viewer_hide",
+   "annotations": null,
+   "schema_bytes": 319
+  },
+  {
+   "name": "viewer_show",
+   "annotations": null,
+   "schema_bytes": 319
+  },
+  {
+   "name": "viewer_reset",
+   "annotations": null,
+   "schema_bytes": 97
+  },
+  {
+   "name": "viewer_fly_to",
+   "annotations": null,
+   "schema_bytes": 319
+  },
+  {
+   "name": "viewer_set_section",
+   "annotations": null,
+   "schema_bytes": 283
+  },
+  {
+   "name": "viewer_clear_section",
+   "annotations": null,
+   "schema_bytes": 49
+  },
+  {
+   "name": "viewer_color_by_storey",
+   "annotations": null,
+   "schema_bytes": 49
+  },
+  {
+   "name": "viewer_color_by_property",
+   "annotations": null,
+   "schema_bytes": 326
+  },
+  {
+   "name": "viewer_get_selection",
+   "annotations": null,
+   "schema_bytes": 356
+  },
+  {
+   "name": "viewer_describe_selection",
+   "annotations": null,
+   "schema_bytes": 49
+  },
+  {
+   "name": "viewer_wait_for_selection",
+   "annotations": null,
+   "schema_bytes": 416
+  },
+  {
+   "name": "viewer_ask",
+   "annotations": null,
+   "schema_bytes": 207
+  },
+  {
+   "name": "cost_data",
+   "annotations": null,
+   "schema_bytes": 174
+  },
+  {
+   "name": "cost_evaluate",
+   "annotations": null,
+   "schema_bytes": 413
+  },
+  {
+   "name": "structural_data",
+   "annotations": null,
+   "schema_bytes": 174
+  },
+  {
+   "name": "describe_flow",
+   "annotations": null,
+   "schema_bytes": 278
+  },
+  {
+   "name": "run_flow",
+   "annotations": null,
+   "schema_bytes": 680
+  },
+  {
+   "name": "propose_flow",
+   "annotations": null,
+   "schema_bytes": 680
+  },
+  {
+   "name": "resume_flow",
+   "annotations": null,
+   "schema_bytes": 986
+  },
+  {
+   "name": "ids_audit",
+   "annotations": null,
+   "schema_bytes": 228
+  },
+  {
+   "name": "ids_lint",
+   "annotations": null,
+   "schema_bytes": 608
+  },
+  {
+   "name": "ids_read",
+   "annotations": null,
+   "schema_bytes": 228
+  },
+  {
+   "name": "ids_apply_ops",
+   "annotations": null,
+   "schema_bytes": 44826
+  },
+  {
+   "name": "ids_write",
+   "annotations": null,
+   "schema_bytes": 199
+  },
+  {
+   "name": "ids_diff",
+   "annotations": null,
+   "schema_bytes": 287
+  },
+  {
+   "name": "ids_preview",
+   "annotations": null,
+   "schema_bytes": 361
+  },
+  {
+   "name": "ids_infer",
+   "annotations": null,
+   "schema_bytes": 288
+  },
+  {
+   "name": "ids_coverage",
+   "annotations": null,
+   "schema_bytes": 330
+  },
+  {
+   "name": "ids_test",
+   "annotations": null,
+   "schema_bytes": 125
+  },
+  {
+   "name": "ids_schema_search",
+   "annotations": null,
+   "schema_bytes": 493
+  },
+  {
+   "name": "ids_schema_entity",
+   "annotations": null,
+   "schema_bytes": 359
+  },
+  {
+   "name": "ids_schema_pset",
+   "annotations": null,
+   "schema_bytes": 353
+  },
+  {
+   "name": "create_draft_layer",
+   "annotations": null,
+   "schema_bytes": 487
+  },
+  {
+   "name": "draft_apply_ops",
+   "annotations": null,
+   "schema_bytes": 897
+  },
+  {
+   "name": "publish_layer",
+   "annotations": null,
+   "schema_bytes": 123
+  },
+  {
+   "name": "diff_layer",
+   "annotations": null,
+   "schema_bytes": 317
+  },
+  {
+   "name": "dry_run_merge",
+   "annotations": null,
+   "schema_bytes": 206
+  },
+  {
+   "name": "list_conflicts",
+   "annotations": null,
+   "schema_bytes": 206
+  },
+  {
+   "name": "request_review",
+   "annotations": null,
+   "schema_bytes": 255
+  },
+  {
+   "name": "add_review_feedback",
+   "annotations": null,
+   "schema_bytes": 530
+  },
+  {
+   "name": "add_review_topic",
+   "annotations": null,
+   "schema_bytes": 291
+  },
+  {
+   "name": "get_review_feedback",
+   "annotations": null,
+   "schema_bytes": 125
+  },
+  {
+   "name": "respond_to_review",
+   "annotations": null,
+   "schema_bytes": 244
+  }
+ ],
+ "list_tools_bytes": 144158
+}

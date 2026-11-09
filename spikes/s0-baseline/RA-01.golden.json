@@ -1,0 +1,1426 @@
+{
+ "class_counts": {
+  "IfcBeam": 8,
+  "IfcBuilding": 1,
+  "IfcBuildingStorey": 2,
+  "IfcColumn": 12,
+  "IfcDoor": 5,
+  "IfcOpeningElement": 13,
+  "IfcSite": 1,
+  "IfcSlab": 3,
+  "IfcSpace": 6,
+  "IfcStairFlight": 1,
+  "IfcWall": 14,
+  "IfcWindow": 8
+ },
+ "elements": {
+  "018pwR5TbIbPcizjR1lz6j": {
+   "class": "IfcBeam",
+   "intent": null,
+   "layers": null,
+   "name": "B-03",
+   "psets": {
+    "Pset_BeamCommon": {
+     "IsExternal": false,
+     "LoadBearing": true,
+     "Reference": "B-03"
+    }
+   },
+   "type": null,
+   "volume_analytic": 0.7008
+  },
+  "04Ry4$uL9HLB6WVkfGzqQQ": {
+   "class": "IfcColumn",
+   "intent": null,
+   "layers": null,
+   "name": "C-01",
+   "psets": {
+    "Pset_ColumnCommon": {
+     "IsExternal": false,
+     "LoadBearing": true,
+     "Reference": "C-01"
+    }
+   },
+   "type": null,
+   "volume_analytic": 0.528
+  },
+  "06XEMC$KPHOAshs$hQsRXg": {
+   "class": "IfcWall",
+   "intent": "{\"axis\":[[12.0,0],[12.0,8.0]],\"height\":3.3,\"kind\":\"wall\",\"role\":\"exterior\",\"storey\":\"2F\",\"thickness\":0.32}",
+   "layers": [
+    [
+     "Finish",
+     0.02
+    ],
+    [
+     "Insulation",
+     0.1
+    ],
+    [
+     "Concrete",
+     0.2
+    ]
+   ],
+   "name": "W-E-06",
+   "psets": {
+    "DoBIM_Intent": {
+     "Intent": "{\"axis\":[[12.0,0],[12.0,8.0]],\"height\":3.3,\"kind\":\"wall\",\"role\":\"exterior\",\"storey\":\"2F\",\"thickness\":0.32}"
+    },
+    "Pset_WallCommon": {
+     "FireRating": "120min",
+     "IsExternal": true,
+     "LoadBearing": true,
+     "Reference": "W-E-06"
+    }
+   },
+   "type": "WT-EXT-320",
+   "volume_analytic": 8.448
+  },
+  "06j3reGVjO6e1bGgGxbqSO": {
+   "class": "IfcWall",
+   "intent": "{\"axis\":[[12.0,0],[12.0,8.0]],\"height\":3.3,\"kind\":\"wall\",\"role\":\"exterior\",\"storey\":\"1F\",\"thickness\":0.32}",
+   "layers": [
+    [
+     "Finish",
+     0.02
+    ],
+    [
+     "Insulation",
+     0.1
+    ],
+    [
+     "Concrete",
+     0.2
+    ]
+   ],
+   "name": "W-E-02",
+   "psets": {
+    "DoBIM_Intent": {
+     "Intent": "{\"axis\":[[12.0,0],[12.0,8.0]],\"height\":3.3,\"kind\":\"wall\",\"role\":\"exterior\",\"storey\":\"1F\",\"thickness\":0.32}"
+    },
+    "Pset_WallCommon": {
+     "FireRating": "120min",
+     "IsExternal": true,
+     "LoadBearing": true,
+     "Reference": "W-E-02"
+    }
+   },
+   "type": "WT-EXT-320",
+   "volume_analytic": 8.448
+  },
+  "0Dbhk7yXTSEvJRMBjdyITy": {
+   "class": "IfcColumn",
+   "intent": null,
+   "layers": null,
+   "name": "C-03",
+   "psets": {
+    "Pset_ColumnCommon": {
+     "IsExternal": false,
+     "LoadBearing": true,
+     "Reference": "C-03"
+    }
+   },
+   "type": null,
+   "volume_analytic": 0.528
+  },
+  "0EpPRF$kzOhfU5ehs9Qbe4": {
+   "class": "IfcColumn",
+   "intent": null,
+   "layers": null,
+   "name": "C-06",
+   "psets": {
+    "Pset_ColumnCommon": {
+     "IsExternal": false,
+     "LoadBearing": true,
+     "Reference": "C-06"
+    }
+   },
+   "type": null,
+   "volume_analytic": 0.528
+  },
+  "0Gay1xBojKAQdsUql6WWOE": {
+   "class": "IfcOpeningElement",
+   "intent": null,
+   "layers": null,
+   "name": "OP-WIN-08",
+   "psets": {},
+   "type": null,
+   "volume_analytic": null
+  },
+  "0HF9ePz_vPa9x$N0N$fOTe": {
+   "class": "IfcBeam",
+   "intent": null,
+   "layers": null,
+   "name": "B-02",
+   "psets": {
+    "Pset_BeamCommon": {
+     "IsExternal": false,
+     "LoadBearing": true,
+     "Reference": "B-02"
+    }
+   },
+   "type": null,
+   "volume_analytic": 0.7008
+  },
+  "0KgXhvvRrKqwDjECUuctIF": {
+   "class": "IfcSlab",
+   "intent": null,
+   "layers": null,
+   "name": "S-02",
+   "psets": {
+    "Pset_SlabCommon": {
+     "FireRating": "120min",
+     "IsExternal": false,
+     "Reference": "S-02"
+    }
+   },
+   "type": null,
+   "volume_analytic": 17.94048
+  },
+  "0M70VM2XHLeRTKtp63_gXk": {
+   "class": "IfcBeam",
+   "intent": null,
+   "layers": null,
+   "name": "B-07",
+   "psets": {
+    "Pset_BeamCommon": {
+     "IsExternal": false,
+     "LoadBearing": true,
+     "Reference": "B-07"
+    }
+   },
+   "type": null,
+   "volume_analytic": 0.4608
+  },
+  "0NMNry_anRwwDmM$NmdIP1": {
+   "class": "IfcDoor",
+   "intent": "{\"height\":2.1,\"host\":\"W-E-01\",\"kind\":\"door\",\"offset\":8.0,\"type\":\"DT-01\",\"width\":0.9}",
+   "layers": null,
+   "name": "D-01",
+   "psets": {
+    "DoBIM_Intent": {
+     "Intent": "{\"height\":2.1,\"host\":\"W-E-01\",\"kind\":\"door\",\"offset\":8.0,\"type\":\"DT-01\",\"width\":0.9}"
+    },
+    "DoBIM_TypeParams": {
+     "OverallHeight": 2.1,
+     "OverallWidth": 0.9
+    },
+    "Pset_DoorCommon": {
+     "FireRating": "60min",
+     "IsExternal": true,
+     "Reference": "D-01"
+    }
+   },
+   "type": "DT-01",
+   "volume_analytic": null
+  },
+  "0O_z4nTGDH097WyBpOfYZz": {
+   "class": "IfcWindow",
+   "intent": null,
+   "layers": null,
+   "name": "WIN-03",
+   "psets": {
+    "DoBIM_TypeParams": {
+     "OverallHeight": 1.2,
+     "OverallWidth": 1.8
+    },
+    "Pset_WindowCommon": {
+     "FireRating": "0min",
+     "IsExternal": true,
+     "Reference": "WIN-03",
+     "ThermalTransmittance": 1.4
+    }
+   },
+   "type": "WT-02",
+   "volume_analytic": null
+  },
+  "0So2jDtfjNAvKYdq8$z3g2": {
+   "class": "IfcColumn",
+   "intent": null,
+   "layers": null,
+   "name": "C-11",
+   "psets": {
+    "Pset_ColumnCommon": {
+     "IsExternal": false,
+     "LoadBearing": true,
+     "Reference": "C-11"
+    }
+   },
+   "type": null,
+   "volume_analytic": 0.528
+  },
+  "0bbvQJpMjSWhcT9r2H0kfg": {
+   "class": "IfcWall",
+   "intent": "{\"axis\":[[4.05,4.0],[11.84,4.0]],\"height\":3.3,\"kind\":\"wall\",\"role\":\"interior\",\"storey\":\"1F\",\"thickness\":0.1}",
+   "layers": [
+    [
+     "Gypsum",
+     0.1
+    ]
+   ],
+   "name": "W-I-02",
+   "psets": {
+    "DoBIM_Intent": {
+     "Intent": "{\"axis\":[[4.05,4.0],[11.84,4.0]],\"height\":3.3,\"kind\":\"wall\",\"role\":\"interior\",\"storey\":\"1F\",\"thickness\":0.1}"
+    },
+    "Pset_WallCommon": {
+     "FireRating": "60min",
+     "IsExternal": false,
+     "LoadBearing": false,
+     "Reference": "W-I-02"
+    }
+   },
+   "type": "WT-INT-100",
+   "volume_analytic": 2.4027
+  },
+  "0fDMFO6IbKRwgwzE1Wy8jP": {
+   "class": "IfcColumn",
+   "intent": null,
+   "layers": null,
+   "name": "C-10",
+   "psets": {
+    "Pset_ColumnCommon": {
+     "IsExternal": false,
+     "LoadBearing": true,
+     "Reference": "C-10"
+    }
+   },
+   "type": null,
+   "volume_analytic": 0.528
+  },
+  "0hu4ztJVbTlBBvemhzSZ26": {
+   "class": "IfcWall",
+   "intent": "{\"axis\":[[4.0,0.16],[4.0,7.84]],\"height\":3.3,\"kind\":\"wall\",\"role\":\"interior\",\"storey\":\"2F\",\"thickness\":0.1}",
+   "layers": [
+    [
+     "Gypsum",
+     0.1
+    ]
+   ],
+   "name": "W-I-04",
+   "psets": {
+    "DoBIM_Intent": {
+     "Intent": "{\"axis\":[[4.0,0.16],[4.0,7.84]],\"height\":3.3,\"kind\":\"wall\",\"role\":\"interior\",\"storey\":\"2F\",\"thickness\":0.1}"
+    },
+    "Pset_WallCommon": {
+     "FireRating": "60min",
+     "IsExternal": false,
+     "LoadBearing": false,
+     "Reference": "W-I-04"
+    }
+   },
+   "type": "WT-INT-100",
+   "volume_analytic": 2.3663999999999996
+  },
+  "0mTRbx1gfInuCwWzCzREvE": {
+   "class": "IfcBeam",
+   "intent": null,
+   "layers": null,
+   "name": "B-04",
+   "psets": {
+    "Pset_BeamCommon": {
+     "IsExternal": false,
+     "LoadBearing": true,
+     "Reference": "B-04"
+    }
+   },
+   "type": null,
+   "volume_analytic": 0.7008
+  },
+  "0nex_vU5bTEBH5WTgxCq_y": {
+   "class": "IfcSpace",
+   "intent": null,
+   "layers": null,
+   "name": "SP-203",
+   "psets": {
+    "Pset_SpaceCommon": {
+     "Category": "office",
+     "IsExternal": false,
+     "Reference": "SP-203"
+    }
+   },
+   "type": null,
+   "volume_analytic": 97.42953
+  },
+  "0tKCUDBLTPWBYHRhs6Z7T3": {
+   "class": "IfcSlab",
+   "intent": null,
+   "layers": null,
+   "name": "S-01",
+   "psets": {
+    "Pset_SlabCommon": {
+     "FireRating": "120min",
+     "IsExternal": false,
+     "Reference": "S-01"
+    }
+   },
+   "type": null,
+   "volume_analytic": 20.500480000000003
+  },
+  "111iLrebzTDwKdJranyhaG": {
+   "class": "IfcOpeningElement",
+   "intent": null,
+   "layers": null,
+   "name": "OP-WIN-04",
+   "psets": {},
+   "type": null,
+   "volume_analytic": null
+  },
+  "1GDds27ALNXwSNR9UBX5P7": {
+   "class": "IfcOpeningElement",
+   "intent": null,
+   "layers": null,
+   "name": "OP-WIN-03",
+   "psets": {},
+   "type": null,
+   "volume_analytic": null
+  },
+  "1N3Lq$r_jMWvF$JdsilU2j": {
+   "class": "IfcWall",
+   "intent": "{\"axis\":[[0,8.0],[0,0]],\"height\":3.3,\"kind\":\"wall\",\"role\":\"exterior\",\"storey\":\"1F\",\"thickness\":0.32}",
+   "layers": [
+    [
+     "Finish",
+     0.02
+    ],
+    [
+     "Insulation",
+     0.1
+    ],
+    [
+     "Concrete",
+     0.2
+    ]
+   ],
+   "name": "W-E-04",
+   "psets": {
+    "DoBIM_Intent": {
+     "Intent": "{\"axis\":[[0,8.0],[0,0]],\"height\":3.3,\"kind\":\"wall\",\"role\":\"exterior\",\"storey\":\"1F\",\"thickness\":0.32}"
+    },
+    "Pset_WallCommon": {
+     "FireRating": "120min",
+     "IsExternal": true,
+     "LoadBearing": true,
+     "Reference": "W-E-04"
+    }
+   },
+   "type": "WT-EXT-320",
+   "volume_analytic": 8.448
+  },
+  "1O8aYRth5S8hSoXs1mYbIs": {
+   "class": "IfcBeam",
+   "intent": null,
+   "layers": null,
+   "name": "B-06",
+   "psets": {
+    "Pset_BeamCommon": {
+     "IsExternal": false,
+     "LoadBearing": true,
+     "Reference": "B-06"
+    }
+   },
+   "type": null,
+   "volume_analytic": 0.4608
+  },
+  "1ZGDVaPEjP6fMkhGEXOq5o": {
+   "class": "IfcOpeningElement",
+   "intent": null,
+   "layers": null,
+   "name": "OP-WIN-01",
+   "psets": {},
+   "type": null,
+   "volume_analytic": null
+  },
+  "1_X2pSG7HHBuzp$_g66$He": {
+   "class": "IfcColumn",
+   "intent": null,
+   "layers": null,
+   "name": "C-07",
+   "psets": {
+    "Pset_ColumnCommon": {
+     "IsExternal": false,
+     "LoadBearing": true,
+     "Reference": "C-07"
+    }
+   },
+   "type": null,
+   "volume_analytic": 0.528
+  },
+  "1_nEk9RPrSi80f09aBT8LF": {
+   "class": "IfcSpace",
+   "intent": null,
+   "layers": null,
+   "name": "SP-201",
+   "psets": {
+    "Pset_SpaceCommon": {
+     "Category": "office",
+     "IsExternal": false,
+     "Reference": "SP-201"
+    }
+   },
+   "type": null,
+   "volume_analytic": 96.05376
+  },
+  "1bwnjRtvrNgw9Z9r3Lsi0e": {
+   "class": "IfcSpace",
+   "intent": null,
+   "layers": null,
+   "name": "SP-103",
+   "psets": {
+    "Pset_SpaceCommon": {
+     "Category": "office",
+     "IsExternal": false,
+     "Reference": "SP-103"
+    }
+   },
+   "type": null,
+   "volume_analytic": 97.42953
+  },
+  "1eEKPnraPOHh_l6e8apyhD": {
+   "class": "IfcColumn",
+   "intent": null,
+   "layers": null,
+   "name": "C-09",
+   "psets": {
+    "Pset_ColumnCommon": {
+     "IsExternal": false,
+     "LoadBearing": true,
+     "Reference": "C-09"
+    }
+   },
+   "type": null,
+   "volume_analytic": 0.528
+  },
+  "1fwXmdOV9Tyeld4QiKP8GT": {
+   "class": "IfcColumn",
+   "intent": null,
+   "layers": null,
+   "name": "C-12",
+   "psets": {
+    "Pset_ColumnCommon": {
+     "IsExternal": false,
+     "LoadBearing": true,
+     "Reference": "C-12"
+    }
+   },
+   "type": null,
+   "volume_analytic": 0.528
+  },
+  "1j$Uew56LNlfCiw9mduyJx": {
+   "class": "IfcColumn",
+   "intent": null,
+   "layers": null,
+   "name": "C-02",
+   "psets": {
+    "Pset_ColumnCommon": {
+     "IsExternal": false,
+     "LoadBearing": true,
+     "Reference": "C-02"
+    }
+   },
+   "type": null,
+   "volume_analytic": 0.528
+  },
+  "1ml4gUzJPI6xjtH6Yx5RVZ": {
+   "class": "IfcOpeningElement",
+   "intent": null,
+   "layers": null,
+   "name": "OP-WIN-05",
+   "psets": {},
+   "type": null,
+   "volume_analytic": null
+  },
+  "1zCNdybhrS3BERfRW1zGef": {
+   "class": "IfcWall",
+   "intent": "{\"axis\":[[12.0,8.0],[0,8.0]],\"height\":3.3,\"kind\":\"wall\",\"role\":\"exterior\",\"storey\":\"1F\",\"thickness\":0.32}",
+   "layers": [
+    [
+     "Finish",
+     0.02
+    ],
+    [
+     "Insulation",
+     0.1
+    ],
+    [
+     "Concrete",
+     0.2
+    ]
+   ],
+   "name": "W-E-03",
+   "psets": {
+    "DoBIM_Intent": {
+     "Intent": "{\"axis\":[[12.0,8.0],[0,8.0]],\"height\":3.3,\"kind\":\"wall\",\"role\":\"exterior\",\"storey\":\"1F\",\"thickness\":0.32}"
+    },
+    "Pset_WallCommon": {
+     "FireRating": "120min",
+     "IsExternal": true,
+     "LoadBearing": true,
+     "Reference": "W-E-03"
+    }
+   },
+   "type": "WT-EXT-320",
+   "volume_analytic": 11.289599999999998
+  },
+  "2$pvDlvunUMvh_UtVLzfmz": {
+   "class": "IfcBuildingStorey",
+   "intent": null,
+   "layers": null,
+   "name": "1F",
+   "psets": {},
+   "type": null,
+   "volume_analytic": null
+  },
+  "24qdbPlyjVDPYQFG9auIm9": {
+   "class": "IfcWindow",
+   "intent": null,
+   "layers": null,
+   "name": "WIN-08",
+   "psets": {
+    "DoBIM_TypeParams": {
+     "OverallHeight": 1.2,
+     "OverallWidth": 1.8
+    },
+    "Pset_WindowCommon": {
+     "FireRating": "0min",
+     "IsExternal": true,
+     "Reference": "WIN-08",
+     "ThermalTransmittance": 1.4
+    }
+   },
+   "type": "WT-02",
+   "volume_analytic": null
+  },
+  "25FhLtGibUvemo0wnbYUQ8": {
+   "class": "IfcWindow",
+   "intent": null,
+   "layers": null,
+   "name": "WIN-02",
+   "psets": {
+    "DoBIM_TypeParams": {
+     "OverallHeight": 1.2,
+     "OverallWidth": 1.2
+    },
+    "Pset_WindowCommon": {
+     "FireRating": "0min",
+     "IsExternal": true,
+     "Reference": "WIN-02",
+     "ThermalTransmittance": 1.4
+    }
+   },
+   "type": "WT-01",
+   "volume_analytic": null
+  },
+  "28VwDxXKjO$hDqrwGRhOkr": {
+   "class": "IfcDoor",
+   "intent": "{\"height\":2.1,\"host\":\"W-I-04\",\"kind\":\"door\",\"offset\":1.84,\"type\":\"DT-02\",\"width\":0.8}",
+   "layers": null,
+   "name": "D-04",
+   "psets": {
+    "DoBIM_Intent": {
+     "Intent": "{\"height\":2.1,\"host\":\"W-I-04\",\"kind\":\"door\",\"offset\":1.84,\"type\":\"DT-02\",\"width\":0.8}"
+    },
+    "DoBIM_TypeParams": {
+     "OverallHeight": 2.1,
+     "OverallWidth": 0.8
+    },
+    "Pset_DoorCommon": {
+     "FireRating": "30min",
+     "IsExternal": false,
+     "Reference": "D-04"
+    }
+   },
+   "type": "DT-02",
+   "volume_analytic": null
+  },
+  "2E$4eERRHORPNbDu9W0aX4": {
+   "class": "IfcDoor",
+   "intent": "{\"height\":2.1,\"host\":\"W-E-05\",\"kind\":\"door\",\"offset\":8.0,\"type\":\"DT-01\",\"width\":0.9}",
+   "layers": null,
+   "name": "D-05",
+   "psets": {
+    "DoBIM_Intent": {
+     "Intent": "{\"height\":2.1,\"host\":\"W-E-05\",\"kind\":\"door\",\"offset\":8.0,\"type\":\"DT-01\",\"width\":0.9}"
+    },
+    "DoBIM_TypeParams": {
+     "OverallHeight": 2.1,
+     "OverallWidth": 0.9
+    },
+    "Pset_DoorCommon": {
+     "FireRating": "60min",
+     "IsExternal": true,
+     "Reference": "D-05"
+    }
+   },
+   "type": "DT-01",
+   "volume_analytic": null
+  },
+  "2HdbQEg4TR$B2gsWUG3TIJ": {
+   "class": "IfcOpeningElement",
+   "intent": null,
+   "layers": null,
+   "name": "OP-D-05",
+   "psets": {},
+   "type": null,
+   "volume_analytic": null
+  },
+  "2J_Nc6Lb1M3BfZUlKvf1th": {
+   "class": "IfcColumn",
+   "intent": null,
+   "layers": null,
+   "name": "C-04",
+   "psets": {
+    "Pset_ColumnCommon": {
+     "IsExternal": false,
+     "LoadBearing": true,
+     "Reference": "C-04"
+    }
+   },
+   "type": null,
+   "volume_analytic": 0.528
+  },
+  "2NmRKe4gXS2g7DSKbN8oJ1": {
+   "class": "IfcWall",
+   "intent": "{\"axis\":[[4.0,0.16],[4.0,7.84]],\"height\":3.3,\"kind\":\"wall\",\"role\":\"interior\",\"storey\":\"1F\",\"thickness\":0.1}",
+   "layers": [
+    [
+     "Gypsum",
+     0.1
+    ]
+   ],
+   "name": "W-I-01",
+   "psets": {
+    "DoBIM_Intent": {
+     "Intent": "{\"axis\":[[4.0,0.16],[4.0,7.84]],\"height\":3.3,\"kind\":\"wall\",\"role\":\"interior\",\"storey\":\"1F\",\"thickness\":0.1}"
+    },
+    "Pset_WallCommon": {
+     "FireRating": "60min",
+     "IsExternal": false,
+     "LoadBearing": false,
+     "Reference": "W-I-01"
+    }
+   },
+   "type": "WT-INT-100",
+   "volume_analytic": 2.3663999999999996
+  },
+  "2OeeOI5vbGuuDI2EE7Z39t": {
+   "class": "IfcSite",
+   "intent": null,
+   "layers": null,
+   "name": "Site",
+   "psets": {},
+   "type": null,
+   "volume_analytic": null
+  },
+  "2Q4GXQ4J5Gcx_OghkRUdXd": {
+   "class": "IfcDoor",
+   "intent": "{\"height\":2.1,\"host\":\"W-I-02\",\"kind\":\"door\",\"offset\":2.95,\"type\":\"DT-02\",\"width\":0.8}",
+   "layers": null,
+   "name": "D-03",
+   "psets": {
+    "DoBIM_Intent": {
+     "Intent": "{\"height\":2.1,\"host\":\"W-I-02\",\"kind\":\"door\",\"offset\":2.95,\"type\":\"DT-02\",\"width\":0.8}"
+    },
+    "DoBIM_TypeParams": {
+     "OverallHeight": 2.1,
+     "OverallWidth": 0.8
+    },
+    "Pset_DoorCommon": {
+     "FireRating": "30min",
+     "IsExternal": false,
+     "Reference": "D-03"
+    }
+   },
+   "type": "DT-02",
+   "volume_analytic": null
+  },
+  "2Qkn_sJh1HPvgk6rr8Rr4t": {
+   "class": "IfcWindow",
+   "intent": null,
+   "layers": null,
+   "name": "WIN-01",
+   "psets": {
+    "DoBIM_TypeParams": {
+     "OverallHeight": 1.2,
+     "OverallWidth": 1.2
+    },
+    "Pset_WindowCommon": {
+     "FireRating": "0min",
+     "IsExternal": true,
+     "Reference": "WIN-01",
+     "ThermalTransmittance": 1.4
+    }
+   },
+   "type": "WT-01",
+   "volume_analytic": null
+  },
+  "2Rweq4B19QiukM5STzVZnA": {
+   "class": "IfcOpeningElement",
+   "intent": null,
+   "layers": null,
+   "name": "OP-D-03",
+   "psets": {},
+   "type": null,
+   "volume_analytic": null
+  },
+  "2Wj1VvT6PTyOIua823$YmL": {
+   "class": "IfcBeam",
+   "intent": null,
+   "layers": null,
+   "name": "B-05",
+   "psets": {
+    "Pset_BeamCommon": {
+     "IsExternal": false,
+     "LoadBearing": true,
+     "Reference": "B-05"
+    }
+   },
+   "type": null,
+   "volume_analytic": 0.4608
+  },
+  "2bt3PtnQPOHv9VYcEoZeN7": {
+   "class": "IfcWall",
+   "intent": "{\"axis\":[[0,0],[12.0,0]],\"height\":3.3,\"kind\":\"wall\",\"role\":\"exterior\",\"storey\":\"2F\",\"thickness\":0.32}",
+   "layers": [
+    [
+     "Finish",
+     0.02
+    ],
+    [
+     "Insulation",
+     0.1
+    ],
+    [
+     "Concrete",
+     0.2
+    ]
+   ],
+   "name": "W-E-05",
+   "psets": {
+    "DoBIM_Intent": {
+     "Intent": "{\"axis\":[[0,0],[12.0,0]],\"height\":3.3,\"kind\":\"wall\",\"role\":\"exterior\",\"storey\":\"2F\",\"thickness\":0.32}"
+    },
+    "Pset_WallCommon": {
+     "FireRating": "120min",
+     "IsExternal": true,
+     "LoadBearing": true,
+     "Reference": "W-E-05"
+    }
+   },
+   "type": "WT-EXT-320",
+   "volume_analytic": 11.145599999999998
+  },
+  "2hn7OsU1HUYgod0jTjTJ8l": {
+   "class": "IfcWindow",
+   "intent": null,
+   "layers": null,
+   "name": "WIN-04",
+   "psets": {
+    "DoBIM_TypeParams": {
+     "OverallHeight": 1.2,
+     "OverallWidth": 1.8
+    },
+    "Pset_WindowCommon": {
+     "FireRating": "0min",
+     "IsExternal": true,
+     "Reference": "WIN-04",
+     "ThermalTransmittance": 1.4
+    }
+   },
+   "type": "WT-02",
+   "volume_analytic": null
+  },
+  "2ldu8vPDfRF8VcYybJnV1h": {
+   "class": "IfcColumn",
+   "intent": null,
+   "layers": null,
+   "name": "C-05",
+   "psets": {
+    "Pset_ColumnCommon": {
+     "IsExternal": false,
+     "LoadBearing": true,
+     "Reference": "C-05"
+    }
+   },
+   "type": null,
+   "volume_analytic": 0.528
+  },
+  "2qdqtwRLXJYBUw4ybuIEGV": {
+   "class": "IfcSpace",
+   "intent": null,
+   "layers": null,
+   "name": "SP-202",
+   "psets": {
+    "Pset_SpaceCommon": {
+     "Category": "office",
+     "IsExternal": false,
+     "Reference": "SP-202"
+    }
+   },
+   "type": null,
+   "volume_analytic": 97.42953
+  },
+  "2qrkWgQlLRWggqKDm9T4yc": {
+   "class": "IfcSpace",
+   "intent": null,
+   "layers": null,
+   "name": "SP-102",
+   "psets": {
+    "Pset_SpaceCommon": {
+     "Category": "office",
+     "IsExternal": false,
+     "Reference": "SP-102"
+    }
+   },
+   "type": null,
+   "volume_analytic": 97.42953
+  },
+  "2t_3uBgsbSvAdRWwYg4tbH": {
+   "class": "IfcWall",
+   "intent": "{\"axis\":[[8.0,0.16],[8.0,2.0]],\"height\":3.3,\"kind\":\"wall\",\"role\":\"interior\",\"storey\":\"1F\",\"thickness\":0.1}",
+   "layers": [
+    [
+     "Gypsum",
+     0.1
+    ]
+   ],
+   "name": "W-I-03",
+   "psets": {
+    "DoBIM_Intent": {
+     "Intent": "{\"axis\":[[8.0,0.16],[8.0,2.0]],\"height\":3.3,\"kind\":\"wall\",\"role\":\"interior\",\"storey\":\"1F\",\"thickness\":0.1}"
+    },
+    "Pset_WallCommon": {
+     "FireRating": "60min",
+     "IsExternal": false,
+     "LoadBearing": false,
+     "Reference": "W-I-03"
+    }
+   },
+   "type": "WT-INT-100",
+   "volume_analytic": 0.6072000000000001
+  },
+  "2wr_uKvDXHhAMA_V6_wRjJ": {
+   "class": "IfcSpace",
+   "intent": null,
+   "layers": null,
+   "name": "SP-101",
+   "psets": {
+    "Pset_SpaceCommon": {
+     "Category": "office",
+     "IsExternal": false,
+     "Reference": "SP-101"
+    }
+   },
+   "type": null,
+   "volume_analytic": 96.05376
+  },
+  "31vsyNIuDV_vx4S6DNgJq0": {
+   "class": "IfcOpeningElement",
+   "intent": null,
+   "layers": null,
+   "name": "OP-WIN-07",
+   "psets": {},
+   "type": null,
+   "volume_analytic": null
+  },
+  "34c0Xeah9UHuAMIhsIuJop": {
+   "class": "IfcOpeningElement",
+   "intent": null,
+   "layers": null,
+   "name": "OP-WIN-06",
+   "psets": {},
+   "type": null,
+   "volume_analytic": null
+  },
+  "3AIUj2D2bKRvKrfxzbkhcL": {
+   "class": "IfcWall",
+   "intent": "{\"axis\":[[0,8.0],[0,0]],\"height\":3.3,\"kind\":\"wall\",\"role\":\"exterior\",\"storey\":\"2F\",\"thickness\":0.32}",
+   "layers": [
+    [
+     "Finish",
+     0.02
+    ],
+    [
+     "Insulation",
+     0.1
+    ],
+    [
+     "Concrete",
+     0.2
+    ]
+   ],
+   "name": "W-E-08",
+   "psets": {
+    "DoBIM_Intent": {
+     "Intent": "{\"axis\":[[0,8.0],[0,0]],\"height\":3.3,\"kind\":\"wall\",\"role\":\"exterior\",\"storey\":\"2F\",\"thickness\":0.32}"
+    },
+    "Pset_WallCommon": {
+     "FireRating": "120min",
+     "IsExternal": true,
+     "LoadBearing": true,
+     "Reference": "W-E-08"
+    }
+   },
+   "type": "WT-EXT-320",
+   "volume_analytic": 8.448
+  },
+  "3F9pOeE_PI2Q6MrE7wyaFY": {
+   "class": "IfcWindow",
+   "intent": null,
+   "layers": null,
+   "name": "WIN-05",
+   "psets": {
+    "DoBIM_TypeParams": {
+     "OverallHeight": 1.2,
+     "OverallWidth": 1.2
+    },
+    "Pset_WindowCommon": {
+     "FireRating": "0min",
+     "IsExternal": true,
+     "Reference": "WIN-05",
+     "ThermalTransmittance": 1.4
+    }
+   },
+   "type": "WT-01",
+   "volume_analytic": null
+  },
+  "3HgPwQDPPMVhn5kZdp9h5u": {
+   "class": "IfcBeam",
+   "intent": null,
+   "layers": null,
+   "name": "B-08",
+   "psets": {
+    "Pset_BeamCommon": {
+     "IsExternal": false,
+     "LoadBearing": true,
+     "Reference": "B-08"
+    }
+   },
+   "type": null,
+   "volume_analytic": 0.4608
+  },
+  "3Jses2$FzNPBRgiAJLRVX2": {
+   "class": "IfcBeam",
+   "intent": null,
+   "layers": null,
+   "name": "B-01",
+   "psets": {
+    "Pset_BeamCommon": {
+     "IsExternal": false,
+     "LoadBearing": true,
+     "Reference": "B-01"
+    }
+   },
+   "type": null,
+   "volume_analytic": 0.7008
+  },
+  "3NsrGZ$IjGafTw1C10DTUK": {
+   "class": "IfcColumn",
+   "intent": null,
+   "layers": null,
+   "name": "C-08",
+   "psets": {
+    "Pset_ColumnCommon": {
+     "IsExternal": false,
+     "LoadBearing": true,
+     "Reference": "C-08"
+    }
+   },
+   "type": null,
+   "volume_analytic": 0.528
+  },
+  "3Ovv7II1DTFBDmmZIkL_aJ": {
+   "class": "IfcOpeningElement",
+   "intent": null,
+   "layers": null,
+   "name": "OP-D-02",
+   "psets": {},
+   "type": null,
+   "volume_analytic": null
+  },
+  "3PLpb2UafNOR$rzKeE2TIl": {
+   "class": "IfcStairFlight",
+   "intent": null,
+   "layers": null,
+   "name": "ST-01",
+   "psets": {
+    "Pset_StairFlightCommon": {
+     "NumberOfRiser": 18.0,
+     "NumberOfTreads": 17.0,
+     "Reference": "ST-01"
+    }
+   },
+   "type": null,
+   "volume_analytic": 1.2636000000000018
+  },
+  "3RGPgszznRu8YwRggppIcs": {
+   "class": "IfcWall",
+   "intent": "{\"axis\":[[4.05,4.0],[11.84,4.0]],\"height\":3.3,\"kind\":\"wall\",\"role\":\"interior\",\"storey\":\"2F\",\"thickness\":0.1}",
+   "layers": [
+    [
+     "Gypsum",
+     0.1
+    ]
+   ],
+   "name": "W-I-05",
+   "psets": {
+    "DoBIM_Intent": {
+     "Intent": "{\"axis\":[[4.05,4.0],[11.84,4.0]],\"height\":3.3,\"kind\":\"wall\",\"role\":\"interior\",\"storey\":\"2F\",\"thickness\":0.1}"
+    },
+    "Pset_WallCommon": {
+     "FireRating": "60min",
+     "IsExternal": false,
+     "LoadBearing": false,
+     "Reference": "W-I-05"
+    }
+   },
+   "type": "WT-INT-100",
+   "volume_analytic": 2.5707
+  },
+  "3Sd2jmbwDKye09eCzsuTsl": {
+   "class": "IfcWindow",
+   "intent": null,
+   "layers": null,
+   "name": "WIN-06",
+   "psets": {
+    "DoBIM_TypeParams": {
+     "OverallHeight": 1.2,
+     "OverallWidth": 1.2
+    },
+    "Pset_WindowCommon": {
+     "FireRating": "0min",
+     "IsExternal": true,
+     "Reference": "WIN-06",
+     "ThermalTransmittance": 1.4
+    }
+   },
+   "type": "WT-01",
+   "volume_analytic": null
+  },
+  "3Tz6yyHRLLfAdpSWDIDl2y": {
+   "class": "IfcSlab",
+   "intent": null,
+   "layers": null,
+   "name": "S-03",
+   "psets": {
+    "Pset_SlabCommon": {
+     "FireRating": "120min",
+     "IsExternal": true,
+     "Reference": "S-03"
+    }
+   },
+   "type": null,
+   "volume_analytic": 17.94048
+  },
+  "3Y2ETKAITKWwOynuyfZ9lq": {
+   "class": "IfcWall",
+   "intent": "{\"axis\":[[0,0],[12.0,0]],\"height\":3.3,\"kind\":\"wall\",\"role\":\"exterior\",\"storey\":\"1F\",\"thickness\":0.32}",
+   "layers": [
+    [
+     "Finish",
+     0.02
+    ],
+    [
+     "Insulation",
+     0.1
+    ],
+    [
+     "Concrete",
+     0.2
+    ]
+   ],
+   "name": "W-E-01",
+   "psets": {
+    "DoBIM_Intent": {
+     "Intent": "{\"axis\":[[0,0],[12.0,0]],\"height\":3.3,\"kind\":\"wall\",\"role\":\"exterior\",\"storey\":\"1F\",\"thickness\":0.32}"
+    },
+    "Pset_WallCommon": {
+     "FireRating": "120min",
+     "IsExternal": true,
+     "LoadBearing": true,
+     "Reference": "W-E-01"
+    }
+   },
+   "type": "WT-EXT-320",
+   "volume_analytic": 11.145599999999998
+  },
+  "3ghRKAaGrPJuu0zvBUwZVe": {
+   "class": "IfcBuildingStorey",
+   "intent": null,
+   "layers": null,
+   "name": "2F",
+   "psets": {},
+   "type": null,
+   "volume_analytic": null
+  },
+  "3jA2QJu1vRt8cFJ5RbyfuT": {
+   "class": "IfcWindow",
+   "intent": null,
+   "layers": null,
+   "name": "WIN-07",
+   "psets": {
+    "DoBIM_TypeParams": {
+     "OverallHeight": 1.2,
+     "OverallWidth": 1.8
+    },
+    "Pset_WindowCommon": {
+     "FireRating": "0min",
+     "IsExternal": true,
+     "Reference": "WIN-07",
+     "ThermalTransmittance": 1.4
+    }
+   },
+   "type": "WT-02",
+   "volume_analytic": null
+  },
+  "3jO$rPRgXJEBMb6ABNtRqE": {
+   "class": "IfcBuilding",
+   "intent": null,
+   "layers": null,
+   "name": "RA-01",
+   "psets": {},
+   "type": null,
+   "volume_analytic": null
+  },
+  "3mox4ZENrRVAxX1nwoDtek": {
+   "class": "IfcWall",
+   "intent": "{\"axis\":[[12.0,8.0],[0,8.0]],\"height\":3.3,\"kind\":\"wall\",\"role\":\"exterior\",\"storey\":\"2F\",\"thickness\":0.32}",
+   "layers": [
+    [
+     "Finish",
+     0.02
+    ],
+    [
+     "Insulation",
+     0.1
+    ],
+    [
+     "Concrete",
+     0.2
+    ]
+   ],
+   "name": "W-E-07",
+   "psets": {
+    "DoBIM_Intent": {
+     "Intent": "{\"axis\":[[12.0,8.0],[0,8.0]],\"height\":3.3,\"kind\":\"wall\",\"role\":\"exterior\",\"storey\":\"2F\",\"thickness\":0.32}"
+    },
+    "Pset_WallCommon": {
+     "FireRating": "120min",
+     "IsExternal": true,
+     "LoadBearing": true,
+     "Reference": "W-E-07"
+    }
+   },
+   "type": "WT-EXT-320",
+   "volume_analytic": 11.289599999999998
+  },
+  "3mx4xG$xrHBO__AIZJvo1g": {
+   "class": "IfcDoor",
+   "intent": "{\"height\":2.1,\"host\":\"W-I-01\",\"kind\":\"door\",\"offset\":1.84,\"type\":\"DT-02\",\"width\":0.8}",
+   "layers": null,
+   "name": "D-02",
+   "psets": {
+    "DoBIM_Intent": {
+     "Intent": "{\"height\":2.1,\"host\":\"W-I-01\",\"kind\":\"door\",\"offset\":1.84,\"type\":\"DT-02\",\"width\":0.8}"
+    },
+    "DoBIM_TypeParams": {
+     "OverallHeight": 2.1,
+     "OverallWidth": 0.8
+    },
+    "Pset_DoorCommon": {
+     "FireRating": "30min",
+     "IsExternal": false,
+     "Reference": "D-02"
+    }
+   },
+   "type": "DT-02",
+   "volume_analytic": null
+  },
+  "3qGooS$NHMuOKMdJoJ1Ibn": {
+   "class": "IfcOpeningElement",
+   "intent": null,
+   "layers": null,
+   "name": "OP-D-04",
+   "psets": {},
+   "type": null,
+   "volume_analytic": null
+  },
+  "3rDBOQJjvKfPwVWBoRC5Cr": {
+   "class": "IfcWall",
+   "intent": "{\"axis\":[[8.0,0.16],[8.0,2.0]],\"height\":3.3,\"kind\":\"wall\",\"role\":\"interior\",\"storey\":\"2F\",\"thickness\":0.1}",
+   "layers": [
+    [
+     "Gypsum",
+     0.1
+    ]
+   ],
+   "name": "W-I-06",
+   "psets": {
+    "DoBIM_Intent": {
+     "Intent": "{\"axis\":[[8.0,0.16],[8.0,2.0]],\"height\":3.3,\"kind\":\"wall\",\"role\":\"interior\",\"storey\":\"2F\",\"thickness\":0.1}"
+    },
+    "Pset_WallCommon": {
+     "FireRating": "60min",
+     "IsExternal": false,
+     "LoadBearing": false,
+     "Reference": "W-I-06"
+    }
+   },
+   "type": "WT-INT-100",
+   "volume_analytic": 0.6072000000000001
+  },
+  "3z02aM321Pef2pvtOTCmaR": {
+   "class": "IfcOpeningElement",
+   "intent": null,
+   "layers": null,
+   "name": "OP-D-01",
+   "psets": {},
+   "type": null,
+   "volume_analytic": null
+  },
+  "3ztohqovLSAgwlGZ6u$ek2": {
+   "class": "IfcOpeningElement",
+   "intent": null,
+   "layers": null,
+   "name": "OP-WIN-02",
+   "psets": {},
+   "type": null,
+   "volume_analytic": null
+  }
+ },
+ "meta": {
+  "generator": "build_ra01.py",
+  "ifc_sha256": "49bf1c83db2e091c20430e694adda07e28b95cc64ca016a2f81243adfe32b969",
+  "ifcopenshell": "0.9.0.post1",
+  "name": "RA-01",
+  "note": "volume_analytic 은 생성 파라미터에서 직접 계산한 값(지오메트리 엔진과 독립)",
+  "schema": "IFC4",
+  "unit": "m"
+ },
+ "relations": {
+  "fills": [
+   [
+    "0Gay1xBojKAQdsUql6WWOE",
+    "24qdbPlyjVDPYQFG9auIm9"
+   ],
+   [
+    "111iLrebzTDwKdJranyhaG",
+    "2hn7OsU1HUYgod0jTjTJ8l"
+   ],
+   [
+    "1GDds27ALNXwSNR9UBX5P7",
+    "0O_z4nTGDH097WyBpOfYZz"
+   ],
+   [
+    "1ZGDVaPEjP6fMkhGEXOq5o",
+    "2Qkn_sJh1HPvgk6rr8Rr4t"
+   ],
+   [
+    "1ml4gUzJPI6xjtH6Yx5RVZ",
+    "3F9pOeE_PI2Q6MrE7wyaFY"
+   ],
+   [
+    "2HdbQEg4TR$B2gsWUG3TIJ",
+    "2E$4eERRHORPNbDu9W0aX4"
+   ],
+   [
+    "2Rweq4B19QiukM5STzVZnA",
+    "2Q4GXQ4J5Gcx_OghkRUdXd"
+   ],
+   [
+    "31vsyNIuDV_vx4S6DNgJq0",
+    "3jA2QJu1vRt8cFJ5RbyfuT"
+   ],
+   [
+    "34c0Xeah9UHuAMIhsIuJop",
+    "3Sd2jmbwDKye09eCzsuTsl"
+   ],
+   [
+    "3Ovv7II1DTFBDmmZIkL_aJ",
+    "3mx4xG$xrHBO__AIZJvo1g"
+   ],
+   [
+    "3qGooS$NHMuOKMdJoJ1Ibn",
+    "28VwDxXKjO$hDqrwGRhOkr"
+   ],
+   [
+    "3z02aM321Pef2pvtOTCmaR",
+    "0NMNry_anRwwDmM$NmdIP1"
+   ],
+   [
+    "3ztohqovLSAgwlGZ6u$ek2",
+    "25FhLtGibUvemo0wnbYUQ8"
+   ]
+  ],
+  "voids": [
+   [
+    "0bbvQJpMjSWhcT9r2H0kfg",
+    "2Rweq4B19QiukM5STzVZnA"
+   ],
+   [
+    "0hu4ztJVbTlBBvemhzSZ26",
+    "3qGooS$NHMuOKMdJoJ1Ibn"
+   ],
+   [
+    "1zCNdybhrS3BERfRW1zGef",
+    "111iLrebzTDwKdJranyhaG"
+   ],
+   [
+    "1zCNdybhrS3BERfRW1zGef",
+    "1GDds27ALNXwSNR9UBX5P7"
+   ],
+   [
+    "2NmRKe4gXS2g7DSKbN8oJ1",
+    "3Ovv7II1DTFBDmmZIkL_aJ"
+   ],
+   [
+    "2bt3PtnQPOHv9VYcEoZeN7",
+    "1ml4gUzJPI6xjtH6Yx5RVZ"
+   ],
+   [
+    "2bt3PtnQPOHv9VYcEoZeN7",
+    "2HdbQEg4TR$B2gsWUG3TIJ"
+   ],
+   [
+    "2bt3PtnQPOHv9VYcEoZeN7",
+    "34c0Xeah9UHuAMIhsIuJop"
+   ],
+   [
+    "3Y2ETKAITKWwOynuyfZ9lq",
+    "1ZGDVaPEjP6fMkhGEXOq5o"
+   ],
+   [
+    "3Y2ETKAITKWwOynuyfZ9lq",
+    "3z02aM321Pef2pvtOTCmaR"
+   ],
+   [
+    "3Y2ETKAITKWwOynuyfZ9lq",
+    "3ztohqovLSAgwlGZ6u$ek2"
+   ],
+   [
+    "3mox4ZENrRVAxX1nwoDtek",
+    "0Gay1xBojKAQdsUql6WWOE"
+   ],
+   [
+    "3mox4ZENrRVAxX1nwoDtek",
+    "31vsyNIuDV_vx4S6DNgJq0"
+   ]
+  ]
+ },
+ "spec_counts": {
+  "IfcBeam": 8,
+  "IfcBuilding": 1,
+  "IfcBuildingStorey": 2,
+  "IfcColumn": 12,
+  "IfcDoor": 5,
+  "IfcDoorType": 2,
+  "IfcSite": 1,
+  "IfcSlab": 3,
+  "IfcSpace": 6,
+  "IfcStairFlight": 1,
+  "IfcWall": 14,
+  "IfcWallType": 2,
+  "IfcWindow": 8,
+  "IfcWindowType": 2
+ }
+}

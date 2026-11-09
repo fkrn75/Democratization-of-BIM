@@ -1,0 +1,85 @@
+{
+ "steps": [
+  {
+   "step": "enable_addon",
+   "ok": true,
+   "sec": 3.73,
+   "ret": "{'FINISHED'}"
+  },
+  {
+   "step": "load_project",
+   "ok": true,
+   "sec": 0.35,
+   "ret": "{'FINISHED'}"
+  },
+  {
+   "step": "save_E1",
+   "ok": true,
+   "sec": 0.04,
+   "ret": "{'FINISHED'}"
+  },
+  {
+   "step": "add_drawing",
+   "ok": true,
+   "sec": 0.02,
+   "ret": "{'FINISHED'}"
+  },
+  {
+   "step": "activate_drawing",
+   "ok": true,
+   "sec": 0.06,
+   "ret": "{'FINISHED'}"
+  },
+  {
+   "step": "create_drawing",
+   "ok": true,
+   "sec": 0.15,
+   "ret": "{'FINISHED'}"
+  },
+  {
+   "step": "add_sheet",
+   "ok": true,
+   "sec": 0.01,
+   "ret": "{'FINISHED'}"
+  },
+  {
+   "step": "create_sheets",
+   "ok": true,
+   "sec": 0.01,
+   "ret": "{'FINISHED'}"
+  },
+  {
+   "step": "save_after_drawing",
+   "ok": true,
+   "sec": 0.03,
+   "ret": "{'FINISHED'}"
+  }
+ ],
+ "wall_object": "IfcWall/W-E-01",
+ "drawings_in_ifc": [
+  "PLAN_VIEW"
+ ],
+ "drawing_files": [
+  "<HOME>\\Democratization-of-BIM\\spikes\\s0-baseline\\results\\bonsai\\drawings\\PLAN_VIEW.svg",
+  "<HOME>\\Democratization-of-BIM\\spikes\\s0-baseline\\results\\bonsai\\drawings\\assets\\markers.svg",
+  "<HOME>\\Democratization-of-BIM\\spikes\\s0-baseline\\results\\bonsai\\drawings\\assets\\patterns.svg",
+  "<HOME>\\Democratization-of-BIM\\spikes\\s0-baseline\\results\\bonsai\\drawings\\assets\\symbols.svg",
+  "<HOME>\\Democratization-of-BIM\\spikes\\s0-baseline\\results\\bonsai\\drawings\\cache\\PLAN_VIEW-annotation.svg",
+  "<HOME>\\Democratization-of-BIM\\spikes\\s0-baseline\\results\\bonsai\\drawings\\cache\\PLAN_VIEW-linework.svg",
+  "<HOME>\\Democratization-of-BIM\\spikes\\s0-baseline\\results\\bonsai\\layouts\\A01 - UNTITLED.svg",
+  "<HOME>\\Democratization-of-BIM\\spikes\\s0-baseline\\results\\bonsai\\layouts\\titleblocks\\A1.svg",
+  "<HOME>\\Democratization-of-BIM\\spikes\\s0-baseline\\results\\bonsai\\sheets\\A01 - UNTITLED.svg"
+ ],
+ "out_files": [
+  "E1.bonsai.ifc",
+  "RA-01.bonsai.ifc",
+  "after_drawing.bonsai.ifc",
+  "drawings",
+  "edit_probe.json",
+  "layouts",
+  "ops_list.json",
+  "probe_log.json",
+  "roundtrip.json",
+  "sheets"
+ ]
+}

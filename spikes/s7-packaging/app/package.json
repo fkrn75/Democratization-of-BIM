@@ -1,0 +1,12 @@
+{
+  "name": "dobim-s7-shell",
+  "version": "0.0.1",
+  "private": true,
+  "description": "S7 스파이크: Tauri 2 셸이 동결 Python 사이드카를 resources 로 싣는지 확인하는 최소 골격",
+  "scripts": {
+    "tauri": "tauri"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2.0.0"
+  }
+}

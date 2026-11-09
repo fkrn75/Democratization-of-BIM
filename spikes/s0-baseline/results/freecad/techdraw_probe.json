@@ -1,0 +1,11 @@
+{
+ "template": "<WORK>/FreeCAD_1.1.4-Windows-x86_64-py311\\\\data\\Mod\\TechDraw\\Templates\\ISO\\A1_Landscape_blank.svg",
+ "recompute_sec": 0.0,
+ "dxf_before_bytes": 4919,
+ "dxf_before_entities": 5,
+ "has_PageResult_in_console": false,
+ "edges_before": 4,
+ "E4_recompute_after_move_sec": 0.01,
+ "dxf_after_entities": 5,
+ "E4_dxf_changed_after_wall_move": true
+}

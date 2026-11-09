@@ -1,0 +1,8 @@
+# ifc-lite 격리 시험 이미지: npm 은 설치 단계에서만, --ignore-scripts, 버전 고정, lockfile 기록. npx 미사용.
+FROM node@sha256:5ec23b7c622b00547753bc6ffd78085dd868a68aeb41c8e0a1418f033e13d96d
+RUN useradd -m -u 10001 tester && mkdir -p /opt/iflite /out && chown -R tester /opt/iflite /out
+USER 10001
+WORKDIR /opt/iflite
+RUN npm init -y >/dev/null && npm install --ignore-scripts --save-exact --no-audit --no-fund @ifc-lite/cli@0.45.1 @ifc-lite/mcp@0.29.0 2>&1 | tail -5 && cp package-lock.json /opt/iflite/lock.copy.json
+ENV PATH=/opt/iflite/node_modules/.bin:$PATH HOME=/home/tester
+WORKDIR /out

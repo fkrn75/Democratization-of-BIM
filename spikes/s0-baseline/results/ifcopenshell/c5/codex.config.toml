@@ -1,0 +1,6 @@
+[mcp_servers.ifc]
+command = "<HOME>/Democratization-of-BIM/spikes/s0-baseline/tools/ifc-cli/.venv/Scripts/python.exe"
+args = ["-X", "utf8", "-m", "ifcmcp"]
+
+[mcp_servers.ifc.env]
+PYTHONUTF8 = "1"

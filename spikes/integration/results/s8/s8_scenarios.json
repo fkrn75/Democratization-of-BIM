@@ -1,0 +1,1779 @@
+{
+ "failures": [],
+ "mutant": null,
+ "pass": true,
+ "runs": [
+  {
+   "PYTHONHASHSEED": 0,
+   "branch_delay_s": 0.0,
+   "reverse_order": false,
+   "run": 0
+  },
+  {
+   "PYTHONHASHSEED": 1,
+   "branch_delay_s": 0.0,
+   "reverse_order": true,
+   "run": 1
+  },
+  {
+   "PYTHONHASHSEED": 31337,
+   "branch_delay_s": 1.1,
+   "reverse_order": false,
+   "run": 2
+  },
+  {
+   "PYTHONHASHSEED": 987654321,
+   "branch_delay_s": 0.0,
+   "reverse_order": true,
+   "run": 3
+  }
+ ],
+ "scenarios": 23,
+ "table": [
+  {
+   "expect": {
+    "clean": true
+   },
+   "flows": {
+    "A<-B": {
+     "apply": "ok",
+     "conflicts": {},
+     "fork_rev": 10,
+     "hashes": {
+      "derived": "ac223ef4f7f7684898f966902bb5755d8e2c739000236e646b17a2e056805ae7",
+      "ifc": "9a29fea00ec1faefad032cda41efc27e6ef34273f9944d85075230ac0175446f",
+      "state": "1a4d3abb46094d8ad5d3869ee654378db127598ef959923edc31f0fbc34c23e5"
+     },
+     "plan_digest": "bccb56f36026b728134327047e4bcd0ad45dd5e2a871aafb671c4fe82ccd90b2",
+     "preview_bytes": 666,
+     "relation": "diverged"
+    },
+    "B<-A": {
+     "apply": "ok",
+     "conflicts": {},
+     "fork_rev": 10,
+     "hashes": {
+      "derived": "ac223ef4f7f7684898f966902bb5755d8e2c739000236e646b17a2e056805ae7",
+      "ifc": "9a29fea00ec1faefad032cda41efc27e6ef34273f9944d85075230ac0175446f",
+      "state": "1a4d3abb46094d8ad5d3869ee654378db127598ef959923edc31f0fbc34c23e5"
+     },
+     "plan_digest": "bccb56f36026b728134327047e4bcd0ad45dd5e2a871aafb671c4fe82ccd90b2",
+     "preview_bytes": 666,
+     "relation": "diverged"
+    }
+   },
+   "id": "s01_independent",
+   "replay_oracle": {
+    "A<-B": {
+     "equals_merge": true,
+     "status": "replayed"
+    },
+    "B<-A": {
+     "equals_merge": true,
+     "status": "replayed"
+    }
+   },
+   "title": "무충돌 독립 편집: 서로 다른 요소·종류를 건드리고 한쪽은 원자 배치"
+  },
+  {
+   "expect": {
+    "clean": true
+   },
+   "flows": {
+    "A<-B": {
+     "apply": "ok",
+     "conflicts": {},
+     "fork_rev": 10,
+     "hashes": {
+      "derived": "e6344189a0084c8ef6429e7691d9359918c008cd11508f8194cf032584a73a41",
+      "ifc": "961d9ab96a12e26556625cc1c03a55ce74c99274f46ed30e7e549e2c3b7adc38",
+      "state": "de876d23572a45fdcccc4d25cb65a640dd2e025a2da3a36b38c6428750e18f07"
+     },
+     "plan_digest": "1226228e8a72721a3e016bdbf29c896bb2726d4b51c44b1d3a9ee4ff348da593",
+     "preview_bytes": 665,
+     "relation": "diverged"
+    },
+    "B<-A": {
+     "apply": "ok",
+     "conflicts": {},
+     "fork_rev": 10,
+     "hashes": {
+      "derived": "e6344189a0084c8ef6429e7691d9359918c008cd11508f8194cf032584a73a41",
+      "ifc": "961d9ab96a12e26556625cc1c03a55ce74c99274f46ed30e7e549e2c3b7adc38",
+      "state": "de876d23572a45fdcccc4d25cb65a640dd2e025a2da3a36b38c6428750e18f07"
+     },
+     "plan_digest": "1226228e8a72721a3e016bdbf29c896bb2726d4b51c44b1d3a9ee4ff348da593",
+     "preview_bytes": 665,
+     "relation": "diverged"
+    }
+   },
+   "id": "s02_same_wall_different_fields",
+   "replay_oracle": {
+    "A<-B": {
+     "equals_merge": true,
+     "status": "replayed"
+    },
+    "B<-A": {
+     "equals_merge": true,
+     "status": "replayed"
+    }
+   },
+   "title": "같은 벽 W1 의 다른 필드(A=두께, B=높이·이름)와 같은 요소의 다른 속성"
+  },
+  {
+   "expect": {
+    "conflicts": [
+     "SAME_FIELD"
+    ]
+   },
+   "flows": {
+    "A<-B": {
+     "apply": "MERGE_CONFLICT",
+     "conflicts": {
+      "SAME_FIELD": 1
+     },
+     "fork_rev": 10,
+     "hashes": null,
+     "plan_digest": null,
+     "preview_bytes": 1275,
+     "relation": "diverged",
+     "variants": {
+      "spec": {
+       "apply": "ok",
+       "facts_failed": [],
+       "hashes": {
+        "derived": "dfd9489d806139adb3a5473e8abae6206d898121c03a54ffbbe9b514986fa385",
+        "ifc": "0350eda1b04e53b4350a24148be1e1ba5b0b4135cd7df18e2a2715fd8e6c5770",
+        "state": "5ae1ccf589e47e0805f9bbf9a1666555a4f45dc2dae06e7ef75b14a57b095138"
+       },
+       "rounds": 1
+      },
+      "swap": {
+       "apply": "ok",
+       "facts_failed": [],
+       "hashes": {
+        "derived": "f091dbfe417b72658af5d4a2381b59a772cd8953e447692fec24ab014b2a9e11",
+        "ifc": "a87f237d4d12a21ee8adf8fc226ec9a0ad18139789bc74a420127634da874e48",
+        "state": "9b614fd65654d54c57004d64b26b6764d7c1b39b9ee96469797ce133c37594b0"
+       },
+       "rounds": 1
+      }
+     }
+    },
+    "B<-A": {
+     "apply": "MERGE_CONFLICT",
+     "conflicts": {
+      "SAME_FIELD": 1
+     },
+     "fork_rev": 10,
+     "hashes": null,
+     "plan_digest": null,
+     "preview_bytes": 1275,
+     "relation": "diverged",
+     "variants": {
+      "spec": {
+       "apply": "ok",
+       "facts_failed": [],
+       "hashes": {
+        "derived": "dfd9489d806139adb3a5473e8abae6206d898121c03a54ffbbe9b514986fa385",
+        "ifc": "0350eda1b04e53b4350a24148be1e1ba5b0b4135cd7df18e2a2715fd8e6c5770",
+        "state": "5ae1ccf589e47e0805f9bbf9a1666555a4f45dc2dae06e7ef75b14a57b095138"
+       },
+       "rounds": 1
+      },
+      "swap": {
+       "apply": "ok",
+       "facts_failed": [],
+       "hashes": {
+        "derived": "f091dbfe417b72658af5d4a2381b59a772cd8953e447692fec24ab014b2a9e11",
+        "ifc": "a87f237d4d12a21ee8adf8fc226ec9a0ad18139789bc74a420127634da874e48",
+        "state": "9b614fd65654d54c57004d64b26b6764d7c1b39b9ee96469797ce133c37594b0"
+       },
+       "rounds": 1
+      }
+     }
+    }
+   },
+   "id": "s03_same_field",
+   "replay_oracle": {
+    "A<-B": {
+     "equals_merge": null,
+     "status": "replayed"
+    },
+    "B<-A": {
+     "equals_merge": null,
+     "status": "replayed"
+    }
+   },
+   "title": "같은 벽의 같은 필드(두께) 충돌 + 같은 벽의 다른 필드는 자동 병합"
+  },
+  {
+   "expect": {
+    "conflicts": [
+     "DELETE_MODIFY"
+    ]
+   },
+   "flows": {
+    "A<-B": {
+     "apply": "MERGE_CONFLICT",
+     "conflicts": {
+      "DELETE_MODIFY": 1
+     },
+     "fork_rev": 10,
+     "hashes": null,
+     "plan_digest": null,
+     "preview_bytes": 1468,
+     "relation": "diverged",
+     "variants": {
+      "spec": {
+       "apply": "ok",
+       "facts_failed": [],
+       "hashes": {
+        "derived": "4b7a89c9433197a67df674efbd0a01cb297533988ae7d18bb2725146da978a3e",
+        "ifc": "9a7c89369a1b32ad36da9575338445925c96fd65b26154afc81d7acfb0a7d440",
+        "state": "82c33b77d2e343856195b1393e69b8e3089a9b494ffd75cf2e43bb4f24a78d1f"
+       },
+       "rounds": 1
+      },
+      "swap": {
+       "apply": "ok",
+       "facts_failed": [],
+       "hashes": {
+        "derived": "3b9ea5e927426f302267f717c2b153e163803bd6c73c0815205041b1c4d8b1f9",
+        "ifc": "628faeeb5da04684839f20f2f8e03b464f4d45a14fc5c89a41add93479e94224",
+        "state": "23484b4a48d3f9f07856327c3d689a987bf4911581b253e8dcd38fafb1a719ac"
+       },
+       "rounds": 1
+      }
+     }
+    },
+    "B<-A": {
+     "apply": "MERGE_CONFLICT",
+     "conflicts": {
+      "DELETE_MODIFY": 1
+     },
+     "fork_rev": 10,
+     "hashes": null,
+     "plan_digest": null,
+     "preview_bytes": 1468,
+     "relation": "diverged",
+     "variants": {
+      "spec": {
+       "apply": "ok",
+       "facts_failed": [],
+       "hashes": {
+        "derived": "4b7a89c9433197a67df674efbd0a01cb297533988ae7d18bb2725146da978a3e",
+        "ifc": "9a7c89369a1b32ad36da9575338445925c96fd65b26154afc81d7acfb0a7d440",
+        "state": "82c33b77d2e343856195b1393e69b8e3089a9b494ffd75cf2e43bb4f24a78d1f"
+       },
+       "rounds": 1
+      },
+      "swap": {
+       "apply": "ok",
+       "facts_failed": [],
+       "hashes": {
+        "derived": "3b9ea5e927426f302267f717c2b153e163803bd6c73c0815205041b1c4d8b1f9",
+        "ifc": "628faeeb5da04684839f20f2f8e03b464f4d45a14fc5c89a41add93479e94224",
+        "state": "23484b4a48d3f9f07856327c3d689a987bf4911581b253e8dcd38fafb1a719ac"
+       },
+       "rounds": 1
+      }
+     }
+    }
+   },
+   "id": "s04_delete_vs_modify",
+   "replay_oracle": {
+    "A<-B": {
+     "code": "NOT_FOUND",
+     "equals_merge": null,
+     "op": "door.set",
+     "path": "/id",
+     "status": "command_error"
+    },
+    "B<-A": {
+     "equals_merge": null,
+     "status": "replayed"
+    }
+   },
+   "title": "삭제 대 수정: A 는 문 D2 를 지우고 B 는 같은 문의 폭과 속성을 바꾼다"
+  },
+  {
+   "expect": {
+    "conflicts": [
+     "HOST_DELETED"
+    ]
+   },
+   "flows": {
+    "A<-B": {
+     "apply": "MERGE_CONFLICT",
+     "conflicts": {
+      "HOST_DELETED": 1
+     },
+     "fork_rev": 10,
+     "hashes": null,
+     "plan_digest": null,
+     "preview_bytes": 1503,
+     "relation": "diverged",
+     "variants": {
+      "spec": {
+       "apply": "ok",
+       "facts_failed": [],
+       "hashes": {
+        "derived": "4e6050e8db9576ff84db9cc9b99dc1905eb4dd0fa54bf213e72f473cf170c66f",
+        "ifc": "94619d73863c6bd51b366f9594bfc4f494b68ec87ed5168f170101d9489753c1",
+        "state": "116ddf6f69e43375eeab8a97d237b874f12eacf4bab60a9307a674e88930db32"
+       },
+       "rounds": 1
+      },
+      "swap": {
+       "apply": "ok",
+       "facts_failed": [],
+       "hashes": {
+        "derived": "65945233d3f3e14d3b0dd1c98bbb662ccbe0019b054f3a572655fd109023f424",
+        "ifc": "7c100db39e069e34d2c6c538509ec4c03b9f33d56515019a9733893320ed245d",
+        "state": "6aec6bc8838a56fe52454e1b95fd63b13124f091dea927bc64a4ee711c1cd128"
+       },
+       "rounds": 1
+      }
+     }
+    },
+    "B<-A": {
+     "apply": "MERGE_CONFLICT",
+     "conflicts": {
+      "HOST_DELETED": 1
+     },
+     "fork_rev": 10,
+     "hashes": null,
+     "plan_digest": null,
+     "preview_bytes": 1503,
+     "relation": "diverged",
+     "variants": {
+      "spec": {
+       "apply": "ok",
+       "facts_failed": [],
+       "hashes": {
+        "derived": "4e6050e8db9576ff84db9cc9b99dc1905eb4dd0fa54bf213e72f473cf170c66f",
+        "ifc": "94619d73863c6bd51b366f9594bfc4f494b68ec87ed5168f170101d9489753c1",
+        "state": "116ddf6f69e43375eeab8a97d237b874f12eacf4bab60a9307a674e88930db32"
+       },
+       "rounds": 1
+      },
+      "swap": {
+       "apply": "ok",
+       "facts_failed": [],
+       "hashes": {
+        "derived": "65945233d3f3e14d3b0dd1c98bbb662ccbe0019b054f3a572655fd109023f424",
+        "ifc": "7c100db39e069e34d2c6c538509ec4c03b9f33d56515019a9733893320ed245d",
+        "state": "6aec6bc8838a56fe52454e1b95fd63b13124f091dea927bc64a4ee711c1cd128"
+       },
+       "rounds": 1
+      }
+     }
+    }
+   },
+   "id": "s05_host_deleted_vs_door_placed",
+   "replay_oracle": {
+    "A<-B": {
+     "code": "NOT_FOUND",
+     "equals_merge": null,
+     "op": "door.place",
+     "path": "/id",
+     "status": "command_error"
+    },
+    "B<-A": {
+     "equals_merge": null,
+     "status": "replayed"
+    }
+   },
+   "title": "호스트 벽 삭제(A) + 같은 벽에 새 문 배치(B): 개별 커맨드는 성공하지만 합치면 문이 갈 곳이 없다"
+  },
+  {
+   "expect": {
+    "conflicts": [
+     "DELETE_MODIFY"
+    ]
+   },
+   "flows": {
+    "A<-B": {
+     "apply": "MERGE_CONFLICT",
+     "conflicts": {
+      "DELETE_MODIFY": 1
+     },
+     "fork_rev": 10,
+     "hashes": null,
+     "plan_digest": null,
+     "preview_bytes": 1410,
+     "relation": "diverged",
+     "variants": {
+      "spec": {
+       "apply": "ok",
+       "facts_failed": [],
+       "hashes": {
+        "derived": "4e6050e8db9576ff84db9cc9b99dc1905eb4dd0fa54bf213e72f473cf170c66f",
+        "ifc": "94619d73863c6bd51b366f9594bfc4f494b68ec87ed5168f170101d9489753c1",
+        "state": "116ddf6f69e43375eeab8a97d237b874f12eacf4bab60a9307a674e88930db32"
+       },
+       "rounds": 1
+      },
+      "swap": {
+       "apply": "ok",
+       "facts_failed": [],
+       "hashes": {
+        "derived": "47c215bb6ea9e93fa7fea940dc539192b7acd9d63483cc19a000e1ff7ed7bac8",
+        "ifc": "520466a4473f50e9e73d95c9759d1796cb9ff6c3592b189f57dbf584ecf7d924",
+        "state": "796c986fe39d221a3cd2f10c82be6ceb840bfb44514d537a3f957edeb1105ed7"
+       },
+       "rounds": 2
+      }
+     }
+    },
+    "B<-A": {
+     "apply": "MERGE_CONFLICT",
+     "conflicts": {
+      "DELETE_MODIFY": 1
+     },
+     "fork_rev": 10,
+     "hashes": null,
+     "plan_digest": null,
+     "preview_bytes": 1410,
+     "relation": "diverged",
+     "variants": {
+      "spec": {
+       "apply": "ok",
+       "facts_failed": [],
+       "hashes": {
+        "derived": "4e6050e8db9576ff84db9cc9b99dc1905eb4dd0fa54bf213e72f473cf170c66f",
+        "ifc": "94619d73863c6bd51b366f9594bfc4f494b68ec87ed5168f170101d9489753c1",
+        "state": "116ddf6f69e43375eeab8a97d237b874f12eacf4bab60a9307a674e88930db32"
+       },
+       "rounds": 1
+      },
+      "swap": {
+       "apply": "ok",
+       "facts_failed": [],
+       "hashes": {
+        "derived": "47c215bb6ea9e93fa7fea940dc539192b7acd9d63483cc19a000e1ff7ed7bac8",
+        "ifc": "520466a4473f50e9e73d95c9759d1796cb9ff6c3592b189f57dbf584ecf7d924",
+        "state": "796c986fe39d221a3cd2f10c82be6ceb840bfb44514d537a3f957edeb1105ed7"
+       },
+       "rounds": 2
+      }
+     }
+    }
+   },
+   "id": "s06_cascade_delete_vs_modify",
+   "replay_oracle": {
+    "A<-B": {
+     "code": "NOT_FOUND",
+     "equals_merge": null,
+     "op": "pset.set",
+     "path": "/id",
+     "status": "command_error"
+    },
+    "B<-A": {
+     "equals_merge": null,
+     "status": "replayed"
+    }
+   },
+   "title": "벽 삭제의 연쇄로 지워진 문을 상대가 수정: 삭제 대 수정 + 호스트 삭제의 2단 충돌"
+  },
+  {
+   "expect": {
+    "conflicts": [
+     "JOIN_TARGET_DELETED"
+    ]
+   },
+   "flows": {
+    "A<-B": {
+     "apply": "MERGE_CONFLICT",
+     "conflicts": {
+      "JOIN_TARGET_DELETED": 1
+     },
+     "fork_rev": 10,
+     "hashes": null,
+     "plan_digest": null,
+     "preview_bytes": 1381,
+     "relation": "diverged",
+     "variants": {
+      "spec": {
+       "apply": "ok",
+       "facts_failed": [],
+       "hashes": {
+        "derived": "24be68a0b9f54d58aba676a8a32e52884cb6f12cfb1dbc922f0937a4e00fed30",
+        "ifc": "c21ebaae031d9c96231b80814169ca0c7eb3fe7a4463aac53df7a5bcd00bdd37",
+        "state": "83e166515245d347b3149ac19baead46acd31934b80e4ad6f84d3512902007b0"
+       },
+       "rounds": 1
+      },
+      "swap": {
+       "apply": "ok",
+       "facts_failed": [],
+       "hashes": {
+        "derived": "5ffdbabc7f06329d760625d1432d927e6cb19c58ac7a136f53fd6e2c78383f03",
+        "ifc": "52e8b444539e84105acb83ceabe754c651af2f8e862647aa51e875ae8b989db6",
+        "state": "c094633b0469838f6bfc1cacede5e276aa9e752a290f53fcfed0ec05cc68024e"
+       },
+       "rounds": 1
+      }
+     }
+    },
+    "B<-A": {
+     "apply": "MERGE_CONFLICT",
+     "conflicts": {
+      "JOIN_TARGET_DELETED": 1
+     },
+     "fork_rev": 10,
+     "hashes": null,
+     "plan_digest": null,
+     "preview_bytes": 1381,
+     "relation": "diverged",
+     "variants": {
+      "spec": {
+       "apply": "ok",
+       "facts_failed": [],
+       "hashes": {
+        "derived": "24be68a0b9f54d58aba676a8a32e52884cb6f12cfb1dbc922f0937a4e00fed30",
+        "ifc": "c21ebaae031d9c96231b80814169ca0c7eb3fe7a4463aac53df7a5bcd00bdd37",
+        "state": "83e166515245d347b3149ac19baead46acd31934b80e4ad6f84d3512902007b0"
+       },
+       "rounds": 1
+      },
+      "swap": {
+       "apply": "ok",
+       "facts_failed": [],
+       "hashes": {
+        "derived": "5ffdbabc7f06329d760625d1432d927e6cb19c58ac7a136f53fd6e2c78383f03",
+        "ifc": "52e8b444539e84105acb83ceabe754c651af2f8e862647aa51e875ae8b989db6",
+        "state": "c094633b0469838f6bfc1cacede5e276aa9e752a290f53fcfed0ec05cc68024e"
+       },
+       "rounds": 1
+      }
+     }
+    }
+   },
+   "id": "s07_join_target_deleted",
+   "replay_oracle": {
+    "A<-B": {
+     "code": "NOT_FOUND",
+     "equals_merge": null,
+     "op": "join.set",
+     "path": "/id",
+     "status": "command_error"
+    },
+    "B<-A": {
+     "equals_merge": null,
+     "status": "replayed"
+    }
+   },
+   "title": "조인 충돌: A 가 벽 W2 를 지우고, B 는 W2-W3 을 조인"
+  },
+  {
+   "expect": {
+    "conflicts": [
+     "DOOR_OUT_OF_HOST",
+     "DOOR_OUTSIDE_TRIMMED"
+    ]
+   },
+   "flows": {
+    "A<-B": {
+     "apply": "MERGE_CONFLICT",
+     "conflicts": {
+      "DOOR_OUTSIDE_TRIMMED": 1,
+      "DOOR_OUT_OF_HOST": 1
+     },
+     "fork_rev": 10,
+     "hashes": null,
+     "plan_digest": null,
+     "preview_bytes": 1896,
+     "relation": "diverged",
+     "variants": {
+      "spec": {
+       "apply": "ok",
+       "facts_failed": [],
+       "hashes": {
+        "derived": "a9d40757d133718f557b4b6f5f78becbc9c466f7a2e212223466ba39d0a0f5f6",
+        "ifc": "c77a054de99b2c61ebb19f5ce560ab074807e73ffdb2b7f187f40b9478f1d272",
+        "state": "cfd724d23408d2a855e69427115ea2936d69acec579035c77928263545a68d73"
+       },
+       "rounds": 1
+      },
+      "swap": {
+       "apply": "ok",
+       "facts_failed": [],
+       "hashes": {
+        "derived": "f186bed45e11fca1f2288c16ae2d622305db484b55f4ca6fa4daac16b46607ac",
+        "ifc": "e91bfd0c6c6c9eff702fb0a31596d3cec8d645414ab5b699cbefceeeed9a77d0",
+        "state": "77b4efdf5549eaee2b4ede906d9d8a5e69019d0e9377d0a238a09c1db670d206"
+       },
+       "rounds": 1
+      }
+     }
+    },
+    "B<-A": {
+     "apply": "MERGE_CONFLICT",
+     "conflicts": {
+      "DOOR_OUTSIDE_TRIMMED": 1,
+      "DOOR_OUT_OF_HOST": 1
+     },
+     "fork_rev": 10,
+     "hashes": null,
+     "plan_digest": null,
+     "preview_bytes": 1896,
+     "relation": "diverged",
+     "variants": {
+      "spec": {
+       "apply": "ok",
+       "facts_failed": [],
+       "hashes": {
+        "derived": "a9d40757d133718f557b4b6f5f78becbc9c466f7a2e212223466ba39d0a0f5f6",
+        "ifc": "c77a054de99b2c61ebb19f5ce560ab074807e73ffdb2b7f187f40b9478f1d272",
+        "state": "cfd724d23408d2a855e69427115ea2936d69acec579035c77928263545a68d73"
+       },
+       "rounds": 1
+      },
+      "swap": {
+       "apply": "ok",
+       "facts_failed": [],
+       "hashes": {
+        "derived": "f186bed45e11fca1f2288c16ae2d622305db484b55f4ca6fa4daac16b46607ac",
+        "ifc": "e91bfd0c6c6c9eff702fb0a31596d3cec8d645414ab5b699cbefceeeed9a77d0",
+        "state": "77b4efdf5549eaee2b4ede906d9d8a5e69019d0e9377d0a238a09c1db670d206"
+       },
+       "rounds": 1
+      }
+     }
+    }
+   },
+   "id": "s08_wall_shortened_vs_door_moved",
+   "replay_oracle": {
+    "A<-B": {
+     "code": "CONSTRAINT",
+     "equals_merge": null,
+     "op": "door.set",
+     "path": "/offset",
+     "status": "command_error"
+    },
+    "B<-A": {
+     "code": "CONSTRAINT",
+     "equals_merge": null,
+     "op": "wall.set",
+     "path": "/axis",
+     "status": "command_error"
+    }
+   },
+   "title": "의미 충돌: A 가 벽 W1 을 3000 으로 줄이고 B 가 문 D1 을 2800 으로 옮김(각각은 유효)"
+  },
+  {
+   "expect": {
+    "conflicts": [
+     "DUPLICATE_WALL"
+    ]
+   },
+   "flows": {
+    "A<-B": {
+     "apply": "MERGE_CONFLICT",
+     "conflicts": {
+      "DUPLICATE_WALL": 1
+     },
+     "fork_rev": 10,
+     "hashes": null,
+     "plan_digest": null,
+     "preview_bytes": 1386,
+     "relation": "diverged",
+     "variants": {
+      "spec": {
+       "apply": "ok",
+       "facts_failed": [],
+       "hashes": {
+        "derived": "f91c9769888863936b413cff1d96d02d0f54eb005b79dc5127b44d190f1dd57d",
+        "ifc": "6d79b849c58ad15dc04028c907e41e60ca865553de3a0e31ce43b6fb592c19f4",
+        "state": "3cda3c3fdb58d506cc0330bec8f88cb0c46b9f1c6520577ff9e0ea03d6c80456"
+       },
+       "rounds": 1
+      },
+      "swap": {
+       "apply": "ok",
+       "facts_failed": [],
+       "hashes": {
+        "derived": "a17cb07bc6b515d3c8087c61be916f6416cd030494ae0d8f168b3bb15fb4f6ab",
+        "ifc": "ebf83ed0eed6e0433b4fbb917c88d95dbed93e6293a890eb9b446d7f1aadbf29",
+        "state": "11f62f74a64277201d8a6b5006beb6f107bbf56bd6cd55e5d9bd9fdae16da121"
+       },
+       "rounds": 1
+      }
+     }
+    },
+    "B<-A": {
+     "apply": "MERGE_CONFLICT",
+     "conflicts": {
+      "DUPLICATE_WALL": 1
+     },
+     "fork_rev": 10,
+     "hashes": null,
+     "plan_digest": null,
+     "preview_bytes": 1386,
+     "relation": "diverged",
+     "variants": {
+      "spec": {
+       "apply": "ok",
+       "facts_failed": [],
+       "hashes": {
+        "derived": "f91c9769888863936b413cff1d96d02d0f54eb005b79dc5127b44d190f1dd57d",
+        "ifc": "6d79b849c58ad15dc04028c907e41e60ca865553de3a0e31ce43b6fb592c19f4",
+        "state": "3cda3c3fdb58d506cc0330bec8f88cb0c46b9f1c6520577ff9e0ea03d6c80456"
+       },
+       "rounds": 1
+      },
+      "swap": {
+       "apply": "ok",
+       "facts_failed": [],
+       "hashes": {
+        "derived": "a17cb07bc6b515d3c8087c61be916f6416cd030494ae0d8f168b3bb15fb4f6ab",
+        "ifc": "ebf83ed0eed6e0433b4fbb917c88d95dbed93e6293a890eb9b446d7f1aadbf29",
+        "state": "11f62f74a64277201d8a6b5006beb6f107bbf56bd6cd55e5d9bd9fdae16da121"
+       },
+       "rounds": 1
+      }
+     }
+    }
+   },
+   "id": "s09_duplicate_wall",
+   "replay_oracle": {
+    "A<-B": {
+     "equals_merge": null,
+     "status": "replayed"
+    },
+    "B<-A": {
+     "equals_merge": null,
+     "status": "replayed"
+    }
+   },
+   "title": "의미 충돌: 두 가지가 같은 레벨의 같은 자리에 서로 다른 id 의 벽을 만든다"
+  },
+  {
+   "expect": {
+    "conflicts": [
+     "DOOR_OVERLAP"
+    ]
+   },
+   "flows": {
+    "A<-B": {
+     "apply": "MERGE_CONFLICT",
+     "conflicts": {
+      "DOOR_OVERLAP": 1
+     },
+     "fork_rev": 10,
+     "hashes": null,
+     "plan_digest": null,
+     "preview_bytes": 1416,
+     "relation": "diverged",
+     "variants": {
+      "spec": {
+       "apply": "ok",
+       "facts_failed": [],
+       "hashes": {
+        "derived": "930d5a7120357ebcfe9819ff7699495239941f08ae57f4dc13f323ac0dfd7eb3",
+        "ifc": "f21df08a309b746f866ba27d58301149636b6274fb85f0cc65b9241e7b6887e6",
+        "state": "2cd53f283e190dc7232a913ab059b29e7b8316b452730e54c6d0c5ac59690c1b"
+       },
+       "rounds": 1
+      },
+      "swap": {
+       "apply": "ok",
+       "facts_failed": [],
+       "hashes": {
+        "derived": "1358bb58fdbf0c1e8c42e6df8d905fdcd4d9898c121989f8a4ee2e0be8d5bdbb",
+        "ifc": "b6e27e8ce8bc155ca050dcfed11aa3fc61e5f3553b3a376350badfbc9b7a7a95",
+        "state": "3b82e1471fc71d30322a42297163321ad83653d2bd8bb748794bee98932de76e"
+       },
+       "rounds": 1
+      }
+     }
+    },
+    "B<-A": {
+     "apply": "MERGE_CONFLICT",
+     "conflicts": {
+      "DOOR_OVERLAP": 1
+     },
+     "fork_rev": 10,
+     "hashes": null,
+     "plan_digest": null,
+     "preview_bytes": 1416,
+     "relation": "diverged",
+     "variants": {
+      "spec": {
+       "apply": "ok",
+       "facts_failed": [],
+       "hashes": {
+        "derived": "930d5a7120357ebcfe9819ff7699495239941f08ae57f4dc13f323ac0dfd7eb3",
+        "ifc": "f21df08a309b746f866ba27d58301149636b6274fb85f0cc65b9241e7b6887e6",
+        "state": "2cd53f283e190dc7232a913ab059b29e7b8316b452730e54c6d0c5ac59690c1b"
+       },
+       "rounds": 1
+      },
+      "swap": {
+       "apply": "ok",
+       "facts_failed": [],
+       "hashes": {
+        "derived": "1358bb58fdbf0c1e8c42e6df8d905fdcd4d9898c121989f8a4ee2e0be8d5bdbb",
+        "ifc": "b6e27e8ce8bc155ca050dcfed11aa3fc61e5f3553b3a376350badfbc9b7a7a95",
+        "state": "3b82e1471fc71d30322a42297163321ad83653d2bd8bb748794bee98932de76e"
+       },
+       "rounds": 1
+      }
+     }
+    }
+   },
+   "id": "s10_door_overlap",
+   "replay_oracle": {
+    "A<-B": {
+     "equals_merge": null,
+     "status": "replayed"
+    },
+    "B<-A": {
+     "equals_merge": null,
+     "status": "replayed"
+    }
+   },
+   "title": "의미 충돌: 두 가지가 같은 벽의 거의 같은 자리에 문을 놓는다"
+  },
+  {
+   "expect": {
+    "conflicts": [
+     "LEVEL_NAME_DUPLICATE"
+    ]
+   },
+   "flows": {
+    "A<-B": {
+     "apply": "MERGE_CONFLICT",
+     "conflicts": {
+      "LEVEL_NAME_DUPLICATE": 1
+     },
+     "fork_rev": 10,
+     "hashes": null,
+     "plan_digest": null,
+     "preview_bytes": 1261,
+     "relation": "diverged",
+     "variants": {
+      "spec": {
+       "apply": "ok",
+       "facts_failed": [],
+       "hashes": {
+        "derived": "f647bf17c4352891d182455f72c34f19cf6993ba12c06ff63a88370bd36af625",
+        "ifc": "1c34be1d7a2216e00e91803c6b3bd01b1a466b84d428ad2102bca7ef3c166eb1",
+        "state": "5dc18232ac3f406342db513e0d6230c805b0ea0a72490250b25bcfbf14ca6520"
+       },
+       "rounds": 1
+      },
+      "swap": {
+       "apply": "ok",
+       "facts_failed": [],
+       "hashes": {
+        "derived": "e42fb315826eec6c3e68abda76109990974ba0f6370cd2687c3a58a9ea91e659",
+        "ifc": "8ad3558933c873766a3f888e3191ed7cc551f55a18da941dcc893c614a43b820",
+        "state": "b5ca334526441b8fa2b82ba9a541b2a59b96903267ad8a3e7b8ff2f69ccfca0a"
+       },
+       "rounds": 1
+      }
+     }
+    },
+    "B<-A": {
+     "apply": "MERGE_CONFLICT",
+     "conflicts": {
+      "LEVEL_NAME_DUPLICATE": 1
+     },
+     "fork_rev": 10,
+     "hashes": null,
+     "plan_digest": null,
+     "preview_bytes": 1261,
+     "relation": "diverged",
+     "variants": {
+      "spec": {
+       "apply": "ok",
+       "facts_failed": [],
+       "hashes": {
+        "derived": "f647bf17c4352891d182455f72c34f19cf6993ba12c06ff63a88370bd36af625",
+        "ifc": "1c34be1d7a2216e00e91803c6b3bd01b1a466b84d428ad2102bca7ef3c166eb1",
+        "state": "5dc18232ac3f406342db513e0d6230c805b0ea0a72490250b25bcfbf14ca6520"
+       },
+       "rounds": 1
+      },
+      "swap": {
+       "apply": "ok",
+       "facts_failed": [],
+       "hashes": {
+        "derived": "e42fb315826eec6c3e68abda76109990974ba0f6370cd2687c3a58a9ea91e659",
+        "ifc": "8ad3558933c873766a3f888e3191ed7cc551f55a18da941dcc893c614a43b820",
+        "state": "b5ca334526441b8fa2b82ba9a541b2a59b96903267ad8a3e7b8ff2f69ccfca0a"
+       },
+       "rounds": 1
+      }
+     }
+    }
+   },
+   "id": "s11_level_name_duplicate",
+   "replay_oracle": {
+    "A<-B": {
+     "code": "CONSTRAINT",
+     "equals_merge": null,
+     "op": "level.create",
+     "path": "/name",
+     "status": "command_error"
+    },
+    "B<-A": {
+     "code": "CONSTRAINT",
+     "equals_merge": null,
+     "op": "level.create",
+     "path": "/name",
+     "status": "command_error"
+    }
+   },
+   "title": "의미 충돌: 두 가지가 같은 이름(3F)의 레벨을 각각 만든다"
+  },
+  {
+   "expect": {
+    "conflicts": [
+     "DOOR_OUTSIDE_TRIMMED"
+    ]
+   },
+   "flows": {
+    "A<-B": {
+     "apply": "MERGE_CONFLICT",
+     "conflicts": {
+      "DOOR_OUTSIDE_TRIMMED": 1
+     },
+     "fork_rev": 10,
+     "hashes": null,
+     "plan_digest": null,
+     "preview_bytes": 1293,
+     "relation": "diverged",
+     "variants": {
+      "spec": {
+       "apply": "ok",
+       "facts_failed": [],
+       "hashes": {
+        "derived": "7b2067cbe19c8c06fba8fa2d23fde3614e7b8938562bd67a89e11e3947c15050",
+        "ifc": "f111f7ea80112201379912b676361f24a4d3dac5b65c1696540d99b8619197d9",
+        "state": "08f179418ba805696a8e637f481344c274cc9e1ac021ddf289fb2ea6c53c0ddd"
+       },
+       "rounds": 1
+      },
+      "swap": {
+       "apply": "ok",
+       "facts_failed": [],
+       "hashes": {
+        "derived": "2f6a028bccee94cc62bff23277fb01035f021a3b969a685b5cc988b6c481707c",
+        "ifc": "1d90b9021aa70811cfa432d64106d8ab98e3028bf92dab7e36c6a721a9a57d4b",
+        "state": "9eb50f6489c2cdd24eb2a65cc47f95186891482d9a8e8e2c294b31253ef59244"
+       },
+       "rounds": 1
+      }
+     }
+    },
+    "B<-A": {
+     "apply": "MERGE_CONFLICT",
+     "conflicts": {
+      "DOOR_OUTSIDE_TRIMMED": 1
+     },
+     "fork_rev": 10,
+     "hashes": null,
+     "plan_digest": null,
+     "preview_bytes": 1293,
+     "relation": "diverged",
+     "variants": {
+      "spec": {
+       "apply": "ok",
+       "facts_failed": [],
+       "hashes": {
+        "derived": "7b2067cbe19c8c06fba8fa2d23fde3614e7b8938562bd67a89e11e3947c15050",
+        "ifc": "f111f7ea80112201379912b676361f24a4d3dac5b65c1696540d99b8619197d9",
+        "state": "08f179418ba805696a8e637f481344c274cc9e1ac021ddf289fb2ea6c53c0ddd"
+       },
+       "rounds": 1
+      },
+      "swap": {
+       "apply": "ok",
+       "facts_failed": [],
+       "hashes": {
+        "derived": "2f6a028bccee94cc62bff23277fb01035f021a3b969a685b5cc988b6c481707c",
+        "ifc": "1d90b9021aa70811cfa432d64106d8ab98e3028bf92dab7e36c6a721a9a57d4b",
+        "state": "9eb50f6489c2cdd24eb2a65cc47f95186891482d9a8e8e2c294b31253ef59244"
+       },
+       "rounds": 1
+      }
+     }
+    }
+   },
+   "id": "s12_regen_door_outside_trimmed",
+   "replay_oracle": {
+    "A<-B": {
+     "equals_merge": null,
+     "status": "replayed"
+    },
+    "B<-A": {
+     "equals_merge": null,
+     "status": "replayed"
+    }
+   },
+   "title": "재생성 검사: A 가 벽 W2 를 옮겨 W1 의 조인 정리가 달라지고, B 는 문 D1 을 W1 시작 쪽으로 옮김"
+  },
+  {
+   "expect": {
+    "clean": true
+   },
+   "flows": {
+    "A<-B": {
+     "apply": "ok",
+     "conflicts": {},
+     "fork_rev": 10,
+     "hashes": {
+      "derived": "b5e0ff11ca4ca62b6bf52f9020d95827b0382b606f3552f58b29a5ea31c71477",
+      "ifc": "ac0f42d44b7e93cc3193543591cd0957bd9377384d883b36077f9ad24d474b81",
+      "state": "cbaee1f5582f509ee2736998de31ddcba8201b578e07b3e89f48b2f94352a2b0"
+     },
+     "plan_digest": "c2ffeacdb02ca78606af69b02d7aad2676cd47317fb0ca99a7053c0aa0287c66",
+     "preview_bytes": 665,
+     "relation": "diverged"
+    },
+    "B<-A": {
+     "apply": "ok",
+     "conflicts": {},
+     "fork_rev": 10,
+     "hashes": {
+      "derived": "b5e0ff11ca4ca62b6bf52f9020d95827b0382b606f3552f58b29a5ea31c71477",
+      "ifc": "ac0f42d44b7e93cc3193543591cd0957bd9377384d883b36077f9ad24d474b81",
+      "state": "cbaee1f5582f509ee2736998de31ddcba8201b578e07b3e89f48b2f94352a2b0"
+     },
+     "plan_digest": "c2ffeacdb02ca78606af69b02d7aad2676cd47317fb0ca99a7053c0aa0287c66",
+     "preview_bytes": 665,
+     "relation": "diverged"
+    }
+   },
+   "id": "s13_undo_in_branch",
+   "replay_oracle": {
+    "A<-B": {
+     "equals_merge": true,
+     "status": "replayed"
+    },
+    "B<-A": {
+     "equals_merge": true,
+     "status": "replayed"
+    }
+   },
+   "title": "한쪽 undo: A 가 두께를 바꿨다 되돌리고(순변화 없음), B 가 같은 필드를 바꿔도 충돌이 아니다. B 는 다시하기도 쓴다"
+  },
+  {
+   "expect": {
+    "conflicts": [
+     "MATERIAL_SAME"
+    ]
+   },
+   "flows": {
+    "A<-B": {
+     "apply": "MERGE_CONFLICT",
+     "conflicts": {
+      "MATERIAL_SAME": 1
+     },
+     "fork_rev": 10,
+     "hashes": null,
+     "plan_digest": null,
+     "preview_bytes": 1267,
+     "relation": "diverged",
+     "variants": {
+      "spec": {
+       "apply": "ok",
+       "facts_failed": [],
+       "hashes": {
+        "derived": "a5227f1c18c0fbeb6e720c0f3c0b401314018ccdcddf4d691e6fd3d1502c2dca",
+        "ifc": "a044a9e7db564e482183d699633b6a23a3d394e6da82667afbf5deb31e3b1a52",
+        "state": "ad4ef8c1f36e51888b8d744cb4bf442c01d4e87191919b951019030bad49e899"
+       },
+       "rounds": 1
+      },
+      "swap": {
+       "apply": "ok",
+       "facts_failed": [],
+       "hashes": {
+        "derived": "5eee04895e39855fc7188f42aafbbd127d1630b5ed5707adeedef278db1ff4d8",
+        "ifc": "3a2de6c4b51b283644caad80784267b9dfe12b397f86b383a49fe3632db75b38",
+        "state": "19fee20fe436be59a22ac4a98456bd62fb47ced5d5f5d53e852f674c30a3f3f2"
+       },
+       "rounds": 1
+      }
+     }
+    },
+    "B<-A": {
+     "apply": "MERGE_CONFLICT",
+     "conflicts": {
+      "MATERIAL_SAME": 1
+     },
+     "fork_rev": 10,
+     "hashes": null,
+     "plan_digest": null,
+     "preview_bytes": 1267,
+     "relation": "diverged",
+     "variants": {
+      "spec": {
+       "apply": "ok",
+       "facts_failed": [],
+       "hashes": {
+        "derived": "a5227f1c18c0fbeb6e720c0f3c0b401314018ccdcddf4d691e6fd3d1502c2dca",
+        "ifc": "a044a9e7db564e482183d699633b6a23a3d394e6da82667afbf5deb31e3b1a52",
+        "state": "ad4ef8c1f36e51888b8d744cb4bf442c01d4e87191919b951019030bad49e899"
+       },
+       "rounds": 1
+      },
+      "swap": {
+       "apply": "ok",
+       "facts_failed": [],
+       "hashes": {
+        "derived": "5eee04895e39855fc7188f42aafbbd127d1630b5ed5707adeedef278db1ff4d8",
+        "ifc": "3a2de6c4b51b283644caad80784267b9dfe12b397f86b383a49fe3632db75b38",
+        "state": "19fee20fe436be59a22ac4a98456bd62fb47ced5d5f5d53e852f674c30a3f3f2"
+       },
+       "rounds": 1
+      }
+     }
+    }
+   },
+   "id": "s14_undo_of_ancestor_txn",
+   "replay_oracle": {
+    "A<-B": {
+     "equals_merge": null,
+     "status": "replayed"
+    },
+    "B<-A": {
+     "equals_merge": null,
+     "status": "n/a",
+     "why": "조상 쪽 트랜잭션의 실행 취소"
+    }
+   },
+   "title": "조상의 마지막 트랜잭션(W1 재료 지정)을 A 가 undo, B 는 다른 재료로 바꿈: 재료 충돌"
+  },
+  {
+   "expect": {
+    "conflicts": [
+     "PSET_SAME_PROP"
+    ]
+   },
+   "flows": {
+    "A<-B": {
+     "apply": "MERGE_CONFLICT",
+     "conflicts": {
+      "PSET_SAME_PROP": 1
+     },
+     "fork_rev": 10,
+     "hashes": null,
+     "plan_digest": null,
+     "preview_bytes": 1305,
+     "relation": "diverged",
+     "variants": {
+      "spec": {
+       "apply": "ok",
+       "facts_failed": [],
+       "hashes": {
+        "derived": "be6ce4c8f5cb082cc16509eb0590fdde604fd178d443fa146c3888a39f2f03f2",
+        "ifc": "0ab9e7b2e3bde7b7940de938967a431188f1c8a7e9caa1de095b06f14738a6d3",
+        "state": "734bf20c4289a9611930d9b8eabf1938b38103bf3f6f216c5a863c388210dcc0"
+       },
+       "rounds": 1
+      },
+      "swap": {
+       "apply": "ok",
+       "facts_failed": [],
+       "hashes": {
+        "derived": "5686917d90e1ef145f3e0bb59d853d02e9a2639847792e4b042256f1ad946eaa",
+        "ifc": "03e674751000302408618a18a0bfb29053261eb9bf627dbc3de43e4c3f40718d",
+        "state": "6e5249fd5c980ec71f86cf1d32b39761d957e9d234dee345a36b2af7794b3187"
+       },
+       "rounds": 1
+      }
+     }
+    },
+    "B<-A": {
+     "apply": "MERGE_CONFLICT",
+     "conflicts": {
+      "PSET_SAME_PROP": 1
+     },
+     "fork_rev": 10,
+     "hashes": null,
+     "plan_digest": null,
+     "preview_bytes": 1305,
+     "relation": "diverged",
+     "variants": {
+      "spec": {
+       "apply": "ok",
+       "facts_failed": [],
+       "hashes": {
+        "derived": "be6ce4c8f5cb082cc16509eb0590fdde604fd178d443fa146c3888a39f2f03f2",
+        "ifc": "0ab9e7b2e3bde7b7940de938967a431188f1c8a7e9caa1de095b06f14738a6d3",
+        "state": "734bf20c4289a9611930d9b8eabf1938b38103bf3f6f216c5a863c388210dcc0"
+       },
+       "rounds": 1
+      },
+      "swap": {
+       "apply": "ok",
+       "facts_failed": [],
+       "hashes": {
+        "derived": "5686917d90e1ef145f3e0bb59d853d02e9a2639847792e4b042256f1ad946eaa",
+        "ifc": "03e674751000302408618a18a0bfb29053261eb9bf627dbc3de43e4c3f40718d",
+        "state": "6e5249fd5c980ec71f86cf1d32b39761d957e9d234dee345a36b2af7794b3187"
+       },
+       "rounds": 1
+      }
+     }
+    }
+   },
+   "id": "s15_pset_concurrent",
+   "replay_oracle": {
+    "A<-B": {
+     "equals_merge": null,
+     "status": "replayed"
+    },
+    "B<-A": {
+     "equals_merge": null,
+     "status": "replayed"
+    }
+   },
+   "title": "속성셋 동시 편집: 다른 속성은 자동 병합, D1 FireRating 은 충돌, 한쪽이 지운 속성은 지운 것으로"
+  },
+  {
+   "expect": {
+    "clean": true
+   },
+   "flows": {
+    "A<-B": {
+     "apply": "ok",
+     "conflicts": {},
+     "fork_rev": 10,
+     "hashes": {
+      "derived": "013a042af61ebb3925ac5f996525c0b54adecdf6a16b3be62992d88109ee53bd",
+      "ifc": "ebb4b57f99a706aff26632152e5b5b5f4fa90f48ca2142073449bb37c385f1be",
+      "state": "c2079aa34ca7b4b43a54b6380deb230812dccdacf275d21e642b56cbddba6abb"
+     },
+     "plan_digest": "f3a9fb7d73715501b2a99ef65d8feb35e668474092222d1858f49d6e417629e8",
+     "preview_bytes": 667,
+     "relation": "diverged"
+    },
+    "B<-A": {
+     "apply": "ok",
+     "conflicts": {},
+     "fork_rev": 10,
+     "hashes": {
+      "derived": "013a042af61ebb3925ac5f996525c0b54adecdf6a16b3be62992d88109ee53bd",
+      "ifc": "ebb4b57f99a706aff26632152e5b5b5f4fa90f48ca2142073449bb37c385f1be",
+      "state": "c2079aa34ca7b4b43a54b6380deb230812dccdacf275d21e642b56cbddba6abb"
+     },
+     "plan_digest": "f3a9fb7d73715501b2a99ef65d8feb35e668474092222d1858f49d6e417629e8",
+     "preview_bytes": 667,
+     "relation": "diverged"
+    }
+   },
+   "id": "s16_identical_changes",
+   "replay_oracle": {
+    "A<-B": {
+     "code": "CONSTRAINT",
+     "equals_merge": null,
+     "op": "level.create",
+     "path": "/id",
+     "status": "command_error"
+    },
+    "B<-A": {
+     "code": "CONSTRAINT",
+     "equals_merge": null,
+     "op": "level.create",
+     "path": "/id",
+     "status": "command_error"
+    }
+   },
+   "title": "양쪽이 같은 변경(같은 값, 같은 id 의 같은 레벨 생성, 같은 문 삭제)을 했다: 충돌이 아니다"
+  },
+  {
+   "expect": {
+    "conflicts": [
+     "ID_COLLISION"
+    ]
+   },
+   "flows": {
+    "A<-B": {
+     "apply": "MERGE_CONFLICT",
+     "conflicts": {
+      "ID_COLLISION": 1
+     },
+     "fork_rev": 10,
+     "hashes": null,
+     "plan_digest": null,
+     "preview_bytes": 1512,
+     "relation": "diverged",
+     "variants": {
+      "spec": {
+       "apply": "ok",
+       "facts_failed": [],
+       "hashes": {
+        "derived": "27a1f4ade43522dad1843a6a2c5dc7ac3adbd76fc46885409a56d037fe2b6515",
+        "ifc": "cbd84c4c5b975acb3603eed759774f0072d8714dd4bb539dc96884832d8d8e91",
+        "state": "aba480f1301de0c44f043010bd354d327020a8cffb37fdb28e44c91f91d4a650"
+       },
+       "rounds": 1
+      },
+      "swap": {
+       "apply": "ok",
+       "facts_failed": [],
+       "hashes": {
+        "derived": "f9e4daefe597f9f95857f2d1517e54d0e24504143504c96cc1a585913759c942",
+        "ifc": "14c19fdfb908599ce6687f3045f3ee51b45f71febf62c858c6677997db266b71",
+        "state": "d73dd53e421191764ec3ac1be32b433484f64c2134df19b52b2a35098ba126b6"
+       },
+       "rounds": 1
+      }
+     }
+    },
+    "B<-A": {
+     "apply": "MERGE_CONFLICT",
+     "conflicts": {
+      "ID_COLLISION": 1
+     },
+     "fork_rev": 10,
+     "hashes": null,
+     "plan_digest": null,
+     "preview_bytes": 1512,
+     "relation": "diverged",
+     "variants": {
+      "spec": {
+       "apply": "ok",
+       "facts_failed": [],
+       "hashes": {
+        "derived": "27a1f4ade43522dad1843a6a2c5dc7ac3adbd76fc46885409a56d037fe2b6515",
+        "ifc": "cbd84c4c5b975acb3603eed759774f0072d8714dd4bb539dc96884832d8d8e91",
+        "state": "aba480f1301de0c44f043010bd354d327020a8cffb37fdb28e44c91f91d4a650"
+       },
+       "rounds": 1
+      },
+      "swap": {
+       "apply": "ok",
+       "facts_failed": [],
+       "hashes": {
+        "derived": "f9e4daefe597f9f95857f2d1517e54d0e24504143504c96cc1a585913759c942",
+        "ifc": "14c19fdfb908599ce6687f3045f3ee51b45f71febf62c858c6677997db266b71",
+        "state": "d73dd53e421191764ec3ac1be32b433484f64c2134df19b52b2a35098ba126b6"
+       },
+       "rounds": 1
+      }
+     }
+    }
+   },
+   "id": "s17_auto_id_collision",
+   "replay_oracle": {
+    "A<-B": {
+     "code": "CONSTRAINT",
+     "equals_merge": null,
+     "op": "wall.create",
+     "path": "/id",
+     "status": "command_error"
+    },
+    "B<-A": {
+     "code": "CONSTRAINT",
+     "equals_merge": null,
+     "op": "wall.create",
+     "path": "/id",
+     "status": "command_error"
+    }
+   },
+   "title": "id 충돌: id 를 주지 않고 각자 벽을 만들면 같은 리비전에서 같은 id 가 나온다(내용은 다름)"
+  },
+  {
+   "expect": {
+    "clean": true
+   },
+   "flows": {
+    "A<-B": {
+     "apply": "ok",
+     "conflicts": {},
+     "fork_rev": 10,
+     "hashes": {
+      "derived": "5b853d1d093452287b32772d1556130b7dbd34ecfc9587b3a8d94969ac774a58",
+      "ifc": "e712c6325bf2365e4a0addaf69846fbfa18b61ad735302c46548b122b66179a3",
+      "state": "5df4ec66163f30cfd116678fe1e976a654c8555367f7b3ea300b733f9a878377"
+     },
+     "plan_digest": "e2b1a8366c100a5a5f29a9a5bfe988da352a4c46ca7296c7a51981b3c23b8f11",
+     "preview_bytes": 668,
+     "relation": "ours_behind"
+    },
+    "B<-A": {
+     "apply": "ok",
+     "conflicts": {},
+     "fork_rev": 10,
+     "hashes": {
+      "derived": "5b853d1d093452287b32772d1556130b7dbd34ecfc9587b3a8d94969ac774a58",
+      "ifc": "e712c6325bf2365e4a0addaf69846fbfa18b61ad735302c46548b122b66179a3",
+      "state": "5df4ec66163f30cfd116678fe1e976a654c8555367f7b3ea300b733f9a878377"
+     },
+     "plan_digest": "e2b1a8366c100a5a5f29a9a5bfe988da352a4c46ca7296c7a51981b3c23b8f11",
+     "preview_bytes": 667,
+     "relation": "ours_ahead"
+    }
+   },
+   "id": "s18_fast_forward",
+   "replay_oracle": {
+    "A<-B": {
+     "equals_merge": true,
+     "status": "replayed"
+    },
+    "B<-A": {
+     "equals_merge": true,
+     "status": "replayed"
+    }
+   },
+   "title": "한쪽(A)이 변경이 없으면 B 의 변경이 그대로 들어온다(반대 방향은 변경 없음)"
+  },
+  {
+   "expect": {
+    "clean": true
+   },
+   "flows": {
+    "A<-B": {
+     "apply": "ok",
+     "conflicts": {},
+     "fork_rev": 10,
+     "hashes": {
+      "derived": "eb00e0cd58686e539d0b4b13767aaeccb6237b393c6696fd0caa2242a6c968a6",
+      "ifc": "3338c903ab3958088d5e121365ee1491d4cb2d759f1120c5b476d745ecac0a01",
+      "state": "3b949994c620a5d865cec38c490286e18942df9f5129f5efad99ea7128195fd7"
+     },
+     "plan_digest": "cddba4bee9fe389ff0c50db64af5e225fb67449b5ad301dc78bb1d8dea97d443",
+     "preview_bytes": 666,
+     "relation": "diverged"
+    },
+    "B<-A": {
+     "apply": "ok",
+     "conflicts": {},
+     "fork_rev": 10,
+     "hashes": {
+      "derived": "eb00e0cd58686e539d0b4b13767aaeccb6237b393c6696fd0caa2242a6c968a6",
+      "ifc": "3338c903ab3958088d5e121365ee1491d4cb2d759f1120c5b476d745ecac0a01",
+      "state": "3b949994c620a5d865cec38c490286e18942df9f5129f5efad99ea7128195fd7"
+     },
+     "plan_digest": "cddba4bee9fe389ff0c50db64af5e225fb67449b5ad301dc78bb1d8dea97d443",
+     "preview_bytes": 666,
+     "relation": "diverged"
+    }
+   },
+   "id": "s19_delete_untouched",
+   "replay_oracle": {
+    "A<-B": {
+     "equals_merge": true,
+     "status": "replayed"
+    },
+    "B<-A": {
+     "equals_merge": true,
+     "status": "replayed"
+    }
+   },
+   "title": "한쪽이 지운 요소를 반대쪽이 건드리지 않았으면 조용히 삭제가 이긴다(조상 대비 변경 없음)"
+  },
+  {
+   "expect": {
+    "conflicts": [
+     "DELETE_MODIFY",
+     "PSET_SAME_PROP",
+     "SAME_FIELD"
+    ]
+   },
+   "flows": {
+    "A<-B": {
+     "apply": "MERGE_CONFLICT",
+     "conflicts": {
+      "DELETE_MODIFY": 1,
+      "PSET_SAME_PROP": 1,
+      "SAME_FIELD": 1
+     },
+     "fork_rev": 10,
+     "hashes": null,
+     "plan_digest": null,
+     "preview_bytes": 2407,
+     "relation": "diverged",
+     "variants": {
+      "spec": {
+       "apply": "ok",
+       "facts_failed": [],
+       "hashes": {
+        "derived": "9cbdc506b7eeed31cd8038a7808776b8808f664bc708762ee6ed330550584669",
+        "ifc": "ee3ee8bc4ab7f729cd62bf98f0bc9818a34125808178effc3592a1b188775c6e",
+        "state": "941f0cf28d6bbb628ae306e06fe9584764116d8140e78c586b3fc54a29202da6"
+       },
+       "rounds": 1
+      },
+      "swap": {
+       "apply": "ok",
+       "facts_failed": [],
+       "hashes": {
+        "derived": "0ef90b5e15f37bbae615c37a3faa11f4ab97fc6df5774ea1eaafd420c4992699",
+        "ifc": "20f2ee53e5a9ff78d75dc9b6dba136dbc14f42d56fe753fee224ff0b455187c9",
+        "state": "0f689f44cf43b113ccc9a5cc86c3eb489a14cf257d90d8e143ffef7bec9c0458"
+       },
+       "rounds": 1
+      }
+     }
+    },
+    "B<-A": {
+     "apply": "MERGE_CONFLICT",
+     "conflicts": {
+      "DELETE_MODIFY": 1,
+      "PSET_SAME_PROP": 1,
+      "SAME_FIELD": 1
+     },
+     "fork_rev": 10,
+     "hashes": null,
+     "plan_digest": null,
+     "preview_bytes": 2407,
+     "relation": "diverged",
+     "variants": {
+      "spec": {
+       "apply": "ok",
+       "facts_failed": [],
+       "hashes": {
+        "derived": "9cbdc506b7eeed31cd8038a7808776b8808f664bc708762ee6ed330550584669",
+        "ifc": "ee3ee8bc4ab7f729cd62bf98f0bc9818a34125808178effc3592a1b188775c6e",
+        "state": "941f0cf28d6bbb628ae306e06fe9584764116d8140e78c586b3fc54a29202da6"
+       },
+       "rounds": 1
+      },
+      "swap": {
+       "apply": "ok",
+       "facts_failed": [],
+       "hashes": {
+        "derived": "0ef90b5e15f37bbae615c37a3faa11f4ab97fc6df5774ea1eaafd420c4992699",
+        "ifc": "20f2ee53e5a9ff78d75dc9b6dba136dbc14f42d56fe753fee224ff0b455187c9",
+        "state": "0f689f44cf43b113ccc9a5cc86c3eb489a14cf257d90d8e143ffef7bec9c0458"
+       },
+       "rounds": 1
+      }
+     }
+    }
+   },
+   "id": "s20_multiple_conflicts",
+   "replay_oracle": {
+    "A<-B": {
+     "code": "NOT_FOUND",
+     "equals_merge": null,
+     "op": "door.set",
+     "path": "/id",
+     "status": "command_error"
+    },
+    "B<-A": {
+     "equals_merge": null,
+     "status": "replayed"
+    }
+   },
+   "title": "충돌 여러 건: 같은 필드 + 삭제 대 수정 + 속성. 일부만 해결하면 거부된다"
+  },
+  {
+   "expect": {
+    "clean": true
+   },
+   "flows": {
+    "A<-B": {
+     "apply": "ok",
+     "conflicts": {},
+     "fork_rev": 10,
+     "hashes": {
+      "derived": "4cb11eb9517e4a767893a19bf8e95f69972698929c3eefee10172fd3f99dac21",
+      "ifc": "d41f05a44468dbc4b73d281e80ae5c619bd42d0a37246b31a51aec32decf665f",
+      "state": "ff45aebb5ae8ea784c2d0bb11189c0f06ba891ebacee647083feb365863536a6"
+     },
+     "plan_digest": "ad30022b4dba21573b9c2c71b7191f0115be5508e6e3ab83de0172e321f992d3",
+     "preview_bytes": 666,
+     "relation": "diverged"
+    },
+    "B<-A": {
+     "apply": "ok",
+     "conflicts": {},
+     "fork_rev": 10,
+     "hashes": {
+      "derived": "4cb11eb9517e4a767893a19bf8e95f69972698929c3eefee10172fd3f99dac21",
+      "ifc": "d41f05a44468dbc4b73d281e80ae5c619bd42d0a37246b31a51aec32decf665f",
+      "state": "ff45aebb5ae8ea784c2d0bb11189c0f06ba891ebacee647083feb365863536a6"
+     },
+     "plan_digest": "ad30022b4dba21573b9c2c71b7191f0115be5508e6e3ab83de0172e321f992d3",
+     "preview_bytes": 666,
+     "relation": "diverged"
+    }
+   },
+   "id": "s21_parent_violation_not_merge_fault",
+   "replay_oracle": {
+    "A<-B": {
+     "equals_merge": true,
+     "status": "replayed"
+    },
+    "B<-A": {
+     "equals_merge": true,
+     "status": "replayed"
+    }
+   },
+   "title": "한쪽(A)이 스스로 같은 자리 벽 중복을 만들었다: 병합이 새로 만든 위반이 아니므로 충돌로 보고하지 않는다"
+  },
+  {
+   "expect": {
+    "conflicts": [
+     "DOOR_OUT_OF_HOST",
+     "DOOR_OUT_OF_HOST",
+     "DOOR_OUT_OF_HOST",
+     "DOOR_OUT_OF_HOST",
+     "DOOR_OUT_OF_HOST",
+     "DOOR_OUT_OF_HOST",
+     "DOOR_OUT_OF_HOST",
+     "DOOR_OUT_OF_HOST",
+     "DOOR_OUT_OF_HOST",
+     "DOOR_OUT_OF_HOST",
+     "DOOR_OUT_OF_HOST",
+     "DOOR_OUT_OF_HOST",
+     "DOOR_OUTSIDE_TRIMMED",
+     "DOOR_OUTSIDE_TRIMMED",
+     "DOOR_OUTSIDE_TRIMMED",
+     "DOOR_OUTSIDE_TRIMMED",
+     "DOOR_OUTSIDE_TRIMMED",
+     "DOOR_OUTSIDE_TRIMMED",
+     "DOOR_OUTSIDE_TRIMMED",
+     "DOOR_OUTSIDE_TRIMMED",
+     "DOOR_OUTSIDE_TRIMMED",
+     "DOOR_OUTSIDE_TRIMMED",
+     "DOOR_OUTSIDE_TRIMMED",
+     "DOOR_OUTSIDE_TRIMMED"
+    ]
+   },
+   "flows": {
+    "A<-B": {
+     "apply": "MERGE_CONFLICT",
+     "conflicts": {
+      "DOOR_OUTSIDE_TRIMMED": 12,
+      "DOOR_OUT_OF_HOST": 12
+     },
+     "fork_rev": 34,
+     "hashes": null,
+     "plan_digest": null,
+     "preview_bytes": 4454,
+     "relation": "diverged",
+     "variants": {
+      "spec": {
+       "apply": "ok",
+       "facts_failed": [],
+       "hashes": {
+        "derived": "bf1996cefd833c6a7d4c1d022f87a7b49ed567b2e076010740efd8b89d6a6628",
+        "ifc": "570e5eab4c90c7983d26f6655c37de40643f0dbee4bb7b32421193e0714255d0",
+        "state": "69d722a16f362d75b7b4d78a706a8a1a3980838427659f9f1b6d859bbd21de9c"
+       },
+       "rounds": 1
+      },
+      "swap": {
+       "apply": "ok",
+       "facts_failed": [],
+       "hashes": {
+        "derived": "9db063fd097bb4c46d1c77a60cd2d0c60cdf4ced2739c8963d8efbad9b0ac229",
+        "ifc": "7b0914c973ba9a00032f645835eff11cf231608b3e803de34c0968f30844f62a",
+        "state": "15e5dd16d7b3bbf5c444cca1efb0a0be1da89dbe9fe49b0e2b6d68cfc4638255"
+       },
+       "rounds": 1
+      }
+     }
+    },
+    "B<-A": {
+     "apply": "MERGE_CONFLICT",
+     "conflicts": {
+      "DOOR_OUTSIDE_TRIMMED": 12,
+      "DOOR_OUT_OF_HOST": 12
+     },
+     "fork_rev": 34,
+     "hashes": null,
+     "plan_digest": null,
+     "preview_bytes": 4454,
+     "relation": "diverged",
+     "variants": {
+      "spec": {
+       "apply": "ok",
+       "facts_failed": [],
+       "hashes": {
+        "derived": "bf1996cefd833c6a7d4c1d022f87a7b49ed567b2e076010740efd8b89d6a6628",
+        "ifc": "570e5eab4c90c7983d26f6655c37de40643f0dbee4bb7b32421193e0714255d0",
+        "state": "69d722a16f362d75b7b4d78a706a8a1a3980838427659f9f1b6d859bbd21de9c"
+       },
+       "rounds": 1
+      },
+      "swap": {
+       "apply": "ok",
+       "facts_failed": [],
+       "hashes": {
+        "derived": "9db063fd097bb4c46d1c77a60cd2d0c60cdf4ced2739c8963d8efbad9b0ac229",
+        "ifc": "7b0914c973ba9a00032f645835eff11cf231608b3e803de34c0968f30844f62a",
+        "state": "15e5dd16d7b3bbf5c444cca1efb0a0be1da89dbe9fe49b0e2b6d68cfc4638255"
+       },
+       "rounds": 1
+      }
+     }
+    }
+   },
+   "id": "s22_many_semantic_conflicts",
+   "replay_oracle": {
+    "A<-B": {
+     "code": "CONSTRAINT",
+     "equals_merge": null,
+     "op": "door.set",
+     "path": "/offset",
+     "status": "command_error"
+    },
+    "B<-A": {
+     "code": "CONSTRAINT",
+     "equals_merge": null,
+     "op": "wall.set",
+     "path": "/axis",
+     "status": "command_error"
+    }
+   },
+   "title": "의미 충돌 12건: 벽 12개를 A 가 줄이고 B 가 각 벽의 문을 끝으로 옮김. 해결 지시가 8건을 넘어도 위반이 남지 않는다"
+  },
+  {
+   "expect": {
+    "clean": true
+   },
+   "flows": {
+    "A<-B": {
+     "apply": "ok",
+     "conflicts": {},
+     "fork_rev": 10,
+     "hashes": {
+      "derived": "a450b4d749f1952202fd7d6091dcf87ee2474d6cadf4d40ebc3a5af6422a4436",
+      "ifc": "017490155ea2812ef5058ed7810077f33042ba85fd376a3f57cc542ecdda7bdf",
+      "state": "fdbb92914c8cb76382eca5a1c2514648d089419256d8ef5dbe16c340b6c5a91b"
+     },
+     "plan_digest": "21a6d269e921041605a4e26edb8388e3d212b9a1b1f7f317447ad3bea7db1c7f",
+     "preview_bytes": 666,
+     "relation": "diverged"
+    },
+    "B<-A": {
+     "apply": "ok",
+     "conflicts": {},
+     "fork_rev": 10,
+     "hashes": {
+      "derived": "a450b4d749f1952202fd7d6091dcf87ee2474d6cadf4d40ebc3a5af6422a4436",
+      "ifc": "017490155ea2812ef5058ed7810077f33042ba85fd376a3f57cc542ecdda7bdf",
+      "state": "fdbb92914c8cb76382eca5a1c2514648d089419256d8ef5dbe16c340b6c5a91b"
+     },
+     "plan_digest": "21a6d269e921041605a4e26edb8388e3d212b9a1b1f7f317447ad3bea7db1c7f",
+     "preview_bytes": 666,
+     "relation": "diverged"
+    }
+   },
+   "id": "s23_auto_ids_after_merge",
+   "replay_oracle": {
+    "A<-B": {
+     "equals_merge": true,
+     "status": "replayed"
+    },
+    "B<-A": {
+     "equals_merge": true,
+     "status": "replayed"
+    }
+   },
+   "title": "상대가 id 를 주지 않고 벽 3개를 만들고 우리는 다른 곳을 고쳤다: 합친 뒤 우리 쪽 자동 id 생성이 상대 id 와 겹치지 않는다"
+  }
+ ]
+}

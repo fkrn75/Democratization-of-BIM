@@ -1,0 +1,76 @@
+{
+  "reps": 9,
+  "cold_first_run": {
+    "venv": {
+      "list_first_run_s": 0.413,
+      "model_hash_first_run_s": 1.016
+    },
+    "frozen": {
+      "list_first_run_s": 0.246,
+      "model_hash_first_run_s": 1.033
+    }
+  },
+  "warm": {
+    "venv": {
+      "list": {
+        "min": 0.379,
+        "median": 0.388,
+        "max": 0.448,
+        "n": 9
+      },
+      "model_hash": {
+        "min": 0.958,
+        "median": 0.999,
+        "max": 1.039,
+        "n": 9
+      }
+    },
+    "frozen": {
+      "list": {
+        "min": 0.238,
+        "median": 0.247,
+        "max": 0.258,
+        "n": 9
+      },
+      "model_hash": {
+        "min": 1.033,
+        "median": 1.055,
+        "max": 1.141,
+        "n": 9
+      }
+    }
+  },
+  "mcp": {
+    "venv": {
+      "initialize_s": {
+        "min": 0.965,
+        "median": 0.997,
+        "max": 1.034,
+        "n": 5
+      },
+      "tools_list_done_s": {
+        "min": 0.967,
+        "median": 1.0,
+        "max": 1.037,
+        "n": 5
+      },
+      "tool_count": 8
+    },
+    "frozen": {
+      "initialize_s": {
+        "min": 0.692,
+        "median": 0.709,
+        "max": 1.043,
+        "n": 5
+      },
+      "tools_list_done_s": {
+        "min": 0.695,
+        "median": 0.712,
+        "max": 1.046,
+        "n": 5
+      },
+      "tool_count": 8
+    }
+  },
+  "note": "다른 에이전트 작업이 동시에 도는 PC 에서 번갈아 측정한 값이다. 절대값이 아니라 상대 비교용"
+}

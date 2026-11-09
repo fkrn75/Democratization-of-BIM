@@ -1,0 +1,25 @@
+{
+  "scanned_files": 15,
+  "scanned_dir": "spikes/s1-core/src/dobim_core",
+  "branch_hits": 0,
+  "hits": [],
+  "mentions_in_docs_or_comments": [
+    {
+      "file": "dispatch.py",
+      "line": 2,
+      "kind": "설명(문서 문자열)",
+      "match": "Claude"
+    },
+    {
+      "file": "limits.py",
+      "line": 2,
+      "kind": "설명(문서 문자열)",
+      "match": "Claude"
+    }
+  ],
+  "negative_control_detected": {
+    "어휘": true,
+    "구조": true
+  },
+  "pass": true
+}

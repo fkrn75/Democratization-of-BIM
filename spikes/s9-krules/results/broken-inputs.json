@@ -1,0 +1,68 @@
+{
+  "note": "krrules.run 에 망가진 입력을 넣은 결과. exit_code 2 = 오류 JSON, 0 = 결과 산출(IFC2X2 는 KR-CODE-01 위반)",
+  "cases": {
+    "empty.ifc": {
+      "exit_code": 2,
+      "error": {
+        "code": "EMPTY_FILE",
+        "message": "빈 파일(0바이트)"
+      }
+    },
+    "garbage.ifc": {
+      "exit_code": 2,
+      "error": {
+        "code": "NOT_STEP",
+        "message": "STEP 파일이 아님(ISO-10303-21 로 시작하지 않음)"
+      }
+    },
+    "truncated.ifc": {
+      "exit_code": 2,
+      "error": {
+        "code": "TRUNCATED",
+        "message": "끝이 잘린 파일(ENDSEC/END-ISO-10303-21 이 파일 끝에 없음)"
+      }
+    },
+    "ifc2x2.ifc": {
+      "exit_code": 0,
+      "schema": "IFC2X2_FINAL",
+      "unreadable_schema": true,
+      "parse_errors": null,
+      "summary": {
+        "na": 31,
+        "fail": 1,
+        "pass": 1,
+        "conditional": {
+          "enabled": false,
+          "na": 3
+        },
+        "total": 36
+      },
+      "KR-CODE-01": "fail"
+    },
+    "corrupt-lines.ifc": {
+      "exit_code": 0,
+      "schema": "IFC4",
+      "unreadable_schema": false,
+      "parse_errors": {
+        "count": 4,
+        "samples": [
+          "[error] Entity with name 'garbage' not found in schema 'IFC4' at offset 192",
+          "[error] [SYN123] Entity with name 'ENDSEC' not found in schema 'IFC4' at offset 205",
+          "[error] [SYN123] Entity with name 'END-ISO-10303-21' not found in schema 'IFC4' at offset 213"
+        ]
+      },
+      "summary": {
+        "fail": 5,
+        "na": 22,
+        "pass": 4,
+        "warn": 2,
+        "conditional": {
+          "enabled": false,
+          "na": 3
+        },
+        "total": 36
+      },
+      "KR-CODE-01": "pass"
+    }
+  }
+}

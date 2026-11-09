@@ -1,0 +1,131 @@
+{
+  "startup": {
+    "runs": 10,
+    "spawn_to_initialize_sec": {
+      "min": 0.993,
+      "median": 1.028,
+      "max": 1.051
+    },
+    "tools_list_sec": {
+      "min": 0.001,
+      "median": 0.001,
+      "max": 0.002
+    },
+    "first_project_call_sec": {
+      "min": 0.543,
+      "median": 0.552,
+      "max": 0.586
+    },
+    "second_project_call_sec": {
+      "min": 0.002,
+      "median": 0.002,
+      "max": 0.002
+    },
+    "note": "spawn 부터 initialize 응답까지(콜드 import 포함). 첫 프로젝트 호출은 ifcopenshell 지연 import 를 포함한다."
+  },
+  "stdout_purity": {
+    "normal_calls_nonjson_stdout_lines": 0,
+    "stderr_bytes": 0,
+    "injected_stray_write_nonjson_stdout_lines": 0,
+    "injected_line_went_to_stderr": true,
+    "injected_note": "커맨드 안에서 fd 1 로 직접 쓴 줄이 프로토콜 스트림에 그대로 섞이는지 본다. 섞이지 않고 stderr 로 가면 SDK 가 fd 1 을 보호하는 것이다(코어 코드가 아니라 mcp SDK 동작)."
+  },
+  "encoding": {
+    "PYTHONUTF8=1": {
+      "create_ok": true,
+      "create_error": null,
+      "name_roundtrip": true,
+      "stdout_is_valid_utf8": true,
+      "nonjson_lines": 0,
+      "ascii_escaped_in_stdout": false
+    },
+    "PYTHONUTF8 없음": {
+      "create_ok": true,
+      "create_error": null,
+      "name_roundtrip": true,
+      "stdout_is_valid_utf8": true,
+      "nonjson_lines": 0,
+      "ascii_escaped_in_stdout": false
+    },
+    "cli_roundtrip_ok": true
+  },
+  "bom": {
+    "cli_json_file_with_bom_ok": true,
+    "cli_script_file_with_bom_ok": true
+  },
+  "paths": {
+    "korean_space_path": {
+      "project_info_ok": true,
+      "mutation_ok": true,
+      "export_ok": true,
+      "exported_file_exists": true
+    },
+    "long_paths": {
+      "200": {
+        "path_len": 228,
+        "project_create_ok": true,
+        "error_code": null
+      },
+      "259": {
+        "path_len": 259,
+        "project_create_ok": true,
+        "error_code": null
+      },
+      "270": {
+        "path_len": 290,
+        "project_create_ok": true,
+        "error_code": null
+      },
+      "300": {
+        "path_len": 321,
+        "project_create_ok": true,
+        "error_code": null
+      }
+    }
+  },
+  "env_systemroot": {
+    "PYTHONPATH+PYTHONUTF8 만(SystemRoot 없음)": {
+      "starts": false,
+      "error": "RuntimeError: 서버가 응답 없이 종료했다 stderr=__.py\", line 43, in <module>\r\n    from .windows_events import *\r\n  File \"<HOME>\\AppData\\Local\\Programs\\Python\\Python312\\Lib\\asyncio"
+    },
+    "위 + SystemRoot": {
+      "starts": true,
+      "project_info_ok": true
+    }
+  },
+  "orphans": {
+    "server_processes_while_running": 2,
+    "stdin_eof_exit_sec": 0.194,
+    "exit_code_after_eof": 0,
+    "server_processes_after_eof": 0,
+    "server_processes_before_parent_kill": 4,
+    "server_processes_3s_after_parent_killed": 0,
+    "note": "서버는 자식 프로세스를 만들지 않는다. venv 의 python.exe 는 실행기(런처)와 실제 인터프리터 2개로 보일 수 있다. 부모 강제 종료 뒤 0 이면 stdin EOF 로 정리된 것이다."
+  },
+  "file_lock": {
+    "viewer_like_share_read": {
+      "share_mode": 1,
+      "opened": true,
+      "export_while_locked": {
+        "ok": false,
+        "error_code": "FILE_LOCKED",
+        "sdk_level_error": false
+      },
+      "original_unchanged": true,
+      "leftover_tmp_files": [],
+      "export_after_unlock_ok": true
+    },
+    "exclusive_no_share": {
+      "share_mode": 0,
+      "opened": true,
+      "export_while_locked": {
+        "ok": false,
+        "error_code": "FILE_LOCKED",
+        "sdk_level_error": false
+      },
+      "original_unchanged": true,
+      "leftover_tmp_files": [],
+      "export_after_unlock_ok": true
+    }
+  }
+}

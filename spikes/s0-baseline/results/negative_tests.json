@@ -1,0 +1,231 @@
+{
+ "all_ok": true,
+ "cases": [
+  {
+   "case": "N00 무결함 사본(양성 대조)",
+   "expected_fail": [],
+   "actual_fail": [],
+   "ok": true,
+   "M7": 100.0,
+   "M3": 100.0,
+   "M6": 100.0,
+   "M1": 100.0,
+   "m8_errors": 0
+  },
+  {
+   "case": "N01 외벽 1개 삭제(개구부 없는 벽)",
+   "expected_fail": [
+    "M1",
+    "M2",
+    "M5",
+    "M6",
+    "X1"
+   ],
+   "actual_fail": [
+    "M1",
+    "M2",
+    "M5",
+    "M6",
+    "X1"
+   ],
+   "ok": true,
+   "M7": 94.73684210526316,
+   "M3": 97.93,
+   "M6": 98.25,
+   "M1": 98.65,
+   "m8_errors": 0
+  },
+  {
+   "case": "N02 문 GlobalId 변경",
+   "expected_fail": [
+    "M1",
+    "M4",
+    "M6",
+    "X1"
+   ],
+   "actual_fail": [
+    "M1",
+    "M4",
+    "M6",
+    "X1"
+   ],
+   "ok": true,
+   "M7": 94.73684210526316,
+   "M3": 98.45,
+   "M6": 98.25,
+   "M1": 98.65,
+   "m8_errors": 0
+  },
+  {
+   "case": "N03 전 벽 IsExternal 반전(7%)",
+   "expected_fail": [
+    "M3"
+   ],
+   "actual_fail": [
+    "M3"
+   ],
+   "ok": true,
+   "M7": 100.0,
+   "M3": 92.75,
+   "M6": 100.0,
+   "M1": 100.0,
+   "m8_errors": 0
+  },
+  {
+   "case": "N03b 벽 5개 IsExternal 반전(2.6%, 경계 안쪽)",
+   "expected_fail": [],
+   "actual_fail": [],
+   "ok": true,
+   "M7": 100.0,
+   "M3": 97.41,
+   "M6": 100.0,
+   "M1": 100.0,
+   "m8_errors": 0
+  },
+  {
+   "case": "N04 개구부 관계 1개 삭제",
+   "expected_fail": [
+    "M4",
+    "M6",
+    "M8"
+   ],
+   "actual_fail": [
+    "M4",
+    "M6",
+    "M8"
+   ],
+   "ok": true,
+   "M7": 100.0,
+   "M3": 100.0,
+   "M6": 98.25,
+   "M1": 100.0,
+   "m8_errors": 1
+  },
+  {
+   "case": "N05 단열층 두께 100->90mm",
+   "expected_fail": [
+    "M5"
+   ],
+   "actual_fail": [
+    "M5"
+   ],
+   "ok": true,
+   "M7": 100.0,
+   "M3": 100.0,
+   "M6": 100.0,
+   "M1": 100.0,
+   "m8_errors": 0
+  },
+  {
+   "case": "N06 기둥 높이 +0.6%",
+   "expected_fail": [
+    "M6",
+    "X1"
+   ],
+   "actual_fail": [
+    "M6",
+    "X1"
+   ],
+   "ok": true,
+   "M7": 100.0,
+   "M3": 100.0,
+   "M6": 98.25,
+   "M1": 100.0,
+   "m8_errors": 0
+  },
+  {
+   "case": "N06b 기둥 높이 +0.4% (체적 허용 안쪽, 위치는 어긋남)",
+   "expected_fail": [
+    "X1"
+   ],
+   "actual_fail": [
+    "X1"
+   ],
+   "ok": true,
+   "M7": 100.0,
+   "M3": 100.0,
+   "M6": 100.0,
+   "M1": 100.0,
+   "m8_errors": 0
+  },
+  {
+   "case": "N07 벽 DoBIM_Intent 전부 삭제",
+   "expected_fail": [],
+   "actual_fail": [],
+   "ok": true,
+   "M7": 26.31578947368421,
+   "M3": 100.0,
+   "M6": 100.0,
+   "M1": 100.0,
+   "m8_errors": 0
+  },
+  {
+   "case": "N08 기둥 프로파일 삭제(스키마 파손)",
+   "expected_fail": [
+    "M6",
+    "M8",
+    "X1"
+   ],
+   "actual_fail": [
+    "M6",
+    "M8",
+    "X1"
+   ],
+   "ok": true,
+   "M7": 100.0,
+   "M3": 100.0,
+   "M6": 98.25,
+   "M1": 100.0,
+   "m8_errors": 1
+  },
+  {
+   "case": "N09 내벽 0.5m 이동",
+   "expected_fail": [
+    "X1"
+   ],
+   "actual_fail": [
+    "X1"
+   ],
+   "ok": true,
+   "M7": 100.0,
+   "M3": 100.0,
+   "M6": 100.0,
+   "M1": 100.0,
+   "m8_errors": 0
+  },
+  {
+   "case": "N10 IfcColumn -> IfcBeam 재분류",
+   "expected_fail": [
+    "M2"
+   ],
+   "actual_fail": [
+    "M2"
+   ],
+   "ok": true,
+   "M7": 100.0,
+   "M3": 100.0,
+   "M6": 100.0,
+   "M1": 100.0,
+   "m8_errors": 0
+  },
+  {
+   "case": "N11 길이 단위 m -> mm 오표기",
+   "expected_fail": [
+    "M5",
+    "M6",
+    "X1"
+   ],
+   "actual_fail": [
+    "M5",
+    "M6",
+    "X1"
+   ],
+   "ok": true,
+   "M7": 100.0,
+   "M3": 100.0,
+   "M6": 0.0,
+   "M1": 100.0,
+   "m8_errors": 0
+  }
+ ]
+}

@@ -1,0 +1,148 @@
+{
+ "M1": {
+  "value": 77.02702702702703,
+  "threshold": ">=99",
+  "unit": "%",
+  "pass": false,
+  "detail": [
+   "누락 3z02aM321Pef2pvtOTCmaR (IfcOpeningElement)",
+   "누락 3Ovv7II1DTFBDmmZIkL_aJ (IfcOpeningElement)",
+   "누락 2Rweq4B19QiukM5STzVZnA (IfcOpeningElement)",
+   "누락 3qGooS$NHMuOKMdJoJ1Ibn (IfcOpeningElement)",
+   "누락 2HdbQEg4TR$B2gsWUG3TIJ (IfcOpeningElement)",
+   "누락 1ZGDVaPEjP6fMkhGEXOq5o (IfcOpeningElement)",
+   "누락 3ztohqovLSAgwlGZ6u$ek2 (IfcOpeningElement)",
+   "누락 1GDds27ALNXwSNR9UBX5P7 (IfcOpeningElement)",
+   "누락 111iLrebzTDwKdJranyhaG (IfcOpeningElement)",
+   "누락 1ml4gUzJPI6xjtH6Yx5RVZ (IfcOpeningElement)"
+  ]
+ },
+ "M2": {
+  "value": 91.66666666666667,
+  "threshold": "=100",
+  "unit": "% (클래스)",
+  "pass": false,
+  "detail": [
+   "IfcRoof: REF 0 / TEST 1",
+   "IfcSlab: REF 3 / TEST 2"
+  ]
+ },
+ "M3": {
+  "value": 16.06217616580311,
+  "threshold": ">=95",
+  "unit": "%",
+  "total": 193,
+  "pass": false,
+  "detail": [
+   "('3Jses2$FzNPBRgiAJLRVX2', 'Pset_BeamCommon', 'Reference') REF='B-01' TEST='<없음>'",
+   "('3Jses2$FzNPBRgiAJLRVX2', 'Pset_BeamCommon', 'LoadBearing') REF=True TEST='<없음>'",
+   "('3Jses2$FzNPBRgiAJLRVX2', 'Pset_BeamCommon', 'IsExternal') REF=False TEST='<없음>'",
+   "('0HF9ePz_vPa9x$N0N$fOTe', 'Pset_BeamCommon', 'Reference') REF='B-02' TEST='<없음>'",
+   "('0HF9ePz_vPa9x$N0N$fOTe', 'Pset_BeamCommon', 'LoadBearing') REF=True TEST='<없음>'",
+   "('0HF9ePz_vPa9x$N0N$fOTe', 'Pset_BeamCommon', 'IsExternal') REF=False TEST='<없음>'",
+   "('018pwR5TbIbPcizjR1lz6j', 'Pset_BeamCommon', 'Reference') REF='B-03' TEST='<없음>'",
+   "('018pwR5TbIbPcizjR1lz6j', 'Pset_BeamCommon', 'LoadBearing') REF=True TEST='<없음>'",
+   "('018pwR5TbIbPcizjR1lz6j', 'Pset_BeamCommon', 'IsExternal') REF=False TEST='<없음>'",
+   "('0mTRbx1gfInuCwWzCzREvE', 'Pset_BeamCommon', 'Reference') REF='B-04' TEST='<없음>'"
+  ]
+ },
+ "M4": {
+  "value": 0.0,
+  "threshold": "=100",
+  "unit": "%",
+  "total": 26,
+  "pass": false,
+  "detail": [
+   "void 쌍 누락 ('0bbvQJpMjSWhcT9r2H0kfg', '2Rweq4B19QiukM5STzVZnA')",
+   "void 쌍 누락 ('0hu4ztJVbTlBBvemhzSZ26', '3qGooS$NHMuOKMdJoJ1Ibn')",
+   "void 쌍 누락 ('1zCNdybhrS3BERfRW1zGef', '111iLrebzTDwKdJranyhaG')",
+   "void 쌍 누락 ('1zCNdybhrS3BERfRW1zGef', '1GDds27ALNXwSNR9UBX5P7')",
+   "void 쌍 누락 ('2NmRKe4gXS2g7DSKbN8oJ1', '3Ovv7II1DTFBDmmZIkL_aJ')",
+   "void 쌍 누락 ('2bt3PtnQPOHv9VYcEoZeN7', '1ml4gUzJPI6xjtH6Yx5RVZ')",
+   "void 쌍 누락 ('2bt3PtnQPOHv9VYcEoZeN7', '2HdbQEg4TR$B2gsWUG3TIJ')",
+   "void 쌍 누락 ('2bt3PtnQPOHv9VYcEoZeN7', '34c0Xeah9UHuAMIhsIuJop')",
+   "void 쌍 누락 ('3Y2ETKAITKWwOynuyfZ9lq', '1ZGDVaPEjP6fMkhGEXOq5o')",
+   "void 쌍 누락 ('3Y2ETKAITKWwOynuyfZ9lq', '3z02aM321Pef2pvtOTCmaR')"
+  ]
+ },
+ "M5": {
+  "value": 100.0,
+  "threshold": "=100",
+  "unit": "%",
+  "total": 14,
+  "pass": true,
+  "detail": []
+ },
+ "M6": {
+  "value": 59.64912280701754,
+  "threshold": "=100 (오차<=0.5%)",
+  "unit": "% (요소)",
+  "total": 57,
+  "max_rel_err": 0.540740740740758,
+  "pass": false,
+  "detail": [
+   "0NMNry_anRwwDmM$NmdIP1 REF=0.094500 TEST=0.14559999999999873 err=0.5407407407407289",
+   "3mx4xG$xrHBO__AIZJvo1g REF=0.084000 TEST=0.08190000000000265 err=0.02499999999999411",
+   "2Q4GXQ4J5Gcx_OghkRUdXd REF=0.084000 TEST=0.08189999999998321 err=0.025000000000154374",
+   "28VwDxXKjO$hDqrwGRhOkr REF=0.084000 TEST=0.0819000000000028 err=0.02499999999988324",
+   "2Qkn_sJh1HPvgk6rr8Rr4t REF=0.072000 TEST=0.0410799999999999 err=0.4294444444444459",
+   "2E$4eERRHORPNbDu9W0aX4 REF=0.094500 TEST=0.14560000000000137 err=0.540740740740758",
+   "25FhLtGibUvemo0wnbYUQ8 REF=0.072000 TEST=0.04108000000000015 err=0.42944444444444185",
+   "0O_z4nTGDH097WyBpOfYZz REF=0.108000 TEST=0.057879999999964266 err=0.46407407407447443"
+  ]
+ },
+ "M7": {
+  "value": 0.0,
+  "threshold": "기록만",
+  "unit": "%",
+  "total": 19,
+  "pass": null,
+  "detail": [
+   "0NMNry_anRwwDmM$NmdIP1 의도 소실/변경",
+   "3mx4xG$xrHBO__AIZJvo1g 의도 소실/변경",
+   "2Q4GXQ4J5Gcx_OghkRUdXd 의도 소실/변경",
+   "28VwDxXKjO$hDqrwGRhOkr 의도 소실/변경",
+   "2E$4eERRHORPNbDu9W0aX4 의도 소실/변경"
+  ]
+ },
+ "M8": {
+  "value": 0,
+  "threshold": "=0",
+  "unit": "건",
+  "pass": true,
+  "warnings": 0,
+  "detail": []
+ },
+ "X1": {
+  "value": 78.94736842105263,
+  "threshold": "=100 (1mm)",
+  "unit": "% (요소)",
+  "total": 57,
+  "pass": false,
+  "detail": [
+   "2Qkn_sJh1HPvgk6rr8Rr4t 편차 0.014142135623730952",
+   "25FhLtGibUvemo0wnbYUQ8 편차 0.014142135623730952",
+   "0O_z4nTGDH097WyBpOfYZz 편차 0.014142135623730807",
+   "2hn7OsU1HUYgod0jTjTJ8l 편차 0.014142135623730807",
+   "3F9pOeE_PI2Q6MrE7wyaFY 편차 0.014142135623730796",
+   "3Sd2jmbwDKye09eCzsuTsl 편차 0.014142135623730796",
+   "24qdbPlyjVDPYQFG9auIm9 편차 0.014142135623730649",
+   "3jA2QJu1vRt8cFJ5RbyfuT 편차 0.014142135623730649"
+  ]
+ },
+ "X2": {
+  "value": 0,
+  "threshold": "참고",
+  "unit": "건",
+  "pass": null,
+  "detail": []
+ },
+ "_meta": {
+  "ref": "RA-01.ifc",
+  "test": "out/p2/ccad/o1/RA-01.ccad.ifc",
+  "schema_ref": "IFC4",
+  "schema_test": "IFC4",
+  "n_products_ref": 74,
+  "n_products_test": 74
+ }
+}

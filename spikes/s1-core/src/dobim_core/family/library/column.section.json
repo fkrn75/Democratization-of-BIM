@@ -1,0 +1,282 @@
+{
+  "schema": "dobim.family/1",
+  "id": "column.section",
+  "version": 1,
+  "name": "단면 선택 기둥",
+  "description": "자립형 기둥. 단면(직사각·원형·모따기)은 타입 매개변수의 표시 조건(when)으로 고르고 높이는 인스턴스 매개변수.",
+  "ifc": {
+    "class": "IfcColumn",
+    "type_class": "IfcColumnType",
+    "predefined": "COLUMN"
+  },
+  "params": {
+    "section": {
+      "kind": "type",
+      "default": "rect",
+      "type": "enum",
+      "values": [
+        "rect",
+        "round",
+        "chamfered"
+      ],
+      "description": "단면 모양"
+    },
+    "width": {
+      "kind": "type",
+      "default": 400,
+      "unit": "mm",
+      "min": 200,
+      "max": 1200
+    },
+    "depth": {
+      "kind": "type",
+      "default": 400,
+      "unit": "mm",
+      "min": 200,
+      "max": 1200
+    },
+    "chamfer": {
+      "kind": "type",
+      "default": 50,
+      "unit": "mm",
+      "description": "chamfered 단면의 모따기",
+      "min": 10,
+      "max": 90
+    },
+    "load_bearing": {
+      "kind": "type",
+      "default": true,
+      "type": "bool"
+    },
+    "height": {
+      "kind": "instance",
+      "default": 3000,
+      "unit": "mm",
+      "min": 2000,
+      "max": 12000
+    }
+  },
+  "derived": {
+    "dia": "min(width, depth)"
+  },
+  "constraints": [
+    {
+      "expr": "chamfer*2 < min(width, depth)",
+      "message": "모따기가 단면 변의 절반 이상이다"
+    }
+  ],
+  "solids": [
+    {
+      "id": "shaft_rect",
+      "op": "extrude",
+      "plane": "xy",
+      "when": "section == 'rect'",
+      "profile": {
+        "shape": "rect",
+        "u": [
+          "-width/2",
+          "width/2"
+        ],
+        "v": [
+          "-depth/2",
+          "depth/2"
+        ]
+      },
+      "range": [
+        0,
+        "height"
+      ]
+    },
+    {
+      "id": "shaft_round",
+      "op": "extrude",
+      "plane": "xy",
+      "when": "section == 'round'",
+      "profile": {
+        "shape": "circle",
+        "center": [
+          0,
+          0
+        ],
+        "r": "dia/2"
+      },
+      "range": [
+        0,
+        "height"
+      ]
+    },
+    {
+      "id": "shaft_chamfered",
+      "op": "extrude",
+      "plane": "xy",
+      "when": "section == 'chamfered'",
+      "profile": {
+        "shape": "polygon",
+        "points": [
+          [
+            "-width/2 + chamfer",
+            "-depth/2"
+          ],
+          [
+            "width/2 - chamfer",
+            "-depth/2"
+          ],
+          [
+            "width/2",
+            "-depth/2 + chamfer"
+          ],
+          [
+            "width/2",
+            "depth/2 - chamfer"
+          ],
+          [
+            "width/2 - chamfer",
+            "depth/2"
+          ],
+          [
+            "-width/2 + chamfer",
+            "depth/2"
+          ],
+          [
+            "-width/2",
+            "depth/2 - chamfer"
+          ],
+          [
+            "-width/2",
+            "-depth/2 + chamfer"
+          ]
+        ]
+      },
+      "range": [
+        0,
+        "height"
+      ]
+    }
+  ],
+  "plan_symbol": {
+    "default": [
+      {
+        "type": "rect",
+        "u": [
+          "-width/2",
+          "width/2"
+        ],
+        "v": [
+          "-depth/2",
+          "depth/2"
+        ],
+        "when": "section == 'rect'",
+        "style": "cut"
+      },
+      {
+        "type": "line",
+        "from": [
+          "-width/2",
+          "-depth/2"
+        ],
+        "to": [
+          "width/2",
+          "depth/2"
+        ],
+        "when": "section == 'rect'"
+      },
+      {
+        "type": "line",
+        "from": [
+          "-width/2",
+          "depth/2"
+        ],
+        "to": [
+          "width/2",
+          "-depth/2"
+        ],
+        "when": "section == 'rect'"
+      },
+      {
+        "type": "circle",
+        "center": [
+          0,
+          0
+        ],
+        "radius": "dia/2",
+        "when": "section == 'round'",
+        "style": "cut"
+      },
+      {
+        "type": "line",
+        "from": [
+          "-dia/2",
+          0
+        ],
+        "to": [
+          "dia/2",
+          0
+        ],
+        "when": "section == 'round'"
+      },
+      {
+        "type": "line",
+        "from": [
+          0,
+          "-dia/2"
+        ],
+        "to": [
+          0,
+          "dia/2"
+        ],
+        "when": "section == 'round'"
+      },
+      {
+        "type": "polyline",
+        "points": [
+          [
+            "-width/2 + chamfer",
+            "-depth/2"
+          ],
+          [
+            "width/2 - chamfer",
+            "-depth/2"
+          ],
+          [
+            "width/2",
+            "-depth/2 + chamfer"
+          ],
+          [
+            "width/2",
+            "depth/2 - chamfer"
+          ],
+          [
+            "width/2 - chamfer",
+            "depth/2"
+          ],
+          [
+            "-width/2 + chamfer",
+            "depth/2"
+          ],
+          [
+            "-width/2",
+            "depth/2 - chamfer"
+          ],
+          [
+            "-width/2",
+            "-depth/2 + chamfer"
+          ]
+        ],
+        "closed": true,
+        "when": "section == 'chamfered'",
+        "style": "cut"
+      }
+    ]
+  },
+  "psets": {
+    "Pset_ColumnCommon": {
+      "on": "type",
+      "props": {
+        "LoadBearing": {
+          "expr": "load_bearing"
+        },
+        "IsExternal": false
+      }
+    }
+  }
+}

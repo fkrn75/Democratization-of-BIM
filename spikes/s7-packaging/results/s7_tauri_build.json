@@ -1,0 +1,40 @@
+{
+  "installers": [
+    {
+      "name": "DoBIM-S7_0.0.1_x64_en-US.msi",
+      "kind": "msi",
+      "bytes": 90116272,
+      "mib": 85.9,
+      "sha256": "0d5b586539e60b5b98d8da094fac9b7aed80c056b560ae0856a06193df0e253f"
+    },
+    {
+      "name": "DoBIM-S7_0.0.1_x64-setup.exe",
+      "kind": "exe",
+      "bytes": 67691386,
+      "mib": 64.6,
+      "sha256": "0672808e6d13e14d1751c8f3bbe078bc329eefe79ec3222631c2b5a5293c3eb4"
+    }
+  ],
+  "shell_exe": {
+    "bytes": 4535808,
+    "sha256": "891414860923341d474909062b2897ad449b99f973479afe3dac3f28a9833e3b"
+  },
+  "frozen_internal_files": 1479,
+  "nsis_script": {
+    "file_commands": 1486,
+    "has_dobim_exe": true,
+    "has_dobim_mcp_exe": true,
+    "internal_entries": 1479,
+    "has_third_party_notices": true,
+    "has_library_replacement_doc": true,
+    "install_mode_line": "!define INSTALLMODE \"currentUser\"",
+    "internal_matches_frozen": true
+  },
+  "layout_emulation": {
+    "dobim_list_ok": true,
+    "exit_code": 0,
+    "items": 3,
+    "same_files_as_frozen": true,
+    "note": "복사로 재현한 설치 폴더에서의 실행이다. 진짜 설치(레지스트리·바로가기·제거)는 아니다"
+  }
+}

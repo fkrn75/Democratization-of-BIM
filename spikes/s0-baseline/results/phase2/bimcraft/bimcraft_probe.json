@@ -1,0 +1,125 @@
+{
+ "console": [
+  "error: Failed to load resource: the server responded with a status of 404 (File not found)",
+  "requestfailed: http://127.0.0.1:8000/assets/js/app-devices-studio.js",
+  "error: Failed to load resource: the server responded with a status of 404 (File not found)",
+  "requestfailed: http://127.0.0.1:8000/assets/js/skill-packs.js",
+  "error: Failed to load resource: the server responded with a status of 404 (File not found)",
+  "requestfailed: http://127.0.0.1:8000/assets/js/app-addons-account.js",
+  "requestfailed: https://getcadcraft.com/api/v1/hardware",
+  "requestfailed: https://getcadcraft.com/api/v1/hardware",
+  "error: Failed to load resource: net::ERR_INTERNET_DISCONNECTED"
+ ],
+ "steps": [],
+ "load_ms": 4458,
+ "title": "BimCraft 0.8.1",
+ "body_text": "BimCraft\nBrowser edition\n0.8.1\nFile\nOpen a file or folder\nChoose a file, or drop a file or folder here\nIFC, RVT, RFA, DWG, DXF, a point cloud (LAS, LAZ) or a project folder\nOpen a folder\nDocuments\nRegister scans…\nNew building\n\nTip: drag a folder onto this page to open it without your browser's permission prompt.\n\nFiles open on this computer. Nothing is uploaded; the browser's prompt is about reading the folder in this tab.\n\nOpen a building model.\n\nChoose an IFC, RVT, RFA or DWG file, or a whole project folder, from your computer. Or drag either onto this page: a dragged folder opens without a permission prompt. Or start a new building and draw it here. It all stays in your browser; nothing is uploaded.\n\nChoose a file\nOpen a folder\nNew building\n\nIFC\n\nThe full model in 3D. Orbit it, turn storeys on and off, cut it with a section plane, and click any element to see its properties and quantities. Change names, tags and property values, then save a new IFC; your original stays as it was.\n\nRVT and RFA\n\nA file card: the release it was saved in, project information, the preview picture and linked files. The 3D model inside an RVT is in an undocumented format, so to see it in 3D, export IFC",
+ "file_inputs": [
+  {
+   "accept": ".ifc,.rvt,.rfa,.rte,.rft,.dwg,.dxf,.step,.stp,.obj,.pln,.pla,.tpl,.bpn,.ccbundle,.zip,.las,.laz,.xyz,.pts,.ply,.pcd,.ptx,.e57",
+   "id": "bc-file",
+   "multiple": false
+  },
+  {
+   "accept": "",
+   "id": "",
+   "multiple": true
+  },
+  {
+   "accept": ".dwg,.png,.jpg,.jpeg,.gif,.bmp,.webp,.tif,.tiff",
+   "id": "",
+   "multiple": true
+  },
+  {
+   "accept": ".ifc",
+   "id": "",
+   "multiple": true
+  },
+  {
+   "accept": ".csv,.txt,.xml,.mspdi,text/csv,application/xml,text/xml",
+   "id": "",
+   "multiple": false
+  },
+  {
+   "accept": ".ids,.xml,application/xml,text/xml",
+   "id": "",
+   "multiple": false
+  },
+  {
+   "accept": ".las,.laz,.xyz,.pts,.ply,.pcd,.ptx,.e57",
+   "id": "",
+   "multiple": false
+  },
+  {
+   "accept": ".csv,.txt,.xyz,.pnezd,.dxf,.dwg,.las,.laz,.tif,.tiff,.asc,.xml,.landxml",
+   "id": "",
+   "multiple": false
+  },
+  {
+   "accept": ".png,.jpg,.jpeg,.webp,image/png,image/jpeg,image/webp",
+   "id": "",
+   "multiple": false
+  },
+  {
+   "accept": ".json,application/json",
+   "id": "",
+   "multiple": false
+  },
+  {
+   "accept": ".bcf,.bcfzip",
+   "id": "",
+   "multiple": false
+  },
+  {
+   "accept": ".ccinput.json,.json,application/json",
+   "id": "",
+   "multiple": false
+  },
+  {
+   "accept": ".json,application/json",
+   "id": "",
+   "multiple": false
+  },
+  {
+   "accept": ".json,application/json",
+   "id": "",
+   "multiple": false
+  }
+ ],
+ "chosen_input": 0,
+ "after_upload_text": "BimCraft\nBrowser edition\n0.8.1\nFile\nOpen a file or folder\nChoose a file, or drop a file or folder here\nIFC, RVT, RFA, DWG, DXF, a point cloud (LAS, LAZ) or a project folder\nOpen a folder\nDocuments\nRegister scans…\nNew building\n\nTip: drag a folder onto this page to open it without your browser's permission prompt.\n\nFiles open on this computer. Nothing is uploaded; the browser's prompt is about reading the folder in this tab.\n\nChanges\nNo changes yet. Pick an element and click a value to change it.\nUndo\nSave as IFC\n\nSaving downloads a new IFC file. Your original file is never changed.\n\nFile\nFile\nRA-01.ifc\nSize\n95 KB\nSchema\nIFC4\nProject\nRA-01\nExported from\nIfcOpenShell 0.9.0.post1, build_ra01.py\nAuthor\nS0\nExported\n2026-11-07T00:00:00\nElements\n51\nTriangles\n1,060\nModels\n\nAdd more IFC files to see them together. The one with the dot is the one you edit.\n\nRA-01.ifc\n51\nMove\nAdd a model…\nBetween two BIM programs\nLinked models\n\nOther models shown beside this one for coordination: they are never changed or saved into it. The model keeps each link (the file's name and where it goes).\n\nLink a model…\nFind\nQuantity totals\nTags\nRenovation phases\nPermit package\nFurnish a room\nRoom program to massing\nPeople in the building\nRoom acoustics\nHazard playback\nLife-cycle view\nDocuments from the model\n4D schedule\nModel checks\nCheck against an IDS\nCheck against IDS…\nClash check\nModel tree\nRA-01\nProject\nSite\nSite\nRA-01\nBuilding\n2F\nStorey\n1F\nStorey\nStoreys\n2F\n1F\nElements\nWall\n14\nColumn\n12\nWindow\n8\nBeam\n8\nSpace\n6\nDoor\n5\nSlab\n3\nStairFlight\n1\nFit\nTop\nFront\nSide\nEdges\nSpaces\nUndo\nRedo\nCopy\nPaste\nMore\nMillimeters\nCentimeters\nMeters\nInches\nDecimal feet\nFeet and inches\nDraw\nEquipment\nCredits\nSymbols\nShow\nSection\nWalk\nMeasure\nRender\nLive view\nLive view in a new window\nVR\nFor rendering\nFor Enscape (.gltf)\nUSD\nPaint\nViews\nTop\nBottom\nFront\nBack\nLeft\nRight\nN\nE\nS\nW\nArrow keys choose a side, edge or corner; Enter looks from there. Shift with Left or Right turns the view a quarter turn. Home goes to the home view.\nProject origin and survey point\nPoint at the model to read where it is\n\nProperties and library\nProperties\nColor\nIssues\nAnalysis\nPoints\nAssets\nDaylight\nCalculations\nEnergy and cost\nProperties\n\nClick an element in the model to see its properties.\n\n38.6 t CO₂e",
+ "save_clicked": true,
+ "downloads": [],
+ "globals": [
+  "bimcraftLan",
+  "bimcraftSettings",
+  "bimcraftLive",
+  "bimcraftTree",
+  "bimcraftFind",
+  "bimcraftTint",
+  "bimcraftFourD",
+  "bimcraftQto",
+  "bimcraftChecks",
+  "bimcraftIds",
+  "bimcraftMepStruct",
+  "bimcraftClash",
+  "bimcraftIssues",
+  "bimcraftColor",
+  "bimcraftCompare",
+  "bimcraftModels",
+  "bimcraftPick3d",
+  "bimcraftDwgState",
+  "bimcraftSection",
+  "bimcraftWalk",
+  "bimcraftRt",
+  "bimcraftMeasure",
+  "bimcraftControl",
+  "bimcraftKeys",
+  "bimcraftVis",
+  "bimcraftLibrary",
+  "bimcraftClip",
+  "bimcraftBundle",
+  "bimcraftAnalysis",
+  "bimcraftPoints"
+ ]
+}

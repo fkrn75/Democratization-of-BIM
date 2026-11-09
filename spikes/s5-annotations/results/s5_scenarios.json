@@ -1,0 +1,414 @@
+{
+ "export": {
+  "elev-S": {
+   "annotations": 2,
+   "bytes": 3011,
+   "dim_groups": 2,
+   "has_korean_text": true,
+   "ok": true,
+   "orphan_groups": 0,
+   "tag_groups": 0
+  },
+  "plan-1F": {
+   "annotations": 34,
+   "bytes": 19381,
+   "dim_groups": 24,
+   "has_korean_text": true,
+   "ok": true,
+   "orphan_groups": 1,
+   "tag_groups": 9
+  },
+  "plan-2F": {
+   "annotations": 27,
+   "bytes": 15366,
+   "dim_groups": 18,
+   "has_korean_text": true,
+   "ok": true,
+   "orphan_groups": 0,
+   "tag_groups": 9
+  },
+  "section-BB": {
+   "annotations": 8,
+   "bytes": 7899,
+   "dim_groups": 8,
+   "has_korean_text": true,
+   "ok": true,
+   "orphan_groups": 0,
+   "tag_groups": 0
+  }
+ },
+ "model": "RA-01 코어 범위(레벨 2, 벽 14, 문 5, 조인, 뷰 7)",
+ "placement": {
+  "baseline": {
+   "ok_match": 72,
+   "orphans_core": 0,
+   "succ_followed": 0,
+   "total": 72
+  },
+  "baseline_unexpected": 0,
+  "by_category": {
+   "문 높이": 3,
+   "문 상부 여유": 1,
+   "문 위치": 10,
+   "문 태그": 5,
+   "문 폭": 5,
+   "문-면 거리": 2,
+   "벽 길이": 14,
+   "벽 높이": 5,
+   "벽 사이 간격": 7,
+   "벽 사이 간격(안목)": 4,
+   "벽 태그": 14,
+   "층고": 2
+  },
+  "derived_hash_changed": true,
+  "dims": 53,
+  "ifc_hash_unchanged": true,
+  "state_hash_changed": true,
+  "tags": 19,
+  "total": 72
+ },
+ "scenarios": [
+  {
+   "annot_check_cmd_orphans": 0,
+   "annot_check_matches_oracle": true,
+   "annots": 72,
+   "bad": [],
+   "changed_by_edit": 7,
+   "check_after_redo": true,
+   "edit_ok": true,
+   "label": "E1 외벽(1F 동쪽) 600mm 이동",
+   "notes": "",
+   "ok_match": 72,
+   "orphan_expected": 0,
+   "orphans_by_reason": {},
+   "recompute": {
+    "annot_nodes_total": 444,
+    "annot_recomputed": 41,
+    "edit_ms": 1.07,
+    "other_recomputed": 1,
+    "refresh_ms": 0.56
+   },
+   "redo_restores_exactly": true,
+   "steps": [
+    "wall.move {\"id\": \"1000000000000000000002\", \"dx\": 600.0, \"dy\": 0.0}"
+   ],
+   "undo_restores_exactly": true,
+   "unexpected_orphans": 0,
+   "value_errors": 0
+  },
+  {
+   "annot_check_cmd_orphans": 0,
+   "annot_check_matches_oracle": true,
+   "annots": 72,
+   "bad": [],
+   "changed_by_edit": 4,
+   "edit_ok": true,
+   "label": "E2 문 폭 900→1000, 문 이동, 문턱 높이·이름 변경",
+   "notes": "",
+   "ok_match": 72,
+   "orphan_expected": 0,
+   "orphans_by_reason": {},
+   "recompute": {
+    "annot_nodes_total": 444,
+    "annot_recomputed": 51,
+    "edit_ms": 2.47,
+    "other_recomputed": 1,
+    "refresh_ms": 0.56
+   },
+   "steps": [
+    "door.set {\"id\": \"2000000000000000000001\", \"width\": 1000.0}",
+    "door.set {\"id\": \"2000000000000000000002\", \"offset\": 2140.0}",
+    "door.set {\"id\": \"2000000000000000000003\", \"sill\": 100.0, \"name\": \"D-03A\"}"
+   ],
+   "unexpected_orphans": 0,
+   "value_errors": 0
+  },
+  {
+   "annot_check_cmd_orphans": 12,
+   "annot_check_matches_oracle": true,
+   "annots": 72,
+   "bad": [],
+   "changed_by_edit": 14,
+   "edit_ok": true,
+   "label": "E3a 내부벽 삭제(호스팅된 문 D-02 연쇄 삭제)",
+   "notes": "",
+   "ok_match": 60,
+   "orphan_expected": 12,
+   "orphans_by_reason": {
+    "target_deleted": 12
+   },
+   "recompute": {
+    "annot_nodes_total": 444,
+    "annot_recomputed": 63,
+    "edit_ms": 3.22,
+    "other_recomputed": 1,
+    "refresh_ms": 0.47
+   },
+   "steps": [
+    "element.delete {\"id\": \"1000000000000000000005\"}"
+   ],
+   "unexpected_orphans": 0,
+   "value_errors": 0
+  },
+  {
+   "annot_check_cmd_orphans": 12,
+   "annot_check_matches_oracle": true,
+   "annots": 72,
+   "bad": [],
+   "changed_by_edit": 1,
+   "edit_ok": true,
+   "label": "E3b 조인 해제(내부벽3-남쪽 외벽 T 조인: 내부벽3 길이가 달라진다)",
+   "notes": "",
+   "ok_match": 60,
+   "orphan_expected": 12,
+   "orphans_by_reason": {
+    "target_deleted": 12
+   },
+   "recompute": {
+    "annot_nodes_total": 444,
+    "annot_recomputed": 6,
+    "edit_ms": 0.78,
+    "other_recomputed": 1,
+    "refresh_ms": 0.2
+   },
+   "steps": [
+    "join.clear {\"a\": \"1000000000000000000007\", \"b\": \"1000000000000000000001\"}"
+   ],
+   "unexpected_orphans": 0,
+   "value_errors": 0
+  },
+  {
+   "annot_check_cmd_orphans": 12,
+   "annot_check_matches_oracle": true,
+   "annots": 72,
+   "bad": [],
+   "changed_by_edit": 2,
+   "edit_ok": true,
+   "label": "E3c 조인 해제(내부벽2-동쪽 외벽)",
+   "notes": "",
+   "ok_match": 60,
+   "orphan_expected": 12,
+   "orphans_by_reason": {
+    "target_deleted": 12
+   },
+   "recompute": {
+    "annot_nodes_total": 444,
+    "annot_recomputed": 12,
+    "edit_ms": 0.8,
+    "other_recomputed": 1,
+    "refresh_ms": 0.25
+   },
+   "steps": [
+    "join.clear {\"a\": \"1000000000000000000006\", \"b\": \"1000000000000000000002\"}"
+   ],
+   "unexpected_orphans": 0,
+   "value_errors": 0
+  },
+  {
+   "label": "E3d undo ×3 → E2 직후 상태 복원",
+   "restores_exactly": true,
+   "undo_ok": [
+    true,
+    true,
+    true
+   ],
+   "unexpected_orphans": 0,
+   "value_errors": 0
+  },
+  {
+   "annot_check_cmd_orphans": 0,
+   "annot_check_matches_oracle": true,
+   "annots": 72,
+   "bad": [],
+   "changed_by_edit": 0,
+   "dim_values_changed_by_split": 0,
+   "door_D01_host_after": true,
+   "edit_ok": true,
+   "label": "E4a 1F 남쪽 외벽을 x=6000 에서 분할(문 D-01 이 끝 쪽 벽으로 이동)",
+   "notes": "분할은 형상을 바꾸지 않으므로 모든 치수 값이 그대로여야 한다",
+   "ok_match": 72,
+   "orphan_expected": 0,
+   "orphans_by_reason": {},
+   "recompute": {
+    "annot_nodes_total": 445,
+    "annot_recomputed": 27,
+    "edit_ms": 1.84,
+    "other_recomputed": 1,
+    "refresh_ms": 0.42
+   },
+   "steps": [
+    "wall.split {\"id\": \"1000000000000000000001\", \"at\": 6000.0, \"new_id\": \"1000000000000000090001\"}"
+   ],
+   "tags_changed_by_split": 0,
+   "unexpected_orphans": 0,
+   "value_errors": 0
+  },
+  {
+   "annot_check_cmd_orphans": 0,
+   "annot_check_matches_oracle": true,
+   "annots": 72,
+   "bad": [],
+   "changed_by_edit": 0,
+   "dim_values_changed_by_split": 0,
+   "edit_ok": true,
+   "label": "E4b 같은 벽을 x=2500 에서 한 번 더 분할(후계 사슬 W→N2→N1)",
+   "notes": "",
+   "ok_match": 72,
+   "orphan_expected": 0,
+   "orphans_by_reason": {},
+   "recompute": {
+    "annot_nodes_total": 445,
+    "annot_recomputed": 17,
+    "edit_ms": 1.62,
+    "other_recomputed": 1,
+    "refresh_ms": 0.35
+   },
+   "steps": [
+    "wall.split {\"id\": \"1000000000000000000001\", \"at\": 2500.0, \"new_id\": \"1000000000000000090002\"}"
+   ],
+   "unexpected_orphans": 0,
+   "value_errors": 0
+  },
+  {
+   "annot_check_cmd_orphans": 7,
+   "annot_check_matches_oracle": true,
+   "annots": 72,
+   "bad": [],
+   "changed_by_edit": 8,
+   "edit_ok": true,
+   "label": "E4c 사슬 끝 벽 N1 삭제(문 D-01 연쇄 삭제)",
+   "notes": "W 의 끝 참조는 successor_deleted, 문 D-01 참조는 target_deleted 로 고아",
+   "ok_match": 65,
+   "orphan_expected": 7,
+   "orphans_by_reason": {
+    "successor_deleted": 1,
+    "target_deleted": 6
+   },
+   "recompute": {
+    "annot_nodes_total": 445,
+    "annot_recomputed": 39,
+    "edit_ms": 2.54,
+    "other_recomputed": 1,
+    "refresh_ms": 0.36
+   },
+   "steps": [
+    "element.delete {\"id\": \"1000000000000000090001\"}"
+   ],
+   "unexpected_orphans": 0,
+   "value_errors": 0
+  },
+  {
+   "label": "E4d N1 삭제 undo → 고아 복귀",
+   "restores_exactly": true,
+   "unexpected_orphans": 0,
+   "value_errors": 0
+  },
+  {
+   "annot_check_cmd_orphans": 3,
+   "annot_check_matches_oracle": true,
+   "annots": 72,
+   "bad": [],
+   "changed_by_edit": 3,
+   "edit_ok": true,
+   "label": "E5a 내부벽3 삭제(그 벽을 가리키는 치수·태그가 고아)",
+   "manual_recovery": {
+    "orphan_after": 1,
+    "orphan_before": 3,
+    "rebound_ok": 2,
+    "unexpected_orphans": 0,
+    "value_errors": 0
+   },
+   "notes": "",
+   "ok_match": 69,
+   "orphan_expected": 3,
+   "orphans_by_reason": {
+    "target_deleted": 3
+   },
+   "recompute": {
+    "annot_nodes_total": 445,
+    "annot_recomputed": 14,
+    "edit_ms": 1.7,
+    "other_recomputed": 1,
+    "refresh_ms": 0.23
+   },
+   "remaining_orphans_listed_by_annot_check": 1,
+   "steps": [
+    "element.delete {\"id\": \"1000000000000000000007\"}"
+   ],
+   "unexpected_orphans": 0,
+   "value_errors": 0
+  },
+  {
+   "annot_check_cmd_orphans": 1,
+   "annot_check_matches_oracle": true,
+   "annots": 72,
+   "bad": [],
+   "changed_by_edit": 1,
+   "dims_whose_value_changed": 1,
+   "direction_warnings": 9,
+   "edit_ok": true,
+   "label": "E6 2F 남쪽 외벽 축선 방향 반전(wall.set axis)",
+   "notes": "참조는 끊기지 않고 오라클과도 일치하지만, 역할 이름(시작·끝·왼쪽·오른쪽)이 가리키는 물리적 위치는 뒤바뀐다(한계)",
+   "ok_match": 71,
+   "orphan_expected": 1,
+   "orphans_by_reason": {
+    "target_deleted": 1
+   },
+   "recompute": {
+    "annot_nodes_total": 445,
+    "annot_recomputed": 33,
+    "edit_ms": 0.94,
+    "other_recomputed": 1,
+    "refresh_ms": 0.41
+   },
+   "steps": [
+    "wall.set {\"id\": \"1000000000000000000008\", \"axis\": [12000.0, 0.0, 0.0, 0.0]}"
+   ],
+   "undo_clears_warnings": true,
+   "unexpected_orphans": 0,
+   "value_errors": 0,
+   "warned_items_listed": 5
+  },
+  {
+   "axis_end_unchanged": true,
+   "dim_axis_end": 12000.0,
+   "dim_own_end": 6000.0,
+   "full_length": 12000.0,
+   "label": "E6b 벽 분할 뒤 axis.end(원래 끝)는 전체 길이, own.end(자기 끝)는 조각 길이",
+   "own_end_is_half": true,
+   "split_ok": true,
+   "unexpected_orphans": 0
+  },
+  {
+   "annots_after_delete": 45,
+   "annots_after_undo": 72,
+   "annots_before": 72,
+   "dangling_view": 0,
+   "deleted_listed": 27,
+   "label": "E7 2F 평면 뷰 삭제 → 그 뷰의 주석 연쇄 삭제(응답에 나열) → undo",
+   "undo_restores_count": true,
+   "unexpected_orphans": 0
+  },
+  {
+   "annot_check_list_hash_ok_after_reuse_attempt": true,
+   "door_moved_to_new_wall": true,
+   "flush_after_redo": true,
+   "flush_after_split": true,
+   "flush_after_undo": true,
+   "ifc_equals_reopened_after_redo": true,
+   "ifc_equals_reopened_after_undo": true,
+   "label": "E9 분할(문 이동) → IFC 투영 → undo → 투영 → redo → 투영",
+   "recreate_with_history_id_rejected": true,
+   "reused_succ_id_rejected": true,
+   "succ_cycle_free": true,
+   "undo_ok": true
+  }
+ ],
+ "summary": {
+  "annotations": 72,
+  "expected_orphans_seen": 47,
+  "scenarios": 15,
+  "total_unexpected_orphans": 0,
+  "total_value_errors": 0
+ }
+}

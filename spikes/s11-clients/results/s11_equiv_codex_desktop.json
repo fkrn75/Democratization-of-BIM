@@ -1,0 +1,165 @@
+{
+  "steps": 15,
+  "baseline_cli": {
+    "log": [
+      {
+        "tool": "dobim_project",
+        "ok": true,
+        "code": null
+      },
+      {
+        "tool": "dobim_execute",
+        "ok": true,
+        "code": null
+      },
+      {
+        "tool": "dobim_execute",
+        "ok": true,
+        "code": null
+      },
+      {
+        "tool": "dobim_execute",
+        "ok": true,
+        "code": null
+      },
+      {
+        "tool": "dobim_execute",
+        "ok": true,
+        "code": null
+      },
+      {
+        "tool": "dobim_execute",
+        "ok": true,
+        "code": null
+      },
+      {
+        "tool": "dobim_execute",
+        "ok": true,
+        "code": null
+      },
+      {
+        "tool": "dobim_execute_destructive",
+        "ok": false,
+        "code": "CONFIRM_REQUIRED"
+      },
+      {
+        "tool": "dobim_execute_destructive",
+        "ok": true,
+        "code": null
+      },
+      {
+        "tool": "dobim_execute_destructive",
+        "ok": false,
+        "code": "PATH_DENIED"
+      },
+      {
+        "tool": "dobim_execute",
+        "ok": true,
+        "code": null
+      },
+      {
+        "tool": "dobim_execute_destructive",
+        "ok": false,
+        "code": "CONFIRM_REQUIRED"
+      },
+      {
+        "tool": "dobim_execute_destructive",
+        "ok": true,
+        "code": null
+      },
+      {
+        "tool": "dobim_query",
+        "ok": true,
+        "code": null
+      },
+      {
+        "tool": "dobim_query",
+        "ok": true,
+        "code": null
+      }
+    ],
+    "state": {
+      "hash": {
+        "rev": 15,
+        "state": "452d8cf07f1b4e6406f8cf2f1d0d6f1d9602b1328af7beaea37ecadccf422885",
+        "derived": "56a899639356262f96232882776220b56f927ccfdb6159a8951bbff856c8af11",
+        "ifc": "60b0d0672bf81b74500582bf0efe0c0b79ff1a57c7ebe88f231c2952941cb215"
+      },
+      "rev": 15,
+      "counts": {
+        "level": 2,
+        "wall": 3,
+        "door": 2
+      }
+    }
+  },
+  "client": {
+    "exit": 0,
+    "wall_s": 39.4,
+    "tool_calls": 15,
+    "usage": {
+      "input_tokens": 210303,
+      "cached_input_tokens": 172416,
+      "output_tokens": 1298,
+      "reasoning_output_tokens": 34
+    },
+    "call_sequence_equals_script": true,
+    "state": {
+      "hash": {
+        "rev": 15,
+        "state": "452d8cf07f1b4e6406f8cf2f1d0d6f1d9602b1328af7beaea37ecadccf422885",
+        "derived": "56a899639356262f96232882776220b56f927ccfdb6159a8951bbff856c8af11",
+        "ifc": "60b0d0672bf81b74500582bf0efe0c0b79ff1a57c7ebe88f231c2952941cb215"
+      },
+      "rev": 15,
+      "counts": {
+        "level": 2,
+        "wall": 3,
+        "door": 2
+      }
+    },
+    "other_item_types": {
+      "error": 1,
+      "agent_message": 2,
+      "mcp_tool_call": 15
+    },
+    "extra_or_missing_calls": 0,
+    "hash_equal_to_cli": true,
+    "escape_file_created_outside": false,
+    "final_ifc_semantic": {
+      "identical": true,
+      "differing_parts": [],
+      "elements": 11
+    },
+    "snapshot1_semantic": {
+      "identical": true,
+      "differing_parts": [],
+      "elements": 11
+    },
+    "protocol": {
+      "initialize": {
+        "protocolVersion": "2025-06-18",
+        "clientInfo": {
+          "name": "codex-mcp-client",
+          "title": "Codex",
+          "version": "0.167.0-alpha.3.2"
+        },
+        "capabilities": [
+          "elicitation",
+          "experimental"
+        ]
+      },
+      "negotiated": "2025-06-18",
+      "non_json_stdout_lines": 0
+    },
+    "latency": {
+      "tool_calls": 15,
+      "initialize_ms": 1062.8,
+      "median_ms": 3.0,
+      "max_ms": 569.7,
+      "slowest_tool": "dobim_project",
+      "max_response_wire_bytes": 1645
+    },
+    "server_start_sec": 1.0703
+  }
+}

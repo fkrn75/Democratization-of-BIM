@@ -1,0 +1,9 @@
+{
+ "shards": 7,
+ "detected": 60,
+ "total": 60,
+ "detected_without_golden": 48,
+ "all_detected": true,
+ "controls_pass": true,
+ "mutants": {}
+}

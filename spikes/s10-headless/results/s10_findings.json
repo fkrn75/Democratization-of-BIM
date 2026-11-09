@@ -1,0 +1,33 @@
+{
+ "경계_음성시험": {
+  "도구": "tests/test_boundaries.py (임시 폴더 + 임시 git 저장소에 기준 커밋과 위반 '시험 커밋'을 만들고 import-linter 실행, 저장소에는 커밋하지 않음)",
+  "기준_커밋_통과": true,
+  "잡힌_위반": [
+   "코어 engine 이 import dobim_render", "코어 cli 가 from dobim_render import scene", "코어 queries 가 tkinter", "코어 dispatch 가 PyQt6",
+   "코어 graph 가 wgpu", "코어 limits 가 numpy 직접 import", "렌더 mesh 가 dobim_core.engine", "렌더 raster 가 ifcopenshell", "렌더 png 가 dobim_render.mesh",
+   "렌더 scene 이 PyQt6", "렌더 __main__ 이 mcp", "간접 의존(코어 commands -> 새 helper 모듈 -> dobim_render)"],
+  "놓친_위반": [],
+  "시험_커밋_되돌린_뒤_재통과": true,
+  "pytest": "13 passed",
+  "추가한_계약": "pyproject.toml: independence(dobim_core, dobim_render) + 코어 GUI/GPU/렌더 라이브러리 금지(numpy·PIL 포함) + 렌더의 GUI/MCP 금지 + raster/png 의 ifcopenshell 금지",
+  "참고": "S1 의 기존 계약(spikes/s1-core/pyproject.toml)은 수정하지 않았다. 새 계약은 s10 pyproject 에 있고 코어·렌더 두 루트 패키지를 함께 본다. 저장소 루트로 합칠 때 코어 설정에 병합 필요"
+ },
+ "발견_코어_validate_는_pytest_필요": {
+  "내용": "model.validate(express_rules=true, 기본값)는 ifcopenshell.validate 가 _pytest 를 import 해서, 코어 의존성만(pip install dobim-core) 설치한 깨끗한 환경에서 errors=1(검증기 예외 ModuleNotFoundError _pytest)로 응답한다. 종료 코드 0 이지만 거짓 오류다",
+  "재현": "ifcopenshell 만 설치한 venv 에서 validate(express_rules=True) -> ModuleNotFoundError: _pytest",
+  "S10_대응": "깨끗한 환경 설치는 dobim-core[validate](pytest 포함)로 했다. pytest 는 GUI 패키지가 아니다",
+  "권고": "pytest 를 코어 런타임 의존성으로 올리거나(S0 발견과 같은 사안), 없을 때 UNSUPPORTED 로 명확히 실패하게 한다"
+ },
+ "발견_IFC_내보내기는_바이트_결정적이_아니다": {
+  "내용": "ifc.export 산출물은 (1) 헤더 FILE_NAME 에 작성 시각과 '/dev/null' 파일 이름, (2) 관계·속성셋 엔티티의 GlobalId 무작위, (3) IFCUNITASSIGNMENT·IFCRELASSOCIATESMATERIAL·IFCRELCONTAINEDINSPATIALSTRUCTURE 의 SET 원소 순서가 Windows/Linux 에서 다르다 때문에 실행마다·OS마다 파일 바이트가 다르다. 의미 해시(model.hash)는 같다",
+  "S10_대응": "합격 기준의 '산출물 해시'는 의미 해시 3종 + 위 세 가지를 지운 정규화 DATA 해시로 비교(Windows == Debian == Ubuntu 일치). 정규화 후 나머지 바이트(실수 표기, 엔티티 번호)는 세 환경에서 같다",
+  "권고": "ifc.export 가 헤더를 고정하고(S0 의 build_ra01 처럼), 관계 GlobalId 를 결정적으로 만들며, SET 목록을 정렬해 쓰면 원시 바이트 해시도 일치시킬 수 있다(코어 수정 필요, S10 에서는 수정하지 않음)"
+ },
+ "발견_Linux_ifcopenshell_휠은_libGL_libEGL_을_NEEDED_로_가진다": {
+  "내용": "ldd 로 ifcopenshell 휠의 모든 .so 를 검사: ifcopenshell_geometry_igs/stp 와 libTKDEIGES 가 libGL.so.1, libEGL.so.1 을 요구한다(OCCT). GUI 패키지가 없는 컨테이너에는 두 라이브러리가 없다(ldd not found)",
+  "영향": "없음: 지오메트리 커널·IFC 입출력·RA-01 완주·렌더가 모두 정상. 렌더까지 마친 프로세스의 /proc/self/maps 에 GUI/GL 라이브러리가 하나도 로드되지 않았다. IGES/STEP 변환기 모듈을 import 할 때만 필요",
+  "권고": "architecture.md 15.9 의 'ldd 로 libGL 등 예외가 나오면 원인을 기록'에 해당: 원인=OCCT 데이터 교환 모듈(IGES/STEP). CI 의 ldd 검사는 libGL/libEGL 을 허용 목록(IGES/STEP 변환기 한정)으로 두어야 한다"
+ },
+ "발견_Windows_DLL_링크": "tools/pe_imports.py: TKernel/TKService 가 user32.dll·winmm.dll(OS 기본 DLL), ifcopenshell_geometry_glb 가 shell32.dll 을 가져온다. GUI 툴킷·OpenGL·Direct3D DLL 링크는 없다. 창을 만들지 않는다",
+ "발견_렌더_후보_부작용": "wgpu 소프트웨어 어댑터(lavapipe)를 쓰려면 mesa-vulkan-drivers 가 libx11·libxcb·libdrm·libwayland 등 14개 시스템 패키지를 끌고 온다 -> 코어 이미지 기본 구성에 넣지 말고 선택 이미지로만"
+}

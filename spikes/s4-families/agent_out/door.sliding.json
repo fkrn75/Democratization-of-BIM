@@ -1,0 +1,109 @@
+{
+  "schema": "dobim.family/1",
+  "id": "door.sliding",
+  "version": 1,
+  "name": "미닫이문(2장)",
+  "description": "벽에 호스팅되는 2장 미닫이문. 문짝 2장이 서로 다른 레일(y)에 놓이고 겹침 폭을 매개변수로 조절한다. 평면 기호에 미닫이 방향 화살표 표시.",
+  "ifc": {
+    "class": "IfcDoor",
+    "type_class": "IfcDoorType",
+    "predefined": "DOOR",
+    "type_attrs": {
+      "OperationType": "DOUBLE_DOOR_SLIDING",
+      "ParameterTakesPrecedence": false
+    },
+    "attrs": {
+      "OverallWidth": {"expr": "width"},
+      "OverallHeight": {"expr": "height"},
+      "OperationType": "DOUBLE_DOOR_SLIDING"
+    }
+  },
+  "host": {
+    "kinds": ["wall"],
+    "cut": {"x": ["left", "right"], "z": [0, "height"]}
+  },
+  "params": {
+    "width": {"kind": "type", "default": 1800, "min": 1200, "max": 3000, "description": "개구부 폭(문틀 바깥)"},
+    "height": {"kind": "type", "default": 2100, "min": 1800, "max": 2700, "description": "개구부 높이"},
+    "frame_w": {"kind": "type", "default": 50, "min": 30, "max": 100, "description": "문틀 단면 폭"},
+    "leaf_t": {"kind": "type", "default": 30, "min": 20, "max": 30, "description": "문짝 두께"},
+    "track_gap": {"kind": "type", "default": 10, "min": 5, "max": 15, "description": "두 문짝 레일 사이 간격"},
+    "overlap": {"kind": "type", "default": 50, "min": 0, "max": 200, "description": "닫혔을 때 두 문짝이 겹치는 폭"},
+    "fire_rating": {"kind": "type", "type": "enum", "values": ["NONE", "EI30", "EI60"], "default": "NONE", "description": "방화 등급"},
+    "is_external": {"kind": "type", "type": "bool", "default": false, "description": "외부 문 여부"},
+    "slide": {"kind": "instance", "type": "enum", "values": ["L", "R"], "default": "L", "description": "움직이는(앞쪽 레일) 문짝: L=왼쪽 문짝이 오른쪽으로 열림, R=오른쪽 문짝이 왼쪽으로 열림"}
+  },
+  "derived": {
+    "inner_w": "width - 2*frame_w",
+    "leaf_w": "(inner_w + overlap)/2",
+    "leaf_h": "height - frame_w",
+    "fx0": "-width/2 + frame_w/2",
+    "fx1": "width/2 - frame_w/2",
+    "fz1": "height - frame_w/2",
+    "a_x0": "-inner_w/2",
+    "b_x1": "inner_w/2",
+    "front_y0": "track_gap/2",
+    "back_y0": "-track_gap/2 - leaf_t",
+    "l_y0": "front_y0 if slide == 'L' else back_y0",
+    "r_y0": "back_y0 if slide == 'L' else front_y0",
+    "dir": "1 if slide == 'L' else -1",
+    "arr_x0": "a_x0 if slide == 'L' else b_x1",
+    "arr_x1": "arr_x0 + dir*leaf_w",
+    "arr_y": "host_thickness/2 + 100"
+  },
+  "refs": {
+    "left": {"axis": "x", "at": "-width/2"},
+    "right": {"axis": "x", "at": "width/2"}
+  },
+  "constraints": [
+    {"expr": "leaf_w >= 300", "message": "문짝 폭이 300mm 미만이다(width 를 키우거나 frame_w 를 줄이세요)"},
+    {"expr": "host_thickness >= 2*leaf_t + track_gap + 20", "message": "벽이 두 문짝 레일을 담기에 얇다"}
+  ],
+  "solids": [
+    {
+      "id": "frame", "op": "sweep", "normal": "y", "closed": false,
+      "path": [["fx0", 0, 0], ["fx0", 0, "fz1"], ["fx1", 0, "fz1"], ["fx1", 0, 0]],
+      "profile": {"shape": "rect", "w": "frame_w", "h": "host_thickness"}
+    },
+    {
+      "id": "leaf_l", "op": "extrude", "plane": "xz",
+      "profile": {"shape": "rect", "u": ["a_x0", "a_x0 + leaf_w"], "v": [0, "leaf_h"]},
+      "range": ["l_y0", "l_y0 + leaf_t"]
+    },
+    {
+      "id": "leaf_r", "op": "extrude", "plane": "xz",
+      "profile": {"shape": "rect", "u": ["b_x1 - leaf_w", "b_x1"], "v": [0, "leaf_h"]},
+      "range": ["r_y0", "r_y0 + leaf_t"]
+    }
+  ],
+  "plan_symbol": {
+    "default": [
+      {"type": "rect", "u": ["left", "left + frame_w"], "v": ["-host_thickness/2", "host_thickness/2"], "style": "cut"},
+      {"type": "rect", "u": ["right - frame_w", "right"], "v": ["-host_thickness/2", "host_thickness/2"], "style": "cut"},
+      {"type": "rect", "u": ["a_x0", "a_x0 + leaf_w"], "v": ["l_y0", "l_y0 + leaf_t"], "style": "projection"},
+      {"type": "rect", "u": ["b_x1 - leaf_w", "b_x1"], "v": ["r_y0", "r_y0 + leaf_t"], "style": "projection"},
+      {"type": "line", "from": ["arr_x0", "arr_y"], "to": ["arr_x1", "arr_y"]},
+      {"type": "polyline", "points": [["arr_x1 - dir*100", "arr_y + 60"], ["arr_x1", "arr_y"], ["arr_x1 - dir*100", "arr_y - 60"]], "closed": false}
+    ],
+    "1:200": [
+      {"type": "rect", "u": ["left", "right"], "v": ["-host_thickness/2", "host_thickness/2"], "style": "cut"},
+      {"type": "line", "from": ["arr_x0", "arr_y"], "to": ["arr_x1", "arr_y"]}
+    ]
+  },
+  "psets": {
+    "Pset_DoorCommon": {
+      "on": "type",
+      "props": {
+        "IsExternal": {"expr": "is_external"},
+        "FireRating": {"expr": "fire_rating"}
+      }
+    },
+    "DoBIM_SlidingDoorParams": {
+      "on": "instance",
+      "props": {
+        "SlideSide": {"expr": "slide"},
+        "LeafOverlap": {"expr": "overlap"}
+      }
+    }
+  }
+}
