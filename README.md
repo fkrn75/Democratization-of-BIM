@@ -40,7 +40,7 @@
 | **S10** | 헤드리스 | 완료 | Windows·Ubuntu 24.04·Debian 13 완주, 의미 해시 3종 일치, CPU 3D 렌더 1280×800 약 1초(기준 10초), 의존성 검사 음성 시험 12/12. 원시 IFC 바이트는 환경 간 불일치 | [report.md](spikes/s10-headless/report.md) |
 | **S11** | 양쪽 클라이언트 | 조건부 | Codex(데스크톱·npm) 층 C 그룹 5/5, 커맨드 31/31, 탐색 20/20, CLI와 결과 동등. Claude 클라이언트 시험은 미시험 | [report.md](spikes/s11-clients/report.md) |
 
-**G1 통합 상태**: 통합 브랜치(spike/integration)에서 S2·S3·S4·S5·S8의 코어 변경을 합치고 git이 잡지 못한 의미 충돌 6건을 고쳤다. 패밀리 의도 왕복(ADR-0014)과 뷰·치수·태그 왕복(ADR-0015)으로 패밀리·뷰·주석이 IFC 내보내기·가져오기를 거쳐 복원된다. 코어 비-slow 시험 478 통과, 패리티 C 100%(54개 커맨드). 코어가 내보낸 IFC 4종은 Revit 2025에서 열기·참조 열기·링크에 성공했다(요소 수 일치, 대화상자 0, 경고는 IFC4 부분 지원 1건). 상세는 spikes/integration/report.md 12절. 충돌 측정과 합치는 순서는 docs/integration-g1.md.
+**G1 통합 상태**: 통합 브랜치(spike/integration)에서 S2·S3·S4·S5·S8의 코어 변경을 합치고 git이 잡지 못한 의미 충돌 6건을 고쳤다. 패밀리 의도 왕복(ADR-0014)과 뷰·치수·태그 왕복(ADR-0015)으로 패밀리·뷰·주석이 IFC 내보내기·가져오기를 거쳐 복원된다. main 병합 후보(spike/main-merge)에서 코어 비-slow 시험 501 통과·실패 0, 패리티 C 100%(54개 커맨드). 코어가 내보낸 IFC 4종은 Revit 2025에서 열기·참조 열기·링크에 성공했다(요소 수 일치, 대화상자 0, 경고는 IFC4 부분 지원 1건). 상세는 spikes/integration/report.md 12절. 충돌 측정과 합치는 순서는 docs/integration-g1.md.
 
 ## 3. 결정 항목
 
