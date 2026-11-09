@@ -445,3 +445,16 @@ def test_1b_가져온_IFC가_원래_갖던_속성의_삭제와_충돌이_병합�
             assert eng.ifc.get_psets(F.D1).get("Pset_DoorCommon", {}).get("FireRating") == expect, name
         finally:
             eng.close()
+
+
+def test_9b_병합의_검사_상수가_레지스트리와_같은_규칙이다():
+    import random
+    import string
+    from dobim_core import merge
+    from dobim_core.kinds import FIXED_IFC_CLASS, id_ok
+    assert merge.KIND_CLASS == FIXED_IFC_CLASS
+    rnd = random.Random(7)
+    alphabet = string.ascii_letters + string.digits + "_$-/ \x00é"
+    for _ in range(2000):
+        v = "".join(rnd.choice(alphabet) for _ in range(rnd.choice((21, 22, 22, 22, 23))))
+        assert id_ok(v) == (merge.ID_RE.match(v) is not None), repr(v)

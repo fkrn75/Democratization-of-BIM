@@ -32,7 +32,7 @@ from typing import Any
 from dobim_core import queries as Q
 from dobim_core.errors import DobimError
 from dobim_core.graph import RefGraph
-from dobim_core.kinds import (ELEMENT_KINDS, NAME_MAX, NON_IFC_KINDS, REL_KINDS, class_error, id_ok as _id_ok, invert,
+from dobim_core.kinds import (ELEMENT_KINDS, FIXED_IFC_CLASS, NAME_MAX, NON_IFC_KINDS, REL_KINDS, class_error, id_ok as _id_ok, invert,
                               num_ok as _num, row_params_error, text_ok as _text_ok)
 
 DUP_PAIRS_MAX_GROUP = 40  # 같은 자리 벽 중복: 이 수까지는 쌍(n^2/2)으로 보고하고, 더 큰 묶음은 벽마다 하나씩(n)으로 보고한다(겹친 벽 1200개가 쌍 72만 개가 되는 것을 막는다)
@@ -62,6 +62,8 @@ def _ckey(key: str) -> str:
 
 # ---------------------------------------------------------------- 불변식 (commands.py 의 입력 검사와 같은 규칙. 같은지는 시험이 대조한다)
 # 요소 종류·관계 종류·효과 태그의 목록과 파라미터 검사는 kinds.py 가 정본이다(여기서 따로 갖지 않는다).
+ID_RE = re.compile(r"^[0-9A-Za-z_$]{22}$")   # kinds.id_ok 와 같은 규칙(시험이 대조한다). 병합이 만드는 id(renamed_id)의 모양 검사에도 쓴다
+KIND_CLASS = FIXED_IFC_CLASS                  # 코어가 직접 정하는 종류의 IFC 클래스: 정본은 kinds.py, ifc_model.IFC_CLASS 와 같은 표
 PROP_RE = re.compile(r"^[A-Za-z][A-Za-z0-9_]{0,63}$")
 REL_KINDS_NAMES = tuple(REL_KINDS)
 RESERVED_PSET = "DoBIM_Intent"   # 투영이 소유한 예약 속성셋: pset.set/pset.delete 가 거부하므로 로그에 있을 수 없다
