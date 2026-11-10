@@ -61,7 +61,7 @@
     },
     {
       "id": "KR-IDS-04",
-      "title": "실에는 실ID(Name)가 있어야 함",
+      "title": "실에는 실ID가 있어야 함",
       "mode": "ids",
       "severity": "필수",
       "requirements": [
@@ -71,7 +71,10 @@
       "applicable": 4,
       "failed": 0,
       "examples": [],
-      "note": ""
+      "note": "정답은 실ID 속성이고 Name 값은 보조로만 인정(Name 이 있다고 실ID 가 있다는 뜻은 아니며 실번호일 수 있음). 형식은 KR-CODE-08 이 확인",
+      "found_via": {
+        "Name 값(보조, 실번호일 수 있음)": 4
+      }
     },
     {
       "id": "KR-IDS-05",
@@ -85,7 +88,10 @@
       "applicable": 4,
       "failed": 0,
       "examples": [],
-      "note": ""
+      "note": "",
+      "found_via": {
+        "분류 참조(IfcClassificationReference)": 4
+      }
     },
     {
       "id": "KR-IDS-06",
@@ -104,7 +110,7 @@
     },
     {
       "id": "KR-IDS-07",
-      "title": "주요 부위 객체에는 부재명(Name)이 있어야 함",
+      "title": "주요 부위 객체에는 부재명이 있어야 함",
       "mode": "ids",
       "severity": "필수",
       "requirements": [
@@ -115,7 +121,10 @@
       "applicable": 4,
       "failed": 0,
       "examples": [],
-      "note": ""
+      "note": "인스턴스 Name 은 도구가 항상 채워 부재명 판정에 쓰지 않음. 대상은 구조·건축 부위 12종(기계·전기는 자율)",
+      "found_via": {
+        "Pset_*Common.Reference": 4
+      }
     },
     {
       "id": "KR-IDS-08",
@@ -188,7 +197,10 @@
       "applicable": 1,
       "failed": 0,
       "examples": [],
-      "note": ""
+      "note": "",
+      "found_via": {
+        "IfcSite.SiteAddress": 1
+      }
     },
     {
       "id": "KR-IDS-13",
@@ -202,7 +214,10 @@
       "applicable": 1,
       "failed": 0,
       "examples": [],
-      "note": ""
+      "note": "",
+      "found_via": {
+        "IfcProject.Name/LongName": 1
+      }
     },
     {
       "id": "KR-IDS-14",
@@ -216,11 +231,14 @@
       "applicable": 1,
       "failed": 0,
       "examples": [],
-      "note": ""
+      "note": "",
+      "found_via": {
+        "Pset_BuildingCommon.OccupancyType": 1
+      }
     },
     {
       "id": "KR-IDS-15",
-      "title": "건물에 층수(NumberOfStoreys)가 있어야 함",
+      "title": "건물에 층수가 있어야 함",
       "mode": "ids",
       "severity": "필수",
       "requirements": [
@@ -230,11 +248,14 @@
       "applicable": 1,
       "failed": 0,
       "examples": [],
-      "note": ""
+      "note": "본관: 층 2개(지상 0, 지하 0)",
+      "found_via": {
+        "Pset_BuildingCommon.NumberOfStoreys": 1
+      }
     },
     {
       "id": "KR-IDS-16",
-      "title": "건물에 연면적(GrossFloorArea)이 있어야 함",
+      "title": "건물에 연면적이 있어야 함",
       "mode": "ids",
       "severity": "필수",
       "requirements": [
@@ -244,11 +265,14 @@
       "applicable": 1,
       "failed": 0,
       "examples": [],
-      "note": ""
+      "note": "값 존재만 확인(법적 산정 면적과 기하 합의 일치는 판정하지 않음). IFC2X3 도 판정",
+      "found_via": {
+        "Qto_BuildingBaseQuantities.GrossFloorArea": 1
+      }
     },
     {
       "id": "KR-IDS-17",
-      "title": "건물에 건축면적(FootprintArea)이 있어야 함",
+      "title": "건물에 건축면적이 있어야 함",
       "mode": "ids",
       "severity": "필수",
       "requirements": [
@@ -258,11 +282,14 @@
       "applicable": 1,
       "failed": 0,
       "examples": [],
-      "note": ""
+      "note": "값 존재만 확인(법적 산정 면적과 기하 합의 일치는 판정하지 않음). IFC2X3 도 판정",
+      "found_via": {
+        "Qto_BuildingBaseQuantities.FootprintArea": 1
+      }
     },
     {
       "id": "KR-IDS-18",
-      "title": "대지에 대지면적(GrossArea)이 있어야 함",
+      "title": "대지에 대지면적이 있어야 함",
       "mode": "ids",
       "severity": "필수",
       "requirements": [
@@ -272,7 +299,10 @@
       "applicable": 1,
       "failed": 0,
       "examples": [],
-      "note": ""
+      "note": "값 존재만 확인(법적 산정 면적과 기하 합의 일치는 판정하지 않음). IFC2X3 도 판정",
+      "found_via": {
+        "Qto_SiteBaseQuantities.GrossArea": 1
+      }
     },
     {
       "id": "KR-CODE-01",
@@ -362,7 +392,7 @@
     },
     {
       "id": "KR-CODE-07",
-      "title": "지하층 이름은 'B' 또는 '지하' 로 시작(조달청 5.2.2(6)라). 지하층 = 고도<0 인 층(해석).",
+      "title": "지하층 이름은 'B' 또는 '지하' 로 시작(조달청 5.2.2(6)라).",
       "mode": "code",
       "severity": "필수",
       "requirements": [
@@ -372,7 +402,10 @@
       "applicable": 1,
       "failed": 0,
       "examples": [],
-      "note": ""
+      "note": "AboveGround 우선, Elevation<0 은 경고급 보조",
+      "found_via": {
+        "Elevation<0(AboveGround 없음, 의심)": 1
+      }
     },
     {
       "id": "KR-CODE-08",
@@ -386,7 +419,10 @@
       "applicable": 4,
       "failed": 0,
       "examples": [],
-      "note": ""
+      "note": "",
+      "found_via": {
+        "Name 값(보조, 실번호일 수 있음)": 4
+      }
     },
     {
       "id": "KR-CODE-09",
@@ -428,7 +464,10 @@
       "applicable": 1,
       "failed": 0,
       "examples": [],
-      "note": ""
+      "note": "IfcSite.RefElevation(지반레벨) 없음",
+      "found_via": {
+        "IfcMapConversion": 1
+      }
     },
     {
       "id": "KR-CODE-12",
@@ -499,7 +538,7 @@
       "applicable": 1,
       "failed": 0,
       "examples": [],
-      "note": "13012 바이트"
+      "note": "13304 바이트; 원본 200MB 분할 검토 / IFC 300MB 초과 시 zip 허용"
     },
     {
       "id": "KR-CODE-17",
@@ -513,11 +552,11 @@
       "applicable": 55,
       "failed": 0,
       "examples": [],
-      "note": ""
+      "note": "숨김 객체·불필요한 저장 뷰는 IFC 에 남지 않아 판정하지 않음"
     },
     {
       "id": "KR-CODE-19",
-      "title": "주요 부위 객체에 '조달청표준공사코드' 속성이 있음(조달청 부속서-1 4.2(3)). Pset 이름은 묻지 않음.",
+      "title": "주요 부위 객체에 조달청표준공사코드가 있음(조달청 부속서-1 4.2(3)). 이름이 '조달청표준공사코드' 인 속성(Revit,",
       "mode": "code",
       "severity": "필수",
       "requirements": [
@@ -528,7 +567,10 @@
       "applicable": 4,
       "failed": 0,
       "examples": [],
-      "note": ""
+      "note": "",
+      "found_via": {
+        "속성 조달청표준공사코드": 4
+      }
     }
   ]
 }

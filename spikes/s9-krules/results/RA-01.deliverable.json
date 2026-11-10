@@ -8,8 +8,8 @@
   "name_checked_as": "RA-01.ifc",
   "unreadable_schema": false,
   "summary": {
-    "pass": 15,
-    "fail": 14,
+    "pass": 16,
+    "fail": 13,
     "na": 3,
     "warn": 1,
     "conditional": {
@@ -63,7 +63,7 @@
     },
     {
       "id": "KR-IDS-04",
-      "title": "실에는 실ID(Name)가 있어야 함",
+      "title": "실에는 실ID가 있어야 함",
       "mode": "ids",
       "severity": "필수",
       "requirements": [
@@ -73,7 +73,10 @@
       "applicable": 6,
       "failed": 0,
       "examples": [],
-      "note": ""
+      "note": "정답은 실ID 속성이고 Name 값은 보조로만 인정(Name 이 있다고 실ID 가 있다는 뜻은 아니며 실번호일 수 있음). 형식은 KR-CODE-08 이 확인",
+      "found_via": {
+        "Name 값(보조, 실번호일 수 있음)": 6
+      }
     },
     {
       "id": "KR-IDS-05",
@@ -91,31 +94,31 @@
           "class": "IfcSpace",
           "name": "SP-101",
           "global_id": "2wr_uKvDXHhAMA_V6_wRjJ",
-          "reason": "System: The entity has no classification"
+          "reason": "분류 참조도 '공간분류코드' 속성도 없음"
         },
         {
           "class": "IfcSpace",
           "name": "SP-102",
           "global_id": "2qrkWgQlLRWggqKDm9T4yc",
-          "reason": "System: The entity has no classification"
+          "reason": "분류 참조도 '공간분류코드' 속성도 없음"
         },
         {
           "class": "IfcSpace",
           "name": "SP-103",
           "global_id": "1bwnjRtvrNgw9Z9r3Lsi0e",
-          "reason": "System: The entity has no classification"
+          "reason": "분류 참조도 '공간분류코드' 속성도 없음"
         },
         {
           "class": "IfcSpace",
           "name": "SP-201",
           "global_id": "1_nEk9RPrSi80f09aBT8LF",
-          "reason": "System: The entity has no classification"
+          "reason": "분류 참조도 '공간분류코드' 속성도 없음"
         },
         {
           "class": "IfcSpace",
           "name": "SP-202",
           "global_id": "2qdqtwRLXJYBUw4ybuIEGV",
-          "reason": "System: The entity has no classification"
+          "reason": "분류 참조도 '공간분류코드' 속성도 없음"
         }
       ],
       "note": ""
@@ -137,7 +140,7 @@
     },
     {
       "id": "KR-IDS-07",
-      "title": "주요 부위 객체에는 부재명(Name)이 있어야 함",
+      "title": "주요 부위 객체에는 부재명이 있어야 함",
       "mode": "ids",
       "severity": "필수",
       "requirements": [
@@ -148,7 +151,10 @@
       "applicable": 50,
       "failed": 0,
       "examples": [],
-      "note": ""
+      "note": "인스턴스 Name 은 도구가 항상 채워 부재명 판정에 쓰지 않음. 대상은 구조·건축 부위 12종(기계·전기는 자율)",
+      "found_via": {
+        "Pset_*Common.Reference": 50
+      }
     },
     {
       "id": "KR-IDS-08",
@@ -232,7 +238,7 @@
           "class": "IfcSite",
           "name": "Site",
           "global_id": "2OeeOI5vbGuuDI2EE7Z39t",
-          "reason": "SiteAddress: The attribute value \"None\" is empty"
+          "reason": "SiteAddress(AddressLines)도 '주소' 속성도 없음(빈 주소 객체는 없는 것으로 봄)"
         }
       ],
       "note": ""
@@ -249,7 +255,10 @@
       "applicable": 1,
       "failed": 0,
       "examples": [],
-      "note": ""
+      "note": "",
+      "found_via": {
+        "IfcProject.Name/LongName": 1
+      }
     },
     {
       "id": "KR-IDS-14",
@@ -267,35 +276,31 @@
           "class": "IfcBuilding",
           "name": "RA-01",
           "global_id": "3jO$rPRgXJEBMb6ABNtRqE",
-          "reason": "Pset_BuildingCommon.OccupancyType: The required property set does not exist"
+          "reason": "OccupancyType 도 '용도' 속성도 없음"
         }
       ],
       "note": ""
     },
     {
       "id": "KR-IDS-15",
-      "title": "건물에 층수(NumberOfStoreys)가 있어야 함",
+      "title": "건물에 층수가 있어야 함",
       "mode": "ids",
       "severity": "필수",
       "requirements": [
         "REQ-036"
       ],
-      "status": "fail",
+      "status": "pass",
       "applicable": 1,
-      "failed": 1,
-      "examples": [
-        {
-          "class": "IfcBuilding",
-          "name": "RA-01",
-          "global_id": "3jO$rPRgXJEBMb6ABNtRqE",
-          "reason": "Pset_BuildingCommon.NumberOfStoreys: The required property set does not exist"
-        }
-      ],
-      "note": ""
+      "failed": 0,
+      "examples": [],
+      "note": "RA-01: 층 2개(지상 0, 지하 0)",
+      "found_via": {
+        "층 개체 수(그 건물의 IfcBuildingStorey)": 1
+      }
     },
     {
       "id": "KR-IDS-16",
-      "title": "건물에 연면적(GrossFloorArea)이 있어야 함",
+      "title": "건물에 연면적이 있어야 함",
       "mode": "ids",
       "severity": "필수",
       "requirements": [
@@ -309,14 +314,14 @@
           "class": "IfcBuilding",
           "name": "RA-01",
           "global_id": "3jO$rPRgXJEBMb6ABNtRqE",
-          "reason": "Qto_BuildingBaseQuantities.GrossFloorArea: The required property set does not exist"
+          "reason": "GrossFloorArea·GrossPlannedArea·'연면적' 속성 모두 없음"
         }
       ],
-      "note": ""
+      "note": "값 존재만 확인(법적 산정 면적과 기하 합의 일치는 판정하지 않음). IFC2X3 도 판정"
     },
     {
       "id": "KR-IDS-17",
-      "title": "건물에 건축면적(FootprintArea)이 있어야 함",
+      "title": "건물에 건축면적이 있어야 함",
       "mode": "ids",
       "severity": "필수",
       "requirements": [
@@ -330,14 +335,14 @@
           "class": "IfcBuilding",
           "name": "RA-01",
           "global_id": "3jO$rPRgXJEBMb6ABNtRqE",
-          "reason": "Qto_BuildingBaseQuantities.FootprintArea: The required property set does not exist"
+          "reason": "FootprintArea·'건축면적' 속성 모두 없음(IFC2X3 에는 표준 대체 슬롯이 없어 사용자 속성이 필요)"
         }
       ],
-      "note": ""
+      "note": "값 존재만 확인(법적 산정 면적과 기하 합의 일치는 판정하지 않음). IFC2X3 도 판정"
     },
     {
       "id": "KR-IDS-18",
-      "title": "대지에 대지면적(GrossArea)이 있어야 함",
+      "title": "대지에 대지면적이 있어야 함",
       "mode": "ids",
       "severity": "필수",
       "requirements": [
@@ -351,10 +356,10 @@
           "class": "IfcSite",
           "name": "Site",
           "global_id": "2OeeOI5vbGuuDI2EE7Z39t",
-          "reason": "Qto_SiteBaseQuantities.GrossArea: The required property set does not exist"
+          "reason": "GrossArea·TotalArea·'대지면적' 속성 모두 없음"
         }
       ],
-      "note": ""
+      "note": "값 존재만 확인(법적 산정 면적과 기하 합의 일치는 판정하지 않음). IFC2X3 도 판정"
     },
     {
       "id": "KR-CODE-01",
@@ -452,7 +457,7 @@
     },
     {
       "id": "KR-CODE-07",
-      "title": "지하층 이름은 'B' 또는 '지하' 로 시작(조달청 5.2.2(6)라). 지하층 = 고도<0 인 층(해석).",
+      "title": "지하층 이름은 'B' 또는 '지하' 로 시작(조달청 5.2.2(6)라).",
       "mode": "code",
       "severity": "필수",
       "requirements": [
@@ -462,7 +467,7 @@
       "applicable": 0,
       "failed": 0,
       "examples": [],
-      "note": "고도<0 인 층 없음"
+      "note": "지하층 없음(AboveGround=FALSE 인 층도, AboveGround 없이 고도<0 인 층도 없음)"
     },
     {
       "id": "KR-CODE-08",
@@ -480,34 +485,37 @@
           "class": "IfcSpace",
           "name": "SP-101",
           "global_id": "2wr_uKvDXHhAMA_V6_wRjJ",
-          "reason": "실ID 'SP-101' 형식 불일치"
+          "reason": "실ID 'SP-101'(Name 값(보조, 실번호일 수 있음)) 형식 불일치"
         },
         {
           "class": "IfcSpace",
           "name": "SP-102",
           "global_id": "2qrkWgQlLRWggqKDm9T4yc",
-          "reason": "실ID 'SP-102' 형식 불일치"
+          "reason": "실ID 'SP-102'(Name 값(보조, 실번호일 수 있음)) 형식 불일치"
         },
         {
           "class": "IfcSpace",
           "name": "SP-103",
           "global_id": "1bwnjRtvrNgw9Z9r3Lsi0e",
-          "reason": "실ID 'SP-103' 형식 불일치"
+          "reason": "실ID 'SP-103'(Name 값(보조, 실번호일 수 있음)) 형식 불일치"
         },
         {
           "class": "IfcSpace",
           "name": "SP-201",
           "global_id": "1_nEk9RPrSi80f09aBT8LF",
-          "reason": "실ID 'SP-201' 형식 불일치"
+          "reason": "실ID 'SP-201'(Name 값(보조, 실번호일 수 있음)) 형식 불일치"
         },
         {
           "class": "IfcSpace",
           "name": "SP-202",
           "global_id": "2qdqtwRLXJYBUw4ybuIEGV",
-          "reason": "실ID 'SP-202' 형식 불일치"
+          "reason": "실ID 'SP-202'(Name 값(보조, 실번호일 수 있음)) 형식 불일치"
         }
       ],
-      "note": ""
+      "note": "",
+      "found_via": {
+        "Name 값(보조, 실번호일 수 있음)": 6
+      }
     },
     {
       "id": "KR-CODE-09",
@@ -584,7 +592,7 @@
           "reason": "TrueNorth 미정의, IfcMapConversion 없음"
         }
       ],
-      "note": ""
+      "note": "IfcSite.RefElevation(지반레벨) 없음"
     },
     {
       "id": "KR-CODE-12",
@@ -659,7 +667,7 @@
       "applicable": 1,
       "failed": 0,
       "examples": [],
-      "note": "97707 바이트"
+      "note": "97707 바이트; 원본 200MB 분할 검토 / IFC 300MB 초과 시 zip 허용"
     },
     {
       "id": "KR-CODE-17",
@@ -673,11 +681,11 @@
       "applicable": 376,
       "failed": 0,
       "examples": [],
-      "note": ""
+      "note": "숨김 객체·불필요한 저장 뷰는 IFC 에 남지 않아 판정하지 않음"
     },
     {
       "id": "KR-CODE-19",
-      "title": "주요 부위 객체에 '조달청표준공사코드' 속성이 있음(조달청 부속서-1 4.2(3)). Pset 이름은 묻지 않음.",
+      "title": "주요 부위 객체에 조달청표준공사코드가 있음(조달청 부속서-1 4.2(3)). 이름이 '조달청표준공사코드' 인 속성(Revit,",
       "mode": "code",
       "severity": "필수",
       "requirements": [
@@ -692,31 +700,31 @@
           "class": "IfcWall",
           "name": "W-E-01",
           "global_id": "3Y2ETKAITKWwOynuyfZ9lq",
-          "reason": "'조달청표준공사코드' 속성 없음"
+          "reason": "'조달청표준공사코드' 속성도 '조달청표준공사코드-세부공종' Pset 도 없음"
         },
         {
           "class": "IfcWall",
           "name": "W-E-02",
           "global_id": "06j3reGVjO6e1bGgGxbqSO",
-          "reason": "'조달청표준공사코드' 속성 없음"
+          "reason": "'조달청표준공사코드' 속성도 '조달청표준공사코드-세부공종' Pset 도 없음"
         },
         {
           "class": "IfcWall",
           "name": "W-E-03",
           "global_id": "1zCNdybhrS3BERfRW1zGef",
-          "reason": "'조달청표준공사코드' 속성 없음"
+          "reason": "'조달청표준공사코드' 속성도 '조달청표준공사코드-세부공종' Pset 도 없음"
         },
         {
           "class": "IfcWall",
           "name": "W-E-04",
           "global_id": "1N3Lq$r_jMWvF$JdsilU2j",
-          "reason": "'조달청표준공사코드' 속성 없음"
+          "reason": "'조달청표준공사코드' 속성도 '조달청표준공사코드-세부공종' Pset 도 없음"
         },
         {
           "class": "IfcWall",
           "name": "W-E-05",
           "global_id": "2bt3PtnQPOHv9VYcEoZeN7",
-          "reason": "'조달청표준공사코드' 속성 없음"
+          "reason": "'조달청표준공사코드' 속성도 '조달청표준공사코드-세부공종' Pset 도 없음"
         }
       ],
       "note": ""
