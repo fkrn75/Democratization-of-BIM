@@ -111,3 +111,60 @@ def build_compliant(unit: str = "MILLIMETERS") -> ifcopenshell.file:
         coordinate_operation={"Eastings": 200000.0, "Northings": 600000.0, "OrthogonalHeight": 0.0,
                               "XAxisAbscissa": 1.0, "XAxisOrdinate": 0.0, "Scale": 1.0})
     return f
+
+
+# ---------------------------------------------------------------- 세움터식 합성 모델(초안 프로파일 시험용)
+
+def _add_area_object(f, body, storey, elev, name, ais_code, props, sx=2500.0, k=1.0):
+    """면적 객체를 IfcSpace 로 만든다(세움터 면적 객체가 IfcSpace 로 나온다는 추정을 그대로 흉내). 실 공간 위에 겹쳐 놓는다."""
+    sp = ifcopenshell.api.root.create_entity(f, ifc_class="IfcSpace", name=name)
+    rep = ifcopenshell.api.geometry.add_profile_representation(
+        f, context=body, profile=f.createIfcRectangleProfileDef("AREA", None, None, 5000.0 * k, 4000.0 * k), depth=2.8)
+    ifcopenshell.api.geometry.assign_representation(f, product=sp, representation=rep)
+    _place(f, sp, sx * k, 2000.0 * k, elev)
+    ifcopenshell.api.aggregate.assign_object(f, products=[sp], relating_object=storey)
+    ps = ifcopenshell.api.pset.add_pset(f, product=sp, name="AIS_면적")  # Pset 이름은 사본에 없어 임의
+    ifcopenshell.api.pset.edit_pset(f, pset=ps, properties={"AIS_분류코드": ais_code, **props})
+    return sp
+
+
+def build_seumteo() -> ifcopenshell.file:
+    """세움터식 합성 모델: build_compliant 에서 실ID·공간분류 참조·시설개요 속성을 빼고 AIS_ 속성과 면적 객체(IfcSpace)를 더했다.
+    조달청 기준으로는 위반이 여럿(분류 참조 없음, 면적 객체와 실 공간 겹침 등)이지만 세움터 프로파일은 위반 없이 통과해야 한다."""
+    f = build_compliant()
+    body = [c for c in f.by_type("IfcGeometricRepresentationSubContext")][0]
+    storeys = {s.Name: s for s in f.by_type("IfcBuildingStorey")}
+    for rel in list(f.by_type("IfcRelAssociatesClassification")):
+        f.remove(rel)
+    rooms = [s for s in f.by_type("IfcSpace")]
+    for i, s in enumerate(rooms):
+        s.Name = f"{101 + i}"  # 방 번호(실ID 형식 아님)
+        code = "33202" if "1F" in storeys and s.LongName != "기계실" else "33405"
+        ps = ifcopenshell.api.pset.add_pset(f, product=s, name="AIS_룸")
+        ifcopenshell.api.pset.edit_pset(f, pset=ps, properties={"AIS_분류코드": code, "AIS_피난계단": False})
+    # 시설개요(세움터 필수 아님): 대지 주소·건물 용도/면적 속성을 뺀다
+    site = f.by_type("IfcSite")[0]
+    site.SiteAddress = None
+    b = f.by_type("IfcBuilding")[0]
+    for name in ("Pset_BuildingCommon", "Qto_BuildingBaseQuantities"):
+        ifcopenshell.api.pset.remove_pset(f, product=b, pset=[p for p in _psets_rel(b) if p.Name == name][0])
+    ifcopenshell.api.pset.remove_pset(f, product=site, pset=[p for p in _psets_rel(site) if p.Name == "Qto_SiteBaseQuantities"][0])
+    # 층 AIS_분류코드(C-2)
+    for name, code in (("B1", "L지하"), ("1F", "L지상")):
+        ps = ifcopenshell.api.pset.add_pset(f, product=storeys[name], name="AIS_층")
+        ifcopenshell.api.pset.edit_pset(f, pset=ps, properties={"AIS_분류코드": code})
+    st = storeys["1F"]
+    _add_area_object(f, body, st, 0.0, "용도구획-1", "A14202", {"면적": 490.18, "AIS_연면적제외": False}, 2500.0)
+    _add_area_object(f, body, st, 0.0, "방화구획-1", "F", {"방화구획여부": True, "면적": 120.0}, 3000.0)
+    _add_area_object(f, body, st, 0.0, "건축면적", "B", {"면적": 5990.42}, 2800.0)
+    _add_area_object(f, body, st, 0.0, "대지면적", "S", {"면적": 9940.9, "AIS_실사용": True}, 2200.0)
+    return f
+
+
+def _psets_rel(prod):
+    """객체에 직접 붙은 IfcPropertySet/IfcElementQuantity 목록(remove_pset 인자용)."""
+    out = []
+    for rel in getattr(prod, "IsDefinedBy", None) or []:
+        if rel.is_a("IfcRelDefinesByProperties"):
+            out.append(rel.RelatingPropertyDefinition)
+    return out
