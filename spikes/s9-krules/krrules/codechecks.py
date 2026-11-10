@@ -327,14 +327,15 @@ def _split_two_sets(items, tol):
     return [r + rest for r in ranked], len(rest)
 
 
-def check_space_overlap(f, tol=0.01, **_):
+def check_space_overlap(f, tol=0.01, spaces=None, **_):
     """KR-CODE-10: 같은 층의 공간객체끼리 겹치지 않음(조달청 5.2.2(3)바, 5.3(4)가).
     근사: 같은 층 공간의 축 정렬 경계상자(AABB)가 tol(m)보다 깊게 겹치면 위반. 비직사각형 방은 오탐 가능.
     조달청은 측면 경계를 벽중심선·벽내부선 두 가지로 모두 납품받으므로(5.2.3(1)나, FAQ), 같은 층에 같은 (실ID, 실명) 공간이
     둘씩 있고 한쪽이 다른 쪽을 포함하면 두 세트로 나눠 세트 안에서만 비교한다. 두 세트를 가르는 IFC 표식은 원문에 없어
     경계상자 포함 관계로 근사한 것이며 발주처 확인이 필요하다. 쌍을 못 지은 겹침은 위반으로 둔다.
-    층이 다른 공간은 비교하지 않고(소속 층이 없는 공간끼리만 한 묶음), 공간이 MAX_SPACES 를 넘으면 판정을 생략한다."""
-    spaces = list(f.by_type("IfcSpace"))
+    층이 다른 공간은 비교하지 않고(소속 층이 없는 공간끼리만 한 묶음), 공간이 MAX_SPACES 를 넘으면 판정을 생략한다.
+    spaces 를 주면 그 공간들만 비교한다(세움터 프로파일이 면적 객체를 뺀 실 공간만 넘길 때 쓴다). 기본은 모든 IfcSpace."""
+    spaces = list(f.by_type("IfcSpace")) if spaces is None else list(spaces)
     if len(spaces) < 2:
         return _res("na", note="공간 2개 미만")
     if len(spaces) > MAX_SPACES:

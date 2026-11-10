@@ -3,6 +3,7 @@
 사용(스파이크 폴더에서):
   python make_results.py --building-architecture <Building-Architecture.ifc 경로>
 RA-01 은 ../s0-baseline/RA-01.ifc 를 쓴다. Building-Architecture.ifc 는 공개 외래 표본(저장소에 없음)이라 경로를 받는다.
+파일 이름의 .seumteo 는 세움터 프로파일(초안) 결과다(--profile seumteo, 나머지는 기본 조달청 프로파일).
 파일 이름의 .energy 는 --energy(에너지 검토를 켜 조건부 규칙 KR-IDS-08/09/10 도 판정) 결과다.
 양성 대조군과 망가진 입력은 합성한다(tests/fixtures.py).
 """
@@ -68,6 +69,7 @@ def main():
     dump(run.run_file(ra01), "RA-01.json")
     dump(run.run_file(ra01, energy=True), "RA-01.energy.json")
     dump(run.run_file(ra01, deliverable=True), "RA-01.deliverable.json")
+    dump(run.run_file(ra01, profile="seumteo"), "RA-01.seumteo.json")
     if a.building_architecture:
         dump(run.run_file(Path(a.building_architecture)), "Building-Architecture.json")
         dump(run.run_file(Path(a.building_architecture), energy=True), "Building-Architecture.energy.json")
@@ -79,6 +81,12 @@ def main():
         res = run.run_file(p, deliverable=True, energy=True)
         res["sha256"] = None   # 합성 파일은 실행마다 GlobalId·시각이 달라 해시를 기록하지 않음(결과를 바이트 재현하려고)
         dump(res, "compliant-fixture.json")
+        # 세움터 프로파일(초안): 세움터식 합성 모델을 세움터 규칙으로 돌린 결과(조달청 기본 결과와 파일이 따로다)
+        q = d / "OO프로젝트_본관_BA_ALL.ifc"
+        fixtures.build_seumteo().write(str(q))
+        res = run.run_file(q, deliverable=True, profile="seumteo")
+        res["sha256"] = None
+        dump(res, "seumteo-fixture.json")
         # 납품 폴더 검사: 규칙을 지키는 합성 폴더 한 곳
         pkg = d / "납품"
         for sub in ("BIM 보고서", "IFC/건물", "원본/건물", "도면"):

@@ -1,12 +1,14 @@
 """한국 납품 규칙 실행기: IDS(.ids) 검증 + 코드 검사를 한 번에 돌려 JSON 으로 쓴다.
 
-사용:  python -m krrules.run [ifc] [--package 폴더] [--out results/x.json] [--energy] [--deliverable] [--as-name 00_건물_BA.ifc]
+사용:  python -m krrules.run [ifc] [--package 폴더] [--out results/x.json] [--energy] [--deliverable] [--as-name 00_건물_BA.ifc] [--profile procurement|seumteo]
   ifc           : 검사할 IFC 파일. 생략하면 --package 만 검사한다.
   --package DIR : 납품 폴더 구성(KR-CODE-18)도 검사한다(조달청 5.5.3). ifc 와 함께 쓰면 결과에 합친다.
   --energy      : 에너지 검토(환경 시뮬레이션)를 수행하는 사업으로 보고 조건부 규칙(KR-IDS-08/09/10)도 판정한다.
                   없으면 그 규칙은 해당 없음으로 두고 위반 집계에 넣지 않는다.
   --deliverable : 납품 후보로 보고 파일명 규칙(KR-CODE-02/03)도 판정. 없으면 해당 없음.
   --as-name     : 파일명 규칙을 이 이름으로 판정(표본 파일명이 납품 이름이 아닐 때 시험용)
+  --profile     : 납품처 프로파일. procurement(기본, 조달청+국토부) 또는 seumteo(세움터 초안, 기본 꺼짐).
+                  기본 결과는 프로파일 도입 전과 같다. 모르는 이름은 오류 JSON(UNKNOWN_PROFILE)과 종료 코드 2.
 종료 코드: 0 = 결과를 만듦(위반이 있어도 0, 위반은 JSON 에 있다), 2 = 입력을 읽지 못함(오류 JSON 을 씀).
 결과에는 절대 경로를 쓰지 않는다(파일 이름만).
 """
@@ -25,7 +27,7 @@ import ifcopenshell.util.element as uel
 from ifctester import ids as ids_mod
 from ifctester import reporter
 
-from . import catalog, slots
+from . import catalog, profiles, seumteo, slots
 from .codechecks import CODE_CHECKS, MAX_EXAMPLES, check_package_layout, check_schema_name, schema_ok
 from .ids_build import THERMAL_5, THERMAL_6
 
@@ -263,10 +265,20 @@ def _energy_off():
             "note": "조건부 규칙: 에너지 검토(환경 시뮬레이션) 수행 시에만 적용. --energy 로 켬"}
 
 
-def run_file(path: Path, deliverable=False, as_name=None, ids_path: Path = IDS_PATH, energy=False, package=None):
+def _check_profile(profile):
+    if not profiles.known(profile):
+        raise InputError("UNKNOWN_PROFILE", f"알 수 없는 프로파일 '{str(profile)[:40]}' (가능: {', '.join(profiles.PROFILE_IDS)})")
+
+
+def run_file(path: Path, deliverable=False, as_name=None, ids_path: Path = IDS_PATH, energy=False, package=None,
+             profile=profiles.DEFAULT_PROFILE):
     """IFC 하나를 검사한다. 읽을 수 없으면 InputError. IFC2X3 미만 스키마는 KR-CODE-01 위반 결과로 돌려준다.
     ids_path 에 사용자 IDS 를 주면 표준 슬롯 + 사용자 속성 OR 판정(slots.OVERRIDES)을 쓰지 않고 그 IDS 의 결과를 그대로 쓴다
-    (기본 IDS 일 때만 OR 판정으로 대체)."""
+    (기본 IDS 일 때만 OR 판정으로 대체).
+    profile: procurement(기본, 결과가 프로파일 도입 전과 바이트 단위로 같음) 또는 seumteo(초안). 모르는 이름은 InputError(UNKNOWN_PROFILE)."""
+    _check_profile(profile)
+    if profile == "seumteo":
+        return _run_file_seumteo(Path(path), deliverable, as_name, energy, package)
     path = Path(path)
     filename = as_name or path.name
     header_schema = inspect_input(path)
@@ -320,6 +332,108 @@ def run_file(path: Path, deliverable=False, as_name=None, ids_path: Path = IDS_P
     }
 
 
+# ---------------------------------------------------------------- 세움터 프로파일(초안)
+
+# 파일 하나만으로 판정하는 세움터 검사(IFC 를 열지 않아도 됨)
+_NO_MODEL_SEU = {"KR-SEU-01", "KR-SEU-03"}
+
+
+def _scope_entry(entry, scope, **extra):
+    """세움터 결과의 규칙 항목에 소속(common/procurement/seumteo)과 설명 키를 덧붙인다."""
+    entry["scope"] = scope
+    entry.update(extra)
+    return entry
+
+
+def _skipped_entry(cid, mode, sev):
+    note, seu = profiles.seumteo_skip_note(cid)
+    r = {"status": "na", "applicable": 0, "failed": 0, "examples": [], "note": note, "excluded_by_profile": True}
+    if seu:
+        r["replaced_by"] = seu
+    title = _ids_title(cid) if mode == "ids" else _check_title(cid, CODE_CHECKS.get(cid))
+    return _scope_entry(_entry(cid, mode, sev, r, title), catalog.CHECK_SCOPE[cid])
+
+
+def _seu_entry(cid, r, title):
+    mode, sev, reqs, olds = catalog.SEUMTEO_CHECKS[cid]
+    e = {"id": cid, "title": title, "mode": mode, "severity": sev, "requirements": list(reqs), **r}
+    return _scope_entry(e, "seumteo", **({"replaces": list(olds)} if olds else {}))
+
+
+def _seu_title(fn):
+    return (fn.__doc__ or "").strip().splitlines()[0].split(": ", 1)[-1]
+
+
+def _run_file_seumteo(path: Path, deliverable, as_name, energy, package):
+    """세움터 프로파일(초안)로 IFC 하나를 검사한다. 공통 규칙은 그대로(또는 대상만 달리) 돌리고, 조달청 전용 규칙은 해당 없음으로
+    표시하며, KR-SEU-* 를 더한다. 입력 점검·열기는 기본 프로파일과 같다."""
+    filename = as_name or path.name
+    header_schema = inspect_input(path)
+    legacy = header_schema is not None and not schema_ok(header_schema)
+    f, parse_errors = (None, []) if legacy else load_model(path)
+    ids_res = {} if legacy else _guard_ids(f, IDS_PATH)
+    checks = []
+    for cid, (mode, sev) in catalog.CHECKS.items():
+        scope = catalog.CHECK_SCOPE[cid]
+        if cid == "KR-CODE-18":
+            if package is not None:  # 폴더 검사는 --package 일 때만: 조달청 전용이라 해당 없음으로만 남긴다
+                checks.append(_skipped_entry(cid, mode, sev))
+            continue
+        if scope == "procurement":
+            checks.append(_skipped_entry(cid, mode, sev))
+            continue
+        if mode == "ids":  # 공통 IDS 규칙(KR-IDS-01, 11)
+            if legacy:
+                checks.append(_scope_entry(_entry(cid, mode, sev, _legacy_na(header_schema), _ids_title(cid)), scope))
+                continue
+            r = ids_res.get(cid)
+            if r is None:
+                continue
+            title = r.pop("title")
+        else:
+            orig = CODE_CHECKS[cid]
+            fn = seumteo.ADAPTED.get(cid, orig)
+            title = _check_title(cid, orig)
+            if legacy and cid not in _NO_MODEL_CHECKS:
+                r = _legacy_na(header_schema)
+            elif legacy and cid == "KR-CODE-01":
+                r = check_schema_name(header_schema)
+            elif legacy:
+                r = _guard(fn, None, path=str(path), filename=filename, deliverable=deliverable)
+            else:
+                r = _guard(fn, f, path=str(path), filename=filename, deliverable=deliverable)
+        extra = {"profile_adapted": True} if cid in seumteo.ADAPTED else {}
+        checks.append(_scope_entry(_entry(cid, mode, sev, r, title), scope, **extra))
+    for cid, fn in seumteo.SEU_CHECKS.items():
+        if legacy and cid not in _NO_MODEL_SEU:
+            r = _legacy_na(header_schema)
+        else:
+            r = _guard(fn, None if legacy else f, path=str(path), filename=filename, deliverable=deliverable)
+        checks.append(_seu_entry(cid, r, _seu_title(fn)))
+    if package is not None:
+        checks.append(_seu_package_entry(package))
+    return {
+        **_seumteo_head(),
+        "file": path.name, "sha256": _sha(path), "schema": header_schema if legacy else f.schema,
+        "profile": profiles.SEUMTEO_LABEL, "energy_mode": False,
+        **({"energy_note": "세움터 프로파일은 에너지 조건부 규칙(KR-IDS-08/09/10)을 판정하지 않아 --energy 를 무시함"} if energy else {}),
+        "deliverable_mode": bool(deliverable), "name_checked_as": filename,
+        "unreadable_schema": bool(legacy),
+        **({"parse_errors": {"count": len(parse_errors), "samples": parse_errors[:3]}} if parse_errors else {}),
+        "summary": _summarize(checks, False), "checks": checks,
+    }
+
+
+def _seumteo_head():
+    """세움터 결과 맨 위의 표식: 프로파일 id, 초안 경고, 소속별 규칙 수."""
+    return {"profile_id": "seumteo", "draft_warning": profiles.DRAFT_WARNING, "scope_counts": profiles.scope_counts()}
+
+
+def _seu_package_entry(root):
+    cid, fn = seumteo.PACKAGE_CHECK
+    return _seu_entry(cid, _guard(fn, Path(root)), _seu_title(fn))
+
+
 def _guard_ids(f, ids_path):
     try:
         return run_ids(f, ids_path)
@@ -354,17 +468,25 @@ def _package_entry(root):
     return _entry("KR-CODE-18", mode, sev, r, _check_title("KR-CODE-18", None))
 
 
-def run_package(root):
-    """납품 폴더 구성만 검사한다(IFC 는 열지 않음)."""
+def run_package(root, profile=profiles.DEFAULT_PROFILE):
+    """납품 폴더 구성만 검사한다(IFC 는 열지 않음). profile 이 seumteo 면 세움터 폴더 규칙(KR-SEU-02)을 쓴다."""
+    _check_profile(profile)
     root = Path(root)
+    if profile == "seumteo":
+        if not root.is_dir():
+            raise InputError("NOT_A_DIRECTORY", "납품 폴더가 아님")
+        checks = [_seu_package_entry(root)]
+        return {**_seumteo_head(), "package": root.name, "profile": profiles.SEUMTEO_LABEL,
+                "summary": _summarize(checks, False), "checks": checks}
     if not root.is_dir():
         raise InputError("NOT_A_DIRECTORY", "납품 폴더가 아님")
     checks = [_package_entry(root)]
     return {"package": root.name, "profile": PROFILE, "summary": _summarize(checks, False), "checks": checks}
 
 
-def error_result(path: Path, err: InputError):
-    return {"file": Path(path).name, "profile": PROFILE, "status": "error",
+def error_result(path: Path, err: InputError, profile=None):
+    """오류 JSON. profile 은 요청받은 프로파일 이름(UNKNOWN_PROFILE 일 때 그대로 적음). 생략하면 기존과 같은 값."""
+    return {"file": Path(path).name, "profile": profile if profile is not None else PROFILE, "status": "error",
             "error": {"code": err.code, "message": err.message}}
 
 
@@ -378,16 +500,17 @@ def main(argv=None):
     ap.add_argument("--energy", action="store_true")
     ap.add_argument("--deliverable", action="store_true")
     ap.add_argument("--as-name")
+    ap.add_argument("--profile", default=profiles.DEFAULT_PROFILE)
     a = ap.parse_args(argv)
     if not a.ifc and not a.package:
         ap.error("ifc 파일이나 --package 폴더 중 하나는 필요함")
     try:
         if a.ifc:
-            res = run_file(Path(a.ifc), a.deliverable, a.as_name, energy=a.energy, package=a.package)
+            res = run_file(Path(a.ifc), a.deliverable, a.as_name, energy=a.energy, package=a.package, profile=a.profile)
         else:
-            res = run_package(a.package)
+            res = run_package(a.package, profile=a.profile)
     except InputError as e:
-        res = error_result(Path(a.ifc or a.package), e)
+        res = error_result(Path(a.ifc or a.package), e, profile=a.profile if e.code == "UNKNOWN_PROFILE" else None)
         text = json.dumps(res, ensure_ascii=False, indent=2)
         if a.out:
             Path(a.out).write_text(text + "\n", encoding="utf-8")

@@ -134,3 +134,44 @@ CHECKS = {
 
 # 에너지 검토를 켰을 때만 판정하는 규칙
 ENERGY_ONLY = sorted(cid for cid, (_, sev) in CHECKS.items() if sev == "조건부")
+
+# ---------------------------------------------------------------- 납품처별 프로파일(2026-11-10)
+# 규칙 소속: common = 조달청·세움터가 같은 요건이라 두 프로파일에 모두 적용, procurement = 조달청(·국토부) 전용.
+# 세움터 전용 검사는 아래 SEUMTEO_CHECKS(소속 seumteo)에 따로 둔다. CHECKS 는 조달청(기본) 프로파일의 검사 집합이라 바꾸지 않는다.
+# 세움터 판단 근거는 세움터 BIM 설계기준서 v1.0(안, 2021-12)의 절·쪽(비공식 사본으로 대조, 공식 배포본 미확보)이며 요지만 적는다.
+CHECK_SCOPE = {
+    # 공통: 두 문서가 같은 것(IFC 2x3+, mm, 층 소속, 지하층 이름, 실 공간 중첩, 창호의 벽 소속, 좌표 기준점, 중복 제거 등)
+    "KR-IDS-01": "common", "KR-IDS-11": "common",
+    "KR-CODE-01": "common", "KR-CODE-03": "common", "KR-CODE-04": "common", "KR-CODE-06": "common",
+    "KR-CODE-07": "common", "KR-CODE-10": "common", "KR-CODE-11": "common", "KR-CODE-14": "common",
+    "KR-CODE-15": "common", "KR-CODE-17": "common",
+    # 조달청 전용: 세움터 사본에 없거나(실ID·부재명·공사코드 구문), 의무성·형식이 달라 세움터 쪽 변형이 따로 있는 것
+    "KR-IDS-02": "procurement", "KR-IDS-03": "procurement", "KR-IDS-04": "procurement", "KR-IDS-05": "procurement",
+    "KR-IDS-06": "procurement", "KR-IDS-07": "procurement", "KR-IDS-08": "procurement", "KR-IDS-09": "procurement",
+    "KR-IDS-10": "procurement", "KR-IDS-12": "procurement", "KR-IDS-13": "procurement", "KR-IDS-14": "procurement",
+    "KR-IDS-15": "procurement", "KR-IDS-16": "procurement", "KR-IDS-17": "procurement", "KR-IDS-18": "procurement",
+    "KR-CODE-02": "procurement", "KR-CODE-05": "procurement", "KR-CODE-08": "procurement", "KR-CODE-09": "procurement",
+    "KR-CODE-12": "procurement", "KR-CODE-13": "procurement", "KR-CODE-16": "procurement", "KR-CODE-18": "procurement",
+    "KR-CODE-19": "procurement",
+}
+
+# 세움터 전용 검사(소속 seumteo): id -> (모드, 심각도, 대응 요구사항, 대체하는 조달청 검사)
+# 근거 요지(설계기준서 v1.0(안) 절·쪽): 파일명 5.1.3, 압축·용량 5.1(IFC 비압축 원칙), 룸 속성 부속서 1-2(p34)·2.4.3(p14),
+# 구획 면적 부속서 1-3(p35), 대지·건축면적 부속서 1-4(p36), 시설개요 부속서 1-1(필수 아님), 부위 부속서 1-6, BIL 2.1·부속서 3.
+SEUMTEO_CHECKS = {
+    "KR-SEU-01": ("code", "필수", ["REQ-003"], ["KR-CODE-02"]),
+    "KR-SEU-02": ("code", "권고", ["REQ-008", "REQ-009"], ["KR-CODE-18"]),
+    "KR-SEU-03": ("code", "권고", ["REQ-007", "REQ-049"], ["KR-CODE-16"]),
+    "KR-SEU-04": ("code", "권고", ["REQ-014"], ["KR-IDS-03"]),
+    "KR-SEU-05": ("code", "필수", ["REQ-017"], ["KR-IDS-05"]),
+    "KR-SEU-06": ("code", "필수", ["REQ-017"], ["KR-CODE-09"]),
+    "KR-SEU-07": ("code", "권고", ["REQ-025", "REQ-028"], ["KR-IDS-06"]),
+    "KR-SEU-08": ("code", "참고", ["REQ-023", "REQ-025", "REQ-046"], ["KR-CODE-19"]),
+    "KR-SEU-09": ("code", "참고", ["REQ-036", "REQ-037"], ["KR-IDS-14", "KR-IDS-16"]),
+    "KR-SEU-10": ("code", "참고", ["REQ-037"], ["KR-IDS-17"]),
+    "KR-SEU-11": ("code", "참고", ["REQ-037"], ["KR-IDS-18"]),
+    "KR-SEU-12": ("code", "참고", ["REQ-034", "REQ-035", "REQ-036"], ["KR-IDS-12", "KR-IDS-13", "KR-IDS-15"]),
+    "KR-SEU-13": ("code", "권고", ["REQ-018"], []),
+    "KR-SEU-14": ("code", "참고", ["REQ-047"], []),
+    "KR-SEU-15": ("code", "참고", [], []),
+}
