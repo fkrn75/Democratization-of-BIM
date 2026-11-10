@@ -4,6 +4,11 @@
 원문 조항 번호는 description 에 짧게만 적는다(원문 인용 없음).
 IFC 속성 사상(예: 실명 -> IfcSpace.LongName)은 원문이 정한 것이 아니라
 이 스파이크의 해석이며, instructions 에 "해석" 으로 표시한다.
+
+엄격 슬롯판 주의: KR-IDS-04~07, 12~18 은 이 파일에서 표준 IFC 슬롯 하나만 요구한다. 조달청 부속서-8 사용자 가이드는
+이 정보들을 소프트웨어 사용자 정의 속성(실ID, 부재명, 사업명, 주소 등)으로 넣게 하므로, 실행기(krrules/slots.py)는
+같은 id 의 IDS 결과를 "표준 슬롯 또는 한국어 사용자 속성" OR 판정으로 대체한다. 이 .ids 를 다른 IDS 도구로 단독 실행하면
+사용자 속성만 쓴 모델은 위반으로 나온다.
 """
 from __future__ import annotations
 
@@ -75,16 +80,16 @@ def build() -> ids.Ids:
     s.requirements.append(ids.Attribute(name="LongName", cardinality="required"))
     doc.specifications.append(s)
 
-    s = _spec("KR-IDS-04", "실에는 실ID(Name)가 있어야 함",
+    s = _spec("KR-IDS-04", "실에는 실ID가 있어야 함",
               "조달청 v2.1 부속서-1 3.1(1)(3) 공간객체 입력정보: 실ID",
-              "해석: 실ID = IfcSpace.Name (내보내기 관례: 방 번호). 형식 검사는 KR-CODE-08")
+              "엄격 슬롯판: 실행기는 표준 슬롯 또는 한국어 사용자 속성 OR 판정으로 대체(krrules/slots.py). 엄격판은 IfcSpace.Name 만 봄. 실행기 판정: 이름이 실ID 인 속성 우선, Name 은 보조(Name 은 IFC 관례상 방 번호 자리). 형식 검사는 KR-CODE-08")
     s.applicability.append(ids.Entity(name="IFCSPACE"))
     s.requirements.append(ids.Attribute(name="Name", cardinality="required"))
     doc.specifications.append(s)
 
     s = _spec("KR-IDS-05", "실에는 공간분류 분류참조가 있어야 함",
               "조달청 v2.1 부속서-1 3.1(1)(4) 공간객체 입력정보: 공간분류코드",
-              "해석: IfcRelAssociatesClassification 로 연결. 코드 형식은 KR-CODE-09, 목록 전체 대조는 미구현")
+              "엄격 슬롯판: 실행기는 표준 슬롯 또는 한국어 사용자 속성 OR 판정으로 대체(krrules/slots.py). 해석: IfcRelAssociatesClassification 로 연결(실행기는 공간분류코드 속성도 인정). 코드 형식은 KR-CODE-09, 목록 전체 대조는 미구현")
     s.applicability.append(ids.Entity(name="IFCSPACE"))
     s.requirements.append(ids.Classification(system=_pat(".+"), cardinality="required"))
     doc.specifications.append(s)
@@ -92,17 +97,18 @@ def build() -> ids.Ids:
     # --- 범용객체: 분류 정보 필수(조달청 5.2.2(4)마, 부속서-1 5) ---
     s = _spec("KR-IDS-06", "범용객체(IfcBuildingElementProxy)에는 분류 정보가 있어야 함",
               "조달청 v2.1 5.2.2(4)마, 부속서-1 5.1: 범용객체는 건설정보분류체계 부위분류를 입력",
-              "해석: 분류 참조 존재만 검사. 부위분류 목록(E0.. 등) 대조는 미구현")
+              "엄격 슬롯판: 실행기는 표준 슬롯 또는 한국어 사용자 속성 OR 판정으로 대체(krrules/slots.py). 엄격판은 분류 참조만 봄. 실행기 판정: 분류 참조 또는 건설정보분류체계-부위분류 속성. 부위분류 목록(E0.. 등) 대조는 미구현")
     s.applicability.append(ids.Entity(name="IFCBUILDINGELEMENTPROXY"))
     s.requirements.append(ids.Classification(system=_pat(".+"), cardinality="required"))
     doc.specifications.append(s)
 
     # --- 부위객체 정보: 부재명, 조달청표준공사코드(조달청 부속서-1 4.2) ---
-    s = _spec("KR-IDS-07", "주요 부위 객체에는 부재명(Name)이 있어야 함",
+    s = _spec("KR-IDS-07", "주요 부위 객체에는 부재명이 있어야 함",
               "조달청 v2.1 5.2.2(4)바, 부속서-1 4.2(2): 부위객체에 부재명 입력",
-              "해석: 부재명 = IfcElement.Name. 원문은 소프트웨어 기본 속성 항목을 쓰라고만 함")
+              "엄격 슬롯판: 실행기는 표준 슬롯 또는 한국어 사용자 속성 OR 판정으로 대체(krrules/slots.py). 엄격판은 Pset_*Common.Reference 만 봄. 실행기 판정: Pset_*Common.Reference / ObjectType / 유형 객체 Name / 부재명·유형 주석 속성 중 하나. "
+              "인스턴스 Name 은 도구가 항상 채워 의미가 없어 쓰지 않음. 원문은 소프트웨어 기본 속성 항목을 쓰라고만 함")
     s.applicability.append(ids.Entity(name=_enum(MAIN_ELEMENTS)))
-    s.requirements.append(ids.Attribute(name="Name", cardinality="required"))
+    s.requirements.append(ids.Property(propertySet=_pat("Pset_.*Common"), baseName="Reference", cardinality="required"))
     doc.specifications.append(s)
 
     # --- 에너지 검토용 외피 정보(조달청 5.2.5(4)나, 시행지침 설계자편 2.3.2) ---
@@ -138,46 +144,53 @@ def build() -> ids.Ids:
     doc.specifications.append(s)
 
     s = _spec("KR-IDS-12", "대지에 주소(SiteAddress)가 있어야 함",
-              "조달청 v2.1 부속서-1 2 사업정보: 대지현황(주소)", "해석: IfcSite.SiteAddress")
+              "조달청 v2.1 부속서-1 2 사업정보: 대지현황(주소)",
+              "엄격 슬롯판: 실행기는 표준 슬롯 또는 한국어 사용자 속성 OR 판정으로 대체(krrules/slots.py). 엄격판은 IfcSite.SiteAddress 만 봄. 실행기 판정: SiteAddress(AddressLines 비어 있지 않음) 또는 주소 속성")
     s.applicability.append(ids.Entity(name="IFCSITE"))
     s.requirements.append(ids.Attribute(name="SiteAddress", cardinality="required"))
     doc.specifications.append(s)
 
     s = _spec("KR-IDS-13", "프로젝트에 사업명(Name)이 있어야 함",
-              "조달청 v2.1 부속서-1 2 사업정보: 사업명", "해석: IfcProject.Name")
+              "조달청 v2.1 부속서-1 2 사업정보: 사업명",
+              "엄격 슬롯판: 실행기는 표준 슬롯 또는 한국어 사용자 속성 OR 판정으로 대체(krrules/slots.py). 엄격판은 IfcProject.Name 만 봄. 실행기 판정: Name/LongName 또는 사업명 속성")
     s.applicability.append(ids.Entity(name="IFCPROJECT"))
     s.requirements.append(ids.Attribute(name="Name", cardinality="required"))
     doc.specifications.append(s)
 
     s = _spec("KR-IDS-14", "건물에 용도(OccupancyType)가 있어야 함",
-              "조달청 v2.1 부속서-1 2 사업정보: 건축규모(용도)", "해석: Pset_BuildingCommon.OccupancyType")
+              "조달청 v2.1 부속서-1 2 사업정보: 건축규모(용도)",
+              "엄격 슬롯판: 실행기는 표준 슬롯 또는 한국어 사용자 속성 OR 판정으로 대체(krrules/slots.py). 엄격판은 Pset_BuildingCommon.OccupancyType 만 봄. 실행기 판정: 그 속성 또는 용도 속성")
     s.applicability.append(ids.Entity(name="IFCBUILDING"))
     s.requirements.append(ids.Property(propertySet="Pset_BuildingCommon", baseName="OccupancyType", cardinality="required"))
     doc.specifications.append(s)
 
-    s = _spec("KR-IDS-15", "건물에 층수(NumberOfStoreys)가 있어야 함",
-              "조달청 v2.1 부속서-1 2 사업정보: 건축규모(층수)", "해석: Pset_BuildingCommon.NumberOfStoreys")
+    s = _spec("KR-IDS-15", "건물에 층수가 있어야 함",
+              "조달청 v2.1 부속서-1 2 사업정보: 건축규모(층수)",
+              "엄격 슬롯판: 실행기는 표준 슬롯 또는 한국어 사용자 속성 OR 판정으로 대체(krrules/slots.py). 엄격판은 Pset_BuildingCommon.NumberOfStoreys(정수 하나, 지하/지상 구분 불가)만 봄. 실행기 판정: 그 속성 / 층수 속성 / 층(IfcBuildingStorey) 개체 수")
     s.applicability.append(ids.Entity(name="IFCBUILDING"))
     s.requirements.append(ids.Property(propertySet="Pset_BuildingCommon", baseName="NumberOfStoreys", cardinality="required"))
     doc.specifications.append(s)
 
-    s = _spec("KR-IDS-16", "건물에 연면적(GrossFloorArea)이 있어야 함",
+    s = _spec("KR-IDS-16", "건물에 연면적이 있어야 함",
               "조달청 v2.1 부속서-1 2 사업정보: 건축규모(연면적)",
-              "해석: Qto_BuildingBaseQuantities.GrossFloorArea (IFC4 이상)", versions=IFC4_UP)
+              "엄격 슬롯판: 실행기는 표준 슬롯 또는 한국어 사용자 속성 OR 판정으로 대체(krrules/slots.py). 엄격판은 Qto_BuildingBaseQuantities.GrossFloorArea(IFC4 이상)만 봄. 실행기 판정: 그 속성 / Pset_BuildingCommon.GrossPlannedArea(IFC2X3 대체) / 연면적 속성",
+              versions=IFC4_UP)
     s.applicability.append(ids.Entity(name="IFCBUILDING"))
     s.requirements.append(ids.Property(propertySet="Qto_BuildingBaseQuantities", baseName="GrossFloorArea", cardinality="required"))
     doc.specifications.append(s)
 
-    s = _spec("KR-IDS-17", "건물에 건축면적(FootprintArea)이 있어야 함",
+    s = _spec("KR-IDS-17", "건물에 건축면적이 있어야 함",
               "조달청 v2.1 부속서-1 2 사업정보: 건축규모(건축면적)",
-              "해석: Qto_BuildingBaseQuantities.FootprintArea (IFC4 이상)", versions=IFC4_UP)
+              "엄격 슬롯판: 실행기는 표준 슬롯 또는 한국어 사용자 속성 OR 판정으로 대체(krrules/slots.py). 엄격판은 Qto_BuildingBaseQuantities.FootprintArea(IFC4 이상)만 봄. 실행기 판정: 그 속성 / 건축면적 속성(IFC2X3 도 판정)",
+              versions=IFC4_UP)
     s.applicability.append(ids.Entity(name="IFCBUILDING"))
     s.requirements.append(ids.Property(propertySet="Qto_BuildingBaseQuantities", baseName="FootprintArea", cardinality="required"))
     doc.specifications.append(s)
 
-    s = _spec("KR-IDS-18", "대지에 대지면적(GrossArea)이 있어야 함",
+    s = _spec("KR-IDS-18", "대지에 대지면적이 있어야 함",
               "조달청 v2.1 부속서-1 2 사업정보: 대지현황(대지면적)",
-              "해석: Qto_SiteBaseQuantities.GrossArea (IFC4 이상)", versions=IFC4_UP)
+              "엄격 슬롯판: 실행기는 표준 슬롯 또는 한국어 사용자 속성 OR 판정으로 대체(krrules/slots.py). 엄격판은 Qto_SiteBaseQuantities.GrossArea(IFC4 이상)만 봄. 실행기 판정: 그 속성 / Pset_SiteCommon.TotalArea(IFC2X3 대체) / 대지면적 속성",
+              versions=IFC4_UP)
     s.applicability.append(ids.Entity(name="IFCSITE"))
     s.requirements.append(ids.Property(propertySet="Qto_SiteBaseQuantities", baseName="GrossArea", cardinality="required"))
     doc.specifications.append(s)

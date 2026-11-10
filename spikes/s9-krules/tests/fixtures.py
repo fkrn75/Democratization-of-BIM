@@ -84,7 +84,7 @@ def build_compliant(unit: str = "MILLIMETERS") -> ifcopenshell.file:
         _place(f, wall, 0.0, 0.0, elev)
         ifcopenshell.api.spatial.assign_container(f, products=[wall], relating_structure=st)
         pw = ifcopenshell.api.pset.add_pset(f, product=wall, name="Pset_WallCommon")
-        ifcopenshell.api.pset.edit_pset(f, pset=pw, properties={"IsExternal": True, "ThermalTransmittance": 0.21})
+        ifcopenshell.api.pset.edit_pset(f, pset=pw, properties={"IsExternal": True, "ThermalTransmittance": 0.21, "Reference": f"W-{idx + 1}"})
         pc = ifcopenshell.api.pset.add_pset(f, product=wall, name="PPS_Info")
         ifcopenshell.api.pset.edit_pset(f, pset=pc, properties={"조달청표준공사코드": "D:200+FA11"})
 
@@ -94,7 +94,7 @@ def build_compliant(unit: str = "MILLIMETERS") -> ifcopenshell.file:
         _place(f, door, 1000.0 * k, 0.0, elev)
         ifcopenshell.api.spatial.assign_container(f, products=[door], relating_structure=st)
         pd = ifcopenshell.api.pset.add_pset(f, product=door, name="Pset_DoorCommon")
-        ifcopenshell.api.pset.edit_pset(f, pset=pd, properties={"IsExternal": True, "ThermalTransmittance": 1.5})
+        ifcopenshell.api.pset.edit_pset(f, pset=pd, properties={"IsExternal": True, "ThermalTransmittance": 1.5, "Reference": f"D-{idx + 1}"})
         pc = ifcopenshell.api.pset.add_pset(f, product=door, name="PPS_Info")
         ifcopenshell.api.pset.edit_pset(f, pset=pc, properties={"조달청표준공사코드": "LA1"})
         opening = ifcopenshell.api.root.create_entity(f, ifc_class="IfcOpeningElement", name=f"OP{idx + 1}")

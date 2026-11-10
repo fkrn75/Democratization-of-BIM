@@ -25,7 +25,7 @@ import ifcopenshell.util.element as uel
 from ifctester import ids as ids_mod
 from ifctester import reporter
 
-from . import catalog
+from . import catalog, slots
 from .codechecks import CODE_CHECKS, MAX_EXAMPLES, check_package_layout, check_schema_name, schema_ok
 from .ids_build import THERMAL_5, THERMAL_6
 
@@ -264,12 +264,15 @@ def _energy_off():
 
 
 def run_file(path: Path, deliverable=False, as_name=None, ids_path: Path = IDS_PATH, energy=False, package=None):
-    """IFC 하나를 검사한다. 읽을 수 없으면 InputError. IFC2X3 미만 스키마는 KR-CODE-01 위반 결과로 돌려준다."""
+    """IFC 하나를 검사한다. 읽을 수 없으면 InputError. IFC2X3 미만 스키마는 KR-CODE-01 위반 결과로 돌려준다.
+    ids_path 에 사용자 IDS 를 주면 표준 슬롯 + 사용자 속성 OR 판정(slots.OVERRIDES)을 쓰지 않고 그 IDS 의 결과를 그대로 쓴다
+    (기본 IDS 일 때만 OR 판정으로 대체)."""
     path = Path(path)
     filename = as_name or path.name
     header_schema = inspect_input(path)
     legacy = header_schema is not None and not schema_ok(header_schema)
     f, parse_errors = (None, []) if legacy else load_model(path)
+    use_override = Path(ids_path).resolve() == IDS_PATH.resolve()
     ids_res = {} if legacy else _guard_ids(f, ids_path)
     checks = []
     for cid, (mode, sev) in catalog.CHECKS.items():
@@ -283,6 +286,11 @@ def run_file(path: Path, deliverable=False, as_name=None, ids_path: Path = IDS_P
                 checks.append(_entry(cid, mode, sev, _legacy_na(header_schema), _ids_title(cid)))
                 continue
             r = ids_res.get(cid)
+            if cid in slots.OVERRIDES and use_override and not (r and r.get("status") == "error"):
+                # 표준 IFC 슬롯 + 한국어 사용자 속성 OR 판정으로 IDS(엄격 슬롯) 결과를 대체한다(slots.py).
+                # IDS 엔진이 죽어 error 가 된 규칙은 대체하지 않고 error 를 그대로 전파한다
+                checks.append(_entry(cid, mode, sev, _guard(slots.OVERRIDES[cid], f), _ids_title(cid)))
+                continue
             if r is None:
                 continue
             title = r.pop("title")
