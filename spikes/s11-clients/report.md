@@ -71,3 +71,24 @@
 **G4 불일치 2건(e_rev_conflict, f_dry_run_ok) 원인: 모델 호출 방식이다.** 원시 기록상 모델이 과제 문구의 이름 `W-000001`을 id로 그대로 넘겼고, 서버는 id 형식 위반으로 SCHEMA_INVALID를 냈다. expected_rev·dry_run 검사 경로까지 가지 못했다. 서버 결함이 아니라 시험 과제(이름 사용)와 모델의 이름→id 해석 부족이다. 같은 이름으로 호출한 `c`(dx 'abc')는 우연히 같은 코드라 일치로 보였다. 개선은 하네스 G4 문구에 실제 id를 주거나 서버가 이름 해석을 안내하는 쪽이다.
 
 토큰(Codex 보고값, 입력+출력, 캐시 포함): 층 C 약 415만, 탐색 약 608만. Claude 값은 없다.
+
+## 8. Claude Code CLI 2.1.325 측정 (Sonnet 5.5, spike/s11-claude-run)
+
+근거: `results/s11_layer_c_claude_54.json`, `results/s11_explore_claude_54.json`. 코어는 origin/main aef8de2. 7절의 "Claude 쪽 미측정"을 대체한다. 구독 로그인으로 `claude -p`가 성공했고, 하네스 실행 규칙은 아래와 같다.
+
+- 깨끗한 환경: 하위 프로세스 env를 PATH, HOME, USERPROFILE, APPDATA, LOCALAPPDATA, SYSTEMROOT, SystemRoot, TEMP, TMP, USERNAME 만 남긴다(`common.claude_clean_env`). 데스크톱 앱이 물려준 ANTHROPIC_*·CLAUDE_* 변수가 있으면 인증이 실패한다.
+- 컨텍스트 최소화: `--strict-mcp-config --mcp-config`(dobim 서버만), `--tools ""`, `--setting-sources project`, `--disable-slash-commands`, `--exclude-dynamic-system-prompt-sections`, `--no-session-persistence`, `--model sonnet`. 작업 폴더는 사용자 홈 밖에 둬 상위 폴더 지침 파일이 로드되지 않게 했다.
+- 하네스 변경: `S11_PY` 환경 변수로 코어 venv 파이썬을 지정할 수 있게 했다(워크트리에 .venv가 없을 때).
+
+| 항목 | Claude Code 2.1.325 | Codex npm 0.147.0 | 판정 |
+|---|---|---|---|
+| 패리티 A(층 C) | 54개 중 54개 호출 통과, 성공 호출 54개. G1~G8 종료 코드 모두 0, 작업 폴더 밖 파일 0 | 54/54 | 통과 |
+| G4 오류 코드 | 9개 중 9개 기대 코드 일치. wall.move 호출 5건 모두 이름이 아니라 22자리 id를 넘김(이름→id 조회를 먼저 수행) | 7/9(이름을 id로 넘겨 SCHEMA_INVALID) | Claude 통과 |
+| G5 이어받기 | history.affected 4쪽, 250개 id 전부 수집, 잘림 표시·커서 3쪽 사용 | 9쪽, 250개 | 통과 |
+| 탐색 20개 | 20/20 성공(100%), 평균 검색 호출 4.0, 평균 도구 호출 7.25. T14(IFC 내보내기)도 확인 토큰까지 끝냄 | 19/20, 검색 8.95, 도구 12.6 | 통과(기준 90%) |
+| 이미지 | `dobim_render` UNSUPPORTED(G4 i 항목에서 정의된 오류로 확인). 시트 이미지 판정 불가 | 같음 | 미구현 |
+| 크기 | 도구 응답 최대 3,334B(G5 history.affected 한 쪽만 전송 바이트 11,828B, 약 4,000토큰 추정). 잘림 오류 0 | 최대 5,959B | 통과 |
+| 시간 | 서버 첫 출력 약 1.3초, 도구 응답 중앙값 2.6~8ms, 최대 약 1.2초(dobim_project). 비JSON 줄 0. initialize 시간은 하네스 Claude 경로에서 기록되지 않음(null) | initialize 1.4~2.0초 | 통과 |
+| 결과 동등 | 미시험(54개 기준 시나리오 스크립트 없음). 탐색 20개의 최종 모델 상태는 CLI 판정으로 20/20 | 미시험 | 미시험 |
+
+토큰(입력+캐시 생성+캐시 읽기+출력, claude result 사용량): 층 C 약 87.2만(그룹당 4.2만~16.3만), 탐색 20개 약 96.2만(과제당 2.6만~8.8만). 합계 약 183만으로 Codex(층 C 약 415만, 탐색 약 608만)의 약 18%다. 탐색은 10개를 먼저 돌려 토큰을 잰 뒤 나머지 10개를 이어 돌렸고 축소는 없었다. 판정은 도구 호출·서버 응답 봉투 기준이다.
