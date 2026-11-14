@@ -1,0 +1,617 @@
+[
+{
+"id": "D-01",
+"layer": "제도·관행",
+"verdict": "미충족"
+},
+{
+"id": "D-02",
+"layer": "제도·관행",
+"verdict": "충족"
+},
+{
+"id": "D-03",
+"layer": "제도·관행",
+"verdict": "충족"
+},
+{
+"id": "D-04",
+"layer": "제도·관행",
+"verdict": "충족"
+},
+{
+"id": "D-05",
+"layer": "제도·관행",
+"verdict": "충족"
+},
+{
+"id": "P-01",
+"layer": "법정",
+"verdict": "미충족"
+},
+{
+"id": "P-02",
+"layer": "법정",
+"verdict": "미충족"
+},
+{
+"id": "P-03",
+"layer": "법정",
+"verdict": "미충족"
+},
+{
+"id": "P-04",
+"layer": "법정",
+"verdict": "미충족"
+},
+{
+"id": "P-05",
+"layer": "법정",
+"verdict": "미충족"
+},
+{
+"id": "P-06",
+"layer": "법정",
+"verdict": "미충족"
+},
+{
+"id": "L-01",
+"layer": "법정",
+"verdict": "충족"
+},
+{
+"id": "L-02",
+"layer": "법정",
+"verdict": "부분"
+},
+{
+"id": "L-03",
+"layer": "법정",
+"verdict": "미충족"
+},
+{
+"id": "L-04",
+"layer": "법정",
+"verdict": "미충족"
+},
+{
+"id": "L-05",
+"layer": "법정",
+"verdict": "미충족"
+},
+{
+"id": "L-06",
+"layer": "제도·관행",
+"verdict": "부분"
+},
+{
+"id": "L-07",
+"layer": "제도·관행",
+"verdict": "미충족"
+},
+{
+"id": "L-08",
+"layer": "제도·관행",
+"verdict": "미충족"
+},
+{
+"id": "L-09",
+"layer": "제도·관행",
+"verdict": "미충족"
+},
+{
+"id": "L-10",
+"layer": "제도·관행",
+"verdict": "미충족"
+},
+{
+"id": "L-11",
+"layer": "제도·관행",
+"verdict": "충족"
+},
+{
+"id": "L-12",
+"layer": "제도·관행",
+"verdict": "부분"
+},
+{
+"id": "E-01",
+"layer": "법정",
+"verdict": "충족"
+},
+{
+"id": "E-02",
+"layer": "법정",
+"verdict": "미충족"
+},
+{
+"id": "E-03",
+"layer": "법정",
+"verdict": "미충족"
+},
+{
+"id": "E-04",
+"layer": "제도·관행",
+"verdict": "부분"
+},
+{
+"id": "E-05",
+"layer": "제도·관행",
+"verdict": "미충족"
+},
+{
+"id": "E-06",
+"layer": "제도·관행",
+"verdict": "충족"
+},
+{
+"id": "X-01",
+"layer": "법정",
+"verdict": "충족"
+},
+{
+"id": "X-02",
+"layer": "법정",
+"verdict": "충족"
+},
+{
+"id": "X-03",
+"layer": "법정",
+"verdict": "충족"
+},
+{
+"id": "X-04",
+"layer": "법정",
+"verdict": "미충족"
+},
+{
+"id": "X-05",
+"layer": "제도·관행",
+"verdict": "미충족"
+},
+{
+"id": "X-06",
+"layer": "제도·관행",
+"verdict": "미충족"
+},
+{
+"id": "X-07",
+"layer": "제도·관행",
+"verdict": "충족"
+},
+{
+"id": "SC-01",
+"layer": "제도·관행",
+"verdict": "해당없음"
+},
+{
+"id": "SC-02",
+"layer": "제도·관행",
+"verdict": "부분"
+},
+{
+"id": "SC-03",
+"layer": "제도·관행",
+"verdict": "미충족"
+},
+{
+"id": "SC-04",
+"layer": "제도·관행",
+"verdict": "해당없음"
+},
+{
+"id": "SC-05",
+"layer": "제도·관행",
+"verdict": "부분"
+},
+{
+"id": "SC-06",
+"layer": "제도·관행",
+"verdict": "해당없음"
+},
+{
+"id": "SC-07",
+"layer": "제도·관행",
+"verdict": "충족"
+},
+{
+"id": "SC-08",
+"layer": "제도·관행",
+"verdict": "충족"
+},
+{
+"id": "SC-09",
+"layer": "제도·관행",
+"verdict": "미충족"
+},
+{
+"id": "SC-10",
+"layer": "제도·관행",
+"verdict": "해당없음"
+},
+{
+"id": "N-01",
+"layer": "중복",
+"verdict": "원 행 따름"
+},
+{
+"id": "N-02",
+"layer": "제도·관행",
+"verdict": "미충족"
+},
+{
+"id": "N-03",
+"layer": "제도·관행",
+"verdict": "충족"
+},
+{
+"id": "N-04",
+"layer": "제도·관행",
+"verdict": "부분"
+},
+{
+"id": "N-05",
+"layer": "제도·관행",
+"verdict": "미충족"
+},
+{
+"id": "N-06",
+"layer": "제도·관행",
+"verdict": "부분"
+},
+{
+"id": "N-07",
+"layer": "제도·관행",
+"verdict": "미충족"
+},
+{
+"id": "N-08",
+"layer": "제도·관행",
+"verdict": "미충족"
+},
+{
+"id": "N-09",
+"layer": "제도·관행",
+"verdict": "미충족"
+},
+{
+"id": "DM-01",
+"layer": "제도·관행",
+"verdict": "부분"
+},
+{
+"id": "DM-02",
+"layer": "제도·관행",
+"verdict": "해당없음"
+},
+{
+"id": "DM-03",
+"layer": "제도·관행",
+"verdict": "충족"
+},
+{
+"id": "DM-04",
+"layer": "제도·관행",
+"verdict": "부분"
+},
+{
+"id": "DM-05",
+"layer": "제도·관행",
+"verdict": "부분"
+},
+{
+"id": "DM-06",
+"layer": "제도·관행",
+"verdict": "부분"
+},
+{
+"id": "DM-07",
+"layer": "제도·관행",
+"verdict": "부분"
+},
+{
+"id": "DM-08",
+"layer": "중복",
+"verdict": "원 행 따름"
+},
+{
+"id": "DM-09",
+"layer": "제도·관행",
+"verdict": "미충족"
+},
+{
+"id": "DM-10",
+"layer": "제도·관행",
+"verdict": "미충족"
+},
+{
+"id": "ST-01",
+"layer": "중복",
+"verdict": "원 행 따름"
+},
+{
+"id": "ST-02",
+"layer": "제도·관행",
+"verdict": "미충족"
+},
+{
+"id": "OP-01",
+"layer": "중복",
+"verdict": "원 행 따름"
+},
+{
+"id": "OP-02",
+"layer": "제도·관행",
+"verdict": "부분"
+},
+{
+"id": "OP-03",
+"layer": "제도·관행",
+"verdict": "미충족"
+},
+{
+"id": "OP-04",
+"layer": "제도·관행",
+"verdict": "부분"
+},
+{
+"id": "OP-05",
+"layer": "제도·관행",
+"verdict": "부분"
+},
+{
+"id": "MT-01",
+"layer": "제도·관행",
+"verdict": "미충족"
+},
+{
+"id": "MT-02",
+"layer": "중복",
+"verdict": "원 행 따름"
+},
+{
+"id": "MT-03",
+"layer": "제도·관행",
+"verdict": "미충족"
+},
+{
+"id": "MT-04",
+"layer": "제도·관행",
+"verdict": "미충족"
+},
+{
+"id": "FR-01",
+"layer": "중복",
+"verdict": "원 행 따름"
+},
+{
+"id": "FR-02",
+"layer": "중복",
+"verdict": "원 행 따름"
+},
+{
+"id": "FR-03",
+"layer": "제도·관행",
+"verdict": "미충족"
+},
+{
+"id": "VT-01",
+"layer": "중복",
+"verdict": "원 행 따름"
+},
+{
+"id": "VT-02",
+"layer": "중복",
+"verdict": "원 행 따름"
+},
+{
+"id": "VT-03",
+"layer": "제도·관행",
+"verdict": "미충족"
+},
+{
+"id": "T-01",
+"layer": "제도·관행",
+"verdict": "미충족"
+},
+{
+"id": "T-02",
+"layer": "제도·관행",
+"verdict": "미충족"
+},
+{
+"id": "T-03",
+"layer": "제도·관행",
+"verdict": "부분"
+},
+{
+"id": "T-04",
+"layer": "제도·관행",
+"verdict": "미충족"
+},
+{
+"id": "T-05",
+"layer": "제도·관행",
+"verdict": "미충족"
+},
+{
+"id": "T-06",
+"layer": "제도·관행",
+"verdict": "미충족"
+},
+{
+"id": "T-07",
+"layer": "제도·관행",
+"verdict": "충족"
+},
+{
+"id": "T-08",
+"layer": "제도·관행",
+"verdict": "미충족"
+},
+{
+"id": "T-09",
+"layer": "제도·관행",
+"verdict": "미충족"
+},
+{
+"id": "T-10",
+"layer": "제도·관행",
+"verdict": "미충족"
+},
+{
+"id": "T-11",
+"layer": "제도·관행",
+"verdict": "부분"
+},
+{
+"id": "T-12",
+"layer": "제도·관행",
+"verdict": "미충족"
+},
+{
+"id": "T-13",
+"layer": "제도·관행",
+"verdict": "미충족"
+},
+{
+"id": "LN-01",
+"layer": "제도·관행",
+"verdict": "충족"
+},
+{
+"id": "LN-02",
+"layer": "제도·관행",
+"verdict": "부분"
+},
+{
+"id": "LN-03",
+"layer": "제도·관행",
+"verdict": "부분"
+},
+{
+"id": "LN-04",
+"layer": "제도·관행",
+"verdict": "부분"
+},
+{
+"id": "LN-05",
+"layer": "제도·관행",
+"verdict": "부분"
+},
+{
+"id": "LN-06",
+"layer": "제도·관행",
+"verdict": "부분"
+},
+{
+"id": "LN-07",
+"layer": "제도·관행",
+"verdict": "미충족"
+},
+{
+"id": "LN-08",
+"layer": "제도·관행",
+"verdict": "충족"
+},
+{
+"id": "LN-09",
+"layer": "제도·관행",
+"verdict": "해당없음"
+},
+{
+"id": "LN-10",
+"layer": "제도·관행",
+"verdict": "미충족"
+},
+{
+"id": "B-01",
+"layer": "BIM",
+"verdict": "충족"
+},
+{
+"id": "B-02",
+"layer": "BIM",
+"verdict": "부분"
+},
+{
+"id": "B-03",
+"layer": "BIM",
+"verdict": "충족"
+},
+{
+"id": "B-04",
+"layer": "BIM",
+"verdict": "부분"
+},
+{
+"id": "B-05",
+"layer": "BIM",
+"verdict": "부분"
+},
+{
+"id": "B-06",
+"layer": "BIM",
+"verdict": "부분"
+},
+{
+"id": "B-07",
+"layer": "BIM",
+"verdict": "부분"
+},
+{
+"id": "B-08",
+"layer": "BIM",
+"verdict": "부분"
+},
+{
+"id": "B-09",
+"layer": "BIM",
+"verdict": "미충족"
+},
+{
+"id": "B-10",
+"layer": "BIM",
+"verdict": "충족"
+},
+{
+"id": "B-11",
+"layer": "BIM",
+"verdict": "충족"
+},
+{
+"id": "B-12",
+"layer": "BIM",
+"verdict": "충족"
+},
+{
+"id": "B-13",
+"layer": "BIM",
+"verdict": "부분"
+},
+{
+"id": "B-14",
+"layer": "BIM",
+"verdict": "해당없음"
+},
+{
+"id": "B-15",
+"layer": "BIM",
+"verdict": "충족"
+},
+{
+"id": "B-16",
+"layer": "BIM",
+"verdict": "해당없음"
+},
+{
+"id": "B-17",
+"layer": "BIM",
+"verdict": "부분"
+},
+{
+"id": "B-18",
+"layer": "BIM",
+"verdict": "해당없음"
+}
+]

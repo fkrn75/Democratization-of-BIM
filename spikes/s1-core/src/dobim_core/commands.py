@@ -1126,6 +1126,67 @@ def view_export(ctx, a: ViewExport):
             "non_ascii_dropped": dropped, "digest": D.view_summary(data["lines"])["digest"], "rev": ctx.eng.rev, "snapshot": snap}
 
 
+class SheetExport(A):
+    views: list[Id] = Field(min_length=1, max_length=12, description="시트에 놓을 뷰 id 목록(앞에서부터 왼쪽 위 -> 오른쪽 -> 아래 순). 뷰는 자기 축척 그대로 놓인다")
+    path: str = Field(max_length=260, description="작업 폴더 안의 .svg 또는 .pdf 경로. PDF 는 한글 글꼴(시스템의 Noto Sans KR·나눔고딕, OFL)을 부분집합으로 내장한다")
+    paper: Literal["A1", "A3"] = Field("A3", description="용지(가로 방향)")
+    project_name: Text = Field("", description="표제란 프로젝트명(비우면 '(프로젝트명 없음)')")
+    sheet_name: Text = Field("", description="표제란 도면명(비우면 첫 뷰 이름)")
+    sheet_number: Text = Field("A-001", description="표제란 도면번호")
+    date: str | None = Field(None, pattern=r"^\d{4}-\d{2}-\d{2}$", description="작성일 YYYY-MM-DD(생략하면 오늘 날짜)")
+    north_angle: Num = Field(0.0, ge=-360.0, le=360.0, description="정북이 도면 위쪽에서 시계방향으로 몇 도 돌아 있는가(0 이면 도면 위가 정북)")
+    overwrite: bool = Field(False, description="거짓이면 이미 있는 파일을 덮어쓰지 않는다. 참이면 덮어쓰며 덮어쓰기 전에 자동 스냅숏을 남긴다(확인 토큰 필요)")
+
+
+def _sheet_preview(ctx, a: SheetExport):
+    for v in a.views:
+        ctx.row(v, "view")   # 없는 뷰는 토큰을 내주기 전에 거절한다
+    p, ext = _view_export_target(ctx, a)
+    _snap_dir(p, ctx.eng.workspace)
+    return {"will_write": p.name, "format": ext[1:], "paper": a.paper, "views": len(a.views), "overwrites": p.exists(), "snapshot_before_overwrite": p.exists()}
+
+
+@command("sheet.export", kind="session", risk="destructive", group="view",
+         summary="시트(표제란)로 SVG·PDF 내보내기",
+         args=SheetExport, since="0.2", preview=_sheet_preview,
+         examples=[{"views": [F.V1], "path": "sheet-example.svg", "paper": "A3", "project_name": "예시 프로젝트", "sheet_number": "A-101", "overwrite": True}])
+def sheet_export(ctx, a: SheetExport):
+    """뷰를 A1·A3 시트에 놓고 윤곽선·표제란(프로젝트명·도면명·도면번호·축척·작성일·개정란·축척 막대·방위표)을 그려 내보낸다."""
+    import datetime
+
+    from dobim_core import pdf_font as PF
+    from dobim_core import sheet as SH
+    p, ext = _view_export_target(ctx, a)
+    if len(set(a.views)) != len(a.views):
+        raise DobimError("CONSTRAINT", "같은 뷰를 두 번 올릴 수 없다", path="/views")
+    datas = [dict(_render_view(ctx, v), id=v) for v in a.views]
+    spec = {"paper": a.paper, "project": a.project_name or "(프로젝트명 없음)", "title": a.sheet_name or datas[0]["name"],
+            "number": a.sheet_number, "date": a.date or datetime.date.today().isoformat(), "north_deg": a.north_angle}
+    try:
+        sh = SH.build_sheet(spec, datas)
+    except SH.SheetError as ex:
+        raise DobimError("CONSTRAINT", str(ex), path="/views")
+    dropped, font_name = False, None
+    if ext == ".svg":
+        blob = SH.render_sheet_svg(sh, spec)
+    else:
+        font = PF.load_pdf_font()
+        blob, dropped = SH.render_sheet_pdf(sh, spec, font)
+        font_name = font.name if font else None
+        if font is None:
+            ctx.warn("한글 글꼴(Noto Sans KR·나눔고딕)을 찾지 못해 PDF 의 한글이 '?' 로 나왔다. 글꼴을 설치하거나 환경 변수 DOBIM_PDF_FONT 에 .ttf 경로를 주세요")
+        elif font.missing:
+            ctx.warn(f"글꼴에 없는 글자 {len(font.missing)}개는 빈칸으로 나왔다: {''.join(font.missing[:20])}")
+    snap = _snapshot_existing(p, ctx.eng.workspace)
+    try:
+        _replace(p, lambda tmp: tmp.write_bytes(blob))
+    except BaseException:
+        _drop_snapshot(p, snap, ctx.eng.workspace)
+        raise
+    return {"path": p.name, "bytes": len(blob), "format": ext[1:], "paper": a.paper, "views": sh.placed, "sheet_number": a.sheet_number,
+            "font_embedded": font_name, "non_ascii_dropped": dropped, "rev": ctx.eng.rev, "snapshot": snap}
+
+
 class ViewAffected(A):
     rev: int | None = Field(None, ge=1, description="변경 응답의 rev. 그 변경이 건드린 입력(요소·목록·관계)에 의존하는 뷰와 다시 계산 안 한 뷰(보수적)를 돌려준다. 생략하면 지금 다시 계산해야 하는(stale·new) 뷰")
 
