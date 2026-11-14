@@ -1,0 +1,58 @@
+{
+ "candidate": "direct-three-webgpu",
+ "elements": 50000,
+ "triangles": 600000,
+ "load_ms": 412,
+ "fetch_ms": 105,
+ "fps": {
+  "frames": 301,
+  "seconds": 5.004680000000167,
+  "fps": 59.997632200468345,
+  "frame_ms": {
+   "n": 299,
+   "min": 16.020000000000437,
+   "median": 16.665000000000077,
+   "p95": 16.740000000000236,
+   "max": 17.30499999999938,
+   "mean": 16.667324414715708
+  }
+ },
+ "gpu_bound_frame_ms": {
+  "n": 55,
+  "min": 2.970000000204891,
+  "median": 4.625,
+  "p95": 7.705000000074506,
+  "max": 8.015000000130385,
+  "mean": 4.8923636363734575
+ },
+ "replace_ms": {
+  "n": 40,
+  "min": 16.37999999988824,
+  "median": 16.65499999979511,
+  "p95": 16.78499999968335,
+  "max": 16.915000000037253,
+  "mean": 16.657874999963678
+ },
+ "replace_core_ms": {
+  "n": 40,
+  "min": 3.4750000000931323,
+  "median": 4.460000000428408,
+  "p95": 5.814999999944121,
+  "max": 6.640000000130385,
+  "mean": 4.5496250000083815
+ },
+ "replace_note": "요소 정점범위 덮어쓰기+증분 업로드+프레임 GPU 완료+다음 rAF",
+ "jsHeapMB": 75,
+ "renderer_info": {
+  "calls": 804,
+  "triangles": 0
+ },
+ "env": {
+  "gpu": {
+   "webgl": "ANGLE (NVIDIA, NVIDIA GeForce RTX 4060 Laptop GPU (0x000028E0) Direct3D11 vs_5_0 ps_5_0, D3D11)",
+   "webgpu": "nvidia/lovelace"
+  },
+  "browser": "157.0.4341.46",
+  "viewport": "1280x800"
+ }
+}

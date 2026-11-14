@@ -1,0 +1,82 @@
+{
+ "candidate": "ifc-lite",
+ "renderer_pkg": "@ifc-lite/renderer 7.1.0",
+ "geometry_pkg": "@ifc-lite/geometry 8.1.0",
+ "load_ms": 1178,
+ "breakdown_ms": {
+  "fetch": 83,
+  "init": 55,
+  "geometry_stream": 708,
+  "upload_first_frame": 335,
+  "first_batch_at": 332
+ },
+ "instancing": true,
+ "shards": 108,
+ "batches": 108,
+ "mesh_count": 0,
+ "instance_count": 50000,
+ "elements": 50000,
+ "triangles": 0,
+ "has_device_handle": true,
+ "fps": {
+  "frames": 301,
+  "seconds": 5.005824999999739,
+  "fps": 59.99847495515165,
+  "frame_ms": {
+   "n": 299,
+   "min": 16.36500000000069,
+   "median": 16.670000000000073,
+   "p95": 16.729999999999563,
+   "max": 16.974999999999454,
+   "mean": 16.667090301003345
+  }
+ },
+ "gpu_bound_frame_ms": {
+  "n": 55,
+  "min": 5.489999999757856,
+  "median": 8.984999999869615,
+  "p95": 12.705000000074506,
+  "max": 13.71500000031665,
+  "mean": 9.130636363620447
+ },
+ "gpu_timing_mode": "gpu-queries",
+ "frame_stats": {
+  "drawCalls": 105,
+  "batchesDrawn": 0,
+  "batchesFrustumCulled": 0,
+  "batchesContributionCulled": 0,
+  "batchesNotResident": 0,
+  "batchesAtLod1": 0,
+  "instancedDrawn": 105,
+  "instancedFrustumCulled": 35,
+  "instancedContributionCulled": 0,
+  "timestamp": 7056.81500000041,
+  "cpuMs": 1.7949999999254942
+ },
+ "replace_ms": {
+  "n": 40,
+  "min": 16.33999999985099,
+  "median": 16.669999999925494,
+  "p95": 16.944999999832362,
+  "max": 24.09500000020489,
+  "mean": 16.845499999972525
+ },
+ "replace_core_ms": {
+  "n": 40,
+  "min": 6.435000000055879,
+  "median": 7.2700000000186265,
+  "p95": 9.044999999925494,
+  "max": 10.765000000130385,
+  "mean": 7.594249999977182
+ },
+ "replace_note": "scene.removeMeshesForEntity + renderer.addMeshes(새 박스) + render + GPU 완료 + 다음 rAF",
+ "jsHeapMB": 46.7,
+ "env": {
+  "gpu": {
+   "webgl": "ANGLE (NVIDIA, NVIDIA GeForce RTX 4060 Laptop GPU (0x000028E0) Direct3D11 vs_5_0 ps_5_0, D3D11)",
+   "webgpu": "nvidia/lovelace"
+  },
+  "browser": "157.0.4341.46",
+  "viewport": "1280x800"
+ }
+}

@@ -1,0 +1,58 @@
+{
+ "candidate": "direct-three-webgl",
+ "elements": 50000,
+ "triangles": 600000,
+ "load_ms": 599,
+ "fetch_ms": 119,
+ "fps": {
+  "frames": 15,
+  "seconds": 4.18551,
+  "fps": 3.362200844946935,
+  "frame_ms": {
+   "n": 13,
+   "min": 283.31999999999994,
+   "median": 299.9849999999999,
+   "p95": 316.6550000000002,
+   "max": 316.6550000000002,
+   "mean": 297.4242307692308
+  }
+ },
+ "gpu_bound_frame_ms": {
+  "n": 55,
+  "min": 284.3249999997206,
+  "median": 342.910000000149,
+  "p95": 385.37000000011176,
+  "max": 405.99500000011176,
+  "mean": 339.5938181818209
+ },
+ "replace_ms": {
+  "n": 40,
+  "min": 275.1850000000559,
+  "median": 322.45000000018626,
+  "p95": 363.84000000031665,
+  "max": 374.29000000003725,
+  "mean": 318.427250000101
+ },
+ "replace_core_ms": {
+  "n": 40,
+  "min": 272.62999999988824,
+  "median": 318.3549999999814,
+  "p95": 360.37000000011176,
+  "max": 371.50499999988824,
+  "mean": 315.42712500001073
+ },
+ "replace_note": "요소 정점범위 덮어쓰기+증분 업로드+프레임 GPU 완료+다음 rAF",
+ "jsHeapMB": 75.1,
+ "renderer_info": {
+  "calls": 1,
+  "triangles": 600000
+ },
+ "env": {
+  "gpu": {
+   "webgl": "ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero) (0x0000C0DE)), SwiftShader driver)",
+   "webgpu": null
+  },
+  "browser": "157.0.4341.46",
+  "viewport": "1280x800"
+ }
+}

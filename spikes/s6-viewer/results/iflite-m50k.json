@@ -1,0 +1,81 @@
+{
+ "candidate": "ifc-lite",
+ "renderer_pkg": "@ifc-lite/renderer 7.1.0",
+ "geometry_pkg": "@ifc-lite/geometry 8.1.0",
+ "load_ms": 1656,
+ "breakdown_ms": {
+  "fetch": 81,
+  "init": 61,
+  "geometry_stream": 934,
+  "upload_first_frame": 583,
+  "first_batch_at": 352
+ },
+ "instancing": false,
+ "shards": 0,
+ "batches": 108,
+ "mesh_count": 50000,
+ "elements": 50000,
+ "triangles": 600000,
+ "has_device_handle": true,
+ "fps": {
+  "frames": 301,
+  "seconds": 5.009739999999796,
+  "fps": 59.9984147576034,
+  "frame_ms": {
+   "n": 299,
+   "min": 16.359999999999673,
+   "median": 16.665000000000873,
+   "p95": 16.774999999999636,
+   "max": 16.975000000000364,
+   "mean": 16.667107023411365
+  }
+ },
+ "gpu_bound_frame_ms": {
+  "n": 55,
+  "min": 2.959999999962747,
+  "median": 5.009999999776483,
+  "p95": 7.21999999973923,
+  "max": 8.304999999701977,
+  "mean": 5.048090909099714
+ },
+ "gpu_timing_mode": "gpu-queries",
+ "frame_stats": {
+  "drawCalls": 3,
+  "batchesDrawn": 3,
+  "batchesFrustumCulled": 0,
+  "batchesContributionCulled": 0,
+  "batchesNotResident": 0,
+  "batchesAtLod1": 0,
+  "instancedDrawn": 0,
+  "instancedFrustumCulled": 0,
+  "instancedContributionCulled": 0,
+  "timestamp": 7332.590000000317,
+  "cpuMs": 0.13500000024214387
+ },
+ "replace_ms": {
+  "n": 40,
+  "min": 18.770000000018626,
+  "median": 49.85000000009313,
+  "p95": 70.30500000016764,
+  "max": 76.96499999985099,
+  "mean": 42.623375000001396
+ },
+ "replace_core_ms": {
+  "n": 40,
+  "min": 18.704999999608845,
+  "median": 46.66000000014901,
+  "p95": 70.23999999975786,
+  "max": 76.84999999962747,
+  "mean": 40.83999999994412
+ },
+ "replace_note": "scene.removeMeshesForEntity + renderer.addMeshes(새 박스) + render + GPU 완료 + 다음 rAF",
+ "jsHeapMB": 191.9,
+ "env": {
+  "gpu": {
+   "webgl": "ANGLE (NVIDIA, NVIDIA GeForce RTX 4060 Laptop GPU (0x000028E0) Direct3D11 vs_5_0 ps_5_0, D3D11)",
+   "webgpu": "nvidia/lovelace"
+  },
+  "browser": "157.0.4341.46",
+  "viewport": "1280x800"
+ }
+}

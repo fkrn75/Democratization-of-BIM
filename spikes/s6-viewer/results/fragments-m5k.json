@@ -1,0 +1,109 @@
+{
+ "candidate": "fragments",
+ "fragments_version": "3.6.1",
+ "frag_bytes": 272594,
+ "load_ms": 435,
+ "fetch_ms": 56,
+ "bbox": [
+  150,
+  9.6,
+  96.1
+ ],
+ "elements": 5000,
+ "fps": {
+  "frames": 301,
+  "seconds": 5.008805000000018,
+  "fps": 59.998896341371655,
+  "frame_ms": {
+   "n": 299,
+   "min": 16.390000000000327,
+   "median": 16.664999999999964,
+   "p95": 16.75,
+   "max": 16.949999999999818,
+   "mean": 16.666973244147147
+  }
+ },
+ "gpu_bound_frame_ms": {
+  "n": 55,
+  "min": 0.9399999999441206,
+  "median": 1.5200000000186265,
+  "p95": 3.9250000002793968,
+  "max": 6.044999999925494,
+  "mean": 1.8520909091034397
+ },
+ "draw": {
+  "calls": 19,
+  "triangles": 78822
+ },
+ "replace_variants": {
+  "A_delete_create_apply": {
+   "replace_ms": {
+    "n": 40,
+    "min": 127.75,
+    "median": 257.54999999981374,
+    "p95": 285.4550000000745,
+    "max": 286.7299999999814,
+    "mean": 221.2503749999916
+   },
+   "replace_core_ms": {
+    "n": 40,
+    "min": 127.69499999983236,
+    "median": 257.50499999988824,
+    "p95": 285.37999999988824,
+    "max": 286.6400000001304,
+    "mean": 220.7211249999935
+   },
+   "error": null
+  },
+  "B_delete_create": {
+   "replace_ms": {
+    "n": 40,
+    "min": 249.47500000009313,
+    "median": 267.89999999990687,
+    "p95": 287.50499999988824,
+    "max": 322.3300000000745,
+    "mean": 268.2681249999907
+   },
+   "replace_core_ms": {
+    "n": 40,
+    "min": 249.4250000002794,
+    "median": 267.839999999851,
+    "p95": 287.4049999997951,
+    "max": 322.2550000003539,
+    "mean": 268.19937499997906
+   },
+   "error": null
+  },
+  "C_update_local_transform": {
+   "replace_ms": null,
+   "replace_core_ms": null,
+   "error": "TypeError: Cannot read properties of undefined (reading 'position')\n    at http://127.0.0.1:3554/dist/fragments.js:65629:25\n    at async runVariant (http://127.0.0.1:3554/dist/fragments.js:65596:13)\n    at async window.run (http://127.0.0.1:3554/dist/fragments.js:65626:7)\n    at async <anonymous>:381:23"
+  }
+ },
+ "replace_ms": {
+  "n": 40,
+  "min": 127.75,
+  "median": 257.54999999981374,
+  "p95": 285.4550000000745,
+  "max": 286.7299999999814,
+  "mean": 221.2503749999916
+ },
+ "replace_core_ms": {
+  "n": 40,
+  "min": 127.69499999983236,
+  "median": 257.50499999988824,
+  "p95": 285.37999999988824,
+  "max": 286.6400000001304,
+  "mean": 220.7211249999935
+ },
+ "replace_note": "editor.getElements/deleteElements/createElements/applyChanges + update(true) + 프레임 GPU 완료 + 다음 rAF",
+ "jsHeapMB": 12.3,
+ "env": {
+  "gpu": {
+   "webgl": "ANGLE (NVIDIA, NVIDIA GeForce RTX 4060 Laptop GPU (0x000028E0) Direct3D11 vs_5_0 ps_5_0, D3D11)",
+   "webgpu": "nvidia/lovelace"
+  },
+  "browser": "157.0.4341.46",
+  "viewport": "1280x800"
+ }
+}
