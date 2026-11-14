@@ -21,7 +21,7 @@ REPO = HERE.parent.parent.parent
 S1 = REPO / "spikes" / "s1-core"
 SRC = S1 / "src"
 S1_TOOLS = S1 / "tools"
-PY = S1 / ".venv" / "Scripts" / "python.exe"          # 코어 의존성이 든 venv (PATH 의 python 은 Store stub)
+PY = Path(os.environ.get("S11_PY") or S1 / ".venv" / "Scripts" / "python.exe")   # 코어 의존성이 든 venv (PATH 의 python 은 Store stub)
 TAP = HERE / "stdio_tap.py"
 SAMPLE_IFC = REPO / "spikes" / "s0-baseline" / "RA-01.ifc"
 
@@ -100,6 +100,12 @@ def claude_cfg(workspace: Path, tap_log: Path | None, path: Path) -> Path:
     return path
 
 
+def claude_clean_env() -> dict:
+    """깨끗한 환경: 데스크톱 앱이 물려준 ANTHROPIC_*·CLAUDE_* 변수가 인증을 깨므로 필수 변수만 남긴다."""
+    keep = ("PATH", "HOME", "USERPROFILE", "APPDATA", "LOCALAPPDATA", "SYSTEMROOT", "SystemRoot", "TEMP", "TMP", "USERNAME")
+    return {k: os.environ[k] for k in keep if k in os.environ}
+
+
 def run_claude(prompt: str, workspace: Path, tag: str, *, model: str = "sonnet", timeout: int = 600,
                tap: bool = True, extra: list[str] | None = None) -> dict:
     """실제 claude 를 비대화로 실행한다. 원본은 RAW/<tag>.* 에 둔다."""
@@ -110,9 +116,10 @@ def run_claude(prompt: str, workspace: Path, tag: str, *, model: str = "sonnet",
     allowed = [f"mcp__dobim__{t}" for t in DOBIM_TOOLS]
     cmd = ["claude", "-p", "--output-format", "stream-json", "--verbose", "--model", model,
            "--strict-mcp-config", "--mcp-config", str(cfg), "--allowedTools", *allowed,
-           "--tools", "", "--setting-sources", "project", "--no-session-persistence", *(extra or []), "--", prompt]
+           "--tools", "", "--setting-sources", "project", "--no-session-persistence",
+           "--disable-slash-commands", "--exclude-dynamic-system-prompt-sections", *(extra or []), "--", prompt]
     t = time.time()
-    p = subprocess.run(cmd, capture_output=True, cwd=workspace, stdin=subprocess.DEVNULL, timeout=timeout)
+    p = subprocess.run(cmd, capture_output=True, cwd=workspace, stdin=subprocess.DEVNULL, timeout=timeout, env=claude_clean_env())
     wall = time.time() - t
     (RAW / f"{tag}.out.jsonl").write_bytes(p.stdout)
     (RAW / f"{tag}.err.txt").write_bytes(p.stderr)
