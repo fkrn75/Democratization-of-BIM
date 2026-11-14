@@ -655,6 +655,8 @@ def vfam_nbr_pieces(g, v, e):
     for o in g.q(scope_fams, v):
         if o != e:
             occ.extend(g.q(_fam_vpieces, v, o))
+    for sl in g.q(scope_slabs, v):
+        occ.extend(g.q(_slab_vpieces, v, sl))
     return tuple(occ)
 
 
@@ -711,6 +713,215 @@ def vfam_hosted_edges(g, v, w):
         if c is not None:
             out.append(c)
     return tuple(out)
+
+
+# ================================================================ 슬래브 (kinds "slab": 레벨 + 경계 다각형 + 두께)
+# 슬래브는 z 범위가 [밑면, 윗면]인 각기둥이다(경계가 오목해도 된다). 가림 판정용 조각은 경계를 삼각형으로 나눈 볼록 조각이다.
+#   평면: 절단 높이가 슬래브 두께 안이면 경계 윤곽을 절단선 + 절단 채움으로(아니면 그리지 않는다: 평면은 벽이 윤곽을 준다)
+#   단면: 절단면과 경계의 교차 구간 x 두께 = 절단 사각형(cut 선 + 채움), 벽 절단과 합집합 윤곽(이음매 선 제거). 절단면 뒤의 모서리는 투영선
+#   입면: 두께 띠의 모서리(위·아랫면 둘레 + 수직 모서리). 앞에 선 벽·기둥·다른 슬래브가 가린다
+def slab_info(g, s):
+    """(밑면 z, 윗면 z, 경계 다각형(반시계 튜플)) 또는 None. 저작(authored) 슬래브만 그린다(분리된 슬래브의 의도는 낡은 값이다)."""
+    row = Q.el(g, s)
+    if row is None or row["kind"] != "slab" or row["origin"] != "authored":
+        return None
+    zb, zt = g.q(Q.slab_zrange, s)
+    poly = [tuple(p) for p in row["params"]["boundary"]]
+    if _area2(poly) < 0:
+        poly.reverse()
+    return (zb, zt, tuple(poly))
+
+
+def all_slabs(g):
+    out = []
+    for b in range(Q.NB):
+        out.extend(e for e in Q.bucket_ids(g, "slab", b) if g.q(slab_info, e) is not None)
+    return tuple(sorted(out))
+
+
+def scope_slabs(g, v):
+    """뷰가 그리는 슬래브. 평면은 그 레벨에 놓인 것만, 단면·입면은 모델 전체."""
+    cfg = g.q(view_cfg, v)
+    if cfg is None:
+        return ()
+    if cfg[0] == "plan":
+        if cfg[1] is None:
+            return ()
+        return tuple(e for e in sorted(Q.rel_in(g, "on_level", cfg[1])) if g.q(slab_info, e) is not None)
+    return g.q(all_slabs)
+
+
+def _in_tri(p, a, b, c):
+    """점 p 가 삼각형 abc(반시계)의 안쪽이거나 경계 위인가."""
+    for u, w in ((a, b), (b, c), (c, a)):
+        if (w[0] - u[0]) * (p[1] - u[1]) - (w[1] - u[1]) * (p[0] - u[0]) < -1e-9:
+            return False
+    return True
+
+
+def slab_tris(g, s):
+    """경계 다각형(오목 가능, 반시계)을 볼록 삼각형들로 나눈다. 귀 자르기, 항상 앞 번호의 귀부터라 결정적이다."""
+    info = g.q(slab_info, s)
+    if info is None:
+        return ()
+    poly = info[2]
+    idx = list(range(len(poly)))
+    tris = []
+    while len(idx) > 3:
+        n = len(idx)
+        pick = None
+        for k in range(n):
+            i0, i1, i2 = idx[k - 1], idx[k], idx[(k + 1) % n]
+            a, b, c = poly[i0], poly[i1], poly[i2]
+            if (b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0]) <= 1e-9:
+                continue                                       # 오목이거나 공선인 꼭짓점은 귀가 아니다
+            if any(_in_tri(poly[j], a, b, c) for j in idx if j not in (i0, i1, i2)):
+                continue
+            pick = k
+            tris.append((a, b, c))
+            break
+        if pick is None:                                       # 귀가 없다: 공선 꼭짓점을 하나 버리고(면적 불변), 그것도 없으면 부채꼴로 마무리
+            for k in range(n):
+                a, b, c = poly[idx[k - 1]], poly[idx[k]], poly[idx[(k + 1) % n]]
+                if abs((b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0])) <= 1e-9:
+                    pick = k
+                    break
+            if pick is None:
+                for k in range(1, n - 1):
+                    tris.append((poly[idx[0]], poly[idx[k]], poly[idx[k + 1]]))
+                return tuple(tris)
+        del idx[pick]
+    if len(idx) == 3:
+        tris.append((poly[idx[0]], poly[idx[1]], poly[idx[2]]))
+    return tuple(tris)
+
+
+def plan_slab_parts(g, v, s):
+    """평면의 슬래브: (선분들, 채움 다각형들). 절단 높이가 두께 범위에 들 때만 경계 윤곽을 절단선·절단 채움으로 그린다."""
+    cfg = g.q(view_cfg, v)
+    info = g.q(slab_info, s)
+    if info is None or cfg is None or cfg[0] != "plan" or not (info[0] - EPS <= cfg[2] <= info[1] + EPS):
+        return ((), ())
+    poly = info[2]
+    n = len(poly)
+    segs = tuple(("cut", poly[i][0], poly[i][1], poly[(i + 1) % n][0], poly[(i + 1) % n][1]) for i in range(n))
+    return (segs, (poly,))
+
+
+def _slab_vpieces(g, v, s):
+    """단면·입면에서 슬래브의 속이 찬 볼록 조각 ((z0, z1, 다각형(s,w)), ...)."""
+    cfg = g.q(view_cfg, v)
+    info = g.q(slab_info, s)
+    if info is None or cfg is None or cfg[0] == "plan":
+        return ()
+    out = []
+    for tri in g.q(slab_tris, s):
+        sw = [_sw(cfg, p) for p in tri]
+        if _area2(sw) < 0:
+            sw.reverse()
+        sw = _clip_w(sw, cfg[7], cfg[8])
+        if len(sw) >= 3 and _area2(sw) > 2 * EPS:
+            out.append((info[0], info[1], tuple(sw)))
+    return tuple(out)
+
+
+def slab_vbbox(g, v, s):
+    ps = g.q(_slab_vpieces, v, s)
+    if not ps:
+        return None
+    ss = [p[0] for _, _, poly in ps for p in poly]
+    return (min(ss), min(z0 for z0, _, _ in ps), max(ss), max(z1 for _, z1, _ in ps))
+
+
+def slab_cut_rects(g, v, s):
+    """단면: 절단면(w=near)과 슬래브 경계의 교차 구간마다 (s, z) 사각형(오목 경계도 짝수-홀수 규칙으로 구간이 여럿일 수 있다)."""
+    cfg = g.q(view_cfg, v)
+    info = g.q(slab_info, s)
+    if info is None or cfg is None or cfg[0] == "plan" or not cfg[9]:
+        return ()
+    near = cfg[7]
+    pts = [_sw(cfg, p) for p in info[2]]
+    xs = []
+    n = len(pts)
+    for i in range(n):
+        a, b = pts[i], pts[(i + 1) % n]
+        if (a[1] <= near) != (b[1] <= near):
+            xs.append(a[0] + (near - a[1]) / (b[1] - a[1]) * (b[0] - a[0]))
+    xs.sort()
+    rects = []
+    for i in range(0, len(xs) - 1, 2):
+        s0, s1 = xs[i], xs[i + 1]
+        if s1 - s0 > EPS:
+            rects.append(((s0, info[0]), (s1, info[0]), (s1, info[1]), (s0, info[1])))
+    return tuple(rects)
+
+
+def slab_vedges(g, v, s):
+    """슬래브의 모서리: 경계 둘레의 위·아랫면 수평선과 꼭짓점의 수직 모서리(뷰 좌표 3D 선분 (s,w,z))."""
+    cfg = g.q(view_cfg, v)
+    info = g.q(slab_info, s)
+    if info is None or cfg is None or cfg[0] == "plan":
+        return ()
+    zb, zt, poly = info
+    pts = [_sw(cfg, p) for p in poly]
+    n = len(pts)
+    raw = []
+    for i in range(n):
+        a, b = pts[i], pts[(i + 1) % n]
+        raw.append(((a[0], a[1], zb), (a[0], a[1], zt)))
+        for z in (zb, zt):
+            raw.append(((a[0], a[1], z), (b[0], b[1], z)))
+    out = []
+    for e0, e1 in raw:
+        if abs(e1[0] - e0[0]) < EPS and abs(e1[2] - e0[2]) < EPS:
+            continue
+        c = _clip_edge(e0, e1, cfg[7], cfg[8])
+        if c is not None:
+            out.append(c)
+    return tuple(out)
+
+
+def _bb_hit(a, b):
+    return a[0] <= b[2] + NBR_PAD and b[0] <= a[2] + NBR_PAD and a[1] <= b[3] + NBR_PAD and b[1] <= a[3] + NBR_PAD
+
+
+def slab_nbr_walls(g, v, s):
+    """슬래브와 경계 상자가 겹치는 같은 뷰의 벽(가림 후보·절단 윤곽 합집합 상대)."""
+    me = g.q(slab_vbbox, v, s)
+    if me is None:
+        return ()
+    return tuple(w for w in g.q(scope_walls, v) if (bb := g.q(vbbox, v, w)) is not None and _bb_hit(me, bb))
+
+
+def slab_lines(g, v, s):
+    """슬래브 하나가 뷰에 기여하는 선분."""
+    cfg = g.q(view_cfg, v)
+    if cfg is None:
+        return ()
+    if cfg[0] == "plan":
+        return g.q(plan_slab_parts, v, s)[0]
+    mine = list(g.q(_slab_vpieces, v, s))
+    nb = g.q(slab_nbr_walls, v, s)
+    occ = mine[:]
+    for w in nb:
+        occ.extend(g.q(vpieces, v, w))
+    for o in g.q(scope_slabs, v):
+        if o != s:
+            occ.extend(g.q(_slab_vpieces, v, o))
+    for fe in g.q(scope_fams, v):
+        occ.extend(g.q(_fam_vpieces, v, fe))
+    lines = []
+    if occ:
+        for e0, e1 in g.q(slab_vedges, v, s):
+            for t0, t1 in visible_parts(e0, e1, occ):
+                lines.append(("proj", e0[0] + t0 * (e1[0] - e0[0]), e0[2] + t0 * (e1[2] - e0[2]),
+                              e0[0] + t1 * (e1[0] - e0[0]), e0[2] + t1 * (e1[2] - e0[2])))
+    if cfg[9]:
+        rects = g.q(slab_cut_rects, v, s)
+        if rects:
+            others = [(w, q) for w in nb for q in g.q(vcut_rects, v, w)]
+            lines += [("cut", a[0], a[1], b[0], b[1]) for a, b in outline_edges(list(rects), others, s)]
+    return tuple(lines)
 
 
 def _door_symbol(sol, op):
@@ -976,6 +1187,9 @@ def vwall_lines(g, v, w):
         occ.extend(g.q(vpieces, v, o))
     for fe in g.q(scope_fams, v):                       # 기둥이 앞에 있으면 벽 선을 가린다
         occ.extend(g.q(_fam_vpieces, v, fe))
+    sls = g.q(scope_slabs, v)
+    for sl in sls:                                      # 슬래브가 앞에 있으면 벽 선을 가린다
+        occ.extend(g.q(_slab_vpieces, v, sl))
     lines = []
     if occ:
         for e0, e1 in g.q(vedges, v, w) + g.q(vfam_hosted_edges, v, w):
@@ -987,6 +1201,7 @@ def vwall_lines(g, v, w):
         mine = g.q(vcut_rects, v, w)
         if mine:
             others = [(o, q) for o in nb for q in g.q(vcut_rects, v, o)]
+            others += [(sl, q) for sl in sls for q in g.q(slab_cut_rects, v, sl)]   # 벽과 슬래브가 맞닿은 이음매 선을 지운다
             lines += [("cut", a[0], a[1], b[0], b[1]) for a, b in outline_edges(list(mine), others, w)]
     return tuple(lines)
 
@@ -1060,6 +1275,8 @@ def view_lines(g, v):
         segs.extend(g.q(fn, v, w))
     for e in g.q(scope_fams, v):
         segs.extend(g.q(fam_lines, v, e))
+    for sl in g.q(scope_slabs, v):
+        segs.extend(g.q(slab_lines, v, sl))
     return merge_lines(segs)
 
 
@@ -1079,6 +1296,11 @@ def view_fills(g, v):
             out.extend(g.q(plan_fam_parts, v, e)[1])
         else:
             out.extend(g.q(vfam_cut_rects, v, e))
+    for sl in g.q(scope_slabs, v):
+        if cfg[0] == "plan":
+            out.extend(g.q(plan_slab_parts, v, sl)[1])
+        else:
+            out.extend(g.q(slab_cut_rects, v, sl))
     return tuple(tuple((round(p[0], 3), round(p[1], 3)) for p in poly) for poly in out)
 
 
@@ -1135,7 +1357,7 @@ def views_depending_on(g, input_keys, vids, include_not_fresh=True):
 VIEW_SCOPED = frozenset({view_cfg, scope_walls, view_omitted, plan_pieces, plan_bbox, plan_nbrs, plan_wall_lines, vpieces, vbbox, vnbrs,
                          vcut_rects, vedges, vwall_lines, view_lines, view_fills,
                          scope_fams, plan_fam_parts, _fam_vpieces, vfam_bbox, vfam_cut_rects, vfam_edges, vfam_nbr_pieces, fam_lines,
-                         vfam_hosted_edges})
+                         vfam_hosted_edges, scope_slabs, plan_slab_parts, _slab_vpieces, slab_vbbox, slab_cut_rects, slab_vedges, slab_nbr_walls, slab_lines})
 
 
 def forget_views(g, vids) -> int:

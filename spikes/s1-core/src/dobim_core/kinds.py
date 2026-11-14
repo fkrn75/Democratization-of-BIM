@@ -148,6 +148,55 @@ def _finst_params(p):
     return _check_fields("finst", p, spec)
 
 
+# ---------------------------------------------------------------- 슬래브 경계 다각형 (순수 기하: 정수 비교가 아니라 외적 부호만 쓴다)
+SLAB_PTS_MIN, SLAB_PTS_MAX = 3, 256
+
+
+def polygon_area2(pts) -> float:
+    """다각형의 부호 있는 면적의 2배(양수 = 반시계)."""
+    n = len(pts)
+    return sum(pts[i][0] * pts[(i + 1) % n][1] - pts[(i + 1) % n][0] * pts[i][1] for i in range(n))
+
+
+def _seg_cross(a, b, c, d) -> bool:
+    """선분 ab 와 cd 가 (끝점 접촉 포함) 만나는가."""
+    def o(p, q, r):
+        v = (q[0] - p[0]) * (r[1] - p[1]) - (q[1] - p[1]) * (r[0] - p[0])
+        return (v > 0) - (v < 0)
+
+    def on(p, q, r):   # 공선일 때 r 이 선분 pq 의 범위 안인가
+        return min(p[0], q[0]) <= r[0] <= max(p[0], q[0]) and min(p[1], q[1]) <= r[1] <= max(p[1], q[1])
+    o1, o2, o3, o4 = o(a, b, c), o(a, b, d), o(c, d, a), o(c, d, b)
+    if o1 != o2 and o3 != o4:
+        return True
+    return (o1 == 0 and on(a, b, c)) or (o2 == 0 and on(a, b, d)) or (o3 == 0 and on(c, d, a)) or (o4 == 0 and on(c, d, b))
+
+
+def polygon_problem(pts) -> str | None:
+    """슬래브 경계가 쓸 수 있는 모양인가(안 되면 이유 문장): 꼭짓점 3~256개, 면적 0 아님, 같은 꼭짓점 반복 없음, 자기 교차 없음."""
+    n = len(pts)
+    if not SLAB_PTS_MIN <= n <= SLAB_PTS_MAX:
+        return f"꼭짓점은 {SLAB_PTS_MIN}~{SLAB_PTS_MAX}개여야 한다(현재 {n}개)"
+    if len({(p[0], p[1]) for p in pts}) != n:
+        return "같은 꼭짓점이 반복된다"
+    if abs(polygon_area2(pts)) <= 1e-6:
+        return "면적이 0 이다"
+    for i in range(n):
+        a, b = pts[i], pts[(i + 1) % n]
+        for j in range(i + 1, n):
+            if j == i or (j + 1) % n == i or (i + 1) % n == j:
+                continue   # 이웃한 변은 꼭짓점을 공유한다
+            if _seg_cross(a, b, pts[j], pts[(j + 1) % n]):
+                return "경계가 자기 자신과 교차한다"
+    return None
+
+
+def _slab_params(p):
+    def boundary(v):
+        return isinstance(v, list) and SLAB_PTS_MIN <= len(v) <= SLAB_PTS_MAX and all(_pt_ok(x) for x in v) and polygon_area2(v) > 0   # 반시계로 저장한다
+    return _check_fields("slab", p, {"name": _name, "boundary": boundary, "thickness": _pos, "top_offset": num_ok})
+
+
 def _foreign_params(p):
     return _check_fields("foreign", p, {"name": lambda v: text_ok(v, 0, 255)})
 
@@ -172,6 +221,7 @@ ELEMENT_KINDS: dict[str, ElementKind] = {k.name: k for k in (
     ElementKind("level", True, "IfcBuildingStorey", True, 0, _level_params),
     ElementKind("wall", True, "IfcWall", True, 1, _wall_params, geometric=True),
     ElementKind("door", True, "IfcDoor", True, 2, _door_params, geometric=True),
+    ElementKind("slab", True, "IfcSlab", True, 1, _slab_params, geometric=True),
     ElementKind("ftype", True, None, True, 3, _ftype_params),
     ElementKind("finst", True, None, True, 4, _finst_params, geometric=True, refs=(("type", "id", "of_type"),)),
     ElementKind("foreign", True, None, False, 5, _foreign_params),
@@ -188,8 +238,8 @@ FIXED_IFC_CLASS = {k: v.ifc_class for k, v in ELEMENT_KINDS.items() if v.ifc_cla
 KIND_NAMES = tuple(ELEMENT_KINDS)
 # 의도 복원(S2 가져오기)이 IFC 클래스로 종류를 정하는 것: IFC 클래스 -> 종류. 패밀리 타입·인스턴스(ftype/finst)는 클래스가 레시피마다 달라 의도가 스스로 밝힌
 # 종류를 따른다(family.restore, ADR-0014). 뷰·주석은 IFC 신원이 없어 IFC 에서 복원할 수 없다(알려진 한계)
-IMPORTABLE_BY_CLASS = {"IfcBuildingStorey": "level", "IfcWall": "wall", "IfcDoor": "door"}
-FAMILY_OF_KIND = {"level": "level.basic", "wall": "wall.basic", "door": "door.single"}
+IMPORTABLE_BY_CLASS = {"IfcBuildingStorey": "level", "IfcWall": "wall", "IfcDoor": "door", "IfcSlab": "slab"}
+FAMILY_OF_KIND = {"level": "level.basic", "wall": "wall.basic", "door": "door.single", "slab": "slab.basic"}
 
 
 def _remap_ref(form: str, v, m: dict):
@@ -274,7 +324,7 @@ def _fs(*a):
 
 REL_KINDS: dict[str, RelKind] = {r.name: r for r in (
     # 레벨은 분리돼 있어도 그 위의 저작 벽이 레벨을 따른다(S2): 레벨 쪽은 막지 않고, 놓이는 요소만 저작이어야 한다
-    RelKind("on_level", _fs("wall", "finst", "foreign"), _fs("level"), guard=("src",), violation="LEVEL_DELETED", message="벽이 놓인 레벨이 지워졌다"),
+    RelKind("on_level", _fs("wall", "slab", "finst", "foreign"), _fs("level"), guard=("src",), violation="LEVEL_DELETED", message="벽이 놓인 레벨이 지워졌다"),
     RelKind("joins", _fs("wall"), _fs("wall"), guard=("src", "dst"), violation="JOIN_TARGET_DELETED", message="조인 대상 벽이 지워졌다"),
     RelKind("hosts", _fs("wall"), _fs("door", "finst"), guard=("src", "dst"), violation="HOST_DELETED",
             message="호스트 벽이 지워졌는데 문이 그 벽에 놓여 있다"),

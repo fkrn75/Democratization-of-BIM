@@ -13,6 +13,7 @@
     door   center / jamb.start / jamb.end  호스트 축선 위 문 중심·문틀 양쪽  pt
            sill / head             문턱·문 상단 높이                       z
     level  elevation               레벨 높이                              z
+    slab   top / bottom            슬래브 윗면·밑면 높이(레벨 + top_offset, 두께는 아래로)  z
 
 요소 id 만으로 부족한 경우의 규칙:
     - 벽 분할(wall.split): 분할은 벽의 "끝"을 새 벽에 넘긴다. 분할 이력은 관계 succ(원래 벽 -> 끝 쪽을 가진 벽)로 남고,
@@ -49,6 +50,7 @@ ROLE_TYPES = {
              "axis": "line", "face.left": "line", "face.right": "line", "base": "z", "top": "z"},
     "door": {"center": "pt", "jamb.start": "pt", "jamb.end": "pt", "sill": "z", "head": "z"},
     "level": {"elevation": "z"},
+    "slab": {"top": "z", "bottom": "z"},
 }
 END_ROLES = frozenset({"axis.end", "trim.end"})           # 분할 이력(succ)을 따라가는 역할
 OWN_ROLE = {"own.end": "axis.end", "own.trim.end": "trim.end"}   # 이력을 따라가지 않는 짝
@@ -116,6 +118,9 @@ def ref_resolve(g, ref):
         return _wall_ref(g, eid, role, row)
     if kind == "door":
         return _door_ref(g, eid, role, row)
+    if kind == "slab":
+        zb, zt = g.q(Q.slab_zrange, eid)
+        return ("z", zt if role == "top" else zb)
     return ("z", g.q(Q.level_info, eid)[1])
 
 

@@ -3,9 +3,14 @@
 
 G1 때와 같은 방식으로 도면을 다시 뽑는다(s3lib.build 의 RA-01 코어 범위 모델). 산출 파일은 저장소 밖 폴더(--out)에 둔다.
 
-사용:  PYTHONPATH=<worktree>/spikes/s1-core/src  <python> run_baseline.py --out <폴더> [--sheets]
+사용:  PYTHONPATH=<worktree>/spikes/s1-core/src  <python> run_baseline.py --out <폴더> [--sheets] [--no-slabs]
   기본          : base/(기본 7뷰) annot/(치수·태그 포함 7뷰) fam/(창·기둥 배치 + 전체높이 치수) xsec/(종단면)  각 SVG·PDF
   --sheets      : 위에 더해 sheets/ 아래에 시트(A3·A1) SVG·PDF(한글 포함)를 뽑는다
+  --no-slabs    : 입력에서 슬래브 3개를 뺀다(이전 단계 산출과 같은 입력으로 되돌려 바이트 비교할 때)
+
+입력 변경(세 번째 작업): RA-01 코어 범위 모델에 슬래브 3개를 더한다(RA-01 에는 슬래브 3개가 있다. g2-gate 5-1절). 기본 켜짐.
+  S-GND  1F 바닥 슬래브(1F 윗면 0, 두께 200, 외벽 바깥면까지)   S-2F  2F 바닥 슬래브(2F 윗면, 두께 200, 외벽 축선 안쪽)
+  S-ROOF 지붕 슬래브(2F 벽 윗면 6600 = 2F + 3300, 두께 200, 외벽 바깥면까지)
 """
 from __future__ import annotations
 
@@ -38,6 +43,7 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--out", required=True)
     ap.add_argument("--sheets", action="store_true")
+    ap.add_argument("--no-slabs", action="store_true")
     o = ap.parse_args()
     out = Path(o.out).resolve()
     out.mkdir(parents=True, exist_ok=True)
@@ -47,7 +53,17 @@ def main():
     if proj.exists():
         proj.unlink()
     sess, ids, views = s3lib.build(proj)
-    log = {"exports": []}
+    log = {"exports": [], "slabs": []}
+    if not o.no_slabs:
+        # 입력 변경: 슬래브 3개(RA-01 슬래브 수). 외벽 두께 320: 바깥면 = 축선 바깥 160
+        lx, ly, ho = s3lib.LX, s3lib.LY, s3lib.EXT_T / 2
+        outer = [[-ho, -ho], [lx + ho, -ho], [lx + ho, ly + ho], [-ho, ly + ho]]
+        axis = [[0.0, 0.0], [lx, 0.0], [lx, ly], [0.0, ly]]
+        for k, (nm, lv, b, off) in enumerate((("S-GND", "1F", outer, 0.0), ("S-2F", "2F", axis, 0.0), ("S-ROOF", "2F", outer, s3lib.STOREY)), 1):
+            sid = "6" + f"{k:021d}"
+            ids[nm] = sid
+            ok(sess.run("slab.create", {"id": sid, "level": ids[lv], "boundary": b, "thickness": 200.0, "top_offset": off, "name": nm}))
+            log["slabs"].append({"name": nm, "id": sid, "level": lv, "top_offset": off})
 
     def exp_views(sub, keys):
         d = out / sub
