@@ -92,3 +92,20 @@
 | 결과 동등 | 미시험(54개 기준 시나리오 스크립트 없음). 탐색 20개의 최종 모델 상태는 CLI 판정으로 20/20 | 미시험 | 미시험 |
 
 토큰(입력+캐시 생성+캐시 읽기+출력, claude result 사용량): 층 C 약 87.2만(그룹당 4.2만~16.3만), 탐색 20개 약 96.2만(과제당 2.6만~8.8만). 합계 약 183만으로 Codex(층 C 약 415만, 탐색 약 608만)의 약 18%다. 탐색은 10개를 먼저 돌려 토큰을 잰 뒤 나머지 10개를 이어 돌렸고 축소는 없었다. 판정은 도구 호출·서버 응답 봉투 기준이다.
+
+## 9. C-1 잔여 (phase1/c1-residual)
+
+근거: `results/s11_c1_claude_handshake.json`, `results/s11_c1_ra01_equiv.json`, `results/s11_lint_no_client_branch.json`. 코어는 origin/main a6639e6. 8절 표에서 비어 있던 항목 중 LLM 재실행 없이 닫을 수 있는 3건을 메웠다.
+
+| 항목 | 결과 | 판정 |
+|---|---|---|
+| Claude initialize 시간 null | 원인: Claude Code 2.1.325는 협상 프로토콜 2026-07-28(무상태)을 써서 `initialize`를 보내지 않고 `server/discover`로 시작한다. 하네스 `common.parse_tap`이 `initialize`만 찾아 협상 버전·클라이언트 정보·시간이 모두 null이었다. 수정: `server/discover`도 핸드셰이크로 인식(버전·클라이언트 정보는 params._meta, 응답은 supportedVersions). 재현은 `claude -p` 최소 1회(도구 1회 호출, 깨끗한 환경)의 중계기 기록으로 했다: 핸드셰이크 2.47초(서버 시작 포함), 협상 2026-07-28, 비JSON 줄 0. Codex 기록으로 기존 `initialize` 경로가 그대로 동작함을 확인했다 | 해결 |
+| 결과 동등(RA-01 결정적 시나리오) | `tools/ra01_equiv.py`: s10의 RA-01 스크립트(레벨 2·벽 14·문 5, 일괄 76커맨드) 포함 11단계를 CLI 직접 호출과 MCP 경유(공식 SDK 클라이언트, LLM 없음)로 실행. 단계별 결과 봉투 불일치 0, 최종 model.hash(state·derived·ifc·rev 76) 동일, 내보낸 IFC 의미 비교 차이 0(요소 28개), 작업 폴더 밖 쓰기 거부 동일 | 통과 |
+| 분기 금지 린트 | 현재 main 코어 소스 23개 파일(8절 당시 15개)에서 클라이언트별 분기 0건, 음성 대조(어휘·구조) 모두 탐지. 주석·문서 문자열 언급 2건(dispatch.py, limits.py의 "Claude")은 분기 아님 | 통과 |
+
+동등 시험에서 비교에서 가린 전송 경로 차이: project.new의 handle(MCP 세션만 발급), history.list의 actor(cli/mcp), 확인 토큰, ifc.export의 bytes. 관찰: 내보낸 IFC의 DATA 구역 바이트는 직접 호출 2회끼리는 같지만 MCP 경유와는 다르다(속성 엔티티 번호 순서와 헤더 시각. 코어 정규 해시·의미 비교는 같음). 바이트 동일성을 합격 기준으로 삼지 않는 한 문제는 아니나 기록해 둔다. 직접 호출 쪽은 CLI의 `script --atomic`, MCP 쪽은 `dobim_execute` 일괄이라 같은 원자 일괄 경로를 비교한 것이다.
+
+**남음(이번 범위 밖)**
+- 이미지 판정: `dobim_render`가 UNSUPPORTED(미구현)이고 시트 이미지 산출물이 아직 없어 이미지를 보는 판정 대상이 없다. 도면 시트 작업이 병합된 뒤 한다.
+- Windows 54개 LLM 재측정: 커맨드 54개 기준으로 Claude·Codex를 다시 돌려야 해 사용량이 크다(8절 합계 약 183만 토큰). 사용량 절약 지침에 따라 이번엔 하지 않았다. 8절의 Claude 54개 측정이 같은 PC·같은 코어 계열이라 값은 있으나, Windows 점검 항목(시작 시간·한글 경로 등) 54개 기준 재측정은 남는다.
+- LLM 경유 결과 동등(Claude·Codex가 RA-01 시나리오를 스스로 수행)은 이번에 LLM을 돌리지 않았으므로 미시험이다. 서버 직접 경로의 동등만 확인했다.

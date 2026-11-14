@@ -290,6 +290,16 @@ def parse_tap(path: Path | None) -> dict:
                 p = m.get("params", {})
                 info["initialize"] = {"protocolVersion": p.get("protocolVersion"), "clientInfo": p.get("clientInfo"),
                                       "capabilities": sorted((p.get("capabilities") or {}).keys())}
+                info["handshake_method"] = "initialize"
+                info["t_initialize_sent"] = r["t"]
+            elif m.get("method") == "server/discover" and "initialize" not in info:
+                # 무상태 프로토콜(2026-07-28): Claude Code 2.1.x 는 initialize 대신 server/discover 로 시작한다.
+                # 버전·클라이언트 정보·기능은 params._meta 에 실린다. 이 경우 initialize 대신 이 호출의 시간을 쓴다.
+                meta = (m.get("params") or {}).get("_meta") or {}
+                info["initialize"] = {"protocolVersion": meta.get("io.modelcontextprotocol/protocolVersion"),
+                                      "clientInfo": meta.get("io.modelcontextprotocol/clientInfo"),
+                                      "capabilities": sorted((meta.get("io.modelcontextprotocol/clientCapabilities") or {}).keys())}
+                info["handshake_method"] = "server/discover"
                 info["t_initialize_sent"] = r["t"]
             if "id" in m and m.get("method"):
                 req_t[m["id"]] = (r["t"], m["method"], (m.get("params") or {}).get("name"),
@@ -299,10 +309,15 @@ def parse_tap(path: Path | None) -> dict:
                 nonjson += 1
                 continue
             m = json.loads(r["raw"])
-            if "result" in m and "protocolVersion" in (m["result"] or {}):
-                info["negotiated"] = m["result"]["protocolVersion"]
-                info["t_initialize_done"] = r["t"]
-                info["server_capabilities"] = sorted((m["result"].get("capabilities") or {}).keys())
+            res0 = m.get("result") or {}
+            if "protocolVersion" in res0 or "supportedVersions" in res0:
+                # initialize 는 protocolVersion, server/discover 는 supportedVersions(협상된 버전은 요청 _meta 의 것)
+                if "t_initialize_done" not in info:
+                    info["negotiated"] = res0.get("protocolVersion") or (info.get("initialize") or {}).get("protocolVersion")
+                    info["t_initialize_done"] = r["t"]
+                    info["server_capabilities"] = sorted((res0.get("capabilities") or {}).keys())
+                    if "supportedVersions" in res0:
+                        info["server_supported_versions"] = res0["supportedVersions"]
             if "id" in m and m["id"] in req_t:
                 t0, method, name, cmd = req_t[m["id"]]
                 res = m.get("result") or {}
@@ -326,8 +341,9 @@ def latency_summary(lat: list[dict]) -> dict:
     """tools/call 응답 시간 요약(ms): 개수, 중앙값, 최댓값과 가장 느린 호출, initialize 시간."""
     import statistics
     calls = [x for x in lat if x["method"] == "tools/call"]
-    init = [x for x in lat if x["method"] == "initialize"]
-    out = {"tool_calls": len(calls), "initialize_ms": init[0]["ms"] if init else None}
+    init = [x for x in lat if x["method"] in ("initialize", "server/discover")]   # Claude 2.1.x 는 server/discover
+    out = {"tool_calls": len(calls), "initialize_ms": init[0]["ms"] if init else None,
+           "handshake_method": init[0]["method"] if init else None}
     if calls:
         worst = max(calls, key=lambda x: x["ms"])
         out.update(median_ms=round(statistics.median(x["ms"] for x in calls), 1), max_ms=worst["ms"],

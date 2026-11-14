@@ -1,0 +1,139 @@
+{
+  "steps": 11,
+  "ra01_commands_in_batch": 76,
+  "per_step": [
+    {
+      "i": 1,
+      "step": "new",
+      "ok_direct": true,
+      "ok_mcp": true,
+      "code": null,
+      "same_envelope": true
+    },
+    {
+      "i": 2,
+      "step": "batch",
+      "ok_direct": true,
+      "ok_mcp": true,
+      "code": null,
+      "same_envelope": true
+    },
+    {
+      "i": 3,
+      "step": "model.stats",
+      "ok_direct": true,
+      "ok_mcp": true,
+      "code": null,
+      "same_envelope": true
+    },
+    {
+      "i": 4,
+      "step": "model.validate",
+      "ok_direct": true,
+      "ok_mcp": true,
+      "code": null,
+      "same_envelope": true
+    },
+    {
+      "i": 5,
+      "step": "ifc.export",
+      "ok_direct": false,
+      "ok_mcp": false,
+      "code": "CONFIRM_REQUIRED",
+      "same_envelope": true
+    },
+    {
+      "i": 6,
+      "step": "ifc.export",
+      "ok_direct": true,
+      "ok_mcp": true,
+      "code": null,
+      "same_envelope": true
+    },
+    {
+      "i": 7,
+      "step": "ifc.export",
+      "ok_direct": false,
+      "ok_mcp": false,
+      "code": "PATH_DENIED",
+      "same_envelope": true
+    },
+    {
+      "i": 8,
+      "step": "schedule.summary",
+      "ok_direct": true,
+      "ok_mcp": true,
+      "code": null,
+      "same_envelope": true
+    },
+    {
+      "i": 9,
+      "step": "element.query",
+      "ok_direct": true,
+      "ok_mcp": true,
+      "code": null,
+      "same_envelope": true
+    },
+    {
+      "i": 10,
+      "step": "history.list",
+      "ok_direct": true,
+      "ok_mcp": true,
+      "code": null,
+      "same_envelope": true
+    },
+    {
+      "i": 11,
+      "step": "model.hash",
+      "ok_direct": true,
+      "ok_mcp": true,
+      "code": null,
+      "same_envelope": true
+    }
+  ],
+  "envelope_mismatches": 0,
+  "hash_direct": {
+    "rev": 76,
+    "state": "3f315184fc601b9a2d08fd011cd0cf9c8fe0dc08d79781a98a32684ed189fee1",
+    "derived": "9569372e9b849e39441c74de8bf5f1ab9588886cdee4e9e9cf4ade026fa60dbe",
+    "ifc": "0f8d0b4319c8cb140e78e0f3c77f2a2aa07cddad253b7e4a3982402bcca9b7ac"
+  },
+  "hash_mcp": {
+    "rev": 76,
+    "state": "3f315184fc601b9a2d08fd011cd0cf9c8fe0dc08d79781a98a32684ed189fee1",
+    "derived": "9569372e9b849e39441c74de8bf5f1ab9588886cdee4e9e9cf4ade026fa60dbe",
+    "ifc": "0f8d0b4319c8cb140e78e0f3c77f2a2aa07cddad253b7e4a3982402bcca9b7ac"
+  },
+  "hash_equal": true,
+  "escape_file_created_outside": false,
+  "ifc_semantic": {
+    "identical": true,
+    "differing_parts": [],
+    "elements": 28
+  },
+  "allowed_differences": [
+    "project.new 결과의 handle(MCP 세션만 핸들을 발급)",
+    "history.list 항목의 actor(CLI 는 cli, MCP 서버는 mcp)",
+    "확인 토큰 값(호출마다 다름)",
+    "ifc.export 의 bytes(헤더 시각 + MCP 경로에서만 속성 엔티티 번호 순서가 다름: 직접 2회끼리는 DATA 구역이 같고 MCP 와는 다르다. 의미·model.hash.ifc 는 같음)"
+  ],
+  "ifc_data_sha256_equal_direct_vs_mcp": false,
+  "ifc_data_sha256_equal_direct_vs_direct2": true,
+  "ifc_semantic_direct_vs_direct2": true,
+  "reference_vs_original_ra01": {
+    "identical": false,
+    "differing_parts": [
+      "classes",
+      "gids",
+      "psets",
+      "intent",
+      "layers",
+      "voids",
+      "fills",
+      "volume",
+      "center"
+    ],
+    "note": "코어는 벽·문·레벨·속성·재료만 표현(창·슬래브·기둥·계단·공간 제외)이라 원본과 다른 것이 정상"
+  },
+  "pass": true
+}
