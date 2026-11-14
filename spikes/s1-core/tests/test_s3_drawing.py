@@ -252,7 +252,7 @@ def test_내보내기는_파일에_쓰고_응답에는_요약만_담는다(ra01)
     assert run("view.export", {"id": views["plan-1F"], "path": "t.dobim"})["error"]["code"] == "PATH_DENIED"
     assert run("view.export", {"id": views["plan-1F"], "path": "a.txt:b.svg"})["error"]["code"] == "PATH_DENIED"   # 대체 데이터 스트림
     r = run("view.export", {"id": views["section-BB"], "path": "b.pdf"})
-    assert r["ok"] and r["result"]["non_ascii_dropped"] is True                       # PDF 는 한글을 쓰지 못한다
+    assert r["ok"] and r["result"]["non_ascii_dropped"] is (r["result"]["font_embedded"] is None)   # 글꼴을 내장하므로 한글이 살아 있다(글꼴이 없는 환경에서만 '?')
     pdf = (ws / "b.pdf").read_bytes()
     assert pdf.startswith(b"%PDF-1.4") and pdf.rstrip().endswith(b"%%EOF") and b" re " not in pdf and b"/Image" not in pdf   # 벡터
     start = int(pdf.rsplit(b"startxref", 1)[1].split()[0])

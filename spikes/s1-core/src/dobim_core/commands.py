@@ -1058,7 +1058,7 @@ def view_linework(ctx, a: ViewLinework):
 
 class ViewExport(A):
     id: Id
-    path: str = Field(max_length=260, description="작업 폴더 안의 .svg 또는 .pdf 경로 (확장자가 형식을 정한다). 응답에는 경로·크기·요약만 담는다. PDF 는 글꼴을 내장하지 않아 한글을 물음표로 쓴다")
+    path: str = Field(max_length=260, description="작업 폴더 안의 .svg 또는 .pdf 경로 (확장자가 형식을 정한다). 응답에는 경로·크기·요약만 담는다. PDF 는 한글 글꼴(시스템의 Noto Sans KR·나눔고딕, OFL)을 부분집합으로 내장한다(못 찾으면 Helvetica 로 내려가 한글이 물음표가 되고 경고한다)")
     overwrite: bool = Field(False, description="거짓이면 이미 있는 파일을 덮어쓰지 않는다. 참이면 덮어쓰며 덮어쓰기 전에 자동 스냅숏을 남긴다(이 커맨드는 destructive 라 확인 토큰이 필요하다)")
 
 
@@ -1111,11 +1111,18 @@ def _view_export_preview(ctx, a: ViewExport):
 def view_export(ctx, a: ViewExport):
     p, ext = _view_export_target(ctx, a)
     data = _render_view(ctx, a.id)
-    dropped = False
+    dropped, font_name = False, None
     if ext == ".svg":
         blob = DX.render_svg(data)
     else:
-        blob, dropped = DX.render_pdf(data)
+        from dobim_core import pdf_font as PF
+        font = PF.load_pdf_font()                  # 시트와 같은 글꼴 내장 경로: 한글이 '?' 가 되지 않게
+        blob, dropped = DX.render_pdf(data, font)
+        font_name = font.name if font else None
+        if font is None:
+            ctx.warn("한글 글꼴(Noto Sans KR·나눔고딕)을 찾지 못해 PDF 의 한글이 '?' 로 나왔다. 글꼴을 설치하거나 환경 변수 DOBIM_PDF_FONT 에 .ttf 경로를 주세요")
+        elif font.missing:
+            ctx.warn(f"글꼴에 없는 글자 {len(font.missing)}개는 빈칸으로 나왔다: {''.join(font.missing[:20])}")
     snap = _snapshot_existing(p, ctx.eng.workspace)
     try:
         _replace(p, lambda tmp: tmp.write_bytes(blob))
@@ -1123,7 +1130,7 @@ def view_export(ctx, a: ViewExport):
         _drop_snapshot(p, snap, ctx.eng.workspace)
         raise
     return {"path": p.name, "bytes": len(blob), "format": ext[1:], "segments": len(data["lines"]), "fills": len(data["fills"]), "annotations": len(data["annots"]),
-            "non_ascii_dropped": dropped, "digest": D.view_summary(data["lines"])["digest"], "rev": ctx.eng.rev, "snapshot": snap}
+            "font_embedded": font_name, "non_ascii_dropped": dropped, "digest": D.view_summary(data["lines"])["digest"], "rev": ctx.eng.rev, "snapshot": snap}
 
 
 class SheetExport(A):

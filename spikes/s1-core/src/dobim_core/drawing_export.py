@@ -3,8 +3,8 @@
 
 외부 변환기 없이 직접 쓴다: SVG 는 문자열, PDF 는 최소 구조(페이지 1장, 선·다각형·Helvetica 문자열).
 - SVG 는 한글 텍스트를 그대로 담는다(글꼴은 보는 쪽 시스템 글꼴: 맑은 고딕·Noto Sans KR 순).
-- PDF 는 글꼴을 내장하지 않아 ASCII 문자열만 낸다. 한글은 '?' 로 바꾸고 non_ascii_dropped 로 알린다 (S0 E5 와 같은 한계).
-  한글 PDF 는 글꼴 내장 또는 글자 윤곽선 변환이 필요하며 S3 범위 밖이다.
+- PDF 는 글꼴(pdf_font, 시트와 같은 경로)이 있으면 한글을 포함해 부분집합으로 내장한다. 글꼴이 없을 때만 Helvetica 로 내려가
+  ASCII 만 내고 한글은 '?' 로 바꾸며 non_ascii_dropped 로 알린다 (S0 E5 와 같은 한계).
 순수 함수만 둔다(파일 접근은 호출한 커맨드가 한다).
 """
 from __future__ import annotations
@@ -169,13 +169,24 @@ def _pdf_str(s: str) -> tuple[str, bool]:
     return t.replace("\\", "\\\\").replace("(", "\\(").replace(")", "\\)"), dropped
 
 
-def render_pdf(data) -> tuple[bytes, bool]:
-    """벡터 PDF 한 쪽. 반환: (바이트, 한글 등 비 ASCII 문자를 '?' 로 바꿨는지)"""
+def render_pdf(data, font=None) -> tuple[bytes, bool]:
+    """벡터 PDF 한 쪽. font(pdf_font.PdfFont)가 있으면 한글을 포함한 모든 글을 그 글꼴 부분집합으로 내장한다(시트 PDF 와 같은 경로).
+    없으면 Helvetica 로 내려가 비 ASCII 문자를 '?' 로 바꾼다. 반환: (바이트, 비 ASCII 문자를 '?' 로 바꿨는지)"""
     w, h, tx, ty, datums, (dx0, dx1) = _frame(data)
     k = 72.0 / 25.4
     px = lambda x: f"{tx(x) * k:.3f}"                       # noqa: E731
     py = lambda y: f"{(h - ty(y)) * k:.3f}"                 # noqa: E731
     dropped = False
+
+    def txt(s_):
+        """Tj 앞에 올 글 인자. 글꼴이 있으면 16진 CID 문자열, 없으면 ASCII 괄호 문자열('?' 치환은 dropped 에 모은다)."""
+        nonlocal dropped
+        if font is not None:
+            return font.show(s_)
+        t, d = _pdf_str(s_)
+        dropped |= d
+        return f"({t})"
+
     c = ["q", "1 J"]
     if data["fills"]:
         c.append("0.81 g")
@@ -189,9 +200,7 @@ def render_pdf(data) -> tuple[bytes, bool]:
         c.append("[] 0 d")
         c.append("0.33 g")
         for name, z in datums:
-            s, d = _pdf_str(datum_label(name, z))
-            dropped |= d
-            c.append(f"BT /F1 {2.6 * k:.2f} Tf {tx(dx0) * k + 3:.2f} {(h - ty(z) + 0.8) * k:.2f} Td ({s}) Tj ET")
+            c.append(f"BT /F1 {2.6 * k:.2f} Tf {tx(dx0) * k + 3:.2f} {(h - ty(z) + 0.8) * k:.2f} Td {txt(datum_label(name, z))} Tj ET")
         c.append("0 g")
     c.append("0 G")
     for cls in ("proj", "symbol", "cut"):
@@ -207,29 +216,27 @@ def render_pdf(data) -> tuple[bytes, bool]:
             c.append(f"{0.13 * k:.3f} w")
             for e in (it[2], it[3], it[4]):
                 c.append(f"{px(e[0])} {py(e[1])} m {px(e[2])} {py(e[3])} l S")
-            s, d = _pdf_str(it[5])
-            dropped |= d
-            c.append(f"BT /F1 {2.5 * k:.2f} Tf {tx(it[6][0]) * k:.2f} {(h - ty(it[6][1]) + 0.8) * k:.2f} Td ({s}) Tj ET")
+            c.append(f"BT /F1 {2.5 * k:.2f} Tf {tx(it[6][0]) * k:.2f} {(h - ty(it[6][1]) + 0.8) * k:.2f} Td {txt(it[5])} Tj ET")
         elif it[0] == "tag":
             c.append(f"{0.13 * k:.3f} w {px(it[2][0])} {py(it[2][1])} m {px(it[3][0])} {py(it[3][1])} l S")
-            s, d = _pdf_str(it[4])
-            dropped |= d
-            c.append(f"BT /F1 {2.5 * k:.2f} Tf {tx(it[3][0]) * k + 2:.2f} {(h - ty(it[3][1])) * k:.2f} Td ({s}) Tj ET")
+            c.append(f"BT /F1 {2.5 * k:.2f} Tf {tx(it[3][0]) * k + 2:.2f} {(h - ty(it[3][1])) * k:.2f} Td {txt(it[4])} Tj ET")
         else:
-            s, d = _pdf_str(f"{it[0]} {it[2]} {it[1][-6:]}: {it[3]}")
-            dropped |= d
-            c.append(f"BT /F1 {2.5 * k:.2f} Tf {tx(it[4]) * k:.2f} {(h - ty(it[5])) * k:.2f} Td ({s}) Tj ET")
+            orphan = f"{it[0]} {it[2]} {it[1][-6:]}: {it[3]}"
+            c.append(f"BT /F1 {2.5 * k:.2f} Tf {tx(it[4]) * k:.2f} {(h - ty(it[5])) * k:.2f} Td {txt(orphan)} Tj ET")
     c.append("0 G 0 g")
-    s, d = _pdf_str(title_text(data))
-    dropped |= d
-    c.append(f"BT /F1 {5 * k:.2f} Tf {MARGIN * k:.2f} {5 * k:.2f} Td ({s}) Tj ET")
+    c.append(f"BT /F1 {5 * k:.2f} Tf {MARGIN * k:.2f} {5 * k:.2f} Td {txt(title_text(data))} Tj ET")
     c.append("Q")
-    content = "\n".join(c).encode("ascii")
+    body = "\n".join(c)
+    content = font.finalize_stream(body) if font is not None else body.encode("ascii")
+    if font is not None:
+        fobjs, t0 = font.objects(5)                         # 5번부터 글꼴 객체 5개(Type0·CID·디스크립터·FontFile2·ToUnicode)
+    else:
+        fobjs, t0 = [b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>"], 5
     objs = [b"<< /Type /Catalog /Pages 2 0 R >>",
             b"<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
-            f"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 {w * k:.2f} {h * k:.2f}] /Resources << /Font << /F1 5 0 R >> >> /Contents 4 0 R >>".encode(),
+            f"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 {w * k:.2f} {h * k:.2f}] /Resources << /Font << /F1 {t0} 0 R >> >> /Contents 4 0 R >>".encode(),
             b"<< /Length " + str(len(content)).encode() + b" >>\nstream\n" + content + b"\nendstream",
-            b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>"]
+            *fobjs]
     buf = bytearray(b"%PDF-1.4\n")
     offs = []
     for i, o in enumerate(objs, 1):

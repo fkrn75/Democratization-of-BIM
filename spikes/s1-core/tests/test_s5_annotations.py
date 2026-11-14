@@ -283,7 +283,7 @@ def test_뷰_내보내기에_주석이_그려지고_고아는_빨갛게_이유�
     assert "고아 치수" in svg and "대상 삭제됨" in svg                           # 한글 이유
     tok = s.run("view.export", {"id": F.V1, "path": "a.pdf"})["error"]["details"]["confirm_token"]
     r = s.run("view.export", {"id": F.V1, "path": "a.pdf"}, confirm=tok)
-    assert r["ok"] and r["result"]["non_ascii_dropped"] is True              # PDF 는 한글을 물음표로 쓴다(기존 한계 그대로)
+    assert r["ok"] and r["result"]["non_ascii_dropped"] is (r["result"]["font_embedded"] is None)   # PDF 는 글꼴을 내장해 한글이 살아 있다(글꼴이 없는 환경에서만 물음표)
 
 
 # ---------------------------------------------------------------- 오라클: RA-01 주석 70개 + 편집 시나리오
