@@ -105,7 +105,7 @@ def test_슬래브_높이_참조는_치수로_잴_수_있다(base):
     r = base.run("annot.dim.create", {"view": v, "a": f"slab:{F.S1}#bottom", "b": f"slab:{F.S1}#top"})
     assert r["ok"], r
     d = base.run("annot.list", {"view": v})["result"]["items"][0]
-    assert d["value"] == 200.0 or d.get("text") == "200" or "200" in str(d)
+    assert d["status"] == "ok" and d["value"] == 200.0
 
 
 # ---------------------------------------------------------------- IFC 투영·왕복
