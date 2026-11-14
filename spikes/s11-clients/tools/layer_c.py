@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: MPL-2.0
-"""층 C 전수 호출: 실제 클라이언트가 현재 코어의 모든 커맨드(30개)를 묶음별로 실행한다.
+"""층 C 전수 호출: 실제 클라이언트가 현재 코어의 모든 커맨드(54개)를 묶음별로 실행한다.
 
 판정은 클라이언트 출력에서 뽑은 도구 호출과 서버 응답 봉투로 한다(모델의 자기 보고 아님).
 커맨드 통과 = 호출됐고 관찰된 결과가 모두 성공이거나 정의된 오류 코드(errors.EXIT_CODES)다. '성공 호출 있음'은 따로 센다.
@@ -92,6 +92,44 @@ GROUPS = {
             "이어받기 값으로 끝까지 반복해서 받아라(변경 이력의 영향 요소를 쪽 단위로 읽는 커맨드가 있다: history.affected). "
             "마지막에 받은 id 의 총 개수를 보고하라."),
     },
+    "G6": {
+        "title": "뷰·주석·도면 내보내기",
+        "setup": "fixture",
+        "commands": ["view.create", "view.set", "view.list", "view.linework", "view.export", "view.affected", "view.delete",
+                     "annot.dim.create", "annot.tag.create", "annot.rebind", "annot.delete", "annot.list", "annot.check"],
+        "prompt": COMMON + (
+            "작업 폴더의 p.dobim 은 벽 3개(W-000001..3), 문 2개, 레벨 1F·2F가 든 모델이다. 아래를 순서대로 하라(괄호는 커맨드 이름).\n"
+            "1. 1F 평면 뷰 만들기(절단 높이 1200), 단면 뷰(점 (3000,-2000)-(3000,6000)), 남측 입면 뷰(축척 50)를 각각 만들기(view.create)\n"
+            "2. 평면 뷰의 절단 높이를 1500 으로 변경(view.set), 뷰 목록 조회(view.list)\n"
+            "3. 평면 뷰의 선분 5개 조회(view.linework)\n"
+            "4. 평면 뷰를 view.svg 로 내보내기(view.export, 확인 절차 포함: 미리보기의 토큰으로 확정)\n"
+            "5. 평면 뷰에 벽 W-000001 양 끝 치수 주석 만들기(annot.dim.create; 참조 형식은 커맨드 설명을 조회해 맞춰라), "
+            "문 D-000001 의 name·width 를 보여 주는 태그 주석 만들기(annot.tag.create)\n"
+            "6. 치수 주석의 한 끝을 벽 축선 끝점으로 다시 묶기(annot.rebind), 주석 목록 조회(annot.list), 주석 검사(annot.check)\n"
+            "7. 태그 주석 삭제(annot.delete), 마지막 변경이 영향 준 뷰 조회(view.affected)\n"
+            "8. 입면 뷰 삭제(view.delete)"),
+    },
+    "G7": {
+        "title": "벽 분할·가져오기·병합",
+        "setup": "merge",
+        "commands": ["wall.split", "ifc.import", "merge.preview", "merge.apply"],
+        "prompt": COMMON + (
+            "작업 폴더에 p.dobim 모델, 같은 모델에서 갈라져 벽이 하나 이동된 other.dobim, IFC 파일 import-example.ifc 가 있다. 아래를 하라(괄호는 커맨드 이름).\n"
+            "1. 벽 W-000002 를 길이 방향 2000 지점에서 둘로 분할(wall.split)\n"
+            "2. import-example.ifc 를 imported.dobim 새 프로젝트로 가져오기(ifc.import; guid 인자가 필요하면 새 UUID 를 만들어라)\n"
+            "3. p.dobim 에 other.dobim 병합 미리보기(merge.preview), 이어서 병합 적용(merge.apply)"),
+    },
+    "G8": {
+        "title": "패밀리",
+        "setup": "fixture",
+        "commands": ["family.list", "family.validate", "family.register", "family.place", "family.set", "family.preview"],
+        "prompt": COMMON + (
+            "작업 폴더의 p.dobim 모델로 아래를 하라(괄호는 커맨드 이름).\n"
+            "1. 사용 가능한 패밀리 목록(family.list), door.single 패밀리 정적 검증(family.validate)\n"
+            "2. door.single 에 폭 1000 인 타입 D1000 등록(family.register)\n"
+            "3. 벽 W-000003 에 door.single(swing R)을 offset 1500 으로 배치(family.place), 배치한 인스턴스 이름을 '현관문'으로 바꾸고 offset 을 2500 으로 변경(family.set)\n"
+            "4. door.single(swing R)을 1:200 으로 미리보기(family.preview)"),
+    },
 }
 
 N_BATCH = 250
@@ -181,8 +219,17 @@ def prepare(group: str, ws: Path) -> None:
     import shutil
     shutil.rmtree(ws, ignore_errors=True)
     ws.mkdir(parents=True)
-    if GROUPS[group]["setup"] in ("fixture", "bigbatch"):
+    if GROUPS[group]["setup"] in ("fixture", "bigbatch", "merge"):
         C.build_fixture(ws)
+    if GROUPS[group]["setup"] == "merge":
+        import shutil as _sh
+        from dobim_core import fixture as F
+        _sh.copyfile(ws / "p.dobim", ws / "other.dobim")
+        e, _ = C.cli(ws, "wall.move", {"id": F.W3, "dy": 200}, project="other.dobim")
+        assert e["ok"], e
+        e, _ = C.cli(ws, "ifc.export", {"path": "import-example.ifc"}, project="p.dobim")
+        e, _ = C.cli(ws, "ifc.export", {"path": "import-example.ifc"}, project="p.dobim", confirm=e["error"]["details"]["confirm_token"])
+        assert e["ok"], e
     if GROUPS[group]["setup"] == "bigbatch":
         from dobim_core import fixture as F
         f = ws / "_bulk.jsonl"
@@ -206,7 +253,7 @@ def post_state(group: str, ws: Path) -> dict:
             out["counts"] = e["result"]["counts"]
         v, _ = C.cli(ws, "model.validate", {}, project="g1.dobim") if (ws / "g1.dobim").exists() else ({"ok": False}, 1)
         out["valid"] = v.get("ok")
-    elif group in ("G2", "G3", "G4", "G5"):
+    elif group in ("G2", "G3", "G4", "G5", "G6", "G7", "G8"):
         e, _ = C.cli(ws, "project.info", {}, project="p.dobim")
         out["rev"] = e["result"]["rev"] if e.get("ok") else None
         out["counts"] = e["result"]["counts"] if e.get("ok") else None

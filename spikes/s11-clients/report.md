@@ -1,4 +1,4 @@
-# S11 보고서: 양쪽 클라이언트 종단 시험 (Codex 측정 완료, Claude 미시험)
+# S11 보고서: 양쪽 클라이언트 종단 시험 (Codex 측정 완료(54개 재측정 포함), Claude 미시험: 로그인 대기)
 
 질문(docs/roadmap.md S11): Claude와 Codex 양쪽에서 같은 경로로 모든 기능을 쓸 수 있는가?
 
@@ -48,3 +48,26 @@
 - 측정은 통합 이전 코어(커맨드 31개)에서 했다. 통합 코어(54개)와 패밀리·뷰·주석 커맨드는 Codex로 다시 재지 않았다. 프로토콜 층 패리티 C는 통합 코어에서 100%로 확인됐다(spikes/integration/report.md).
 - 클라이언트별 토큰 비용은 Codex 사용량 값만 있고 Claude 값은 없다.
 - 이 결과 파일 중 일부(층 A 외)는 한 대의 Windows PC에서 한 번씩 쟀다.
+
+## 7. 통합 코어(54개) 재측정: Codex npm 0.147.0 (spike/s11-claude)
+
+근거: `results/s11_layer_c_codex_npm_54.json`, `results/s11_explore_codex_npm_54.json`. 하네스는 `tools/layer_c.py`에 그룹 G6(뷰·주석·도면 내보내기 13개), G7(벽 분할·가져오기·병합 4개), G8(패밀리 6개)을 추가해 54개 전부를 덮도록 확장했다. 코어는 origin/main c010f60.
+
+**Claude 쪽은 로그인 대기로 미측정이다.** `claude -p`가 "Not logged in"으로 실패해 Claude Code CLI 층 C·탐색·이미지는 시험하지 못했다. 로그인 후 같은 하네스(`python layer_c.py claude <out.json>`, `python explore.py claude <out.json>`)로 재개한다.
+
+| 항목 | Codex 0.147 결과 | 판정 |
+|---|---|---|
+| 패리티 A(층 C) | 54개 중 54개 호출 통과, 성공 호출 54개. G1~G8 종료 코드 모두 0, 작업 폴더 밖 파일 0 | 통과 |
+| G4 오류 코드 | 9개 중 7개 기대 코드 일치(PATH_DENIED, UNKNOWN_COMMAND, SCHEMA_INVALID, RISK_MISMATCH, NOT_FOUND, job NOT_FOUND, render UNSUPPORTED). 2개 불일치는 아래 원인 참조 | 서버 동작은 정상 |
+| G5 이어받기 | history.affected 9쪽, 250개 id 전부 수집, 잘림 표시와 커서 사용 확인 | 통과 |
+| 탐색 20개 | 19/20 성공(95%), 평균 검색 호출 8.95(성공만 9.32), 평균 도구 호출 12.6. 실패 T14(IFC 내보내기)는 확인 토큰 단계에서 CONFIRM_REQUIRED로 멈춤 | 통과(기준 90%) |
+| 이미지 | `dobim_render`가 UNSUPPORTED(미구현). 시트 이미지는 아직 없어 판정 불가 | 미구현 |
+| 크기 | 도구 응답 최대 5,959B(바이트/3 추정 약 2,000토큰), 8,000토큰 이내, 잘림 오류 0 | 통과 |
+| 시간 | initialize 1.4~2.0초, 도구 응답 중앙값 2~27ms, 최대 3.6초(30초 이내). 서버 stdout 비JSON 줄 0 | 통과 |
+| 결과 동등(RA-01·roundtrip.check) | 미시험(54개 기준 시나리오 스크립트 없음) | 미시험 |
+| 안내문 생성물 검사 | 이 저장소에 해당 검사 도구 없음 | 미구현 |
+| 분기 금지 린트·Windows 점검 | 31개 기준 결과(5절)만 있고 재측정 안 함 | 미재측정 |
+
+**G4 불일치 2건(e_rev_conflict, f_dry_run_ok) 원인: 모델 호출 방식이다.** 원시 기록상 모델이 과제 문구의 이름 `W-000001`을 id로 그대로 넘겼고, 서버는 id 형식 위반으로 SCHEMA_INVALID를 냈다. expected_rev·dry_run 검사 경로까지 가지 못했다. 서버 결함이 아니라 시험 과제(이름 사용)와 모델의 이름→id 해석 부족이다. 같은 이름으로 호출한 `c`(dx 'abc')는 우연히 같은 코드라 일치로 보였다. 개선은 하네스 G4 문구에 실제 id를 주거나 서버가 이름 해석을 안내하는 쪽이다.
+
+토큰(Codex 보고값, 입력+출력, 캐시 포함): 층 C 약 415만, 탐색 약 608만. Claude 값은 없다.
