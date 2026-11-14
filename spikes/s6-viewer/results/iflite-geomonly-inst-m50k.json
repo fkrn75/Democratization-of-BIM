@@ -1,0 +1,30 @@
+{
+ "candidate": "ifc-lite(geometry only, CPU)",
+ "ifc_bytes": 26067316,
+ "fetch_ms": 125,
+ "init_ms": 72,
+ "geometry_ms": 511,
+ "first_batch_ms": 181,
+ "events": {
+  "start": 1,
+  "model-open": 1,
+  "progress": 117,
+  "rtcOffset": 1,
+  "batch": 108,
+  "workerMemory": 8,
+  "complete": 1,
+  "complete_info": "{\"type\":\"complete\",\"totalMeshes\":50000,\"coordinateInfo\":{\"originShift\":{\"x\":0,\"y\":0,\"z\":0},\"originalBounds\":{\"min\":{\"x\":0,\"y\":0,\"z\":0},\"max\":{\"x\":0,\"y\":0,\"z\":0}},\"shiftedBounds\":{\"min\":{\"x\":0,\"y\":0,\"z\":0},\"max\":{\"x\":0,\"y\":0,\"z\":0}},\"hasLargeCoordinates\":false,\"boundsRecoveryFallbackCount\":0,\"wasmRtc"
+ },
+ "meshes": 0,
+ "elements": 0,
+ "triangles": 0,
+ "jsHeapMB": 38.8,
+ "env": {
+  "gpu": {
+   "webgl": "ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero) (0x0000C0DE)), SwiftShader driver)",
+   "webgpu": null
+  },
+  "browser": "157.0.4341.46",
+  "viewport": "1280x800"
+ }
+}

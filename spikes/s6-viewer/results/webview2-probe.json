@@ -1,0 +1,15 @@
+{
+ "webgl2": true,
+ "webgl_renderer": "ANGLE (NVIDIA, NVIDIA GeForce RTX 4060 Laptop GPU (0x000028E0) Direct3D11 vs_5_0 ps_5_0, D3D11)",
+ "navigator_gpu": true,
+ "webgpu_adapter": {
+  "vendor": "nvidia",
+  "arch": "lovelace"
+ },
+ "sab": true,
+ "crossOriginIsolated": true,
+ "browser": "157.0.4341.46",
+ "webview2_runtime_versions": [
+  "157.0.4341.46"
+ ]
+}

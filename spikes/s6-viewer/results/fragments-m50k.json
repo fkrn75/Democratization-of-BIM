@@ -1,0 +1,130 @@
+{
+ "candidate": "fragments",
+ "fragments_version": "3.6.1",
+ "frag_bytes": 2497491,
+ "load_ms": 1407,
+ "fetch_ms": 23,
+ "bbox": [
+  150,
+  80,
+  96.1
+ ],
+ "elements": 50000,
+ "fps": {
+  "frames": 301,
+  "seconds": 5.006539999999646,
+  "fps": 59.99883614297782,
+  "frame_ms": {
+   "n": 299,
+   "min": 16.15000000000009,
+   "median": 16.664999999999964,
+   "p95": 16.769999999999982,
+   "max": 17.199999999999818,
+   "mean": 16.666989966555175
+  }
+ },
+ "gpu_bound_frame_ms": {
+  "n": 55,
+  "min": 1.5350000001490116,
+  "median": 2.3100000000558794,
+  "p95": 5.125,
+  "max": 9.450000000186265,
+  "mean": 2.6973636363886975
+ },
+ "draw": {
+  "calls": 97,
+  "triangles": 791100
+ },
+ "local_transforms": 80,
+ "replace_variants": {
+  "A_delete_create_apply": {
+   "phase_edit_ms_median": 607.9899999997579,
+   "phase_update_ms_median": 38.16500000003725,
+   "replace_ms": {
+    "n": 40,
+    "min": 564.0400000000373,
+    "median": 667.3950000000186,
+    "p95": 775.7450000001118,
+    "max": 796.5950000002049,
+    "mean": 677.9670000000158
+   },
+   "replace_core_ms": {
+    "n": 40,
+    "min": 563.9599999999627,
+    "median": 667.3349999999627,
+    "p95": 775.6650000000373,
+    "max": 796.4849999998696,
+    "mean": 677.8852500000037
+   },
+   "error": null
+  },
+  "B_delete_create": {
+   "phase_edit_ms_median": 612.0849999999627,
+   "phase_update_ms_median": 62.10000000009313,
+   "replace_ms": {
+    "n": 40,
+    "min": 599.6349999997765,
+    "median": 702.1550000002608,
+    "p95": 809.0299999997951,
+    "max": 820.429999999702,
+    "mean": 707.5516250000103
+   },
+   "replace_core_ms": {
+    "n": 40,
+    "min": 599.5749999997206,
+    "median": 702.0800000000745,
+    "p95": 808.9449999998324,
+    "max": 820.3499999996275,
+    "mean": 707.4749999999651
+   },
+   "error": null
+  },
+  "C_update_local_transform": {
+   "phase_edit_ms_median": 552.589999999851,
+   "phase_update_ms_median": 15.604999999981374,
+   "replace_ms": {
+    "n": 40,
+    "min": 567.285000000149,
+    "median": 612.1299999998882,
+    "p95": 731.2799999997951,
+    "max": 762.9899999997579,
+    "mean": 628.2327500000014
+   },
+   "replace_core_ms": {
+    "n": 40,
+    "min": 567.2050000000745,
+    "median": 612.0400000000373,
+    "p95": 731.2200000002049,
+    "max": 762.9249999998137,
+    "mean": 628.1593750000117
+   },
+   "error": null
+  }
+ },
+ "replace_ms": {
+  "n": 40,
+  "min": 564.0400000000373,
+  "median": 667.3950000000186,
+  "p95": 775.7450000001118,
+  "max": 796.5950000002049,
+  "mean": 677.9670000000158
+ },
+ "replace_core_ms": {
+  "n": 40,
+  "min": 563.9599999999627,
+  "median": 667.3349999999627,
+  "p95": 775.6650000000373,
+  "max": 796.4849999998696,
+  "mean": 677.8852500000037
+ },
+ "replace_note": "editor.getElements/deleteElements/createElements/applyChanges + update(true) + 프레임 GPU 완료 + 다음 rAF",
+ "jsHeapMB": 19.9,
+ "env": {
+  "gpu": {
+   "webgl": "ANGLE (NVIDIA, NVIDIA GeForce RTX 4060 Laptop GPU (0x000028E0) Direct3D11 vs_5_0 ps_5_0, D3D11)",
+   "webgpu": "nvidia/lovelace"
+  },
+  "browser": "157.0.4341.46",
+  "viewport": "1280x800"
+ }
+}
