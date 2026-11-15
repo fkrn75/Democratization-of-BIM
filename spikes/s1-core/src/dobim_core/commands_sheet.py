@@ -138,6 +138,7 @@ def build_profile(applied: dict | None = None) -> dict:
                                                     "unit": "mm, 단위 생략"}
         if "symbol_scale" in applied:
             out["symbols_scale"] = applied["symbol_scale"]
+            out["text_font"]["symbol_text_heights_mm"] = {k: round(v * applied["symbol_scale"], 3) for k, v in out["text_font"]["symbol_text_heights_mm"].items()}
         out["applied_profile"] = applied
     return out
 
@@ -163,7 +164,8 @@ def _base_profile(SH, uses, weights) -> dict:
         "hatch": {"types": [{"id": "ext-finish-45", "angle_deg": 45, "step_mm": D.HATCH_STEP, "line_mm": DX.STYLE["hatch"][0], "use": "입면 외벽 마감 재료(재료 이름 문자 병기)"},
                             {"id": "section-fill", "fill": "#cfcfcf", "use": "절단면 채움(벽·기둥·슬래브·계단)"}]},
         "text_font": {"font": SH.FONT, "pdf": "OFL 고딕 부분집합 내장", "heights_mm": {"room_name": D.LABEL_NAME_H, "room_area": D.LABEL_SUB_H, "fire_mark": D.LABEL_FIRE_H,
-                                                                                     "dimension": 2.5, "datum": 2.6, "view_caption": 4.0, "sheet_title": 5.0}, "direction": "가로쓰기"},
+                                                                                     "dimension": 2.5, "datum": 2.6, "view_caption": 4.0, "sheet_title": 5.0},
+                      "symbol_text_heights_mm": {"grid": 2.3, "section_mark": 1.9, "detail_callout": 2.0, "tag": 1.9}, "direction": "가로쓰기"},
         "dimension_leader": {"style": "연관 치수(선·보조선·45도 눈금·치수 문자)", "unit": "mm, 단위 생략", "ordering": "건물에서 먼 쪽으로 열을 달리해 배치", "leader": "태그 지시선(점 + 선)"},
         "symbols": [{"id": "door", "plan": "열린 문짝 선 + 1/4 호(문에만)", "label": "D<n>"}, {"id": "window", "plan": "개구부 마구리·벽 면 선·유리 중심선(호 없음)", "label": "W<n>"},
                     {"id": "column", "plan": "절단 채움 + 대각선"}, {"id": "stair", "plan": "단 선·걸음선 화살표·절단선"}, {"id": "fire_wall", "plan": "중심선 파선 + 'FW 등급'"},

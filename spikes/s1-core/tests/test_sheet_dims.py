@@ -107,3 +107,11 @@ def test_치수_글자가_프로파일_형식을_따른다(pv):
 
 def test_저장하는_시트_정의에는_dims를_넣지_않는다(pv):
     assert not pv.run("sheet.define", {"name": "S", "views": [F.V1], "dims": ["stair"]})["ok"]
+
+
+def test_입면_치수는_가까운_벽_위치를_한_위치로_묶는다(pv):
+    # 옆면이 보이는 내벽(x=3000)은 중심선 위치를 내고, 외벽 안쪽에서 끝나는 짧은 내벽 끝점(x=100)은 외벽 끝점(0)에 묶인다(160mm 같은 두께 간격 치수가 안 생긴다)
+    assert pv.run("wall.create", {"id": "1" + "0" * 20 + "9", "level": F.LV1, "axis": [3000, 0, 3000, 4000], "thickness": 100, "height": 3000})["ok"]
+    assert pv.run("wall.create", {"id": "1" + "0" * 20 + "8", "level": F.LV1, "axis": [100, 2000, 2950, 2000], "thickness": 100, "height": 3000})["ok"]
+    d = SM.elev_dims(_graph(pv), V3)
+    assert [c[2] for c in d["chain"]] == ["3000", "3000"] and d["overall"][2] == "6000"

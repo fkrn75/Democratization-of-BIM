@@ -158,25 +158,33 @@ def _num(v: float) -> str:
     return AN.fmt_num(v)
 
 
+ELEV_MERGE = 300.0   # 입면 치수에서 이 간격(mm) 이내의 벽 위치는 한 위치로 묶는다
+
+
 def elev_dims(g, view_id):
     """입면 뷰의 가로 치수 사슬: 벽 중심선(축선) 위치들 사이 간격과 전체 폭. {"chain": [(s0, s1, 글)], "overall": (s0, s1, 글)} 또는 None.
-    보는 방향과 나란한 벽(입면에서 면이 보이는 벽)은 양 끝 위치를, 그에 수직인 벽(옆면이 보이는 벽)은 축선 위치를 낸다. 1mm 이내는 한 위치로 본다."""
+    보는 방향과 나란한 벽(입면에서 면이 보이는 벽)은 양 끝 위치를, 그에 수직인 벽(옆면이 보이는 벽)은 축선 위치를 낸다. ELEV_MERGE 이내는 한 위치로 본다."""
     cfg = g.q(D.view_cfg, view_id)
     if cfg is None or cfg[0] != "elev":
         return None
     rx, ry = cfg[5], cfg[6]
-    xs = []
+    xs: list[tuple[float, float]] = []                   # (위치, 그 위치를 낸 벽의 길이): 긴 벽(외벽)이 대표가 되게 무게로 쓴다
     for w in D.all_walls(g):
         x1, y1, x2, y2 = Q.el(g, w)["params"]["axis"]
         ln = sqrt((x2 - x1) ** 2 + (y2 - y1) ** 2)
         if abs(((x2 - x1) * rx + (y2 - y1) * ry) / ln) < 0.1:
-            xs.append((x1 + x2) / 2.0 * rx + (y1 + y2) / 2.0 * ry)
+            xs.append(((x1 + x2) / 2.0 * rx + (y1 + y2) / 2.0 * ry, ln))
         else:
-            xs += [x1 * rx + y1 * ry, x2 * rx + y2 * ry]
-    pos: list[float] = []
-    for x in sorted(xs):
-        if not pos or x - pos[-1] > 1.0:
-            pos.append(round(x, 3))
+            xs += [(x1 * rx + y1 * ry, ln), (x2 * rx + y2 * ry, ln)]
+    pos: list[float] = []                                # 가까운(ELEV_MERGE 이내) 위치는 한 묶음으로 보고, 가장 긴 벽이 낸 위치를 대표로 한다(벽 두께 때문에 생기는 160·50mm 간격을 없앤다)
+    cluster: list[tuple[float, float]] = []
+    for x, ln in sorted(xs):
+        if cluster and x - cluster[-1][0] > ELEV_MERGE:
+            pos.append(round(max(cluster, key=lambda t: (t[1], -t[0]))[0], 3))
+            cluster = []
+        cluster.append((x, ln))
+    if cluster:
+        pos.append(round(max(cluster, key=lambda t: (t[1], -t[0]))[0], 3))
     if len(pos) < 2:
         return None
     chain = [(a, b, _num(b - a)) for a, b in zip(pos, pos[1:])] if len(pos) > 2 else []
