@@ -64,6 +64,8 @@ def _name_ok(v) -> bool:
 def _view_values(p: dict) -> None:
     if type(p["scale"]) is not int or not 1 <= p["scale"] <= 1000:
         raise ValueError("뷰 축척이 올바르지 않다")
+    if "crop" in p and not all(_in(c, MAX_VIEW) for c in p["crop"]):   # 부위 상세 잘라내기 사각형(view.create 의 좌표 범위)
+        raise ValueError("뷰 잘라내기 좌표가 범위를 벗어났다")
     t = p["type"]
     if t == "plan":
         if not _in(p["cut_height"], MAX_VIEW) or not _in(p["view_depth"], MAX_VIEW, 0):

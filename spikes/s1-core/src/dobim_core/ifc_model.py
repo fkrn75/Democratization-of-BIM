@@ -201,7 +201,9 @@ def detect_skeleton(f):
 #       승강기 종류가 없고 슬래브가 지붕이 아닌 프로젝트는 요소 행·IFC·클로저가 이전과 같다
 #   "12" 대지의 선택 속성(지반 표고점·조경/공개공지 영역·주차 계획·간판)과 대지 단면 뷰(section 의 with_site). 모두 의도(DoBIM_Intent)·뷰 정의로 왕복하고
 #       IFC 형상은 바뀌지 않는다. 이 속성이 없는 프로젝트는 요소 행·IFC·클로저가 이전과 같다
-CLOSURE_FORMAT = "12"
+#   "13" 뷰의 선택 옵션(crop 잘라내기·dims 계단/승강기 치수 자동 표기·finish 입면 외부 마감)과 시트 방위 각 기본값(대지의 정북 각). 뷰 정의(DoBIM_Defs)로 왕복하고
+#       IFC 형상은 바뀌지 않는다. 이 옵션이 없는 뷰는 정의·IFC·클로저가 이전과 같다
+CLOSURE_FORMAT = "13"
 
 
 def make_norm():

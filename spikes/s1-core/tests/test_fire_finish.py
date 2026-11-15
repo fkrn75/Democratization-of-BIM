@@ -75,9 +75,11 @@ def test_방화문_문자는_문_옆에_놓이고_등급이_없으면_없다(bas
 
 # ---------------------------------------------------------------- 외부 마감 (입면)
 def test_외부_벽에_재료가_있으면_입면에_해치와_재료_문자를_그린다(base):
-    e = mk(base, name="E", type="elevation", dir="S")
+    e = mk(base, name="E", type="elevation", dir="S", finish=True)
+    plain = mk(base, name="E 기본", type="elevation", dir="S")                          # finish 옵션이 없는 입면은 해치도 재료 문자도 그리지 않는다
     assert hatch(base, e) == [] and labels_of(base, e) == ()                               # 속성이 없으면 해치도 문자도 없다
     external(base, F.W1)
+    assert hatch(base, plain) == [] and labels_of(base, plain) == ()
     h = hatch(base, e)
     assert len(h) > 20
     assert all(abs((x[3] - x[1]) - (x[4] - x[2])) < 0.01 or abs((x[3] - x[1]) + (x[4] - x[2])) < 0.01 for x in h)   # 45도
@@ -93,7 +95,7 @@ def test_외부_벽에_재료가_있으면_입면에_해치와_재료_문자를_
 
 
 def test_재료가_없거나_외부가_아니면_해치가_없다(base):
-    e = mk(base, name="E", type="elevation", dir="S")
+    e = mk(base, name="E", type="elevation", dir="S", finish=True)
     pset(base, F.W3, "Pset_WallCommon", "IsExternal", True)                                 # 외부지만 재료 없음
     pset(base, F.W2, "Pset_WallCommon", "IsExternal", False)
     assert hatch(base, e) == []
@@ -106,7 +108,7 @@ def test_재료가_없거나_외부가_아니면_해치가_없다(base):
 
 
 def test_앞벽에_가려진_뒷벽의_해치는_개구부로만_보인다(base):
-    e = mk(base, name="E", type="elevation", dir="S")
+    e = mk(base, name="E", type="elevation", dir="S", finish=True)
     external(base, F.W3, "Brick")                                                           # 뒤쪽(y=4000) 벽만 외부 마감
     h = hatch(base, e)
     assert h, "문 개구부로 뒷벽이 보여야 한다"
@@ -116,7 +118,7 @@ def test_앞벽에_가려진_뒷벽의_해치는_개구부로만_보인다(base)
 
 
 def test_방화와_마감_도면은_증분이_전체_재생성과_같다(base):
-    views = {"p": mk(base, name="P", type="plan", level=F.LV1), "e": mk(base, name="E", type="elevation", dir="S"), "e2": mk(base, name="E2", type="elevation", dir="N")}
+    views = {"p": mk(base, name="P", type="plan", level=F.LV1), "e": mk(base, name="E", type="elevation", dir="S", finish=True), "e2": mk(base, name="E2", type="elevation", dir="N", finish=True)}
 
     def check():
         for k, v in views.items():
@@ -148,7 +150,7 @@ def test_방화와_마감_도면은_결정적이다(tmp_path):
         pset(s, F.W1, "Pset_WallCommon", "FireRating", "EI60")
         external(s, F.W1)
         external(s, F.W2, "Brick")
-        vs = [mk(s, name="P", type="plan", level=F.LV1), mk(s, name="E", type="elevation", dir="S"), mk(s, name="E2", type="elevation", dir="E")]
+        vs = [mk(s, name="P", type="plan", level=F.LV1), mk(s, name="E", type="elevation", dir="S", finish=True), mk(s, name="E2", type="elevation", dir="E", finish=True)]
         out = ([lines_of(s, v) for v in vs], [labels_of(s, v) for v in vs], s.eng.hashes())
         s.close()
         return out

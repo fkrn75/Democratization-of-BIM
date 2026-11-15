@@ -2010,6 +2010,9 @@ VCoord = Annotated[float, Field(allow_inf_nan=False, ge=-1e7, le=1e7)]
 Point2 = Annotated[list[VCoord], Field(min_length=2, max_length=2, description="[x,y] mm (±1e7)")]
 Scale = Annotated[int, Field(strict=True, ge=1, le=1000, description="축척 분모 (100 = 1:100)")]
 _PLAN_ONLY, _SEC_ONLY, _ELEV_ONLY, _SITE_ONLY = ("level", "cut_height", "view_depth"), ("p1", "p2", "depth", "flip", "with_site"), ("dir",), ()
+# 선택 필드(없으면 키 자체가 없다): crop 은 평면·단면·입면, dims 는 평면·단면, finish 는 입면, with_site 는 단면(위 _SEC_ONLY). around·margin 은 만들 때만 받는 입력이다
+_OPT_FIELDS = {"plan": ("crop", "dims"), "section": ("crop", "dims"), "elevation": ("crop", "finish"), "site": ()}
+_OPT_ALL = ("crop", "dims", "finish")
 
 
 class ViewCreate(A):
@@ -2026,6 +2029,11 @@ class ViewCreate(A):
     with_site: bool = Field(False, description="단면: 참이면 대지 단면(대지 경계 안쪽의 지반선·GL·대지 경계 표시를 건물 단면과 함께 그린다). 거짓이면 키 자체가 없다")
     dir: Literal["N", "E", "S", "W"] | None = Field(None, description="입면: 건물을 바라보는 면의 방위 (N = 북측 입면, 바깥에서 남쪽을 봄)")
     scale: Scale = 100
+    crop: Annotated[list[VCoord], Field(min_length=4, max_length=4)] | None = Field(None, description="부위 상세: 뷰를 이 사각형 [x1, y1, x2, y2] 안으로 자른다(뷰 좌표 mm: 평면은 모델 x,y, 단면·입면은 가로 s·높이 z). 선·채움·문자를 사각형으로 잘라 그린다. 없으면 키 자체가 없다")
+    dims: bool = Field(False, description="평면·단면: 참이면 뷰에 보이는 계단(폭·디딤판·챌판·층참)과 승강기(샤프트·카 치수, 단면은 카 높이·오버헤드·피트)의 치수를 자동으로 표기한다. 거짓이면 키 자체가 없다")
+    finish: bool = Field(False, description="입면: 참이면 외부 마감(IsExternal 이 참인 벽의 재료)의 해치와 재료 문자를 그린다. 거짓이면 그리지 않는다(입면 관행: 벽 전체에 해치를 깔지 않는다). 거짓이면 키 자체가 없다")
+    around: Id | None = Field(None, description="부위 상세 편의: 계단·승강기 id. 주면 그 요소의 뷰 안 범위 + margin 으로 crop 을 정해 저장한다(요소 참조는 저장하지 않는다: 이후 요소를 옮겨도 crop 은 그대로). crop 과 함께 못 쓴다")
+    margin: VCoord = Field(1000.0, ge=0, description="around 와 함께: 요소 범위 둘레 여유 mm(0..1e7)")
 
     @model_validator(mode="after")
     def _by_type(self):
@@ -2033,8 +2041,14 @@ class ViewCreate(A):
         own = {"plan": _PLAN_ONLY, "section": _SEC_ONLY, "elevation": _ELEV_ONLY, "site": _SITE_ONLY}[self.type]
         # 기본값과 같은 값은 쓰지 않은 것으로 본다: 로그에는 기본값까지 적혀 있어(log_args) 단면·입면 뷰의 로그를 다시 실행하면
         # cut_height 같은 기본값이 '쓰지 않는 필드'로 거절됐다(S5 의 전체 재생 검사가 찾은 S3 결함)
-        stray = sorted(f for f in (given & {*_PLAN_ONLY, *_SEC_ONLY, *_ELEV_ONLY}) - set(own)
+        stray = sorted(f for f in (given & {*_PLAN_ONLY, *_SEC_ONLY, *_ELEV_ONLY, *_OPT_ALL}) - set(own) - set(_OPT_FIELDS[self.type])
                        if getattr(self, f) != type(self).model_fields[f].default)
+        if self.around is not None and self.crop is not None:
+            raise ValueError("around 와 crop 은 함께 쓸 수 없다")
+        if self.around is not None and self.type not in ("plan", "section", "elevation"):
+            raise ValueError("around 는 평면·단면·입면 뷰에만 쓴다")
+        if self.crop is not None and not (self.crop[0] < self.crop[2] and self.crop[1] < self.crop[3]):
+            raise ValueError("crop 은 [x1, y1, x2, y2] 이고 x1<x2, y1<y2 여야 한다")
         if stray:
             raise ValueError(f"{self.type} 뷰에는 쓰지 않는 필드다: {', '.join(stray)}")
         if self.type == "plan" and self.level is None:
@@ -2066,7 +2080,9 @@ def _view_name_free(ctx, name, except_id=None):
          examples=[{"id": F.V1, "name": "1F 평면", "type": "plan", "level": F.LV1, "cut_height": 1200},
                    {"name": "A-A 단면", "type": "section", "p1": [3000, -2000], "p2": [3000, 6000]},
                    {"name": "대지 종단면", "type": "section", "p1": [3000, -4000], "p2": [3000, 8000], "with_site": True, "scale": 200},
-                   {"name": "남측 입면", "type": "elevation", "dir": "S", "scale": 50}])
+                   {"name": "남측 입면", "type": "elevation", "dir": "S", "scale": 50},
+                   {"name": "1F 평면 계단·승강기 치수", "type": "plan", "level": F.LV1, "scale": 20, "crop": [0, 0, 3000, 3000], "dims": True},
+                   {"name": "남측 입면 마감", "type": "elevation", "dir": "S", "finish": True}])
 def view_create(ctx, a: ViewCreate):
     _fresh_id(ctx, a, "view")
     _view_name_free(ctx, a.name)
@@ -2081,8 +2097,32 @@ def view_create(ctx, a: ViewCreate):
         params = {"name": a.name, "type": "site", "scale": a.scale}
     else:
         params = {"name": a.name, "type": "elevation", "dir": a.dir, "scale": a.scale}
+    crop = list(a.crop) if a.crop is not None else None
+    if a.around is not None:   # 부위 상세 편의: 요소의 뷰 안 범위 + 여유로 잘라내기 사각형을 정해 저장한다(요소 참조는 남기지 않는다)
+        crop = _around_crop(ctx, a.around, params, a.margin)
+    if crop is not None:
+        params["crop"] = crop
+    if a.dims:
+        params["dims"] = True
+    if a.finish:
+        params["finish"] = True
     ctx.put_el(a.id, row("view", "", "view.basic", params))
-    return {"id": a.id}
+    return {"id": a.id, **({"crop": crop} if a.around is not None else {})}
+
+
+def _around_crop(ctx, eid, params, margin) -> list:
+    """계단·승강기 eid 가 뷰(params) 안에서 차지하는 범위 + margin 의 잘라내기 사각형 [x1,y1,x2,y2]."""
+    r = ctx.row(eid)
+    if r["kind"] not in ("stair", "elevator"):
+        raise DobimError("CONSTRAINT", f"around 는 계단·승강기 id 여야 한다: {r['kind']}", path="/around")
+    if params["type"] == "plan":
+        kind, cfg = "plan", None
+    else:
+        kind, cfg = "sec", D.cfg_from_params(params)
+    ext = D.detail_extent(ctx.fresh(), eid, kind, cfg)
+    if ext is None:
+        raise DobimError("CONSTRAINT", "저작 계단·승강기만 범위를 잴 수 있다", path="/around")
+    return [round(ext[0] - margin, 3), round(ext[1] - margin, 3), round(ext[2] + margin, 3), round(ext[3] + margin, 3)]
 
 
 class ViewSet(A):
@@ -2098,16 +2138,22 @@ class ViewSet(A):
     with_site: bool | None = Field(None, description="단면: 참이면 대지 단면으로, 거짓이면 일반 단면으로 되돌린다")
     dir: Literal["N", "E", "S", "W"] | None = None
     scale: Scale | None = None
+    crop: Annotated[list[VCoord], Field(min_length=4, max_length=4)] | None = Field(None, description="부위 상세 잘라내기 사각형 [x1, y1, x2, y2](뷰 좌표 mm)")
+    clear_crop: bool | None = Field(None, description="참이면 잘라내기를 없앤다(crop 키 삭제)")
+    dims: bool | None = Field(None, description="평면·단면: 참이면 계단·승강기 치수 자동 표기를 켠다, 거짓이면 끈다(키 삭제)")
+    finish: bool | None = Field(None, description="입면: 참이면 외부 마감 해치·재료 문자를 켠다, 거짓이면 끈다(키 삭제)")
 
     @model_validator(mode="after")
     def _any(self):
         if len(self.model_fields_set - {"id"}) == 0:
             raise ValueError("바꿀 필드가 하나도 없다")
+        if self.crop is not None and (self.clear_crop or not (self.crop[0] < self.crop[2] and self.crop[1] < self.crop[3])):
+            raise ValueError("crop 은 [x1, y1, x2, y2](x1<x2, y1<y2)이고 clear_crop 과 함께 못 쓴다")
         return self
 
 
 @command("view.set", kind="mutation", risk="write", group="view", summary="뷰 설정을 바꾼다",
-         args=ViewSet, since="0.1", examples=[{"id": F.V1, "cut_height": 1500}])
+         args=ViewSet, since="0.1", examples=[{"id": F.V1, "cut_height": 1500}, {"id": F.V1, "dims": True, "crop": [0, 0, 4000, 4000]}])
 def view_set(ctx, a: ViewSet):
     r = ctx.row(a.id, "view")
     p = dict(r["params"])
@@ -2127,6 +2173,20 @@ def view_set(ctx, a: ViewSet):
         p[k] = list(v) if k in ("p1", "p2") else v
     if a.name is not None:
         _view_name_free(ctx, a.name, a.id)
+    for k in ("crop", "dims", "finish"):   # 선택 옵션: 거짓·없애기는 키를 지운다(옵션이 없는 뷰의 저장 형식 그대로)
+        v = getattr(a, k)
+        if v is None and not (k == "crop" and a.clear_crop):
+            continue
+        if k not in K.VIEW_OPTIONAL[p["type"]]:
+            raise DobimError("CONSTRAINT", f"{p['type']} 뷰에는 쓰지 않는 필드다: {k}", path=f"/{k}")
+        if k == "crop" and a.clear_crop:
+            p.pop(k, None)
+        elif k == "crop":
+            p[k] = list(v)
+        elif v:
+            p[k] = True
+        else:
+            p.pop(k, None)
     if p["type"] == "section" and _seg_len2(p["p1"], p["p2"]) < 1.0:
         raise DobimError("CONSTRAINT", "절단선 길이는 1mm 이상이어야 한다", path="/p2")
     ctx.put_el(a.id, dict(r, params=p))
@@ -2216,7 +2276,7 @@ def _render_view(ctx, vid, detail=False, hidden=False, hier=False):
         lines = lines + ctx.g.q(D.view_hidden_lines, vid)
     _warn_omitted(ctx, ctx.g.q(D.view_omitted, vid))
     return {"type": p["type"], "name": p["name"], "scale": p["scale"], "lines": lines, "fills": ctx.g.q(D.view_fills, vid),
-            "datums": levels, "annots": ctx.g.q(AN.view_annots, vid) + ctx.g.q(D.site_dims, vid), "labels": ctx.g.q(D.view_labels, vid)}
+            "datums": levels, "annots": ctx.g.q(AN.view_annots, vid) + ctx.g.q(D.site_dims, vid) + ctx.g.q(D.view_dims, vid), "labels": ctx.g.q(D.view_labels, vid)}
 
 
 def _view_export_target(ctx, a: ViewExport):
@@ -2321,6 +2381,13 @@ class SheetProfile(A):
     projection: Literal["third"] | None = Field(None, description="투상법. third 면 표제란에 '제3각법' 칸과 기호를 넣는다(T-11)")
 
 
+def site_north(ctx) -> float:
+    """시트 표제란 방위표의 기본 각: 모델의 대지(id 순 첫 번째)의 정북 각, 대지가 없으면 0. 배치도 방위표(site_info 의 north)와 같은 값이다."""
+    g = ctx.fresh()   # 변경 커맨드(sheet.define)에서도 같은 배치의 앞 대지 입력이 보이도록 기준 그래프로 읽는다
+    sites = g.q(D.all_sites)
+    return float(g.q(D.site_info, sites[0])[2]) if sites else 0.0
+
+
 class SheetExport(SheetFrame):
     views: list[Id] = Field(min_length=1, max_length=12, description="시트에 놓을 뷰 id 목록(앞에서부터 왼쪽 위 -> 오른쪽 -> 아래 순). 뷰는 자기 축척 그대로 놓인다")
     path: str = Field(max_length=260, description="작업 폴더 안의 .svg 또는 .pdf 경로. PDF 는 한글 글꼴(시스템의 Noto Sans KR·나눔고딕, OFL)을 부분집합으로 내장한다")
@@ -2329,7 +2396,7 @@ class SheetExport(SheetFrame):
     sheet_name: Text = Field("", description="표제란 도면명(비우면 첫 뷰 이름)")
     sheet_number: Text = Field("A-001", description="표제란 도면번호")
     date: str | None = Field(None, pattern=r"^\d{4}-\d{2}-\d{2}$", description="작성일 YYYY-MM-DD(생략하면 오늘 날짜)")
-    north_angle: Num = Field(0.0, ge=-360.0, le=360.0, description="정북이 도면 위쪽에서 시계방향으로 몇 도 돌아 있는가(0 이면 도면 위가 정북)")
+    north_angle: Num | None = Field(None, ge=-360.0, le=360.0, description="정북이 도면 위쪽에서 시계방향으로 몇 도 돌아 있는가(0 이면 도면 위가 정북). 생략하면 모델에 대지가 있을 때 대지의 정북 각(site.north_angle: 배치도 방위표와 같은 값, 진북과 도북의 불일치 방지), 없으면 0")
     overwrite: bool = Field(False, description="거짓이면 이미 있는 파일을 덮어쓰지 않는다. 참이면 덮어쓰며 덮어쓰기 전에 자동 스냅숏을 남긴다(확인 토큰 필요)")
     grids: list[SheetGrid] = Field(default_factory=list, max_length=40, description="통심선(1점쇄선)과 그리드 기호를 평면 뷰에 그린다")
     callouts: list[SheetCallout] = Field(default_factory=list, max_length=12, description="부위 상세 표시(1점쇄선 사각형 + 부호)")
@@ -2369,7 +2436,8 @@ def sheet_export(ctx, a: SheetExport):
     hier = bool(a.profile is not None and a.profile.line_hierarchy)
     datas = [dict(_render_view(ctx, v, a.detail, hidden, hier), id=v) for v in a.views]
     spec = {"paper": a.paper, "project": a.project_name or "(프로젝트명 없음)", "title": a.sheet_name or datas[0]["name"],
-            "number": a.sheet_number, "date": a.date or datetime.date.today().isoformat(), "north_deg": a.north_angle}
+            "number": a.sheet_number, "date": a.date or datetime.date.today().isoformat(),
+            "north_deg": a.north_angle if a.north_angle is not None else site_north(ctx)}
     from dobim_core import sheet_extras as SE
     spec.update(SE.frame_spec(a))
     spec.update(SE.profile_spec(a))

@@ -417,6 +417,8 @@ def test_9_종류_레지스트리가_모든_모듈과_맞는다(tmp_path):
                                  "terrain": [[0, 0, 100], [6000, 4000, 0]], "zones": [{"use": "landscape", "name": "전정", "boundary": [[-5000, 6000], [-1000, 6000], [-1000, 10000], [-5000, 10000]]}],
                                  "parking": {"bays": [{"origin": [8000, -4000], "count": 3}], "routes": [{"path": [[17000, -6000], [17000, 1500]]}]},
                                  "signs": [{"name": "S1", "face": "S", "center": [3000, 0], "z": 2200, "w": 2400, "h": 600}]}, project=p))   # 대지도(선택 속성 포함)
+        _ok(b.run("view.create", {"id": "4" + "0" * 20 + "6", "name": "계단 상세", "type": "plan", "level": F.LV1, "scale": 20, "around": F.ST1, "dims": True}, project=p))   # 부위 상세 뷰(crop·dims)
+        _ok(b.run("view.create", {"id": "4" + "0" * 20 + "5", "name": "남측 입면 마감", "type": "elevation", "dir": "S", "finish": True}, project=p))   # 입면 외부 마감 옵션
         _ok(b.run("sheet.define", {"id": F.SH1, "name": "시트", "views": [F.V1]}, project=p))   # 시트 정의도
     finally:
         b.close()
