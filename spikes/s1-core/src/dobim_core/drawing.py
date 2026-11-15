@@ -1382,6 +1382,70 @@ def plan_wall_lines(g, v, w):
     return tuple(lines)
 
 
+# ================================================================ 큰 축척(1:50 이하) 표현 수준 (SC-09, B-17)
+# 시트·내보내기가 detail 을 켤 때만 더하는 가는 선들이다(view_lines 는 그대로라 1:100 기본 도면과 켜지 않은 출력은 바이트가 같다).
+# 모델에 마감 층 구성이 없으므로 규약값을 쓴다: 마감 두께 FINISH_T, 문짝 두께 LEAF_T. 재료가 지정된 벽에만 마감선을 긋는다.
+DETAIL_SCALE = 50      # 뷰 축척이 1:이 값 이하(1:50, 1:20 ...)일 때 상세 표현
+FINISH_T = 20.0        # 벽 마감 두께 규약(mm): 벽 양면에서 이만큼 안쪽에 마감선
+LEAF_T = 40.0          # 문짝 두께 규약(mm)
+DETAIL_MIN_T = 100.0   # 이보다 얇은 벽은 마감선을 긋지 않는다
+
+
+def _cut_intervals(sol, cutz):
+    """절단 높이에서 벽이 속이 찬 구간들 ((a, b), ...)."""
+    if sol[7] - EPS <= cutz <= sol[8] + EPS:
+        for z0, z1, ivs in sol[10]:
+            if z0 - EPS <= cutz <= z1 + EPS:
+                return tuple(ivs)
+    return ()
+
+
+def plan_detail_lines(g, v, w):
+    """평면 벽 하나의 상세 선: 재료가 지정된 벽의 양면 마감선(가는 hatch 선, 이웃 벽 절단 조각 안쪽은 지운다)과, 문의 문짝 두께·문턱선.
+    큰 축척(DETAIL_SCALE 이하)의 평면에서만 낸다."""
+    cfg = g.q(view_cfg, v)
+    if cfg is None or cfg[0] != "plan" or cfg[1] is None or cfg[4] > DETAIL_SCALE:
+        return ()
+    sol = g.q(wall_solid, w)
+    ivs = _cut_intervals(sol, cfg[2])
+    if not ivs:
+        return ()
+    out = []
+    h = sol[4]
+    if Q.material(g, w) is not None and 2.0 * h >= DETAIL_MIN_T:
+        others = [q for o in g.q(plan_nbrs, v, w) for q in g.q(plan_pieces, v, o)[0]]
+        ux, uy = sol[2], sol[3]
+        for a, b in ivs:
+            for sgn in (-1.0, 1.0):
+                p0 = _world(sol, a, sgn * (h - FINISH_T))
+                cuts = []
+                for q in others:
+                    iv = _inside_interval(p0, ux, uy, b - a, q)
+                    if iv is not None:
+                        cuts.append(iv)
+                for q0, q1 in _keep(p0, ux, uy, b - a, cuts):
+                    out.append(("hatch", q0[0], q0[1], q1[0], q1[1]))
+    for op in g.q(wall_door_openings, w):
+        if op[2] <= cfg[2] + EPS and cfg[2] <= op[3] + EPS:
+            u0, u1 = op[0], op[1]
+            width = u1 - u0
+            for pa, pb in (((u0 + LEAF_T, h), (u0 + LEAF_T, h + width)), ((u0, h + width), (u0 + LEAF_T, h + width))):   # 문짝 두께(경첩 쪽 문짝 옆선과 끝 마구리)
+                out.append(("symbol", *_world(sol, *pa), *_world(sol, *pb)))
+            out.append(("hatch", *_world(sol, u0, 0.0), *_world(sol, u1, 0.0)))    # 문턱선(개구부를 가로지르는 가는 선)
+    return tuple(out)
+
+
+def view_detail_lines(g, v):
+    """뷰의 큰 축척 상세 선(병합한 선분 묶음). 평면 외에는 비어 있다."""
+    cfg = g.q(view_cfg, v)
+    if cfg is None or cfg[0] != "plan" or cfg[4] > DETAIL_SCALE:
+        return ()
+    segs = []
+    for w in g.q(scope_walls, v):
+        segs.extend(g.q(plan_detail_lines, v, w))
+    return merge_lines(segs)
+
+
 # ================================================================ 단면·입면 (뷰 좌표 (s, w, z))
 def _sw(cfg, p):
     px, py = p[0] - cfg[1], p[1] - cfg[2]
@@ -1783,7 +1847,7 @@ def views_depending_on(g, input_keys, vids, include_not_fresh=True):
 
 
 # 뷰 하나에 딸린 질의 노드의 함수들 (첫 인자가 뷰 id). 뷰를 지우면 이 노드들을 그래프에서 치운다.
-VIEW_SCOPED = frozenset({view_cfg, scope_walls, view_omitted, plan_pieces, plan_bbox, plan_nbrs, plan_wall_lines, vpieces, vbbox, vnbrs,
+VIEW_SCOPED = frozenset({view_cfg, scope_walls, view_omitted, plan_pieces, plan_bbox, plan_nbrs, plan_wall_lines, plan_detail_lines, view_detail_lines, vpieces, vbbox, vnbrs,
                          vcut_rects, vedges, vwall_lines, view_lines, view_fills,
                          scope_fams, plan_fam_parts, _fam_vpieces, vfam_bbox, vfam_cut_rects, vfam_edges, vfam_nbr_pieces, fam_lines,
                          vfam_hosted_edges, scope_slabs, plan_slab_parts, _slab_vpieces, slab_vbbox, slab_cut_rects, slab_vedges, slab_nbr_walls, slab_lines,

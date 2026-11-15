@@ -1328,13 +1328,15 @@ def _warn_omitted(ctx, omitted: dict) -> None:
                  "(외래는 형상 정보가 없고, 분리된 벽의 의도 값은 낡았다)")
 
 
-def _render_view(ctx, vid):
-    """뷰의 선분·채움·기준선(레벨)·제목을 내보내기용 데이터로 묶는다."""
+def _render_view(ctx, vid, detail=False):
+    """뷰의 선분·채움·기준선(레벨)·제목을 내보내기용 데이터로 묶는다. detail 이면 큰 축척(1:50 이하) 상세 선을 더한다(SC-09)."""
     r = ctx.row(vid, "view")
     p = r["params"]
     levels = sorted(((ctx.st.el[l]["params"]["name"], ctx.st.el[l]["params"]["elevation"]) for l in ctx.st.by_kind.get("level", ())),
                     key=lambda t: (t[1], t[0]))
     lines = ctx.g.q(D.view_lines, vid)
+    if detail:
+        lines = lines + ctx.g.q(D.view_detail_lines, vid)
     _warn_omitted(ctx, ctx.g.q(D.view_omitted, vid))
     return {"type": p["type"], "name": p["name"], "scale": p["scale"], "lines": lines, "fills": ctx.g.q(D.view_fills, vid),
             "datums": levels, "annots": ctx.g.q(AN.view_annots, vid), "labels": ctx.g.q(D.view_labels, vid)}
@@ -1455,6 +1457,7 @@ class SheetExport(SheetFrame):
     tags: list[Literal["room", "opening", "wall"]] = Field(default_factory=list, max_length=3, description="평면 뷰에 부호 태그를 자동으로 단다: room 실번호, opening 문·창 부호, wall 벽체 부호")
     key_plan: Id | None = Field(None, description="키 플랜으로 쓸 평면 뷰(표제란 오른쪽 위에 줄여 그리고 해당 영역을 해칭한다)")
     key_zone: list[Num] | None = Field(None, min_length=4, max_length=4, description="키 플랜에서 해칭할 영역 [x0, y0, x1, y1](모델 mm). 생략하면 전체")
+    detail: bool = Field(False, description="참이면 큰 축척(1:50 이하) 뷰에 상세 표현을 더한다(재료가 있는 벽의 마감선·문짝 두께·문턱선). 1:100 이상의 작은 축척 뷰는 그대로")
     profile: SheetProfile | None = Field(None, description="별도 작성기준 프로파일: 문자 높이·치수 형식(소수·천단위 쉼표)·기호 크기. 생략하면 기본 체계(시트는 이전과 바이트까지 같다)")
 
 
@@ -1479,7 +1482,7 @@ def sheet_export(ctx, a: SheetExport):
     p, ext = _view_export_target(ctx, a)
     if len(set(a.views)) != len(a.views):
         raise DobimError("CONSTRAINT", "같은 뷰를 두 번 올릴 수 없다", path="/views")
-    datas = [dict(_render_view(ctx, v), id=v) for v in a.views]
+    datas = [dict(_render_view(ctx, v, a.detail), id=v) for v in a.views]
     spec = {"paper": a.paper, "project": a.project_name or "(프로젝트명 없음)", "title": a.sheet_name or datas[0]["name"],
             "number": a.sheet_number, "date": a.date or datetime.date.today().isoformat(), "north_deg": a.north_angle}
     from dobim_core import sheet_extras as SE

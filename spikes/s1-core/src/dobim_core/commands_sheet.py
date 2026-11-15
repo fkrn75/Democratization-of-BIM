@@ -199,7 +199,7 @@ def _sheet_def_check(self):
     return self
 
 
-NOT_STORED = ("path", "overwrite", "profile")   # 파일을 낼 때만 받는 입력(저장하는 시트 정의에는 넣지 않는다: 저장된 정의의 해시·형식은 그대로)
+NOT_STORED = ("path", "overwrite", "profile", "detail")   # 파일을 낼 때만 받는 입력(저장하는 시트 정의에는 넣지 않는다: 저장된 정의의 해시·형식은 그대로)
 _DEF_FIELDS = {n: (f.annotation, f) for n, f in C.SheetExport.model_fields.items() if n not in NOT_STORED}
 SheetDef = create_model(
     "SheetDef", __base__=A, __validators__={"_chk": model_validator(mode="after")(_sheet_def_check)},
