@@ -14,6 +14,8 @@ G1 때와 같은 방식으로 도면을 다시 뽑는다(s3lib.build 의 RA-01 �
   --no-after8   : 여덟 번째 작업(대지·배치도 A-006, 숨은 선·선 굵기 위계·제3각법 A-007, 도면목록 A-000b)을 통째로 건너뛴다
   --no-site     : 여덟 번째 작업 중 대지 입력과 배치도(A-006·도면목록의 배치도 행)만 뺀다(숨은 선·위계·제3각법은 그대로)
   --no-after9   : 아홉 번째 작업(벽·슬래브 층 구성, 문짝 두께, 천장 높이, 1:50 단면·입면 상세, 비내력벽 절단선 A-008~A-010)을 건너뛴다
+  --no-after11  : 열한 번째 작업(승강기·지붕 입력과 승강기 표시 평면)을 건너뛴다
+  --no-after12  : 열두 번째 작업(대지 단면·조경·주차·간판 입력과 산출)을 건너뛴다
   --no-sheet2   : 다섯 번째 작업(색인 시트·통심선·기호·태그·키 플랜·개정·서명·선 굵기 프로파일·작성기준 프로파일)을 건너뛴다
 
 다섯 번째 작업 산출(--sheets): sheets/A-000(색인: 도면목록·범례·주기·레벨 노트·창호/벽체 일람표·재료표), sheets/A-002(통심선·단면·입면 기호·부위 상세·부호 태그·키 플랜·
@@ -455,6 +457,44 @@ def after9(sess, ids, views, log, out, work, spec):
     log["after9"] = probe
 
 
+def after11(sess, ids, views, log, out, work, spec):
+    """열한 번째 작업(승강기·지붕, 코어는 main 의 elevator·roof 종류): 승강기(1F 왼쪽 방 모서리, 1F->2F + 오버런 1500)와 슬래브 구멍, 지붕 슬래브(S-ROOF 를 roof 로, 물매·배수구)를
+    입력으로 더하고 평면 1F·2F 에 승강기 표시(EV 문자·샤프트·카)를 낸다(L-05 승강기 위치). 산출은 sheets11/ 에 둔다.
+    이 입력은 모든 기존 산출을 뽑은 뒤에 더하므로 기존 파일은 바이트가 그대로다."""
+    from dobim_core import dispatch
+    sd = out / "sheets11"
+    sd.mkdir(exist_ok=True)
+    probe: dict = {"exports": []}
+    eid = "d" + f"{1:021d}"
+    ids["EV-1"] = eid
+    ok(sess.run("elevator.create", {"id": eid, "level": ids["1F"], "shaft": [600.0, 5600.0, 2400.0, 7400.0], "to_level": ids["2F"], "overrun": 1500.0, "name": "EV-1"}))
+    cut = ok(sess.run("elevator.cut_slabs", {"id": eid}))
+    if "S-ROOF" in ids:
+        ok(sess.run("slab.set", {"id": ids["S-ROOF"], "use": "roof", "fall": {"dir": 90.0, "pct": 2.0}, "drains": [[6000.0, 4000.0]]}))
+    sess.eng.sync()
+    sess.eng._touch_pending()
+    g = sess.eng.g
+    probe["elevator"] = {"id": eid, "shaft": [600.0, 5600.0, 2400.0, 7400.0], "cut_slabs": cut["cut"], "skipped": cut["skipped"]}
+    for nm, vk in (("plan-1F", "plan-1F"), ("plan-2F", "plan-2F")):
+        v = views[vk]
+        labels = [t[2] for t in g.q(D.view_labels, v)]
+        r = None
+        for ext in ("svg", "pdf"):
+            r = export(sess, "view.export", {"id": v}, work / f"ev_{nm}.{ext}")
+            (sd / f"{nm}.{ext}").write_bytes((work / f"ev_{nm}.{ext}").read_bytes())
+            probe["exports"].append({"dir": "sheets11", "view": nm, "ext": ext, "bytes": r["bytes"], "segments": r["segments"], "labels": r["labels"]})
+        probe[nm] = {"view": v, "ev_labels": labels.count("EV"), "lines": len(g.q(D.view_lines, v))}
+    ifc_out(sess, "after11.ifc")
+    import ifcopenshell
+    f = ifcopenshell.open(str(work / "after11.ifc"))
+    probe["ifc_check"] = {"transport": [(e.is_a(), e.PredefinedType) for e in f.by_type("IfcTransportElement")], "roof_slabs": [e.GlobalId for e in f.by_type("IfcSlab") if e.PredefinedType == "ROOF"]}
+    h0 = ok(sess.run("model.hash", {}))
+    imp = ok(dispatch.run(sess.env, "ifc.import", {"source": "after11.ifc", "path": "after11-imp.dobim"}))
+    h1 = ok(dispatch.run(sess.env, "model.hash", {}, project="after11-imp.dobim"))
+    probe["roundtrip"] = {"warnings": imp["warnings"], "hash_equal": [h0[k] == h1[k] for k in ("state", "derived", "ifc")]}
+    log["after11"] = probe
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--out", required=True)
@@ -466,6 +506,8 @@ def main():
     ap.add_argument("--no-after7", action="store_true")
     ap.add_argument("--no-after8", action="store_true")
     ap.add_argument("--no-after9", action="store_true")
+    ap.add_argument("--no-after11", action="store_true")
+    ap.add_argument("--no-after12", action="store_true")
     ap.add_argument("--no-site", action="store_true")
     for f in ("stairs", "spaces", "fire", "finish"):
         ap.add_argument(f"--no-{f}", action="store_true")
@@ -658,6 +700,8 @@ def main():
         after8(sess, ids, views, log, out, work, spec, site=not o.no_site)
     if o.sheets and not o.no_sheet2 and not o.no_after9:
         after9(sess, ids, views, log, out, work, spec)
+    if o.sheets and not o.no_sheet2 and not o.no_after11:
+        after11(sess, ids, views, log, out, work, spec)
     (out / "run.json").write_text(json.dumps({"views": views, "ids": ids, **log}, ensure_ascii=False, indent=1), encoding="utf-8")
     print(json.dumps(log, ensure_ascii=False)[:1500])
 

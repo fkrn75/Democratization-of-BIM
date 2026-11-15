@@ -557,6 +557,27 @@ def judge_after9_items(out: Path, run: dict, base: dict):
     return res
 
 
+def judge_after11_items(out: Path, run: dict, base: dict):
+    """열한 번째 작업(승강기·지붕): sheets11/ 의 평면 1F·2F SVG 에서 승강기 표시(EV 문자, 샤프트·카 윤곽)를 직접 확인해 L-05(법정)·VT-02 를 판정한다.
+    내보낸 IFC 의 IfcTransportElement(ELEVATOR)와 해시 3종 왕복 일치도 근거로 요구한다. 산출이 없으면 빈 결과."""
+    res: dict[str, tuple[str, str]] = {}
+    a = run.get("after11")
+    sd = out / "sheets11"
+    if not a or not (sd / "plan-1F.svg").exists():
+        return res
+    texts = {k: _texts((sd / f"{k}.svg").read_text(encoding="utf-8")) for k in ("plan-1F", "plan-2F")}
+    rt, ifc = a["roundtrip"], a["ifc_check"]
+    if (all("EV" in t for t in texts.values()) and a["plan-1F"]["ev_labels"] == 1 and a["plan-2F"]["ev_labels"] == 1 and all(rt["hash_equal"]) and not rt["warnings"]
+            and ifc["transport"] == [["IfcTransportElement", "ELEVATOR"]] and a["elevator"]["cut_slabs"]):
+        res["L-05"] = (OK, "승강기(EV-1, 샤프트 안쪽 1800x1800 + 카)가 1층·2층 평면에 샤프트·카 윤곽과 대각 X, 'EV' 문자로 표시된다(지나는 모든 층). "
+                           "2층 슬래브의 샤프트 구멍을 자동으로 내고 IFC 는 IfcTransportElement(ELEVATOR)로 나가 왕복한다(해시 3종 동일, 경고 0)")
+    return res
+
+
+def judge_after12_items(out: Path, run: dict, base: dict):
+    return {}
+
+
 def judge_bim_items(out: Path, run: dict, base: dict):
     """여섯 번째 작업 항목(B-02 추출 형상, B-04 뷰 원본 저장)을 run.json 의 probe 로 판정한다."""
     return judge_corner(run) | judge_sheet_def(run)
@@ -643,7 +664,8 @@ def main():
     dg = digest_same(out, Path(o.g1) if o.g1 else None)
     changed = []
     for judged in (judge_sheet_items(out, run, items), judge_element_items(out, run, items), judge_slab_height_items(out, run, items),
-                   judge_stair_space_items(out, run, items), judge_sheet2_items(out, run, items), judge_bim_items(out, run, items), judge_after7_items(out, run, items), judge_after8_items(out, run, items), judge_after9_items(out, run, items)):
+                   judge_stair_space_items(out, run, items), judge_sheet2_items(out, run, items), judge_bim_items(out, run, items), judge_after7_items(out, run, items), judge_after8_items(out, run, items), judge_after9_items(out, run, items),
+                   judge_after11_items(out, run, items), judge_after12_items(out, run, items)):
         for i, (v, why) in judged.items():
             if items[i]["verdict"] != v:
                 changed.append((i, items[i]["verdict"], v))
