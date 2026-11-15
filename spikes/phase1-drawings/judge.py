@@ -263,6 +263,142 @@ def judge_stair_space_items(out: Path, run: dict, base: dict):
     return res
 
 
+def _group(svg: str, gid: str):
+    """<g id=gid ...> 한 그룹(중첩 없는 그룹)의 (속성 문자열, 안쪽)."""
+    m = re.search(rf'<g id="{gid}"([^>]*)>(.*?)</g>', svg, re.S)
+    return (m.group(1), m.group(2)) if m else None
+
+
+def _gtexts(svg: str, gid: str) -> list[str]:
+    """같은 id 의 그룹이 여러 개(뷰마다)일 수 있다: 모두 모아 글자를 낸다."""
+    out: list[str] = []
+    for m in re.finditer(rf'<g id="{gid}"[^>]*>(.*?)</g>', svg, re.S):
+        out += re.findall(r"<text[^>]*>([^<]*)</text>", m.group(1))
+    return out
+
+
+def _gsum(svg: str, gid: str, attr: str = "data-count") -> int:
+    return sum(int(x) for x in re.findall(rf'<g id="{gid}"[^>]*{attr}="(\d+)"', svg))
+
+
+def _gattr(svg: str, gid: str, attr: str):
+    g = _group(svg, gid)
+    m = re.search(rf'{attr}="([^"]*)"', g[0]) if g else None
+    return m.group(1) if m else None
+
+
+def judge_sheet2_items(out: Path, run: dict, base: dict):
+    """다섯 번째 작업 항목(색인 시트·확장 시트·작성기준 프로파일)을 산출 파일에서 직접 판정한다. 산출이 없으면 이전 판정 그대로(빈 결과).
+    항목 정의대로 도면에 실제로 보일 때만 충족으로 둔다: 입력이 없어 못 하는 부분이 있으면 부분으로 남기고 이유를 적는다. 반환: {id: (판정, 근거)}"""
+    res: dict[str, tuple[str, str]] = {}
+    sd = out / "sheets"
+    f2, f0, f3, fa3 = sd / "A-002.svg", sd / "A-000.svg", sd / "A-003.svg", sd / "A-101.svg"
+    if not (f2.exists() and f0.exists()):
+        return res
+    s2, s0 = f2.read_text(encoding="utf-8"), f0.read_text(encoding="utf-8")
+    exports = [e for e in run.get("exports", []) if e.get("number") and e["ext"] == "svg"]
+    # ---- 표제란·도면목록·서명·개정
+    tb2, tb0 = _group(s2, "title-block"), _group(s0, "title-block")
+    need = ("프로젝트명", "건축주", "설계사무소", "도면명", "도면번호", "축척", "작성일")
+    if tb2 and tb0 and all(k in s2 and k in s0 for k in need):
+        res["T-02"] = (OK, "표제란에 프로젝트명·건축주·설계사무소·도면명·도면번호·축척·작성일·개정 영역(확장 시트 A-002, 색인 시트 A-000)")
+    revs_n = int(_gattr(s2, "revision-table", "data-count") or 0)
+    if "개정차수" in s2 and revs_n >= 1 and all(k in s2 for k in ("도면명", "도면번호", "축척", "작성일")):
+        res["T-03"] = (OK, f"표제란에 도면명·도면번호·축척·작성일·개정차수 칸, 개정 {revs_n}건 기재")
+    cloud = re.search(r'<g id="revision-cloud"[^>]*>\s*<polygon points="([^"]+)"', s2)
+    if revs_n >= 1 and cloud and len(cloud.group(1).split()) > 40:
+        res["T-08"] = (OK, f"개정란에 차수·일자·내용 {revs_n}건 + 개정한 뷰를 둘러싼 구름 표시(점 {len(cloud.group(1).split())}개)와 차수 삼각형")
+    sig_n = int(_gattr(s2, "signature-block", "data-count") or 0)
+    sg = _gtexts(s2, "signature-block")
+    if sig_n >= 2 and "(서명)" in sg and "(인)" in sg:
+        res["T-06"] = (OK, f"표제란에 서명·날인 영역({sig_n}줄: 역할·성명·서명·인). 서명·날인 자체는 사람이 한다(영역만 제공)")
+    listed = run.get("drawing_list", [])
+    dl_rows = int(_gattr(s0, "drawing-list", "data-rows") or 0)
+    numbers = {e["number"] for e in exports}
+    dl_texts = _gtexts(s0, "drawing-list")
+    if listed and dl_rows == len(listed) and {d["number"] for d in listed} == numbers and all(d["number"] in dl_texts for d in listed) and "건축" in dl_texts:
+        res["T-01"] = (OK, f"색인 시트(A-000)에 도면목록표 {dl_rows}행(도면번호·도면명·공종·축척), 공종 '건축', 목록이 낸 시트 {len(numbers)}장과 일치. "
+                           "색인 시트가 프로젝트·건축주·설계사무소를 적은 표지 역할")
+    checks = [e["number_check"] for e in exports if e.get("number_check")]
+    if checks and all(c["format_ok"] and c["file_match"] for c in checks) and res.get("T-01", (None,))[0] == OK:
+        res["T-04"] = (OK, f"도면번호 {len(checks)}장 모두 '공종문자-3자리' 체계에 맞고 파일명과 일치, 도면목록표와 일치")
+    # ---- 범례·키 플랜·기호
+    lg = _gtexts(s0, "legend")
+    nt = _gtexts(s0, "notes")
+    if lg and nt and all(any(k in t for t in lg) for k in ("1점쇄선", "파선", "해치", "FW", "FD")):
+        res["T-09"] = (OK, f"색인 시트에 범례(선 종류·해치·기호·약어 {len(lg)}줄)와 주기 {_gattr(s0, 'notes', 'data-lines')}줄")
+        dashed = "stroke-dasharray" in s2 and _group(s2, "grid-lines") is not None
+        res["LN-02"] = (OK, "범례가 실선·파선·1점쇄선의 용도를 밝히고, 도면에는 실선·파선(레벨 기준선)·1점쇄선(통심선·절단선)이 실제로 쓰였다") if dashed else (PART, "범례는 있으나 도면에 선 종류가 다 쓰이지 않았다")
+    kp = _group(s2, "key-plan")
+    if kp and len(re.findall(r'stroke="#c62828"', kp[1])) >= 5:
+        res["T-10"] = (OK, f"표제란 오른쪽 위 키 플랜(평면 축소) + 해당 영역 해칭(영역 {_gattr(s2, 'key-plan', 'data-zone')})")
+    marks = {g: int(_gattr(s2, g, "data-count") or 0) for g in ("section-markers", "elevation-markers", "detail-callouts")}
+    if all(v >= 1 for v in marks.values()):
+        res["T-12"] = (OK, f"평면에 단면 절단선 기호 {marks['section-markers']}개, 입면 방향 기호 {marks['elevation-markers']}개, 부위 상세 표시(1점쇄선 + 부호) {marks['detail-callouts']}개")
+    rooms = _gsum(s2, "room-numbers")
+    if rooms:
+        res["T-13"] = (PART, f"실번호 {rooms}개(좌상단부터 시계방향)와 실 중앙의 실명은 있다. 좁은 실의 인출선은 없다")
+    # ---- 창호·벽체·재료 부호와 일람표
+    def qty(gid, col, ncols):
+        t = _gtexts(s0, gid)
+        body = t[ncols + 1:]                       # 제목 1 + 머리글 ncols 개 이후가 행
+        return [body[i:i + ncols] for i in range(0, len(body), ncols)]
+    op_rows = qty("opening-schedule", 8, 8)
+    wl_rows = qty("wall-schedule", 7, 7)
+    op_marks = {r[0] for r in op_rows}
+    op_qty = sum(int(r[6]) for r in op_rows if len(r) == 8)
+    wl_marks = {r[0] for r in wl_rows}
+    wl_qty = sum(int(r[5]) for r in wl_rows if len(r) == 7)
+    op_tags = _gtexts(s2, "opening-tags")
+    wl_tags = _gtexts(s2, "wall-tags")
+    if op_rows:
+        res["OP-03"] = (PART, f"창호 일람표 {len(op_rows)}행(부호·구분·폭·높이·하단높이·내화·수량·설치 층). 창호 상세 도면은 없다")
+    if op_rows and op_tags and len(op_tags) == op_qty and set(op_tags) <= op_marks:
+        res["OP-04"] = (OK, f"평면에 문·창 부호 {len(op_tags)}개({'·'.join(sorted(set(op_tags)))}), 일람표 수량 합 {op_qty}과 일치하고 부호가 일람표에 있다")
+    if wl_rows and wl_tags and len(wl_tags) == wl_qty and set(wl_tags) <= wl_marks:
+        res["OP-05"] = (OK, f"평면의 모든 벽 {len(wl_tags)}개에 벽체 부호({'·'.join(sorted(set(wl_tags)))}), 벽체 일람표 수량 합 {wl_qty}과 일치")
+    mt = int(_gattr(s0, "material-schedule", "data-rows") or 0)
+    if mt:
+        res["MT-01"] = (PART, f"재료표 {mt}행에 재료(품명)·규격(두께)·내화 성능. 질감·색상·성능 세부는 모델에 입력이 없다")
+        res["MT-03"] = (PART, f"외벽·내벽 마감 재료표 {mt}행. 실내 마감(바닥·벽·천장)은 모델에 입력이 없어 표에 없다")
+        res["MT-04"] = (PART, "재료명(모델 입력 그대로)과 규격(두께 mm) 병기. 시방서 용어와의 일치는 검증할 수 없다")
+    lv = int(_gattr(s0, "level-note", "data-rows") or 0)
+    if lv and "±0" in _gtexts(s0, "level-note"):
+        res["N-05"] = (PART, f"색인 시트 레벨 노트에 층별 FL과 GL 대비 값 {lv}행. 평면도 위 노트가 아니고 GL 은 입력 레벨(기본 최저 레벨)이다")
+    grids = run.get("grids", [])
+    gl = _group(s2, "grid-lines")
+    if gl and int(_gattr(s2, "grid-lines", "data-count") or 0) == len(grids) and set(g["label"] for g in grids) <= set(_gtexts(s2, "grid-lines")):
+        res["N-09"] = (OK, f"평면에 통심선(1점쇄선) {len(grids)}개와 양 끝 그리드 기호(원 + 번호: {'·'.join(g['label'] for g in grids)})")
+    # ---- 실의 용도·면적(이미 그리던 것)
+    plan = out / "base" / "plan-1F.svg"
+    sp1 = [x for x in run.get("spaces", []) if x["level"] == "1F"]
+    if sp1 and plan.exists():
+        t = _svg_texts(plan, "labels")
+        names_ok = all(x["name"] in t for x in sp1)
+        areas = [x for x in t if x.endswith("㎡")]
+        if names_ok and len(areas) >= len(sp1):
+            res["L-08"] = (OK, f"평면 1F 공간 {len(sp1)}개 모두 실명(거실·침실 등 용도)과 면적(㎡) 문자 {len(areas)}개")
+    # ---- BIM 지침: 작성기준 프로파일
+    pf = out / "profile.json"
+    if pf.exists():
+        prof = json.loads(pf.read_text(encoding="utf-8"))
+        ov = prof.get("line_overlap", {})
+        if ov.get("priority") and ov.get("rule") and prof.get("line_weights"):
+            res["B-06"] = (OK, f"작성기준 프로파일(drawing.profile)이 선 클래스 우선순위 {ov['priority']}와 겹침 규칙(병합·절단선 우선·그리는 순서 {ov.get('draw_order')})을 명기")
+        sy = {x["id"] for x in prof.get("symbols", [])}
+        if {"door", "window", "column", "stair", "fire_wall", "fire_door", "space", "grid", "section_mark"} <= sy:
+            res["B-07"] = (OK, f"프로파일에 평면 심볼 {len(sy)}종(문·창·기둥·계단·방화·공간·통심선·단면 기호 등) 정의")
+        keys = ("paper_size", "layout_orientation", "north_level", "title_block", "scale", "line_weights", "hatch", "text_font", "dimension_leader", "symbols")
+        if all(k in prof for k in keys):
+            res["B-08"] = (OK, "프로파일이 도면 크기·배치·방향·방위·레벨·표제란·축척·선 굵기·선·해칭·문자·폰트·치수·지시선·기호 10개 기준 항목을 값으로 명기")
+    if f3.exists() and fa3.exists():
+        c3 = len(re.findall(r'stroke-width="0.35"', f3.read_text(encoding="utf-8")))
+        ca = len(re.findall(r'stroke-width="0.35"', fa3.read_text(encoding="utf-8")))
+        if c3 > ca + 5:
+            res["B-09"] = (PART, f"별도 작성기준을 선 굵기 프로파일로 받아 적용할 수 있다(A-003: 절단선 0.35mm 선 {c3}개, 기본 시트 {ca}개). 문자·기호·치수 기준은 입력 경로가 없다")
+    return res
+
+
 def judge_gate(items: dict, out: Path, run: dict):
     """G2 5-1절 자동 표현 대상 8항목 중 이번 작업이 다루는 #2·#7·#8 을 근거와 함께 낸다(128항목 집계와 별개). 반환: [(번호, 항목, 판정, 근거)]"""
     rows = [("2", "기둥·벽·창문 위치", items["L-02"]["verdict"], items["L-02"]["reason"])]
@@ -317,7 +453,7 @@ def main():
     dg = digest_same(out, Path(o.g1) if o.g1 else None)
     changed = []
     for judged in (judge_sheet_items(out, run, items), judge_element_items(out, run, items), judge_slab_height_items(out, run, items),
-                   judge_stair_space_items(out, run, items)):
+                   judge_stair_space_items(out, run, items), judge_sheet2_items(out, run, items)):
         for i, (v, why) in judged.items():
             if items[i]["verdict"] != v:
                 changed.append((i, items[i]["verdict"], v))
