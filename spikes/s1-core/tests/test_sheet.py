@@ -189,3 +189,36 @@ def test_글_줄바꿈은_줄수를_넘기면_줄임표():
     lines = SH.wrap("가" * 100, 4.0, 40.0, 2)
     assert len(lines) == 2 and lines[-1].endswith("…")
     assert SH.wrap("짧다", 4.0, 40.0, 2) == ["짧다"]
+
+
+# ---------------------------------------------------------------- view.export(뷰 한 장) PDF 글꼴 내장
+def view_pdf(sess, name):
+    a = {"id": F.V1, "path": name, "overwrite": True}
+    r = sess.run("view.export", a)
+    assert r["error"]["code"] == "CONFIRM_REQUIRED", r
+    return sess.run("view.export", a, confirm=r["error"]["details"]["confirm_token"])
+
+
+def test_뷰_PDF도_한글_글꼴을_내장한다(pv):
+    r = view_pdf(pv, "v.pdf")
+    assert r["ok"], r
+    assert r["result"]["font_embedded"] and r["result"]["non_ascii_dropped"] is False
+    pdf = read(pv, "v.pdf")
+    assert pdf.startswith(b"%PDF") and b"/Identity-H" in pdf and b"/ToUnicode" in pdf and b"/Helvetica" not in pdf
+    m = re.search(rb"/FontFile2 (\d+) 0 R", pdf)
+    obj = re.search(rb"\n" + m.group(1) + rb" 0 obj\n.*?stream\n(.*?)\nendstream", pdf, re.S)
+    from fontTools.ttLib import TTFont
+    cmap = TTFont(io.BytesIO(zlib.decompress(obj.group(1)))).getBestCmap()
+    assert all(ord(ch) in cmap for ch in "평면도")                 # 제목 '1F 평면  평면도' 의 한글 글리프
+    start = int(pdf.rsplit(b"startxref", 1)[1].split()[0])
+    assert pdf[start:start + 4] == b"xref"                        # 상호참조 표 위치가 맞다
+    view_pdf(pv, "v2.pdf")
+    assert read(pv, "v2.pdf") == pdf                              # 같은 입력 -> 같은 바이트
+
+
+def test_뷰_PDF도_글꼴이_없으면_Helvetica로_내려가고_알린다(pv, monkeypatch):
+    monkeypatch.setattr(PF, "find_font_path", lambda: None)
+    r = view_pdf(pv, "v.pdf")
+    assert r["ok"] and r["result"]["font_embedded"] is None and r["result"]["non_ascii_dropped"] is True
+    assert any("글꼴" in w for w in r.get("warnings", [])), r
+    assert b"/Helvetica" in read(pv, "v.pdf")

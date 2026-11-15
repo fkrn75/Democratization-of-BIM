@@ -109,6 +109,38 @@ def judge_sheet_items(out: Path, run: dict, base: dict):
     return res
 
 
+def _svg_group_count(svg: str, gid: str, tag: str) -> int:
+    """SVG 의 <g id=gid> 그룹 안 tag 요소 개수(없으면 0)."""
+    m = re.search(rf'<g id="{gid}"[^>]*>(.*?)</g>', svg, re.S)
+    return len(re.findall(rf"<{tag}[ >/]", m.group(1))) if m else 0
+
+
+def judge_element_items(out: Path, run: dict, base: dict):
+    """창·기둥 표현 항목(L-02, B-02)을 패밀리 배치 산출(fam/)과 기본 산출(base/)을 비교해 판정한다. 반환: {id: (판정, 근거)}
+
+    창: 평면에서 문 호가 아닌 창 기호 — 창 하나가 더하는 symbol 선은 유리 중심선 1개뿐이어야 한다(예전: 문짝 1 + 호 8).
+    기둥: 평면 절단 채움 다각형이 base 보다 늘고, 기둥 기호(대각선 2)만 더해진다. 배치가 실패했으면 판정하지 않는다."""
+    res: dict[str, tuple[str, str]] = {}
+    fam_p, base_p = out / "fam" / "plan-1F.svg", out / "base" / "plan-1F.svg"
+    if not fam_p.exists() or not base_p.exists():
+        return res
+    fs, bs = fam_p.read_text(encoding="utf-8"), base_p.read_text(encoding="utf-8")
+    fam_log = run.get("family", [])
+    windows = sum(1 for e in fam_log if "window" in e and e["ok"])
+    columns = sum(1 for e in fam_log if "column" in e and e["ok"])
+    added_sym = _svg_group_count(fs, "lines-symbol", "line") - _svg_group_count(bs, "lines-symbol", "line")
+    added_fill = _svg_group_count(fs, "fills", "polygon") - _svg_group_count(bs, "fills", "polygon")
+    win_ok = windows > 0 and added_sym <= windows + 2 * columns       # 창마다 중심선 1, 기둥마다 대각선 2 까지만(호가 있으면 창마다 +9)
+    col_ok = columns > 0 and added_fill >= columns
+    if windows and columns:
+        if win_ok and col_ok:
+            res["L-02"] = (OK, f"벽 + 창 {windows}(창 기호: 벽 두께를 가로지르는 선, 호 없음) + 기둥 {columns}(절단 채움·대각선) 평면 표시. 추가 symbol 선 {added_sym}, 추가 채움 {added_fill}")
+        else:
+            res["L-02"] = (PART, f"창 호 없음={win_ok}, 기둥 채움={col_ok}(추가 symbol 선 {added_sym}, 추가 채움 {added_fill})")
+        res["B-02"] = (PART, "창 호 오표시·기둥 미도시는 해소(L-02 근거). 남은 불일치: L 조인 모서리는 표시용 채움(S3 보고서 7절 2)") if win_ok and col_ok else (base["B-02"]["verdict"], "G1 판정 유지")
+    return res
+
+
 # ---------------------------------------------------------------- 집계
 def tally(items: dict):
     """G1 집계 규칙. 반환: {층: (충족, 부분, 미충족, 해당없음)}"""
@@ -132,10 +164,11 @@ def main():
     items = load_carried()
     dg = digest_same(out, Path(o.g1) if o.g1 else None)
     changed = []
-    for i, (v, why) in judge_sheet_items(out, run, items).items():
-        if items[i]["verdict"] != v:
-            changed.append((i, items[i]["verdict"], v))
-        items[i] = dict(items[i], verdict=v, reason=why)
+    for judged in (judge_sheet_items(out, run, items), judge_element_items(out, run, items)):
+        for i, (v, why) in judged.items():
+            if items[i]["verdict"] != v:
+                changed.append((i, items[i]["verdict"], v))
+            items[i] = dict(items[i], verdict=v, reason=why)
     t, bundle = tally(items)
     lines = []
     if dg:

@@ -28,7 +28,9 @@ EPS = 0.01          # 기하 허용 오차(mm): 같은 선·같은 점 판정
 EPS_V = 0.5         # 가림 판정에서 "충분히 앞"으로 칠 깊이 차(mm)
 SEG_MIN = 0.05      # 이보다 짧은 선분은 버린다
 BIG = 1.0e9
-ARC_N = 8           # 문 회전 호의 분할 수
+ARC_N = 8           # 문 회전 호의 분할 수(90도당)
+CIRC_N = 24         # 원 단면을 다각형으로 근사할 때 분할 수
+PI = 3.141592653589793
 NBR_PAD = 1.0       # 이웃 판정 경계 상자 여유(mm)
 CORNER_FILL = True  # L 조인 모서리를 채워 그린다 (코어 투영은 축선 교점까지만 잘라 모서리가 비어 있다)
 MIN_SIN = 0.2       # 조인 각이 너무 얕으면(sin 이 이보다 작으면) 모서리 보정을 하지 않는다
@@ -173,13 +175,24 @@ def hosted_opening(g, d, elev):
 
 
 def wall_openings(g, w):
-    """호스팅된 문의 개구부: (u0, u1, z0, z1) 정렬 튜플. 벽 범위 안으로 자른다."""
+    """호스팅된 요소(문·창·패밀리 인스턴스)의 개구부: (u0, u1, z0, z1) 정렬 튜플. 벽 범위 안으로 자른다."""
+    return _openings(g, w, False)
+
+
+def wall_door_openings(g, w):
+    """호스팅된 문(kind door)만의 개구부. 평면 문 기호(열린 문짝 + 호)는 이 개구부에만 그린다 — 창에 호를 그리면 문으로 읽힌다."""
+    return _openings(g, w, True)
+
+
+def _openings(g, w, doors_only):
     start, end, _ = g.q(Q.wall_trim, w)
     p = Q.el(g, w)["params"]
     _, elev = g.q(Q.level_info, g.q(Q.wall_level, w))
     zb, zt = elev, elev + p["height"]
     out = []
     for d in g.q(Q.wall_hosted, w):
+        if doors_only and Q.el(g, d)["kind"] != "door":
+            continue
         box = g.q(hosted_opening, d, elev)
         if box is None:
             continue
@@ -368,6 +381,338 @@ def plan_nbrs(g, v, w):
     return _nbrs(g, plan_bbox, v, w)
 
 
+# ================================================================ 패밀리 요소 (창·패밀리 문·기둥)
+# 패밀리 인스턴스(finst)의 평가 결과(ifc_spec: 평면 기호 plan, 형상 body)를 그대로 그린다. 새 요소 종류를 만들지 않고 이미 IFC 로 나가는 패밀리를 쓴다.
+def _floor(x):
+    """바닥 함수(math.floor 대신: 이 모듈은 math 에서 sqrt 만 쓴다). int() 는 0 쪽으로 자르므로 음수를 보정한다."""
+    i = int(x)
+    return i if i <= x else i - 1
+
+
+def _sincos_deg(a):
+    """도 -> (sin, cos). 플랫폼 libm 을 쓰지 않는다(결정성): 90도 단위로 줄인 뒤 테일러 급수(사칙연산만)."""
+    a = a - 360.0 * _floor(a / 360.0)
+    k = _floor((a + 45.0) / 90.0)
+    x = (a - 90.0 * k) * PI / 180.0
+    x2 = x * x
+    sn = cs = 0.0
+    tn, tc = x, 1.0
+    for i in range(1, 9):
+        sn += tn
+        cs += tc
+        tn = -tn * x2 / ((2 * i) * (2 * i + 1))
+        tc = -tc * x2 / ((2 * i - 1) * (2 * i))
+    return [(sn, cs), (cs, -sn), (-sn, -cs), (-cs, sn)][k % 4]
+
+
+def _freeze_plan(items):
+    out = []
+    for it in items:
+        t, st = it["t"], it.get("s", "projection")
+        if t == "line":
+            out.append(("line", tuple(it["a"]), tuple(it["b"]), st))
+        elif t == "arc":
+            out.append(("arc", tuple(it["c"]), it["r"], it["a0"], it["a1"], st))
+        elif t == "circle":
+            out.append(("circle", tuple(it["c"]), it["r"], st))
+        else:
+            out.append(("poly", tuple(tuple(p) for p in it["pts"]), bool(it["closed"]), st))
+    return tuple(out)
+
+
+def _circle_pts(c, r, n=CIRC_N):
+    pts = []
+    for i in range(n):
+        sn, cs = _sincos_deg(360.0 * i / n)
+        pts.append((c[0] + r * cs, c[1] + r * sn))
+    return pts
+
+
+def _plan_items(items, to_world, fills=None):
+    """평면 기호 항목들 -> [(등급, x0, y0, x1, y1)]. 절단 스타일은 'cut'(굵은 선), 투영은 'symbol'. fills 가 리스트면 닫힌 절단 도형의 채움 다각형도 모은다."""
+    segs = []
+
+    def add(p0, p1, st):
+        a, b = to_world(*p0), to_world(*p1)
+        segs.append(("cut" if st == "cut" else "symbol", a[0], a[1], b[0], b[1]))
+
+    for it in items:
+        t, st = it[0], it[-1]
+        if t == "line":
+            add(it[1], it[2], st)
+        elif t == "arc":
+            _, c, r, a0, a1, _ = it
+            n = max(1, -int(-((a1 - a0) / 90.0 * ARC_N) // 1))
+            pts = []
+            for i in range(n + 1):
+                sn, cs = _sincos_deg(a0 + (a1 - a0) * i / n)
+                pts.append((c[0] + r * cs, c[1] + r * sn))
+            for p0, p1 in zip(pts, pts[1:]):
+                add(p0, p1, st)
+        else:
+            if t == "circle":
+                pts, closed = _circle_pts(it[1], it[2]), True
+            else:
+                pts, closed = list(it[1]), it[2]
+            for i in range(len(pts) - (0 if closed else 1)):
+                add(pts[i], pts[(i + 1) % len(pts)], st)
+            if closed and st == "cut" and fills is not None:
+                fills.append(tuple(to_world(*p) for p in pts))
+    return segs
+
+
+def _body_boxes(body):
+    """body 의 xz 평면 직사각 압출을 상자 (u0, u1, z0, z1, n0, n1) 로. 구멍(cuts)은 부모 두께 안으로 자른 상자를 더한다. 다른 형상은 건너뛴다."""
+    out = []
+    for b in body:
+        if b.get("k") != "extrude" or b.get("plane") != "xz" or b["profile"].get("shape") != "rect":
+            continue
+        pr, (n0, n1) = b["profile"], b["range"]
+        out.append((pr["u"][0], pr["u"][1], pr["v"][0], pr["v"][1], n0, n1))
+        for c in b.get("cuts", ()):
+            if c.get("plane") == "xz" and c["profile"].get("shape") == "rect":
+                cp, (c0, c1) = c["profile"], c["range"]
+                out.append((cp["u"][0], cp["u"][1], cp["v"][0], cp["v"][1], max(n0, c0), min(n1, c1)))
+    return tuple(out)
+
+
+def hosted_fam(g, w):
+    """벽에 호스팅된 패밀리 인스턴스(창·패밀리 문)의 그림 정보 (u0, u1, z0, z1, offset, zbase, 평면 기호, 상자들). 정렬 튜플.
+    u 는 벽 지역 길이 방향, z 는 절대 높이. 개구부가 없는 인스턴스(평가 오류 등)는 그리지 않는다."""
+    _, elev = g.q(Q.level_info, g.q(Q.wall_level, w))
+    out = []
+    for d in g.q(Q.wall_hosted, w):
+        row = Q.el(g, d)
+        if row is None or row["kind"] != "finst":
+            continue
+        spec = g.q(Q.ifc_spec, d)
+        cut = spec.get("cut")
+        if not cut:
+            continue
+        zb = elev + spec["elevation"]
+        out.append((spec["offset"] + cut["x"][0], spec["offset"] + cut["x"][1], zb + cut["z"][0], zb + cut["z"][1],
+                    spec["offset"], zb, _freeze_plan(spec["plan"]), _body_boxes(spec["body"])))
+    return tuple(sorted(out, key=repr))
+
+
+def _prism_poly(pr):
+    """body 의 xy 압출 프로필 -> 지역 좌표 볼록 다각형(반시계). 지원: rect·circle·polygon."""
+    p = pr["profile"]
+    sh = p.get("shape")
+    if sh == "rect":
+        (u0, u1), (v0, v1) = p["u"], p["v"]
+        return [(u0, v0), (u1, v0), (u1, v1), (u0, v1)]
+    if sh == "circle":
+        return _circle_pts(p["center"], p["r"])
+    if sh == "polygon":
+        return [tuple(q) for q in p["points"]]
+    return None
+
+
+def free_fam(g, e):
+    """호스트 없이 레벨에 서는 패밀리 인스턴스(기둥 등)의 그림 정보 (x, y, 회전도, zb, zt, 평면 기호, 각기둥들). 그릴 형상이 없으면 None.
+    각기둥은 (z0, z1, 지역 다각형). 높이는 body 의 xy 압출 범위에서 온다."""
+    row = Q.el(g, e)
+    if row is None or row["kind"] != "finst" or g.q(Q.finst_host, e):
+        return None
+    spec = g.q(Q.ifc_spec, e)
+    if spec.get("error") or not spec.get("position"):
+        return None
+    _, elev = g.q(Q.level_info, g.q(Q.finst_level, e))
+    zb0 = elev + spec["elevation"]
+    prisms = []
+    for b in spec["body"]:
+        if b.get("k") != "extrude" or b.get("plane") != "xy":
+            continue
+        poly = _prism_poly(b)
+        if poly is None:
+            continue
+        if _area2(poly) < 0:
+            poly.reverse()
+        prisms.append((zb0 + b["range"][0], zb0 + b["range"][1], tuple(poly)))
+    if not prisms:
+        return None
+    return (spec["position"][0], spec["position"][1], spec.get("rotation", 0.0) or 0.0, min(p[0] for p in prisms), max(p[1] for p in prisms),
+            _freeze_plan(spec["plan"]), tuple(prisms))
+
+
+def _free_world(ff):
+    """지역(u, v) -> 세계 좌표 변환 함수(회전 후 이동)."""
+    sn, cs = _sincos_deg(ff[2])
+    return lambda u, v: (ff[0] + u * cs - v * sn, ff[1] + u * sn + v * cs)
+
+
+def all_free_fams(g):
+    out = []
+    for b in range(Q.NB):
+        out.extend(e for e in Q.bucket_ids(g, "finst", b) if g.q(free_fam, e) is not None)
+    return tuple(sorted(out))
+
+
+def scope_fams(g, v):
+    """뷰가 그리는 자립형 패밀리 인스턴스(기둥 등). 평면은 그 레벨에 놓인 것만, 단면·입면은 모델 전체."""
+    cfg = g.q(view_cfg, v)
+    if cfg is None:
+        return ()
+    if cfg[0] == "plan":
+        if cfg[1] is None:
+            return ()
+        return tuple(e for e in sorted(Q.rel_in(g, "on_level", cfg[1])) if g.q(free_fam, e) is not None)
+    return g.q(all_free_fams)
+
+
+def plan_fam_parts(g, v, e):
+    """평면의 자립형 요소: (선분들, 채움 다각형들). 절단 높이가 요소 높이 범위에 들 때만 그린다(기둥 단면 + 기호)."""
+    cfg = g.q(view_cfg, v)
+    ff = g.q(free_fam, e)
+    if ff is None or cfg[0] != "plan" or not (ff[3] - EPS <= cfg[2] <= ff[4] + EPS):
+        return ((), ())
+    fills: list = []
+    segs = _plan_items(ff[5], _free_world(ff), fills)
+    return (tuple(segs), tuple(fills))
+
+
+def _fam_vpieces(g, v, e):
+    """단면·입면에서 자립형 요소의 속이 찬 조각 ((z0, z1, 다각형(s,w)), ...)."""
+    cfg = g.q(view_cfg, v)
+    ff = g.q(free_fam, e)
+    if ff is None or cfg[0] == "plan":
+        return ()
+    tw = _free_world(ff)
+    out = []
+    for z0, z1, poly in ff[6]:
+        sw = [_sw(cfg, tw(*p)) for p in poly]
+        if _area2(sw) < 0:
+            sw.reverse()
+        sw = _clip_w(sw, cfg[7], cfg[8])
+        if len(sw) >= 3 and _area2(sw) > 2 * EPS:
+            out.append((z0, z1, tuple(sw)))
+    return tuple(out)
+
+
+def vfam_pieces(g, v, e):
+    return g.q(_fam_vpieces, v, e)
+
+
+def vfam_bbox(g, v, e):
+    ps = g.q(_fam_vpieces, v, e)
+    if not ps:
+        return None
+    ss = [p[0] for _, _, poly in ps for p in poly]
+    return (min(ss), min(z0 for z0, _, _ in ps), max(ss), max(z1 for _, z1, _ in ps))
+
+
+def vfam_cut_rects(g, v, e):
+    """단면: 절단면(w=near)과 만나는 기둥 조각의 (s, z) 사각형."""
+    cfg = g.q(view_cfg, v)
+    if cfg[0] == "plan" or not cfg[9]:
+        return ()
+    rects = []
+    for z0, z1, poly in g.q(_fam_vpieces, v, e):
+        ss = [p[0] for p in poly if abs(p[1] - cfg[7]) <= EPS]
+        if len(ss) >= 2 and max(ss) - min(ss) > EPS:
+            s0, s1 = min(ss), max(ss)
+            rects.append(((s0, z0), (s1, z0), (s1, z1), (s0, z1)))
+    return tuple(rects)
+
+
+def vfam_edges(g, v, e):
+    """자립형 요소의 날카로운 모서리: 각기둥의 수직 모서리와 위·아랫면 둘레(뷰 좌표 3D 선분)."""
+    cfg = g.q(view_cfg, v)
+    ff = g.q(free_fam, e)
+    if ff is None or cfg[0] == "plan":
+        return ()
+    tw = _free_world(ff)
+    raw = []
+    for z0, z1, poly in ff[6]:
+        pts = [_sw(cfg, tw(*p)) for p in poly]
+        n = len(pts)
+        for i in range(n):
+            a, b = pts[i], pts[(i + 1) % n]
+            raw.append(((a[0], a[1], z0), (a[0], a[1], z1)))
+            for z in (z0, z1):
+                raw.append(((a[0], a[1], z), (b[0], b[1], z)))
+    out = []
+    for e0, e1 in raw:
+        if abs(e1[0] - e0[0]) < EPS and abs(e1[2] - e0[2]) < EPS:
+            continue
+        c = _clip_edge(e0, e1, cfg[7], cfg[8])
+        if c is not None:
+            out.append(c)
+    return tuple(out)
+
+
+def vfam_nbr_pieces(g, v, e):
+    """가림 후보: 같은 뷰의 벽과 다른 기둥 중 경계 상자가 겹치는 것의 조각."""
+    me = g.q(vfam_bbox, v, e)
+    if me is None:
+        return ()
+    occ = []
+    for w in g.q(scope_walls, v):
+        bb = g.q(vbbox, v, w)
+        if bb is not None and bb[0] <= me[2] + NBR_PAD and me[0] <= bb[2] + NBR_PAD and bb[1] <= me[3] + NBR_PAD and me[1] <= bb[3] + NBR_PAD:
+            occ.extend(g.q(vpieces, v, w))
+    for o in g.q(scope_fams, v):
+        if o != e:
+            occ.extend(g.q(_fam_vpieces, v, o))
+    return tuple(occ)
+
+
+def fam_lines(g, v, e):
+    """자립형 요소 하나가 뷰에 기여하는 선분."""
+    cfg = g.q(view_cfg, v)
+    if cfg is None:
+        return ()
+    if cfg[0] == "plan":
+        return g.q(plan_fam_parts, v, e)[0]
+    mine = list(g.q(_fam_vpieces, v, e))
+    occ = mine + list(g.q(vfam_nbr_pieces, v, e))
+    lines = []
+    if occ:
+        for e0, e1 in g.q(vfam_edges, v, e):
+            for t0, t1 in visible_parts(e0, e1, occ):
+                lines.append(("proj", e0[0] + t0 * (e1[0] - e0[0]), e0[2] + t0 * (e1[2] - e0[2]),
+                              e0[0] + t1 * (e1[0] - e0[0]), e0[2] + t1 * (e1[2] - e0[2])))
+    if cfg[9]:
+        rects = g.q(vfam_cut_rects, v, e)
+        if rects:
+            lines += [("cut", a[0], a[1], b[0], b[1]) for a, b in outline_edges(list(rects), [], e)]
+    return tuple(lines)
+
+
+def vfam_hosted_edges(g, v, w):
+    """벽에 호스팅된 패밀리 인스턴스(창)의 상자 모서리(창틀 바깥·안쪽 틀·유리)를 뷰 좌표 3D 선분으로."""
+    cfg = g.q(view_cfg, v)
+    sol = g.q(wall_solid, w)
+    if cfg is None or cfg[0] == "plan":
+        return ()
+    raw = []
+
+    def pt(u, n, z):
+        s_, w_ = _sw(cfg, _world(sol, u, n))
+        return (s_, w_, z)
+
+    for u0, u1, _, _, off, zb, _, boxes in g.q(hosted_fam, w):
+        for bu0, bu1, bz0, bz1, n0, n1 in boxes:
+            us, zs, ns = (off + bu0, off + bu1), (zb + bz0, zb + bz1), (n0, n1)
+            for n in ns:                                           # 앞·뒤 면의 사각형 둘레
+                for z in zs:
+                    raw.append((pt(us[0], n, z), pt(us[1], n, z)))
+                for u in us:
+                    raw.append((pt(u, n, zs[0]), pt(u, n, zs[1])))
+            for u in us:                                           # 두께 방향 모서리
+                for z in zs:
+                    raw.append((pt(u, ns[0], z), pt(u, ns[1], z)))
+    out = []
+    for e0, e1 in raw:
+        if abs(e1[0] - e0[0]) < EPS and abs(e1[2] - e0[2]) < EPS:
+            continue
+        c = _clip_edge(e0, e1, cfg[7], cfg[8])
+        if c is not None:
+            out.append(c)
+    return tuple(out)
+
+
 def _door_symbol(sol, op):
     """문 한 개의 평면 기호: 열린 문짝 선 + 1/4 원 호. +v 쪽으로 열리고 경첩은 개구부의 시작 쪽이다.
     호는 유리식 매개화로 sin/cos 없이 그린다: 각 = 2*atan(t) (t 0..1 -> 0..90도)."""
@@ -400,9 +745,12 @@ def plan_wall_lines(g, v, w):
             others = [(o, q) for o in nb for q in g.q(plan_pieces, v, o)[1]]
             lines += [("proj", a[0], a[1], b[0], b[1]) for a, b in outline_edges(list(proj), others, w)]
     if cut:
-        for op in sol[9]:
+        for op in g.q(wall_door_openings, w):
             if op[2] <= cfg[2] + EPS and cfg[2] <= op[3] + EPS:   # 절단면이 문 개구부 높이 안에 있을 때만(문 위를 자르면 벽이 이어져 문이 안 보인다)
                 lines += _door_symbol(sol, op)
+        for f in g.q(hosted_fam, w):                              # 창·패밀리 문: 패밀리가 평가한 평면 기호(창은 벽 두께를 가로지르는 평행선)
+            if f[2] <= cfg[2] + EPS and cfg[2] <= f[3] + EPS:
+                lines += _plan_items(f[6], lambda u, vv, _o=f[4]: _world(sol, _o + u, vv))
     return tuple(lines)
 
 
@@ -626,9 +974,11 @@ def vwall_lines(g, v, w):
     occ = list(g.q(vpieces, v, w))
     for o in nb:
         occ.extend(g.q(vpieces, v, o))
+    for fe in g.q(scope_fams, v):                       # 기둥이 앞에 있으면 벽 선을 가린다
+        occ.extend(g.q(_fam_vpieces, v, fe))
     lines = []
     if occ:
-        for e0, e1 in g.q(vedges, v, w):
+        for e0, e1 in g.q(vedges, v, w) + g.q(vfam_hosted_edges, v, w):
             for t0, t1 in visible_parts(e0, e1, occ):
                 x0, z0 = e0[0] + t0 * (e1[0] - e0[0]), e0[2] + t0 * (e1[2] - e0[2])
                 x1, z1 = e0[0] + t1 * (e1[0] - e0[0]), e0[2] + t1 * (e1[2] - e0[2])
@@ -708,6 +1058,8 @@ def view_lines(g, v):
     segs = []
     for w in g.q(scope_walls, v):
         segs.extend(g.q(fn, v, w))
+    for e in g.q(scope_fams, v):
+        segs.extend(g.q(fam_lines, v, e))
     return merge_lines(segs)
 
 
@@ -722,6 +1074,11 @@ def view_fills(g, v):
             out.extend(g.q(plan_pieces, v, w)[0])
         else:
             out.extend(g.q(vcut_rects, v, w))
+    for e in g.q(scope_fams, v):
+        if cfg[0] == "plan":
+            out.extend(g.q(plan_fam_parts, v, e)[1])
+        else:
+            out.extend(g.q(vfam_cut_rects, v, e))
     return tuple(tuple((round(p[0], 3), round(p[1], 3)) for p in poly) for poly in out)
 
 
@@ -776,7 +1133,9 @@ def views_depending_on(g, input_keys, vids, include_not_fresh=True):
 
 # 뷰 하나에 딸린 질의 노드의 함수들 (첫 인자가 뷰 id). 뷰를 지우면 이 노드들을 그래프에서 치운다.
 VIEW_SCOPED = frozenset({view_cfg, scope_walls, view_omitted, plan_pieces, plan_bbox, plan_nbrs, plan_wall_lines, vpieces, vbbox, vnbrs,
-                         vcut_rects, vedges, vwall_lines, view_lines, view_fills})
+                         vcut_rects, vedges, vwall_lines, view_lines, view_fills,
+                         scope_fams, plan_fam_parts, _fam_vpieces, vfam_bbox, vfam_cut_rects, vfam_edges, vfam_nbr_pieces, fam_lines,
+                         vfam_hosted_edges})
 
 
 def forget_views(g, vids) -> int:
