@@ -8,6 +8,7 @@ G1 때와 같은 방식으로 도면을 다시 뽑는다(s3lib.build 의 RA-01 �
   --sheets      : 위에 더해 sheets/ 아래에 시트(A3·A1) SVG·PDF(한글 포함)를 뽑는다
   --no-slabs    : 입력에서 슬래브 3개를 뺀다(이전 단계 산출과 같은 입력으로 되돌려 바이트 비교할 때)
   --no-heights  : 높이 치수 자동 배치(heights/)를 건너뛴다
+  --no-stairs / --no-spaces / --no-fire / --no-finish : 계단·공간·방화 등급·외벽 마감 입력을 뺀다(네 번째 작업 이전 입력)
 
 높이 치수(두 번째 작업): 단면·입면 6뷰(단면 2·입면 4)에 annot.dim.heights 로 층고·반자높이(슬래브 밑면 기준 안목)·최고 높이를 자동 배치하고
   heights/ 에 낸다. 같은 뷰에 손으로 만든 높이 치수(annot/ 용 level 사이 치수)는 지우고 자동 치수로 바꾼 뒤 시트를 뽑는다.
@@ -15,6 +16,13 @@ G1 때와 같은 방식으로 도면을 다시 뽑는다(s3lib.build 의 RA-01 �
 입력 변경(세 번째 작업): RA-01 코어 범위 모델에 슬래브 3개를 더한다(RA-01 에는 슬래브 3개가 있다. g2-gate 5-1절). 기본 켜짐.
   S-GND  1F 바닥 슬래브(1F 윗면 0, 두께 200, 외벽 바깥면까지)   S-2F  2F 바닥 슬래브(2F 윗면, 두께 200, 외벽 축선 안쪽)
   S-ROOF 지붕 슬래브(2F 벽 윗면 6600 = 2F + 3300, 두께 200, 외벽 바깥면까지)
+
+입력 변경(네 번째 작업, 모두 기본 켜짐): RA-01 에 계단 1개, 공간 6개, 방화 등급, 외벽 재료를 더한다(g2-gate 5-1절 RA-01 사양).
+  계단 ST-1F   1F 오른쪽 위 방(주방)의 직선 계단: 걸음선 (5000,5000)->(9400,5000), 폭 1200, 오름 3300(1F->2F), 챌판 19
+  공간 6       1F 거실·복도(분류 복도)·침실1·침실2·주방, 2F 침실3 (벽 안쪽 면 기준 경계)
+  방화         1F 내벽 W-I-1F-1(구획 벽)에 Pset_WallCommon.FireRating EI60, 문 D-02(그 벽에 호스팅) EI60, 현관문 D-01 EI30
+  외벽 재료    외벽 8개에 Pset_WallCommon.IsExternal 참 + 재료(1F 치장벽돌, 2F 스터코)
+  종단 계단 단면 뷰 section-CC (y=5000, 걸음선 위를 지난다)를 따로 만들어 stair/ 에 낸다(base/·annot/ 의 뷰 목록은 그대로)
 """
 from __future__ import annotations
 
@@ -50,6 +58,8 @@ def main():
     ap.add_argument("--sheets", action="store_true")
     ap.add_argument("--no-slabs", action="store_true")
     ap.add_argument("--no-heights", action="store_true")
+    for f in ("stairs", "spaces", "fire", "finish"):
+        ap.add_argument(f"--no-{f}", action="store_true")
     o = ap.parse_args()
     out = Path(o.out).resolve()
     out.mkdir(parents=True, exist_ok=True)
@@ -86,6 +96,70 @@ def main():
                              "views": {k: {"segments_before": before[k]["segments"], "segments_after": after[k]["segments"], "fills_before": before[k]["fills"],
                                            "fills_after": after[k]["fills"], "slab_cut_rects": cuts[k]} for k in probe_views}}
 
+    # ---- 네 번째 작업 입력: 계단·공간·방화 등급·외벽 재료. 각 묶음을 더하기 전후의 뷰 선분·채움·문자를 재서 판정기의 근거로 쓴다
+
+    def measure2():
+        sess.eng.sync()
+        sess.eng._touch_pending()
+        out_ = {}
+        for k, v in probe_views.items():
+            ln = sess.eng.g.q(D.view_lines, v)
+            lb = sess.eng.g.q(D.view_labels, v)
+            by = {}
+            for x in ln:
+                by[x[0]] = by.get(x[0], 0) + 1
+            out_[k] = {"segments": len(ln), "fills": len(sess.eng.g.q(D.view_fills, v)), "by_class": by, "labels": [t[2] for t in lb]}
+        return out_
+
+    def probe(name, extra):
+        log[name] = {"views": {k: {"before": b4[k], "after": af[k], **extra.get(k, {})} for k in probe_views}, **extra.get("_", {})}
+
+    if not o.no_stairs:
+        # 계단 단면 뷰(걸음선 위 y=5000)는 계단을 더할 때만 만든다(자동 id 가 쓰는 순번이 바뀌므로 --no-stairs 입력은 이전 산출과 바이트 같게 둔다)
+        vc1 = ok(sess.run("view.create", {"id": "4" + "0" * 20 + "8", "name": "C-C 계단 단면", "type": "section", "p1": [-1000.0, 5000.0], "p2": [13000.0, 5000.0]}))
+        probe_views["section-CC"] = vc1["id"]
+        b4 = measure2()
+        sid = "7" + f"{1:021d}"
+        ids["ST-1F"] = sid
+        ok(sess.run("stair.create", {"id": sid, "level": ids["1F"], "run": [5000.0, 5000.0, 9400.0, 5000.0], "width": 1200.0, "height": s3lib.STOREY,
+                                     "risers": 19, "name": "ST-1F"}))
+        af = measure2()
+        probe("stair_probe", {k: {"stair_cut_rects": len(sess.eng.g.q(D.stair_cut_rects, probe_views[k], sid))} for k in probe_views} | {"_": {"stairs": ["ST-1F"]}})
+    if not o.no_spaces:
+        b4 = measure2()
+        hi = s3lib.EXT_T / 2
+        inner = s3lib.INT_T / 2
+        lx, ly = s3lib.LX, s3lib.LY
+        rooms = (("거실", "거실", "1F", [[hi, hi], [2700.0, hi], [2700.0, ly - hi], [hi, ly - hi]]),
+                 ("복도", "복도", "1F", [[2700.0, hi], [4000.0 - inner, hi], [4000.0 - inner, ly - hi], [2700.0, ly - hi]]),
+                 ("침실1", "침실", "1F", [[4000.0 + inner, hi], [8000.0 - inner, hi], [8000.0 - inner, 4000.0 - inner], [4000.0 + inner, 4000.0 - inner]]),
+                 ("침실2", "침실", "1F", [[8000.0 + inner, hi], [lx - hi, hi], [lx - hi, 4000.0 - inner], [8000.0 + inner, 4000.0 - inner]]),
+                 ("주방", "주방", "1F", [[4000.0 + inner, 4000.0 + inner], [lx - hi, 4000.0 + inner], [lx - hi, ly - hi], [4000.0 + inner, ly - hi]]),
+                 ("침실3", "침실", "2F", [[hi, hi], [lx - hi, hi], [lx - hi, ly - hi], [hi, ly - hi]]))
+        log["spaces"] = []
+        for k, (nm, cat, lv, b) in enumerate(rooms, 1):
+            spid = "8" + f"{k:021d}"
+            ids[f"SP-{nm}"] = spid
+            ok(sess.run("space.create", {"id": spid, "level": ids[lv], "boundary": b, "name": nm, "category": cat, "height": 2700.0}))
+            log["spaces"].append({"name": nm, "category": cat, "level": lv, "id": spid})
+        af = measure2()
+        probe("space_probe", {"_": {"spaces": [r_["name"] for r_ in log["spaces"]]}})
+    if not o.no_fire:
+        b4 = measure2()
+        ok(sess.run("pset.set", {"id": ids["int-1F"][0], "pset": "Pset_WallCommon", "prop": "FireRating", "value": "EI60"}))
+        ok(sess.run("pset.set", {"id": ids["D-02"], "pset": "Pset_DoorCommon", "prop": "FireRating", "value": "EI60"}))
+        ok(sess.run("pset.set", {"id": ids["D-01"], "pset": "Pset_DoorCommon", "prop": "FireRating", "value": "EI30"}))
+        af = measure2()
+        probe("fire_probe", {"_": {"fire_walls": 1, "fire_doors": 2}})
+    if not o.no_finish:
+        b4 = measure2()
+        for lv, mat in (("1F", "치장벽돌"), ("2F", "스터코")):
+            for w in ids[f"ext-{lv}"]:
+                ok(sess.run("pset.set", {"id": w, "pset": "Pset_WallCommon", "prop": "IsExternal", "value": True}))
+                ok(sess.run("material.set", {"id": w, "name": mat}))
+        af = measure2()
+        probe("finish_probe", {"_": {"external_walls": 8, "materials": ["치장벽돌", "스터코"]}})
+
     def exp_views(sub, keys):
         d = out / sub
         d.mkdir(exist_ok=True)
@@ -118,6 +192,10 @@ def main():
     exp_views("fam", ["plan-1F", "section-BB"])
     views["xsec-AA"] = vc0["id"]
     exp_views("xsec", ["xsec-AA"])
+    if not o.no_stairs:
+        views["section-CC"] = vc1["id"]
+        exp_views("stair", ["section-CC"])
+        del views["section-CC"]
 
     plans = [views["plan-1F"], views["plan-2F"]]
     elevs = [views[f"elev-{x}"] for x in "NESW"]
