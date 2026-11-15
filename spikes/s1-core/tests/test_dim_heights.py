@@ -175,3 +175,44 @@ def test_증분이_전체_재생성과_같다(base):
     heights(base, v)
     check()
     assert s3lib is not None
+
+
+# ---------------------------------------------------------------- 천장 높이(space.ceiling_height)가 있으면 반자높이는 천장 마감까지
+def test_천장_높이_입력이_있으면_반자높이가_천장_마감까지다(base):
+    add_slabs(base)
+    v = mk(base, name="S", type="section", p1=[3000, -2000], p2=[3000, 2000])
+    pts = [[100, 100], [5900, 100], [5900, 3900], [100, 3900]]
+    assert base.run("space.create", {"id": F.SP1, "level": F.LV1, "boundary": pts, "name": "방", "height": 2700})["ok"]
+    k0 = by_kind(heights(base, v))
+    assert [d["value"] for d in k0["clear"]] == [3100.0, 3100.0]                         # 천장 입력이 없으면 슬래브 밑면 근사 그대로
+    assert base.run("space.set", {"id": F.SP1, "ceiling_height": 2400})["ok"]
+    k1 = by_kind(heights(base, v))
+    assert [d["value"] for d in k1["clear"]] == [2400.0, 3100.0]                         # 1F: 천장 마감 2400, 2F(천장 입력 없음): 슬래브 밑면
+    assert k1["clear"][0]["b"] == f"space:{F.SP1}#ceiling" and k1["clear"][1]["b"].startswith("slab:")
+    assert base.run("annot.check", {})["result"]["problems"] == 0
+    # 연관: 천장 높이를 바꾸면 치수 값이 따라가고, 입력을 지우면 대상이 사라진 고아로 알린다(조용히 다른 값이 되지 않는다)
+    assert base.run("space.set", {"id": F.SP1, "ceiling_height": 2500})["ok"]
+    assert sorted(i["value"] for i in base.run("annot.list", {"view": v})["result"]["items"] if i["name"].startswith("H-반자")) == [2500.0, 3100.0]
+    assert base.run("space.set", {"id": F.SP1, "clear_ceiling": True})["ok"]
+    chk = base.run("annot.check", {})["result"]
+    assert chk["orphan"] == {"target_deleted": 1}
+    r = base.run("history.undo", {})
+    assert r["ok"] and base.run("annot.check", {})["result"]["problems"] == 0
+
+
+def test_천장_기준_반자높이도_증분이_전체_재생성과_같고_IFC_왕복에서_살아난다(base):
+    add_slabs(base)
+    v = mk(base, name="S", type="section", p1=[3000, -2000], p2=[3000, 2000])
+    pts = [[100, 100], [5900, 100], [5900, 3900], [100, 3900]]
+    assert base.run("space.create", {"id": F.SP1, "level": F.LV1, "boundary": pts, "name": "방", "height": 2700, "ceiling_height": 2400})["ok"]
+    heights(base, v)
+    from dobim_core import dispatch
+    h = base.run("model.hash", {})["result"]
+    r = base.run("ifc.export", {"path": "a.ifc"})
+    assert base.run("ifc.export", {"path": "a.ifc"}, confirm=r["error"]["details"]["confirm_token"])["ok"]
+    imp = dispatch.run(base.env, "ifc.import", {"source": "a.ifc", "path": "imp.dobim"})
+    assert imp["ok"] and imp["result"]["warnings"] == []
+    h1 = dispatch.run(base.env, "model.hash", {}, project="imp.dobim")["result"]
+    assert [h[k] for k in ("state", "derived", "ifc")] == [h1[k] for k in ("state", "derived", "ifc")]
+    items = dispatch.run(base.env, "annot.list", {"view": v}, project="imp.dobim")["result"]["items"]
+    assert [i["value"] for i in items if i["name"] == "H-반자-1F"] == [2400.0]

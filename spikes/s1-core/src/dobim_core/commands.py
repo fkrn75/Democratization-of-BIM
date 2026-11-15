@@ -1746,8 +1746,8 @@ def view_affected(ctx, a: ViewAffected):
 # ================================================================ 주석: 치수·태그 (S5)
 # 주석은 의도 요소(kind dim, tag)이고 IFC 로 투영하지 않는다(IFC 해시 불변). 값은 저장하지 않고 항상 파생이다(그래프 질의).
 # 대상이 사라지면 조용히 지우지 않고 고아로 표시한다(annot.check). 뷰를 지우면 그 뷰의 주석도 같이 지운다(응답에 나열, undo 로 복귀).
-RefStr = Annotated[str, Field(pattern=r"^(wall|door|level|slab):[0-9A-Za-z_$]{22}#[a-z]{3,9}(\.[a-z]{3,9}){0,2}$", max_length=48,
-                              description="안정 참조 '종류:id#역할'. wall: axis.start axis.end(분할 뒤에도 원래 끝) own.end(이 벽 자신의 끝) trim.start trim.end own.trim.end axis face.left face.right base top / door: center jamb.start jamb.end sill head / level: elevation / slab: top bottom")]
+RefStr = Annotated[str, Field(pattern=r"^(wall|door|level|slab|space):[0-9A-Za-z_$]{22}#[a-z]{3,9}(\.[a-z]{3,9}){0,2}$", max_length=48,
+                              description="안정 참조 '종류:id#역할'. wall: axis.start axis.end(분할 뒤에도 원래 끝) own.end(이 벽 자신의 끝) trim.start trim.end own.trim.end axis face.left face.right base top / door: center jamb.start jamb.end sill head / level: elevation / slab: top bottom / space: ceiling(천장 마감 높이, 공간에 ceiling_height 가 있을 때)")]
 Off = Annotated[float, Field(allow_inf_nan=False, ge=-1e5, le=1e5)]
 _ANNOT_KINDS = ("dim", "tag")
 
@@ -1866,7 +1866,7 @@ class DimHeights(A):
     view: Id = Field(description="단면·입면 뷰")
     kinds: Annotated[list[Literal["floor", "clear", "overall"]], Field(
         min_length=1, max_length=3,
-        description="floor=각 층의 높이(층고: 이웃한 레벨 사이), clear=반자높이(안목: 레벨에서 그 위 가장 가까운 슬래브 밑면, 천장 요소가 없어 슬래브 밑면으로 근사), "
+        description="floor=각 층의 높이(층고: 이웃한 레벨 사이), clear=반자높이(레벨에서 그 레벨 공간의 가장 낮은 천장 마감 높이(space.ceiling_height)까지. 천장 높이 입력이 없으면 그 위 가장 가까운 슬래브 밑면으로 근사), "
                     "overall=건축물 최고 높이(가장 낮은 레벨에서 벽·슬래브의 가장 높은 윗면)")] = ["floor", "clear", "overall"]
     at: Point2 | None = Field(None, description="치수선을 그릴 평면 위치 [x,y]. 생략하면 뷰 그림의 왼쪽 바깥에 자동으로 둔다")
 
@@ -1892,8 +1892,13 @@ def annot_dim_heights(ctx, a: DimHeights):
                 plan.append(("floor", f"{HEIGHT_PREFIX}층고-{st.el[l0]['params']['name']}", f"level:{l0}#elevation", f"level:{l1}#elevation"))
     if "clear" in a.kinds:
         for e0, l0 in levels:
+            # 천장 높이 입력(space.ceiling_height)이 있는 공간이 그 레벨에 있으면 가장 낮은 천장 마감까지를 반자높이로 한다(없으면 슬래브 밑면 근사 그대로)
+            ceil = sorted((st.el[i]["params"]["ceiling_height"], i) for i in ctx.rels_in("on_level", l0)
+                          if st.el[i]["kind"] == "space" and st.el[i]["origin"] == "authored" and "ceiling_height" in st.el[i]["params"])
             above = sorted((zr[0], i) for i, zr in slabs if zr[0] > e0 + 1.0)   # 레벨 위의 슬래브 중 밑면이 가장 낮은 것(자기 바닥 슬래브는 밑면이 레벨 아래라 빠진다)
-            if above:
+            if ceil:
+                plan.append(("clear", f"{HEIGHT_PREFIX}반자-{st.el[l0]['params']['name']}", f"level:{l0}#elevation", f"space:{ceil[0][1]}#ceiling"))
+            elif above:
                 plan.append(("clear", f"{HEIGHT_PREFIX}반자-{st.el[l0]['params']['name']}", f"level:{l0}#elevation", f"slab:{above[0][1]}#bottom"))
     if "overall" in a.kinds:
         tops = [(z, "wall", i) for i, z in walls] + [(zr[1], "slab", i) for i, zr in slabs]
