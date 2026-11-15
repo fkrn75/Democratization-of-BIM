@@ -172,6 +172,11 @@ def stair_zrange(g, s):
     return (base, base + p["height"])
 
 
+# ---------------------------------------------------------------- 난간
+def railing_level(g, s):
+    return rel_out(g, "on_level", s)[0]
+
+
 # ---------------------------------------------------------------- 공간
 def space_level(g, s):
     return rel_out(g, "on_level", s)[0]
@@ -306,9 +311,9 @@ def schedule_sorted(g, kind):
 
 def model_stats(g):
     out = {k: g.q(count, k) for k in ("level", "wall", "door")}
-    for k in ("slab", "stair", "space", "site"):
+    for k in ("slab", "stair", "space", "railing", "site"):
         n = g.q(count, k)
-        if n:   # 슬래브·계단·공간·대지가 없는 프로젝트의 응답·해시는 그대로다
+        if n:   # 슬래브·계단·공간·난간·대지가 없는 프로젝트의 응답·해시는 그대로다
             out[k] = n
     return out
 
@@ -331,8 +336,8 @@ def intent_of(g, e):
     elif row["kind"] == "wall":
         out["level"] = g.q(wall_level, e)
         out["joins"] = list(g.q(wall_joins, e))
-    elif row["kind"] in ("slab", "stair", "space"):
-        out["level"] = g.q({"slab": slab_level, "stair": stair_level, "space": space_level}[row["kind"]], e)
+    elif row["kind"] in ("slab", "stair", "space", "railing"):
+        out["level"] = g.q({"slab": slab_level, "stair": stair_level, "space": space_level, "railing": railing_level}[row["kind"]], e)
     elif row["kind"] == "door":
         out["host"] = g.q(door_host, e)
     return out
@@ -383,6 +388,10 @@ def ifc_spec(g, e):
     if kind == "space":
         return {"kind": kind, "name": p["name"], "category": p["category"], "level": g.q(space_level, e),
                 "boundary": tuple(tuple(q) for q in p["boundary"]), "height": p["height"], "intent": intent}
+    if kind == "railing":
+        # 배치는 레벨 좌표계(원점·무회전)이고 높이는 레벨 + base_offset 이므로 레벨 높이는 읽지 않는다
+        return {"kind": kind, "name": p["name"], "level": g.q(railing_level, e), "path": tuple(tuple(q) for q in p["path"]), "height": p["height"],
+                "base_offset": p["base_offset"], "rise": p["rise"], "intent": intent}
     if kind == "stair":
         # 배치는 레벨 좌표계(원점·무회전)이고 아래 끝은 레벨 + base_offset 이므로 레벨 높이는 읽지 않는다
         spec = {"kind": kind, "name": p["name"], "level": g.q(stair_level, e), "run": tuple(p["run"]), "width": p["width"],

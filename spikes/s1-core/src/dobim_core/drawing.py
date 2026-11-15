@@ -1210,6 +1210,95 @@ def stair_lines(g, v, s):
     return tuple(lines)
 
 
+# ================================================================ 난간 (kinds "railing": 난간선 + 높이 + 경사, 설계: elements-design.md 12절)
+# 난간은 손잡이 윗선(3D 폴리라인)과 난간 기둥(수직선)이다. 형상은 kinds.railing_geom 이 정한다(IFC 투영과 같은 값).
+#   평면: 바닥 마감선이 절단 높이 이하인 부분의 난간선을 투영선으로(경사 난간은 절단 높이에서 끊는다)
+#   단면·입면: 손잡이선과 기둥을 투영선으로. 앞에 선 벽·슬래브·계단·패밀리가 가린다. 난간은 다른 요소를 가리지 않는다(가는 선)
+def railing_info(g, r):
+    """((바닥 마감 3D 점들), (손잡이 윗선 3D 점들), (((x,y,z0),(x,y,z1)) 기둥들)) 절대 높이, 또는 None. 저작 난간만 그린다."""
+    row = Q.el(g, r)
+    if row is None or row["kind"] != "railing" or row["origin"] != "authored":
+        return None
+    lv = g.q(Q.level_info, g.q(Q.railing_level, r))[1]
+    gm = K.railing_geom(row["params"])
+
+    def up(q):
+        return (q[0], q[1], q[2] + lv)
+    return (tuple(up(q) for q in gm["surface"]), tuple(up(q) for q in gm["top"]), tuple((up(a), up(b)) for a, b in gm["posts"]))
+
+
+def all_railings(g):
+    out = []
+    for b in range(Q.NB):
+        out.extend(e for e in Q.bucket_ids(g, "railing", b) if g.q(railing_info, e) is not None)
+    return tuple(sorted(out))
+
+
+def scope_railings(g, v):
+    """뷰가 그리는 난간. 평면은 그 레벨에 놓인 것만, 단면·입면은 모델 전체."""
+    cfg = g.q(view_cfg, v)
+    if cfg is None or cfg[0] == "site":
+        return ()
+    if cfg[0] == "plan":
+        if cfg[1] is None:
+            return ()
+        return tuple(e for e in sorted(Q.rel_in(g, "on_level", cfg[1])) if g.q(railing_info, e) is not None)
+    return g.q(all_railings)
+
+
+def railing_lines(g, v, r):
+    """난간 하나가 뷰에 기여하는 선분."""
+    cfg = g.q(view_cfg, v)
+    info = g.q(railing_info, r)
+    if cfg is None or info is None:
+        return ()
+    surf, top, posts = info
+    if cfg[0] == "plan":
+        out = []
+        c = cfg[2]
+        for i in range(len(surf) - 1):
+            (x0, y0, z0), (x1, y1, z1) = surf[i], surf[i + 1]
+            if z0 > c + EPS and z1 > c + EPS:
+                continue
+            lo, hi = 0.0, 1.0
+            if z0 > c + EPS or z1 > c + EPS:   # 경사 난간이 절단 높이를 가로지른다: 아래쪽 부분만
+                t = (c - z0) / (z1 - z0)
+                if z0 <= c + EPS:
+                    hi = t
+                else:
+                    lo = t
+            ax, ay, bx, by = x0 + (x1 - x0) * lo, y0 + (y1 - y0) * lo, x0 + (x1 - x0) * hi, y0 + (y1 - y0) * hi
+            if sqrt((bx - ax) ** 2 + (by - ay) ** 2) > SEG_MIN:
+                out.append(("proj", ax, ay, bx, by))
+        return tuple(out)
+    raw = []
+    for i in range(len(top) - 1):
+        raw.append((top[i], top[i + 1]))
+    raw.extend(posts)
+    occ = []
+    for w in g.q(scope_walls, v):
+        occ.extend(g.q(vpieces, v, w))
+    for sl in g.q(scope_slabs, v):
+        occ.extend(g.q(_slab_vpieces, v, sl))
+    for st in g.q(scope_stairs, v):
+        occ.extend(g.q(_stair_vpieces, v, st))
+    for fe in g.q(scope_fams, v):
+        occ.extend(g.q(_fam_vpieces, v, fe))
+    lines = []
+    for a, b in raw:
+        pa, pb = _sw(cfg, a), _sw(cfg, b)
+        e0, e1 = (pa[0], pa[1], a[2]), (pb[0], pb[1], b[2])
+        if abs(e1[0] - e0[0]) < EPS and abs(e1[1] - e0[1]) < EPS and abs(e1[2] - e0[2]) < EPS:
+            continue
+        c = _clip_edge(e0, e1, cfg[7], cfg[8])
+        if c is None:
+            continue
+        e0, e1 = c
+        for t0, t1 in (visible_parts(e0, e1, occ) if occ else [(0.0, 1.0)]):
+            lines.append(("proj", e0[0] + t0 * (e1[0] - e0[0]), e0[2] + t0 * (e1[2] - e0[2]), e0[0] + t1 * (e1[0] - e0[0]), e0[2] + t1 * (e1[2] - e0[2])))
+    return tuple(lines)
+
+
 # ================================================================ 공간 (kinds "space") 과 문자 층
 # 공간은 선·채움을 만들지 않는다(윤곽은 벽이 준다). 평면에 실명과 면적 문자(labels)만 놓는다.
 # 문자 항목: (x, y, 문자, 글자 높이 mm(용지 위), 앵커 "middle"). 좌표는 선분과 같은 뷰 좌표(평면 x,y / 단면·입면 s,z).
@@ -2493,6 +2582,8 @@ def view_lines(g, v):
         segs.extend(g.q(slab_lines, v, sl))
     for st in g.q(scope_stairs, v):
         segs.extend(g.q(stair_lines, v, st))
+    for rl in g.q(scope_railings, v):
+        segs.extend(g.q(railing_lines, v, rl))
     return merge_lines(segs)
 
 
@@ -2527,6 +2618,8 @@ def view_lines_hier(g, v):
         segs.extend(g.q(slab_lines, v, sl))
     for st in g.q(scope_stairs, v):
         segs.extend(g.q(stair_lines, v, st))
+    for rl in g.q(scope_railings, v):
+        segs.extend(g.q(railing_lines, v, rl))
     return merge_lines(segs)
 
 
@@ -2612,7 +2705,7 @@ VIEW_SCOPED = frozenset({view_cfg, scope_walls, view_omitted, plan_pieces, plan_
                          vcut_rects, vedges, vwall_lines, view_lines, view_fills,
                          scope_fams, plan_fam_parts, _fam_vpieces, vfam_bbox, vfam_cut_rects, vfam_edges, vfam_nbr_pieces, fam_lines,
                          vfam_hosted_edges, scope_slabs, plan_slab_parts, _slab_vpieces, slab_vbbox, slab_cut_rects, slab_vedges, slab_nbr_walls, slab_lines,
-                         scope_stairs, plan_stair_parts, _stair_vpieces, stair_vbbox, stair_cut_rects, stair_vedges, stair_nbr_walls, stair_lines,
+                         scope_stairs, scope_railings, railing_lines, plan_stair_parts, _stair_vpieces, stair_vbbox, stair_cut_rects, stair_vedges, stair_nbr_walls, stair_lines,
                          scope_spaces, plan_space_labels, view_labels, site_lines, site_labels, site_dims, vwall_hidden, view_hidden_lines, plan_fire_lines, plan_fire_labels, elev_finish})
 
 

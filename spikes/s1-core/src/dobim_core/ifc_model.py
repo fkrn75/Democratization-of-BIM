@@ -678,17 +678,19 @@ class IfcModel:
         return f.createIfcExtrudedAreaSolid(prof, pos, f.createIfcDirection([0.0, 0.0, 1.0]), float(depth))
 
     def _set_body(self, product, solid):
-        """기존 표현이 있으면 항목만 교체한다. 표현·배치 엔티티는 유지해 다른 요소의 참조가 끊기지 않는다."""
+        """기존 표현이 있으면 항목만 교체한다. 표현·배치 엔티티는 유지해 다른 요소의 참조가 끊기지 않는다. solid 는 목록일 수 있다(스타일은 첫 항목에 입힌다)."""
         f = self.f
+        items = list(solid) if isinstance(solid, (list, tuple)) else [solid]
+        solid = items[0]
         shape = product.Representation
         if shape is None:
-            rep = f.createIfcShapeRepresentation(self.body, "Body", "SweptSolid", [solid])
+            rep = f.createIfcShapeRepresentation(self.body, "Body", "SweptSolid", items)
             product.Representation = f.createIfcProductDefinitionShape(None, None, [rep])
             self._restore_style(product, solid)
             return
         rep = shape.Representations[0]
         old = list(rep.Items)
-        rep.Items = [solid]
+        rep.Items = items
         # 외부 도구가 몸체에 붙인 스타일(색)·레이어 지정은 새 솔리드로 옮긴다: 외형은 의도가 정한 형상이 아니라 요소가 가진 속성이다.
         # 형상이 실제로 바뀌어 다시 투영해도 스타일은 유지한다(항목이 여럿이면 첫 스타일만, 나머지는 버린다)
         moved = False
@@ -1030,7 +1032,7 @@ class IfcModel:
     # ------------------------------------------------------------ 투영 (늦게)
     def project(self, eid: str, spec: dict) -> None:
         kind = spec["kind"]
-        {"level": self._project_level, "wall": self._project_wall, "door": self._project_door, "slab": self._project_slab, "stair": self._project_stair, "space": self._project_space,
+        {"level": self._project_level, "wall": self._project_wall, "door": self._project_door, "slab": self._project_slab, "stair": self._project_stair, "space": self._project_space, "railing": self._project_railing,
          "site": self._project_site, "ftype": lambda i, sp: fp.project_type(self, i, sp), "finst": lambda i, sp: fp.project_inst(self, i, sp)}[kind](eid, spec)
         # 의도를 IFC 에도 복제한다. 정본은 의도 저장소이고 이 속성셋은 매번 덮어쓴다.
         e = self.ents[eid]
@@ -1217,6 +1219,23 @@ class IfcModel:
         wanted["landing"] = {"cls": "IfcSlab", "name": f"{spec['name']}-landing", "rel": "aggregate", "attrs": {"PredefinedType": "LANDING"},
                              "solid": (lambda: self._solid(ld["poly"], ld["t"], z0=z0 + ld["z"] - ld["t"]))}
         self._sync_parts(eid, wanted)
+
+    def _project_railing(self, eid, spec):
+        """난간: 손잡이(IfcSweptDiskSolid, 손잡이 윗선을 따라 3D 폴리라인)와 난간 기둥(수직 IfcSweptDiskSolid)을 한 몸체에 담는다. 배치는 레벨 좌표계 원점이다."""
+        from dobim_core.kinds import RAILING_HANDRAIL_R, RAILING_POST_R, railing_geom
+        f = self.f
+        e = self.ents[eid]
+        e.Name = spec["name"]
+        e.PredefinedType = "GUARDRAIL"
+        self._contain(eid, spec["level"])
+        self._place(e, self.ents[spec["level"]].ObjectPlacement, (0.0, 0.0, 0.0), (1.0, 0.0, 0.0))
+        g = railing_geom({"path": spec["path"], "height": spec["height"], "base_offset": spec["base_offset"], "rise": spec["rise"]})
+
+        def disk(pts, r):
+            pl = f.createIfcPolyline([f.createIfcCartesianPoint([float(a), float(b), float(c)]) for a, b, c in pts])
+            return f.createIfcSweptDiskSolid(pl, float(r), None, None, None)
+        items = [disk(g["top"], RAILING_HANDRAIL_R)] + [disk([a, b], RAILING_POST_R) for a, b in g["posts"]]
+        self._set_body(e, items)
 
     def _project_space(self, eid, spec):
         """공간: 경계 프로필을 레벨 좌표계 원점에서 높이만큼 압출한다. 층 소속은 포함(IfcRelContainedInSpatialStructure)이 아니라 집합(IfcRelAggregates)이다.
