@@ -792,8 +792,63 @@ def _hole_x(poly):
     return []
 
 
+def _x2(p, q, r):
+    return (q[0] - p[0]) * (r[1] - p[1]) - (q[1] - p[1]) * (r[0] - p[0])
+
+
+def _free_bridge(a, b, edges) -> bool:
+    """선분 ab 가 edges 의 선분과 끝점 접촉 외에는 만나지 않는가(ab 의 끝점을 공유하는 선분은 건너뛴다)."""
+    for c, d in edges:
+        if a == c or a == d or b == c or b == d:
+            continue
+        if _x2(a, b, c) * _x2(a, b, d) <= 0 and _x2(c, d, a) * _x2(c, d, b) <= 0:
+            return False
+    return True
+
+
+def _in_ring(pt, ring) -> bool:
+    """짝수-홀수 규칙으로 점이 고리 안인가."""
+    x, y = pt
+    c = False
+    n = len(ring)
+    for i in range(n):
+        a, b = ring[i], ring[(i + 1) % n]
+        if (a[1] > y) != (b[1] > y) and x < a[0] + (y - a[1]) / (b[1] - a[1]) * (b[0] - a[0]):
+            c = not c
+    return c
+
+
+BRIDGE_WORK_MAX = 40000   # 구멍 잇기 후보(고리 꼭짓점 x 구멍 꼭짓점) 수 상한: 넘으면 구멍을 비우지 않는다(옛 채움)
+
+
+def fill_ring(poly, holes):
+    """구멍이 있는 슬래브의 절단 채움: 경계(반시계)에 구멍(시계 방향으로 뒤집음)을 가는 틈으로 이어 붙인 고리 하나(비영·짝수-홀수 규칙 모두 구멍이 빈다).
+    구멍은 왼쪽 끝 꼭짓점(x, y) 순으로 하나씩, 이미 이어진 고리의 꼭짓점과 가장 가까우면서 어떤 변과도 만나지 않는 쌍으로 잇는다(결정적).
+    이을 수 없으면 None(채움은 경계만)."""
+    ring = list(poly)
+    todo = sorted((list(reversed(h)) for h in holes), key=lambda h: min(h))
+    if len(ring) * sum(len(h) for h in todo) > BRIDGE_WORK_MAX:
+        return None
+    for k, h in enumerate(todo):
+        others = [(o[i], o[(i + 1) % len(o)]) for o in todo[k + 1:] for i in range(len(o))]
+        edges = [(ring[i], ring[(i + 1) % len(ring)]) for i in range(len(ring))] + [(h[i], h[(i + 1) % len(h)]) for i in range(len(h))] + others
+        cands = sorted(((ring[i][0] - h[j][0]) ** 2 + (ring[i][1] - h[j][1]) ** 2, i, j) for i in range(len(ring)) for j in range(len(h)))
+        pick = None
+        for _, i, j in cands:
+            a, b = ring[i], h[j]
+            mid = ((a[0] + b[0]) / 2.0, (a[1] + b[1]) / 2.0)
+            if _free_bridge(a, b, edges) and _in_ring(mid, ring) and not _in_ring(mid, h) and not any(_in_ring(mid, o) for o in todo[k + 1:]):
+                pick = (i, j)
+                break
+        if pick is None:
+            return None
+        i, j = pick
+        ring = ring[:i + 1] + h[j:] + h[:j + 1] + [ring[i]] + ring[i + 1:]
+    return tuple(ring)
+
+
 def plan_slab_parts(g, v, s):
-    """평면의 슬래브: (선분들, 채움 다각형들). 절단 높이가 두께 범위에 들 때만 경계 윤곽을 절단선·절단 채움으로 그린다(구멍 윤곽도 절단선이다. 채움은 구멍을 비우지 않는다).
+    """평면의 슬래브: (선분들, 채움 다각형들). 절단 높이가 두께 범위에 들 때만 경계 윤곽을 절단선·절단 채움으로 그린다(구멍 윤곽도 절단선이다. 채움은 구멍을 비운다: 구멍이 있으면 fill_ring 의 고리 하나).
     슬래브가 절단 높이 아래(윗면 < 절단 높이)이고 구멍이 있으면 내려다 보이는 구멍을 윤곽(proj)과 X 표시(symbol)로 그린다."""
     cfg = g.q(view_cfg, v)
     info = g.q(slab_info, s)
@@ -807,7 +862,7 @@ def plan_slab_parts(g, v, s):
         for o in holes:
             m = len(o)
             segs += tuple(("cut", o[i][0], o[i][1], o[(i + 1) % m][0], o[(i + 1) % m][1]) for i in range(m))
-        return (segs, (poly,))
+        return (segs, (fill_ring(poly, holes) or poly if holes else poly,))
     if cfg[2] > info[1] + EPS:
         segs = []
         for o in holes:
