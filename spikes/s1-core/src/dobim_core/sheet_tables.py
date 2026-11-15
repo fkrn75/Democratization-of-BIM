@@ -219,6 +219,8 @@ def triangle_tag(sh, x, y, label: str, color=RED):
 
 # ---------------------------------------------------------------- 뷰 위 기호
 def bubble(sh, cx, cy, label: str, r=3.3, color=INK, size=2.3):
+    k = getattr(sh, "sym_k", 1.0)          # 기호 크기 배율(작성기준 프로파일). 1 이면 값이 그대로다
+    r, size = r * k, size * k
     sh.circle(cx, cy, r, 0.3, color)
     sh.text(cx, cy + size * 0.35, size, label, "middle", color)
 
@@ -238,6 +240,7 @@ def grid_lines(sh, data, TX, TY, grids):
     if bb is None or not grids:
         return
     sh.begin("grid-lines", **{"data-count": len(grids)})
+    k = getattr(sh, "sym_k", 1.0)
     ext = 5.0
     for g in grids:
         lab, pos = g["label"], g["pos"]
@@ -245,14 +248,14 @@ def grid_lines(sh, data, TX, TY, grids):
             xa = TX(pos)
             ya, yb = TY(bb[3]) - ext, TY(bb[1]) + ext
             dashdot(sh, xa, ya, xa, yb)
-            bubble(sh, xa, ya - 3.3, lab)
-            bubble(sh, xa, yb + 3.3, lab)
+            bubble(sh, xa, ya - 3.3 * k, lab)
+            bubble(sh, xa, yb + 3.3 * k, lab)
         else:
             ya = TY(pos)
             xa, xb = TX(bb[0]) - ext, TX(bb[2]) + ext
             dashdot(sh, xa, ya, xb, ya)
-            bubble(sh, xa - 3.3, ya, lab)
-            bubble(sh, xb + 3.3, ya, lab)
+            bubble(sh, xa - 3.3 * k, ya, lab)
+            bubble(sh, xb + 3.3 * k, ya, lab)
     sh.end()
 
 
@@ -311,9 +314,10 @@ def tag_items(sh, gid, items, TX, TY, circle=True):
     if not items:
         return
     sh.begin(gid, **{"data-count": len(items)})
+    k = getattr(sh, "sym_k", 1.0)
     for x, y, text in items:
         px, py = TX(x), TY(y)
         if circle:
-            sh.circle(px, py, 2.4 if len(text) < 4 else 3.0, 0.25, INK, "#ffffff")
-        sh.text(px, py + 0.7, 1.9, text, "middle")
+            sh.circle(px, py, (2.4 if len(text) < 4 else 3.0) * k, 0.25, INK, "#ffffff")
+        sh.text(px, py + 0.7 * k, 1.9 * k, text, "middle")
     sh.end()

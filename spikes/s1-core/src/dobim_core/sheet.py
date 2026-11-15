@@ -85,20 +85,39 @@ def wrap(s: str, size: float, maxw: float, max_lines: int) -> list[str]:
     return lines
 
 
+def fmt_dim(text: str, prof) -> str:
+    """치수 문자 형식(작성기준 프로파일): 소수 자릿수·천단위 쉼표(DM-10). 프로파일이 없거나 숫자가 아니면 그대로."""
+    if not prof or (prof.get("dim_decimals") is None and not prof.get("dim_thousands")):
+        return text
+    try:
+        v = float(text)
+    except ValueError:
+        return text
+    d = prof.get("dim_decimals")
+    if d is None:
+        d = len(text.split(".")[1]) if "." in text else 0
+    return f"{v:,.{d}f}" if prof.get("dim_thousands") else f"{v:.{d}f}"
+
+
 # ---------------------------------------------------------------- 뷰 -> 그림 요소
-def view_prims(sh: Sheet, data, tx, ty, datums, dx0, dx1, style=None):
+def view_prims(sh: Sheet, data, tx, ty, datums, dx0, dx1, style=None, prof=None):
     """뷰 한 장의 선·채움·기준선·주석을 시트 좌표로 옮겨 그린다(drawing_export.render_svg 와 같은 그림, 같은 굵기 체계)."""
+    th = (prof or {}).get("text_height") or {}
+    h_dim, h_tag = th.get("dimension", 2.5), th.get("tag", 2.5)
+    h_lab = {2.5: th.get("room_name"), 2.0: th.get("room_area")}     # 실명·면적 문자 높이(뷰 데이터의 기본 높이 -> 프로파일 값)
     for poly in data["fills"]:
         sh.poly([(tx(x), ty(y)) for x, y in poly], fill="#cfcfcf")
     for name, z in datums:
         sh.line(tx(dx0), ty(z), tx(dx1), ty(z), DX.DATUM_W, "#555555", (3.0, 1.5))
-        sh.text(tx(dx0) + 1.0, ty(z) - 0.8, 2.6, DX.datum_label(name, z), color="#555555")
+        sh.text(tx(dx0) + 1.0, ty(z) - 0.8, th.get("datum", 2.6), DX.datum_label(name, z), color="#555555")
     st = style or DX.STYLE
     for cls in DX.LINE_ORDER:
         wd, col = st[cls]
         for _, x0, y0, x1, y1 in (ln for ln in data["lines"] if ln[0] == cls):
             sh.line(tx(x0), ty(y0), tx(x1), ty(y1), wd, col)
     for x, y, text, size, anchor in data.get("labels", ()):
+        if th:
+            size = (th.get("fire_mark") if text.startswith(("FW ", "FD ")) else h_lab.get(size)) or size
         sh.text(tx(x), ty(y), size, text, anchor, "#000000")
     for it in data.get("annots", ()):
         t, aid = it[0], it[1]
@@ -114,12 +133,12 @@ def view_prims(sh: Sheet, data, tx, ty, datums, dx0, dx1, style=None):
             ang = degrees(atan2(upy, upx))
             ang = ang - 180.0 if ang > 90.0 else (ang + 180.0 if ang <= -90.0 else ang)
             a = radians(ang)
-            sh.text(tx(tpos[0]) + 0.8 * sin(a), ty(tpos[1]) - 0.8 * cos(a), 2.5, text, "middle", DX.ANNOT_COLOR, ang)
+            sh.text(tx(tpos[0]) + 0.8 * sin(a), ty(tpos[1]) - 0.8 * cos(a), h_dim, fmt_dim(text, prof), "middle", DX.ANNOT_COLOR, ang)
         elif t == "tag":
             _, _, anc, lab, text = it
             sh.line(tx(anc[0]), ty(anc[1]), tx(lab[0]), ty(lab[1]), 0.13, "#8a3b00")
             sh.circle(tx(anc[0]), ty(anc[1]), 0.5, 0.0, "#8a3b00", "#8a3b00")
-            sh.text(tx(lab[0]) + 0.6, ty(lab[1]), 2.5, text, color="#8a3b00")
+            sh.text(tx(lab[0]) + 0.6, ty(lab[1]), h_tag, text, color="#8a3b00")
         else:
             _, _, kind, reason, x, y = it
             what = "치수" if kind == "dim" else "태그"
@@ -263,6 +282,8 @@ def title_block(sh: Sheet, spec: dict, scales: list[int]):
 def build_sheet(spec: dict, views: list[dict]) -> Sheet:
     """spec: paper, project, title, number, date, north_deg. views: 커맨드가 만든 뷰 데이터(+ 'id')."""
     sh = Sheet(spec["paper"])
+    prof = spec.get("profile")
+    sh.sym_k = (prof or {}).get("symbol_scale", 1.0)       # 기호 크기 배율(작성기준 프로파일). 주지 않으면 1
     sh.begin("sheet-border")
     sh.rect(OUTER, OUTER, sh.w - 2 * OUTER, sh.h - 2 * OUTER, 0.7)      # 윤곽선
     sh.end()
@@ -292,11 +313,12 @@ def build_sheet(spec: dict, views: list[dict]) -> Sheet:
         f = DX.MARGIN
         sh.begin(f"view-{v.get('id') or len(sh.placed)}", **{"data-view": v.get("id") or "", "data-scale": v["scale"]})
         TX, TY = (lambda X, _tx=tx, _ox=ox: _ox + _tx(X) - f), (lambda Y, _ty=ty, _oy=oy: _oy + _ty(Y) - f)
-        view_prims(sh, v, TX, TY, datums, ex0, ex1, _style(spec))
+        view_prims(sh, v, TX, TY, datums, ex0, ex1, _style(spec), prof)
         _view_extras(sh, spec, v, TX, TY)
         cap = f"{v['name']}"
-        sh.text(ox, oy + ch + 7.0, 4.0, cap, bold=True)
-        sh.text(ox + est_w(cap, 4.0) + 4.0, oy + ch + 7.0, 3.5, f"S=1:{v['scale']}")
+        ch_cap = ((prof or {}).get("text_height") or {}).get("caption", 4.0)
+        sh.text(ox, oy + ch + 7.0, ch_cap, cap, bold=True)
+        sh.text(ox + est_w(cap, ch_cap) + 4.0, oy + ch + 7.0, ch_cap * 0.875, f"S=1:{v['scale']}")
         sh.end()
         sh.placed.append({"view": v.get("id"), "name": v["name"], "scale": v["scale"], "x": round(ox, 2), "y": round(oy, 2),
                           "w": round(cw, 2), "h": round(ch, 2)})

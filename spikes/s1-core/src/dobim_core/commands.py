@@ -1426,6 +1426,19 @@ class SheetFrame(A):
         None, description="별도 작성기준 선 굵기 프로파일(mm): 선 종류별로 바꾼다. 생략하면 기본 체계")
 
 
+TextHeightKey = Literal["dimension", "caption", "datum", "tag", "room_name", "room_area", "fire_mark"]
+
+
+class SheetProfile(A):
+    """별도 작성기준 프로파일(B-09): 문자 높이·치수 형식·기호 크기. 모두 선택이며, 주지 않은 값은 기본 체계다. 시트 파일에만 적용한다(저장하는 시트 정의에는 넣지 않는다)."""
+    text_height: dict[TextHeightKey, Annotated[float, Field(ge=1.0, le=10.0, allow_inf_nan=False)]] | None = Field(
+        None, description="문자 높이(용지 mm). dimension 치수 문자(기본 2.5), caption 뷰 도면명(4.0, 축척 문자는 7/8), datum 레벨 문자(2.6), tag 부호 태그(2.5), "
+                          "room_name 실명(2.5), room_area 면적(2.0), fire_mark 방화 표기(2.0)")
+    dim_decimals: Annotated[int, Field(ge=0, le=3)] | None = Field(None, description="치수 문자의 소수 자릿수(생략하면 값 그대로: 정수면 정수)")
+    dim_thousands: bool | None = Field(None, description="참이면 네 자리 이상 숫자에 세 자리마다 쉼표(DM-10)")
+    symbol_scale: Annotated[float, Field(ge=0.5, le=2.0, allow_inf_nan=False)] | None = Field(None, description="기호 크기 배율(그리드·단면·상세 원, 부호 태그 원·글자). 생략하면 1")
+
+
 class SheetExport(SheetFrame):
     views: list[Id] = Field(min_length=1, max_length=12, description="시트에 놓을 뷰 id 목록(앞에서부터 왼쪽 위 -> 오른쪽 -> 아래 순). 뷰는 자기 축척 그대로 놓인다")
     path: str = Field(max_length=260, description="작업 폴더 안의 .svg 또는 .pdf 경로. PDF 는 한글 글꼴(시스템의 Noto Sans KR·나눔고딕, OFL)을 부분집합으로 내장한다")
@@ -1442,6 +1455,7 @@ class SheetExport(SheetFrame):
     tags: list[Literal["room", "opening", "wall"]] = Field(default_factory=list, max_length=3, description="평면 뷰에 부호 태그를 자동으로 단다: room 실번호, opening 문·창 부호, wall 벽체 부호")
     key_plan: Id | None = Field(None, description="키 플랜으로 쓸 평면 뷰(표제란 오른쪽 위에 줄여 그리고 해당 영역을 해칭한다)")
     key_zone: list[Num] | None = Field(None, min_length=4, max_length=4, description="키 플랜에서 해칭할 영역 [x0, y0, x1, y1](모델 mm). 생략하면 전체")
+    profile: SheetProfile | None = Field(None, description="별도 작성기준 프로파일: 문자 높이·치수 형식(소수·천단위 쉼표)·기호 크기. 생략하면 기본 체계(시트는 이전과 바이트까지 같다)")
 
 
 def _sheet_preview(ctx, a: SheetExport):
@@ -1470,6 +1484,7 @@ def sheet_export(ctx, a: SheetExport):
             "number": a.sheet_number, "date": a.date or datetime.date.today().isoformat(), "north_deg": a.north_angle}
     from dobim_core import sheet_extras as SE
     spec.update(SE.frame_spec(a))
+    spec.update(SE.profile_spec(a))
     spec.update(SE.view_extras(ctx, a, datas))
     try:
         sh = SH.build_sheet(spec, datas)
