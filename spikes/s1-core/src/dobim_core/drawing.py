@@ -1305,9 +1305,7 @@ def elev_finish(g, v, w):
     pieces = g.q(vpieces, v, w)
     if not isinstance(mat, str) or not mat.strip() or not pieces:
         return ((), ())
-    occ = list(pieces)
-    for o in g.q(vnbrs, v, w):
-        occ.extend(g.q(vpieces, v, o))
+    occ = _wall_occluders(g, v, w)
     for fe in g.q(scope_fams, v):
         occ.extend(g.q(_fam_vpieces, v, fe))
     for sl in g.q(scope_slabs, v):
@@ -1667,12 +1665,42 @@ def visible_parts(e0, e1, occluders):
     return out
 
 
+def _bridges(g, v, w):
+    """벽 하나의 위아래로 맞닿은 두 띠가 같은 u 구간에서 모두 속이 찬 곳의 가는 가림 조각(이음매 z 위로 +-2*EPS).
+    문 개구부 때문에 벽의 띠가 높이로 나뉘면 띠 경계(문 윗선 z)가 어느 조각 안쪽도 아니라서, 앞벽의 속이 찬 곳 뒤의 선이 그 높이에서만 보이는 선으로
+    남았다(가림 판정은 z 가 조각 안쪽일 때만 가린다). 두 띠가 모두 막힌 곳은 같은 벽이 막은 것이므로 이 조각으로 이음매를 메운다."""
+    cfg = g.q(view_cfg, v)
+    sol = g.q(wall_solid, w)
+    out = []
+    bands = sol[10]
+    for (_a0, a1, aiv), (b0, _b1, biv) in zip(bands, bands[1:]):
+        if abs(a1 - b0) > EPS:
+            continue
+        for p0, p1 in aiv:
+            for q0, q1 in biv:
+                lo, hi = max(p0, q0), min(p1, q1)
+                if hi - lo <= EPS:
+                    continue
+                poly = _clip_w([_sw(cfg, p) for p in _quad(sol, lo, hi)], cfg[7], cfg[8])
+                if len(poly) >= 3 and _area2(poly) > 2 * EPS:
+                    out.append((a1 - 2 * EPS, a1 + 2 * EPS, tuple(poly)))
+    return tuple(out)
+
+
+def _wall_occluders(g, v, w):
+    """벽 w 의 선을 가릴 수 있는 벽 조각들: w 와 이웃 벽의 속이 찬 조각 + 띠 이음매를 메우는 조각."""
+    occ = list(g.q(vpieces, v, w))
+    occ.extend(_bridges(g, v, w))
+    for o in g.q(vnbrs, v, w):
+        occ.extend(g.q(vpieces, v, o))
+        occ.extend(_bridges(g, v, o))
+    return occ
+
+
 def vwall_lines(g, v, w):
     cfg = g.q(view_cfg, v)
     nb = g.q(vnbrs, v, w)
-    occ = list(g.q(vpieces, v, w))
-    for o in nb:
-        occ.extend(g.q(vpieces, v, o))
+    occ = _wall_occluders(g, v, w)
     for fe in g.q(scope_fams, v):                       # 기둥이 앞에 있으면 벽 선을 가린다
         occ.extend(g.q(_fam_vpieces, v, fe))
     sls = g.q(scope_slabs, v)
@@ -2022,9 +2050,7 @@ def vwall_hidden(g, v, w):
     cfg = g.q(view_cfg, v)
     if cfg is None or cfg[0] in ("plan", "site"):
         return ()
-    occ = list(g.q(vpieces, v, w))
-    for o in g.q(vnbrs, v, w):
-        occ.extend(g.q(vpieces, v, o))
+    occ = _wall_occluders(g, v, w)
     for fe in g.q(scope_fams, v):
         occ.extend(g.q(_fam_vpieces, v, fe))
     for sl in g.q(scope_slabs, v):
