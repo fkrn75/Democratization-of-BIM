@@ -8,6 +8,9 @@ G1 판정(항목 ID·층·판정만 carried_g1.json 에 옮겼다)을 출발점�
  3) 슬래브·높이 치수가 바꾸는 항목(X-01, X-02, X-03, X-04. DM-08 은 이 셋의 중복 행이라 따름): run.json 의 slab_probe(슬래브 추가 전후 뷰 선분·채움)와 heights/ 산출(높이 치수 SVG)을 검사해 판정한다.
     산출이 없으면 G1 판정 그대로다. 128항목 집계에는 "법정 #7 슬래브 단면 표현"에 해당하는 항목이 따로 없어서, G2 5-1절의 8개 자동 표현 대상(#2·#7·#8)은
     집계와 별도로 judge_gate 가 근거와 함께 낸다(계단 등 아직 없는 표현은 부분으로 남긴다).
+ 4) 계단·공간·방화·외부 마감이 바꾸는 항목(L-03 방화구획·방화문, L-04 복도·계단, E-02 외부마감재료. FR-01·FR-02·VT-01·MT-02 는 이 셋의 중복 행): run.json 의 stair_probe·
+    space_probe·fire_probe·finish_probe(각 입력을 더하기 전후의 뷰 선분·문자)와 base/ 산출 SVG(문자 층 labels, 해치 선 lines-hatch)를 함께 검사해 판정한다.
+    산출이 없으면 G1 판정 그대로다. 법정 #7 의 계단 단면 표현은 stair_probe 의 단면 뷰 채움 증가로 확인한다.
 집계 규칙은 G1 과 같다: 중복 행은 뺀다, 해당없음은 분모에서 뺀다, 법정 16 = 별표 2 고유 항목(높이 3개 행은 한 묶음 판정).
 
 사용: <python> judge.py --out <산출 폴더> [--g1 <G1 산출 폴더>] [--md <출력.md>]
@@ -196,19 +199,88 @@ def judge_slab_height_items(out: Path, run: dict, base: dict):
     return res
 
 
+def _svg_texts(path: Path, gid: str) -> list[str]:
+    """SVG 의 <g id=gid> 그룹 안 <text> 글자들(없으면 빈 목록)."""
+    if not path.exists():
+        return []
+    m = re.search(rf'<g id="{gid}"[^>]*>(.*?)</g>', path.read_text(encoding="utf-8"), re.S)
+    return re.findall(r"<text[^>]*>([^<]*)</text>", m.group(1)) if m else []
+
+
+def _svg_lines(path: Path, gid: str) -> int:
+    return _svg_group_count(path.read_text(encoding="utf-8"), gid, "line") if path.exists() else 0
+
+
+def stair_ok(run: dict):
+    """(계단 평면 표시, 계단 단면 표시, 근거 문장). stair_probe 에서 평면 선분이 늘고 단면 채움이 계단 절단 사각형 수만큼 늘었는가."""
+    p = run.get("stair_probe")
+    if not p:
+        return False, False, "계단 입력 없음"
+    pv = p["views"].get("plan-1F")
+    plan_ok = bool(pv) and pv["after"]["segments"] > pv["before"]["segments"] and pv["after"]["by_class"].get("symbol", 0) > pv["before"]["by_class"].get("symbol", 0)
+    secs = {k: v for k, v in p["views"].items() if k.startswith("section") or k.startswith("xsec")}
+    cut = {k: v for k, v in secs.items() if v["stair_cut_rects"] >= 1}
+    sec_ok = bool(cut) and all(v["after"]["fills"] - v["before"]["fills"] == v["stair_cut_rects"] for v in cut.values())
+    cut_txt = ", ".join("%s 채움 +%d" % (k, v["stair_cut_rects"]) for k, v in sorted(cut.items())) or "계단을 자르는 단면 없음"
+    sym0, sym1 = (pv["before"]["by_class"].get("symbol", 0), pv["after"]["by_class"].get("symbol", 0)) if pv else (0, 0)
+    why = (f"평면 1F: 선분 {pv['before']['segments']}->{pv['after']['segments']}(symbol {sym0}->{sym1}), 단면 {cut_txt}") if pv else "평면 1F 뷰 없음"
+    return plan_ok, sec_ok, why
+
+
+def judge_stair_space_items(out: Path, run: dict, base: dict):
+    """L-04(복도·계단), L-03(방화구획·방화문), E-02(외부마감재료)를 판정한다. 반환: {id: (판정, 근거)}
+
+    L-04: 계단이 평면에 표시되고(stair_probe) 복도로 분류된 공간의 실명 문자가 평면 SVG 의 문자 층에 있으면 충족. 하나만 되면 부분.
+    L-03: FireRating 이 있는 벽의 중심선 파선(symbol 선 증가)과 'FW' 문자, 문의 'FD' 문자가 평면 SVG 에 있으면 충족(방화구획 면적 판정은 범위 밖).
+    E-02: 입면 SVG 에 해치 선 그룹과 재료 이름 문자가 있으면 충족."""
+    res: dict[str, tuple[str, str]] = {}
+    plan = out / "base" / "plan-1F.svg"
+    texts = _svg_texts(plan, "labels")
+    plan_ok, _, sw = stair_ok(run)
+    sp = run.get("space_probe")
+    corridors = [s["name"] for s in run.get("spaces", []) if s["category"] in ("복도", "corridor", "hallway") and s["level"] == "1F"]
+    corr_ok = bool(sp) and bool(corridors) and all(n in texts for n in corridors)
+    if run.get("stair_probe") or sp:
+        why = f"계단: {sw}. 공간 {len(run.get('spaces', []))}개 실명·면적 문자(평면 1F 문자 {len(texts)}개), 복도 문자 {'있음' if corr_ok else '없음'}({'·'.join(corridors) or '복도 분류 공간 없음'})"
+        res["L-04"] = (OK if plan_ok and corr_ok else (PART if plan_ok or corr_ok else NO), why)
+    fp = run.get("fire_probe")
+    if fp:
+        pv = fp["views"]["plan-1F"]
+        added_sym = pv["after"]["by_class"].get("symbol", 0) - pv["before"]["by_class"].get("symbol", 0)
+        fw = sum(1 for t in texts if t.startswith("FW "))
+        fd = sum(1 for t in texts if t.startswith("FD "))
+        ok_ = added_sym > 0 and fw >= fp["fire_walls"] and fd >= fp["fire_doors"]
+        res["L-03"] = ((OK if ok_ else PART), f"평면 1F: 방화벽 중심선 파선(symbol 선 +{added_sym}), FW 문자 {fw}/{fp['fire_walls']}, 방화문 FD 문자 {fd}/{fp['fire_doors']}. 방화구획 면적 판정은 범위 밖")
+    fin = run.get("finish_probe")
+    if fin:
+        elevs = sorted(k for k in fin["views"] if k.startswith("elev"))
+        hatched = [k for k in elevs if fin["views"][k]["after"]["by_class"].get("hatch", 0) > 0]
+        mats = set(fin["materials"])
+        shown = {m for k in elevs for m in _svg_texts(out / "base" / f"{k}.svg", "labels") if m in mats}
+        svg_h = [k for k in elevs if _svg_lines(out / "base" / f"{k}.svg", "lines-hatch") > 0]
+        ok_ = len(hatched) == len(elevs) > 0 and shown == mats and len(svg_h) == len(elevs)
+        res["E-02"] = ((OK if ok_ else PART), f"입면 {len(hatched)}/{len(elevs)}개에 외벽 해치(hatch 선 {sum(fin['views'][k]['after']['by_class'].get('hatch', 0) for k in elevs)}개), 재료 문자 {sorted(shown)}")
+    return res
+
+
 def judge_gate(items: dict, out: Path, run: dict):
     """G2 5-1절 자동 표현 대상 8항목 중 이번 작업이 다루는 #2·#7·#8 을 근거와 함께 낸다(128항목 집계와 별개). 반환: [(번호, 항목, 판정, 근거)]"""
     rows = [("2", "기둥·벽·창문 위치", items["L-02"]["verdict"], items["L-02"]["reason"])]
     probe = run.get("slab_probe")
-    stairs = "계단 단면 표현은 아직 없다(계단 요소 미구현)"
+    _, stair_sec, stair_why = stair_ok(run)
+    stairs = f"계단 단면 표현 확인({stair_why})" if stair_sec else "계단 단면 표현은 확인되지 않았다(stair_probe 없음·불일치)"
     if probe and probe.get("slabs"):
         secs, elevs, sec_ok, ev_ok = _slab_probe_ok(probe)
         if sec_ok and ev_ok:
-            rows.append(("7", "종·횡단면도(슬래브·계단 표현 포함)", PART, f"슬래브: 단면 절단 사각형·채움 {len(secs)}개 뷰 확인, 입면 모서리 {len(elevs)}개 뷰 확인. {stairs}"))
+            rows.append(("7", "종·횡단면도(슬래브·계단 표현 포함)", OK if stair_sec else PART,
+                         f"슬래브: 단면 절단 사각형·채움 {len(secs)}개 뷰 확인, 입면 모서리 {len(elevs)}개 뷰 확인. {stairs}"))
         else:
             rows.append(("7", "종·횡단면도(슬래브·계단 표현 포함)", PART, "슬래브 표현이 확인되지 않았다(slab_probe 불일치). " + stairs))
     else:
         rows.append(("7", "종·횡단면도(슬래브·계단 표현 포함)", items["X-01"]["verdict"], "슬래브 입력 없음: G1 판정 유지(슬래브·계단 단면 표현은 아직 없다)"))
+    for n, nm, i in (("3", "방화구획 및 방화문의 위치", "L-03"), ("4", "복도 및 계단의 위치", "L-04"), ("6", "외부마감재료", "E-02")):
+        rows.append((n, nm, items[i]["verdict"], items[i]["reason"]))
+    rows.sort(key=lambda r: int(r[0]))
     exp = run.get("heights", {}).get("expected")
     if exp and (out / "heights").exists():
         hv = [items[i]["verdict"] for i in ("X-02", "X-03")]
@@ -244,7 +316,8 @@ def main():
     items = load_carried()
     dg = digest_same(out, Path(o.g1) if o.g1 else None)
     changed = []
-    for judged in (judge_sheet_items(out, run, items), judge_element_items(out, run, items), judge_slab_height_items(out, run, items)):
+    for judged in (judge_sheet_items(out, run, items), judge_element_items(out, run, items), judge_slab_height_items(out, run, items),
+                   judge_stair_space_items(out, run, items)):
         for i, (v, why) in judged.items():
             if items[i]["verdict"] != v:
                 changed.append((i, items[i]["verdict"], v))
@@ -258,8 +331,10 @@ def main():
     for k, (a, b, c, d) in t.items():
         den = a + b + c
         lines.append(f"| {k} | {a} | {b} | {c} | {d} | {a}/{den} ({100 * a // den}%) | {a + b}/{den} ({100 * (a + b) // den}%) |")
-    lines += ["", f"법정 높이 묶음(X-02·X-03·X-04): {bundle}", "", "자동 표현 대상(G2 5-1절) 중 이번 작업이 다루는 항목(집계와 별개):", "",
-              "| # | 항목 | 판정 | 근거 |", "|---|---|---|---|"]
+    full = {"1": items["L-01"]["verdict"], "5": items["E-01"]["verdict"]} | {n: v for n, _, v, _ in gate}     # #1·#5 는 G1 판정(충족 유지)
+    n_ok = sum(1 for v in full.values() if v == OK)
+    lines += ["", f"법정 높이 묶음(X-02·X-03·X-04): {bundle}", "", f"G2 자동 표현 대상 법정 8항목 충족: {n_ok}/8(#1·#5 는 G1 판정 유지, 나머지는 아래 표)", "",
+              "자동 표현 대상(G2 5-1절) 중 이번 작업이 다루는 항목(집계와 별개):", "", "| # | 항목 | 판정 | 근거 |", "|---|---|---|---|"]
     lines += [f"| {n} | {nm} | {v} | {why} |" for n, nm, v, why in gate]
     lines += ["", "| 항목 | 층 | 판정 | 근거 |", "|---|---|---|---|"]
     for i, r in items.items():
@@ -268,6 +343,7 @@ def main():
     if o.md:
         Path(o.md).write_text(text, encoding="utf-8")
     print(text.split("법정 높이 묶음")[0])
+    print(next(ln for ln in lines if ln.startswith("G2 자동 표현")))
     print("변경:", changed)
 
 

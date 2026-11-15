@@ -657,6 +657,8 @@ def vfam_nbr_pieces(g, v, e):
             occ.extend(g.q(_fam_vpieces, v, o))
     for sl in g.q(scope_slabs, v):
         occ.extend(g.q(_slab_vpieces, v, sl))
+    for st in g.q(scope_stairs, v):
+        occ.extend(g.q(_stair_vpieces, v, st))
     return tuple(occ)
 
 
@@ -908,6 +910,8 @@ def slab_lines(g, v, s):
     for o in g.q(scope_slabs, v):
         if o != s:
             occ.extend(g.q(_slab_vpieces, v, o))
+    for st in g.q(scope_stairs, v):
+        occ.extend(g.q(_stair_vpieces, v, st))
     for fe in g.q(scope_fams, v):
         occ.extend(g.q(_fam_vpieces, v, fe))
     lines = []
@@ -922,6 +926,444 @@ def slab_lines(g, v, s):
             others = [(w, q) for w in nb for q in g.q(vcut_rects, v, w)]
             lines += [("cut", a[0], a[1], b[0], b[1]) for a, b in outline_edges(list(rects), others, s)]
     return tuple(lines)
+
+
+# ================================================================ 계단 (kinds "stair": 직선 계단, 설계: elements-design.md 6절)
+# 계단은 디딤판마다 속이 찬 볼록 각기둥(아래 끝 ~ 그 디딤판 윗면)의 모임이다. 디딤판은 챌판 수 - 1 개(마지막 챌판 위는 위층 바닥).
+#   평면: 윤곽·디딤판 선(투영선), 걸음선 + 화살촉(symbol), 절단 높이가 계단 높이 안이면 그 위치의 절단선(cut)과 그 위쪽 생략
+#   단면: 절단면과 만나는 디딤 조각마다 (s, z) 사각형(cut 선 + 채움), 벽·슬래브와 합집합 윤곽
+#   입면: 옆모습 윤곽(양 옆면)과 디딤판 앞 모서리를 투영선으로
+STAIR_ARROW = 0.3   # 화살촉 길이 = 폭 x STAIR_ARROW (mm, 상한 400)
+
+
+def stair_info(g, s):
+    """(아래 z, 위 z, 시작 x, y, 걸음 방향 ux, uy, 걸음선 길이, 폭, 챌판 수, 디딤판 깊이, 챌판 높이) 또는 None. 저작 계단만 그린다."""
+    row = Q.el(g, s)
+    if row is None or row["kind"] != "stair" or row["origin"] != "authored":
+        return None
+    zb, zt = g.q(Q.stair_zrange, s)
+    p = row["params"]
+    x1, y1, x2, y2 = p["run"]
+    dx, dy = x2 - x1, y2 - y1
+    length = sqrt(dx * dx + dy * dy)
+    n = p["risers"]
+    return (zb, zt, x1, y1, dx / length, dy / length, length, p["width"], n, length / (n - 1), (zt - zb) / n)
+
+
+def all_stairs(g):
+    out = []
+    for b in range(Q.NB):
+        out.extend(e for e in Q.bucket_ids(g, "stair", b) if g.q(stair_info, e) is not None)
+    return tuple(sorted(out))
+
+
+def scope_stairs(g, v):
+    """뷰가 그리는 계단. 평면은 그 레벨에 놓인 것만, 단면·입면은 모델 전체."""
+    cfg = g.q(view_cfg, v)
+    if cfg is None:
+        return ()
+    if cfg[0] == "plan":
+        if cfg[1] is None:
+            return ()
+        return tuple(e for e in sorted(Q.rel_in(g, "on_level", cfg[1])) if g.q(stair_info, e) is not None)
+    return g.q(all_stairs)
+
+
+def _st_pt(info, t, m):
+    """걸음선 위 t(mm), 왼쪽으로 m(mm) 만큼 떨어진 점의 세계 좌표."""
+    return (info[2] + info[4] * t - info[5] * m, info[3] + info[5] * t + info[4] * m)
+
+
+def plan_stair_parts(g, v, s):
+    """평면의 계단: (선분들, 채움들). 채움은 없다."""
+    cfg = g.q(view_cfg, v)
+    info = g.q(stair_info, s)
+    if info is None or cfg is None or cfg[0] != "plan" or cfg[2] < info[0] - EPS:
+        return ((), ())
+    zb, zt, _, _, _, _, length, width, n, td, rise = info
+    h = width / 2.0
+    broken = cfg[2] < zt - EPS
+    k_b = min(_floor((cfg[2] - zb) / rise), n - 1) if broken else n - 1
+    tmax = k_b * td if broken else length
+    segs = []
+
+    def seg(cls, a, b):
+        segs.append((cls, a[0], a[1], b[0], b[1]))
+
+    seg("proj", _st_pt(info, 0.0, h), _st_pt(info, 0.0, -h))                  # 첫 챌판 쪽 끝선
+    seg("proj", _st_pt(info, 0.0, h), _st_pt(info, tmax, h))                  # 양 옆선
+    seg("proj", _st_pt(info, 0.0, -h), _st_pt(info, tmax, -h))
+    if not broken:
+        seg("proj", _st_pt(info, length, h), _st_pt(info, length, -h))
+    for k in range(1, n - 1):                                                 # 디딤판 사이 선(절단 위치 아래만)
+        if k * td < tmax - EPS:
+            seg("proj", _st_pt(info, k * td, h), _st_pt(info, k * td, -h))
+    # 걸음선과 오르는 방향 화살촉
+    t_start = min(td * 0.5, tmax)
+    t_end = tmax - min(td * 0.3, tmax * 0.1) if broken else length - min(td * 0.5, length * 0.1)
+    if t_end - t_start > EPS:
+        seg("symbol", _st_pt(info, t_start, 0.0), _st_pt(info, t_end, 0.0))
+        hl = min(width * STAIR_ARROW, 400.0, t_end - t_start)
+        for sgn in (1.0, -1.0):
+            seg("symbol", _st_pt(info, t_end, 0.0), _st_pt(info, t_end - hl, sgn * hl * 0.4))
+    if broken:                                                                # 절단선: 계단을 가로지르는 대각선
+        e = min(td * 0.5, 150.0)
+        seg("cut", _st_pt(info, tmax - e, h), _st_pt(info, tmax + e, -h))
+    return (tuple(segs), ())
+
+
+def _stair_vpieces(g, v, s):
+    """단면·입면에서 계단의 속이 찬 볼록 조각 ((z0, z1, 다각형(s,w)), ...): 디딤판마다 하나."""
+    cfg = g.q(view_cfg, v)
+    info = g.q(stair_info, s)
+    if info is None or cfg is None or cfg[0] == "plan":
+        return ()
+    zb, _, _, _, _, _, _, width, n, td, rise = info
+    h = width / 2.0
+    out = []
+    for k in range(n - 1):
+        quad = [_sw(cfg, _st_pt(info, t, m)) for t, m in ((k * td, -h), ((k + 1) * td, -h), ((k + 1) * td, h), (k * td, h))]
+        if _area2(quad) < 0:
+            quad.reverse()
+        quad = _clip_w(quad, cfg[7], cfg[8])
+        if len(quad) >= 3 and _area2(quad) > 2 * EPS:
+            out.append((zb, zb + (k + 1) * rise, tuple(quad)))
+    return tuple(out)
+
+
+def stair_vbbox(g, v, s):
+    ps = g.q(_stair_vpieces, v, s)
+    if not ps:
+        return None
+    ss = [p[0] for _, _, poly in ps for p in poly]
+    return (min(ss), min(z0 for z0, _, _ in ps), max(ss), max(z1 for _, z1, _ in ps))
+
+
+def stair_cut_rects(g, v, s):
+    """단면: 절단면(w=near)과 각 디딤 조각의 교차 구간 x (바닥 ~ 디딤판 윗면) 사각형."""
+    cfg = g.q(view_cfg, v)
+    if cfg is None or cfg[0] == "plan" or not cfg[9]:
+        return ()
+    near = cfg[7]
+    rects = []
+    for z0, z1, poly in g.q(_stair_vpieces, v, s):
+        xs = []
+        n = len(poly)
+        for i in range(n):
+            a, b = poly[i], poly[(i + 1) % n]
+            if abs(a[1] - near) <= EPS:
+                xs.append(a[0])
+            if (a[1] < near - EPS) != (b[1] < near - EPS) and abs(b[1] - a[1]) > EPS:
+                xs.append(a[0] + (near - a[1]) / (b[1] - a[1]) * (b[0] - a[0]))
+        if len(xs) >= 2 and max(xs) - min(xs) > EPS:
+            s0, s1 = min(xs), max(xs)
+            rects.append(((s0, z0), (s1, z0), (s1, z1), (s0, z1)))
+    return tuple(rects)
+
+
+def stair_vedges(g, v, s):
+    """계단의 모서리(뷰 좌표 3D 선분 (s,w,z)): 양 옆면의 톱니 윤곽과 디딤판 앞 모서리(폭 방향)."""
+    cfg = g.q(view_cfg, v)
+    info = g.q(stair_info, s)
+    if info is None or cfg is None or cfg[0] == "plan":
+        return ()
+    zb, _, _, _, _, _, length, width, n, td, rise = info
+    h = width / 2.0
+    prof = [(0.0, zb)]
+    for k in range(n):
+        prof.append((k * td, zb + (k + 1) * rise))
+        if k < n - 1:
+            prof.append(((k + 1) * td, zb + (k + 1) * rise))
+    prof.append((length, zb))
+    raw = []
+    for m in (-h, h):
+        pts = [(_sw(cfg, _st_pt(info, t, m)), z) for t, z in prof]
+        for i in range(len(pts)):
+            (a, za), (b, zb2) = pts[i], pts[(i + 1) % len(pts)]
+            raw.append(((a[0], a[1], za), (b[0], b[1], zb2)))
+    for t, z in prof[1:-1]:                                                   # 디딤판·챌판 모서리가 만나는 꼭짓점마다 폭 방향 선
+        a, b = _sw(cfg, _st_pt(info, t, -h)), _sw(cfg, _st_pt(info, t, h))
+        raw.append(((a[0], a[1], z), (b[0], b[1], z)))
+    out = []
+    for e0, e1 in raw:
+        if abs(e1[0] - e0[0]) < EPS and abs(e1[1] - e0[1]) < EPS and abs(e1[2] - e0[2]) < EPS:
+            continue
+        c = _clip_edge(e0, e1, cfg[7], cfg[8])
+        if c is not None:
+            out.append(c)
+    return tuple(out)
+
+
+def stair_nbr_walls(g, v, s):
+    """계단과 경계 상자가 겹치는 같은 뷰의 벽(가림 후보·절단 윤곽 합집합 상대)."""
+    me = g.q(stair_vbbox, v, s)
+    if me is None:
+        return ()
+    return tuple(w for w in g.q(scope_walls, v) if (bb := g.q(vbbox, v, w)) is not None and _bb_hit(me, bb))
+
+
+def stair_lines(g, v, s):
+    """계단 하나가 뷰에 기여하는 선분."""
+    cfg = g.q(view_cfg, v)
+    if cfg is None:
+        return ()
+    if cfg[0] == "plan":
+        return g.q(plan_stair_parts, v, s)[0]
+    mine = list(g.q(_stair_vpieces, v, s))
+    nb = g.q(stair_nbr_walls, v, s)
+    occ = mine[:]
+    for w in nb:
+        occ.extend(g.q(vpieces, v, w))
+    for o in g.q(scope_stairs, v):
+        if o != s:
+            occ.extend(g.q(_stair_vpieces, v, o))
+    for sl in g.q(scope_slabs, v):
+        occ.extend(g.q(_slab_vpieces, v, sl))
+    for fe in g.q(scope_fams, v):
+        occ.extend(g.q(_fam_vpieces, v, fe))
+    lines = []
+    if occ:
+        for e0, e1 in g.q(stair_vedges, v, s):
+            for t0, t1 in visible_parts(e0, e1, occ):
+                lines.append(("proj", e0[0] + t0 * (e1[0] - e0[0]), e0[2] + t0 * (e1[2] - e0[2]),
+                              e0[0] + t1 * (e1[0] - e0[0]), e0[2] + t1 * (e1[2] - e0[2])))
+    if cfg[9]:
+        rects = g.q(stair_cut_rects, v, s)
+        if rects:
+            others = [(w, q) for w in nb for q in g.q(vcut_rects, v, w)]
+            others += [(sl, q) for sl in g.q(scope_slabs, v) for q in g.q(slab_cut_rects, v, sl)]
+            others += [(o, q) for o in g.q(scope_stairs, v) if o != s for q in g.q(stair_cut_rects, v, o)]
+            lines += [("cut", a[0], a[1], b[0], b[1]) for a, b in outline_edges(list(rects), others, s)]
+    return tuple(lines)
+
+
+# ================================================================ 공간 (kinds "space") 과 문자 층
+# 공간은 선·채움을 만들지 않는다(윤곽은 벽이 준다). 평면에 실명과 면적 문자(labels)만 놓는다.
+# 문자 항목: (x, y, 문자, 글자 높이 mm(용지 위), 앵커 "middle"). 좌표는 선분과 같은 뷰 좌표(평면 x,y / 단면·입면 s,z).
+LABEL_NAME_H, LABEL_SUB_H = 2.5, 2.0
+
+
+def space_info(g, s):
+    """(경계 다각형(반시계 튜플), 실명, 분류) 또는 None. 저작 공간만 그린다."""
+    row = Q.el(g, s)
+    if row is None or row["kind"] != "space" or row["origin"] != "authored":
+        return None
+    p = row["params"]
+    poly = [tuple(q) for q in p["boundary"]]
+    if _area2(poly) < 0:
+        poly.reverse()
+    return (tuple(poly), p["name"], p["category"])
+
+
+def all_spaces(g):
+    out = []
+    for b in range(Q.NB):
+        out.extend(e for e in Q.bucket_ids(g, "space", b) if g.q(space_info, e) is not None)
+    return tuple(sorted(out))
+
+
+def scope_spaces(g, v):
+    """평면은 그 레벨에 놓인 공간만, 단면·입면은 없다."""
+    cfg = g.q(view_cfg, v)
+    if cfg is None or cfg[0] != "plan" or cfg[1] is None:
+        return ()
+    return tuple(e for e in sorted(Q.rel_in(g, "on_level", cfg[1])) if g.q(space_info, e) is not None)
+
+
+def polygon_centroid(poly):
+    """다각형의 면적 무게중심. 면적이 0 에 가까우면 꼭짓점 평균."""
+    a2 = _area2(poly)
+    n = len(poly)
+    if abs(a2) < 1e-6:
+        return (sum(p[0] for p in poly) / n, sum(p[1] for p in poly) / n)
+    cx = cy = 0.0
+    for i in range(n):
+        p, q = poly[i], poly[(i + 1) % n]
+        c = p[0] * q[1] - q[0] * p[1]
+        cx += (p[0] + q[0]) * c
+        cy += (p[1] + q[1]) * c
+    return (cx / (3.0 * a2), cy / (3.0 * a2))
+
+
+def area_text(poly) -> str:
+    """면적 문자: ㎡, 소수 둘째 자리."""
+    return f"{abs(_area2(poly)) / 2.0 / 1.0e6:.2f}㎡"
+
+
+def plan_space_labels(g, v, s):
+    """평면의 공간 하나: 실명(위)과 면적(아래) 문자."""
+    cfg = g.q(view_cfg, v)
+    info = g.q(space_info, s)
+    if info is None or cfg is None or cfg[0] != "plan":
+        return ()
+    cx, cy = polygon_centroid(info[0])
+    sc = cfg[4]
+    return ((round(cx, 3), round(cy + 0.9 * sc, 3), info[1], LABEL_NAME_H, "middle"),
+            (round(cx, 3), round(cy - 2.0 * sc, 3), area_text(info[0]), LABEL_SUB_H, "middle"))
+
+
+def view_labels(g, v):
+    """뷰의 문자 층: ((x, y, 문자, 높이 mm, 앵커), ...). 선분과 달리 병합하지 않고 만든 순서(공간 id 순 등)를 유지한다."""
+    cfg = g.q(view_cfg, v)
+    if cfg is None:
+        return ()
+    out = []
+    for s in g.q(scope_spaces, v):
+        out.extend(g.q(plan_space_labels, v, s))
+    for w in g.q(scope_walls, v):
+        if cfg[0] == "plan":
+            out.extend(g.q(plan_fire_labels, v, w))
+        elif cfg[0] == "elev":
+            out.extend(g.q(elev_finish, v, w)[1])
+    return tuple(out)
+
+
+# ================================================================ 방화(#3)·외부 마감(#6): 기존 속성만 읽는다 (새 종류 없음, 설계 8절)
+#   평면: Pset_WallCommon.FireRating 이 있는 벽 -> 중심선 파선(symbol) + "FW 등급" 문자, Pset_DoorCommon.FireRating 이 있는 문 -> "FD 등급" 문자
+#   입면: Pset_WallCommon.IsExternal 이 참이고 재료가 있는 벽 -> 앞면 보이는 부분에 45도 해치(hatch) + 재료 이름 문자
+FIRE_DASH, FIRE_GAP = 4.0, 1.2     # 방화벽 중심선 파선의 마디·간격(용지 mm)
+HATCH_STEP = 3.5                   # 해치 가로 간격(용지 mm)
+LABEL_FIRE_H = 2.0
+
+
+def _prop(g, e, pset, prop):
+    return Q.psets(g, e).get(pset, {}).get(prop)
+
+
+def fire_rating(g, e, pset):
+    """방화 등급 문자(앞 16자). 값이 없거나 문자열이 아니거나 비어 있으면 None."""
+    v = _prop(g, e, pset, "FireRating")
+    return v.strip()[:16] if isinstance(v, str) and v.strip() else None
+
+
+def _truthy(v) -> bool:
+    return v is True or (isinstance(v, str) and v.strip().lower() in ("true", "yes", "y", "1", "예", "외부"))
+
+
+def plan_fire_lines(g, v, w):
+    """방화벽(FireRating 이 있는 벽)의 중심선 파선. 마디 길이는 용지 위 일정하다."""
+    cfg = g.q(view_cfg, v)
+    if cfg is None or cfg[0] != "plan" or fire_rating(g, w, "Pset_WallCommon") is None:
+        return ()
+    x, y, c, s, _ = g.q(Q.wall_frame, w)
+    start, end, _st = g.q(Q.wall_trim, w)
+    dash, gap = FIRE_DASH * cfg[4], FIRE_GAP * cfg[4]
+    out = []
+    t = start
+    while t < end - SEG_MIN:
+        t1 = min(t + dash, end)
+        out.append(("symbol", x + c * t, y + s * t, x + c * t1, y + s * t1))
+        t = t1 + gap
+    return tuple(out)
+
+
+def plan_fire_labels(g, v, w):
+    """방화벽·방화문 문자: 벽은 왼쪽, 문은 오른쪽 바깥에 놓는다."""
+    cfg = g.q(view_cfg, v)
+    if cfg is None or cfg[0] != "plan":
+        return ()
+    x, y, c, s, _ = g.q(Q.wall_frame, w)
+    half = Q.el(g, w)["params"]["thickness"] / 2.0 + 1.6 * cfg[4]
+    out = []
+    fr = fire_rating(g, w, "Pset_WallCommon")
+    if fr is not None:
+        start, end, _st = g.q(Q.wall_trim, w)
+        m = (start + end) / 2.0
+        out.append((round(x + c * m - s * half, 3), round(y + s * m + c * half, 3), "FW " + fr, LABEL_FIRE_H, "middle"))
+    for d in g.q(Q.wall_hosted, w):
+        row = Q.el(g, d)
+        fd = fire_rating(g, d, "Pset_DoorCommon") if row is not None and row["kind"] == "door" else None
+        if fd is not None:
+            wx, wy, _z = g.q(Q.door_world, d)
+            out.append((round(wx + s * half, 3), round(wy - c * half, 3), "FD " + fd, LABEL_FIRE_H, "middle"))
+    return tuple(out)
+
+
+def _text_w(text, size):
+    """문자 층 글의 대략 폭(용지 mm). 한글 등 넓은 글자는 글자 높이만큼, 그 밖은 0.58배(drawing_export.label_width 와 같은 규칙)."""
+    return sum(size * (1.0 if ord(c) >= 0x2E80 else 0.58) for c in text)
+
+
+def _visible_slanted(e0, e1, occluders):
+    """z 가 변하는(대각선) 선분의 보이는 매개변수 구간들. 가림 조각의 z 범위 안에 드는 구간만 가려진다(수평·수직은 visible_parts)."""
+    dz = e1[2] - e0[2]
+    if abs(dz) < 1e-9:
+        return visible_parts(e0, e1, occluders)
+    hidden = []
+    for z0, z1, poly in occluders:
+        ta, tb = (z0 + EPS - e0[2]) / dz, (z1 - EPS - e0[2]) / dz
+        if ta > tb:
+            ta, tb = tb, ta
+        ta, tb = max(ta, 0.0), min(tb, 1.0)
+        if tb - ta <= 1e-9:
+            continue
+        for a, b in _hidden_h(poly, e0, e1):
+            lo, hi = max(a, ta), min(b, tb)
+            if hi - lo > 1e-9:
+                hidden.append((lo, hi))
+    if not hidden:
+        return [(0.0, 1.0)]
+    hidden.sort()
+    out, cur = [], 0.0
+    for a, b in hidden:
+        if a > cur + 1e-9:
+            out.append((cur, a))
+        cur = max(cur, b)
+    if cur < 1.0 - 1e-9:
+        out.append((cur, 1.0))
+    return out
+
+
+def elev_finish(g, v, w):
+    """입면의 외부 마감: (해치 선분들, 재료 문자들). IsExternal 이 참이고 재료 이름이 있는 벽만, 앞면의 보이는 부분에 45도 해치."""
+    cfg = g.q(view_cfg, v)
+    if cfg is None or cfg[0] != "elev" or not _truthy(_prop(g, w, "Pset_WallCommon", "IsExternal")):
+        return ((), ())
+    mat = Q.material(g, w)
+    pieces = g.q(vpieces, v, w)
+    if not isinstance(mat, str) or not mat.strip() or not pieces:
+        return ((), ())
+    occ = list(pieces)
+    for o in g.q(vnbrs, v, w):
+        occ.extend(g.q(vpieces, v, o))
+    for fe in g.q(scope_fams, v):
+        occ.extend(g.q(_fam_vpieces, v, fe))
+    for sl in g.q(scope_slabs, v):
+        occ.extend(g.q(_slab_vpieces, v, sl))
+    for st in g.q(scope_stairs, v):
+        occ.extend(g.q(_stair_vpieces, v, st))
+    step = HATCH_STEP * cfg[10]
+    text = mat.strip()[:24]
+    need = _text_w(text, LABEL_FIRE_H) * cfg[10]               # 글이 들어갈 만큼 넓은 조각에만 재료 문자를 놓는다(벽 끝면 같은 좁은 조각은 해치만)
+    lines = []
+    best = None
+    for z0, z1, poly in pieces:
+        s0, s1 = min(p[0] for p in poly), max(p[0] for p in poly)
+        wf = min(p[1] for p in poly)                           # 앞면 깊이
+        if s1 - s0 <= EPS or z1 - z0 <= EPS:
+            continue
+        mine = []
+        k = _floor((s0 - z1) / step) + 1                       # 세계 격자에 맞춘 해치선 번호(c = s - z): 이웃 조각과 선이 이어진다
+        while k * step < s1 - z0:
+            c = k * step
+            sa, sb = max(s0, c + z0), min(s1, c + z1)
+            if sb - sa > SEG_MIN:
+                e0, e1 = (sa, wf, sa - c), (sb, wf, sb - c)
+                for t0, t1 in _visible_slanted(e0, e1, occ):
+                    if (t1 - t0) * (sb - sa) * 1.4142 < SEG_MIN:   # 가림 경계에 남은 부스러기 선분은 버린다(병합 단계도 같은 길이로 거른다)
+                        continue
+                    mine.append(("hatch", e0[0] + t0 * (e1[0] - e0[0]), e0[2] + t0 * (e1[2] - e0[2]),
+                                 e0[0] + t1 * (e1[0] - e0[0]), e0[2] + t1 * (e1[2] - e0[2])))
+            k += 1
+        lines.extend(mine)
+        if mine and s1 - s0 >= need and (best is None or len(mine) > best[0]):   # 보이는 해치가 가장 많은 넓은 조각의 보이는 부분 가운데에 재료 문자를 놓는다
+            xs = [c for ln in mine for c in (ln[1], ln[3])]
+            zs = [c for ln in mine for c in (ln[2], ln[4])]
+            best = (len(mine), (min(xs) + max(xs)) / 2.0, (min(zs) + max(zs)) / 2.0)
+    labels = ()
+    if best is not None:                                        # 앞의 벽에 가려 해치가 하나도 안 보이는 벽에는 문자도 없다
+        labels = ((round(best[1], 3), round(best[2], 3), text, LABEL_FIRE_H, "middle"),)
+    return (tuple(lines), labels)
 
 
 def _door_symbol(sol, op):
@@ -1190,6 +1632,8 @@ def vwall_lines(g, v, w):
     sls = g.q(scope_slabs, v)
     for sl in sls:                                      # 슬래브가 앞에 있으면 벽 선을 가린다
         occ.extend(g.q(_slab_vpieces, v, sl))
+    for st in g.q(scope_stairs, v):                     # 계단이 앞에 있으면 벽 선을 가린다
+        occ.extend(g.q(_stair_vpieces, v, st))
     lines = []
     if occ:
         for e0, e1 in g.q(vedges, v, w) + g.q(vfam_hosted_edges, v, w):
@@ -1202,6 +1646,7 @@ def vwall_lines(g, v, w):
         if mine:
             others = [(o, q) for o in nb for q in g.q(vcut_rects, v, o)]
             others += [(sl, q) for sl in sls for q in g.q(slab_cut_rects, v, sl)]   # 벽과 슬래브가 맞닿은 이음매 선을 지운다
+            others += [(st, q) for st in g.q(scope_stairs, v) for q in g.q(stair_cut_rects, v, st)]   # 계단도 같다
             lines += [("cut", a[0], a[1], b[0], b[1]) for a, b in outline_edges(list(mine), others, w)]
     return tuple(lines)
 
@@ -1273,10 +1718,16 @@ def view_lines(g, v):
     segs = []
     for w in g.q(scope_walls, v):
         segs.extend(g.q(fn, v, w))
+        if cfg[0] == "plan":
+            segs.extend(g.q(plan_fire_lines, v, w))
+        elif cfg[0] == "elev":
+            segs.extend(g.q(elev_finish, v, w)[0])
     for e in g.q(scope_fams, v):
         segs.extend(g.q(fam_lines, v, e))
     for sl in g.q(scope_slabs, v):
         segs.extend(g.q(slab_lines, v, sl))
+    for st in g.q(scope_stairs, v):
+        segs.extend(g.q(stair_lines, v, st))
     return merge_lines(segs)
 
 
@@ -1301,6 +1752,9 @@ def view_fills(g, v):
             out.extend(g.q(plan_slab_parts, v, sl)[1])
         else:
             out.extend(g.q(slab_cut_rects, v, sl))
+    for st in g.q(scope_stairs, v):
+        if cfg[0] != "plan":
+            out.extend(g.q(stair_cut_rects, v, st))
     return tuple(tuple((round(p[0], 3), round(p[1], 3)) for p in poly) for poly in out)
 
 
@@ -1357,7 +1811,9 @@ def views_depending_on(g, input_keys, vids, include_not_fresh=True):
 VIEW_SCOPED = frozenset({view_cfg, scope_walls, view_omitted, plan_pieces, plan_bbox, plan_nbrs, plan_wall_lines, vpieces, vbbox, vnbrs,
                          vcut_rects, vedges, vwall_lines, view_lines, view_fills,
                          scope_fams, plan_fam_parts, _fam_vpieces, vfam_bbox, vfam_cut_rects, vfam_edges, vfam_nbr_pieces, fam_lines,
-                         vfam_hosted_edges, scope_slabs, plan_slab_parts, _slab_vpieces, slab_vbbox, slab_cut_rects, slab_vedges, slab_nbr_walls, slab_lines})
+                         vfam_hosted_edges, scope_slabs, plan_slab_parts, _slab_vpieces, slab_vbbox, slab_cut_rects, slab_vedges, slab_nbr_walls, slab_lines,
+                         scope_stairs, plan_stair_parts, _stair_vpieces, stair_vbbox, stair_cut_rects, stair_vedges, stair_nbr_walls, stair_lines,
+                         scope_spaces, plan_space_labels, view_labels, plan_fire_lines, plan_fire_labels, elev_finish})
 
 
 def forget_views(g, vids) -> int:

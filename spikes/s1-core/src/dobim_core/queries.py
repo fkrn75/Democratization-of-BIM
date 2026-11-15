@@ -122,6 +122,23 @@ def slab_zrange(g, s):
     return (top - p["thickness"], top)
 
 
+# ---------------------------------------------------------------- 계단
+def stair_level(g, s):
+    return rel_out(g, "on_level", s)[0]
+
+
+def stair_zrange(g, s):
+    """(아래 끝 z, 위 끝 z) 절대 높이. 아래 끝 = 레벨 높이 + base_offset, 위 끝 = 아래 끝 + 전체 오름."""
+    p = el(g, s)["params"]
+    base = g.q(level_info, g.q(stair_level, s))[1] + p["base_offset"]
+    return (base, base + p["height"])
+
+
+# ---------------------------------------------------------------- 공간
+def space_level(g, s):
+    return rel_out(g, "on_level", s)[0]
+
+
 # ---------------------------------------------------------------- 레벨
 def level_info(g, lv):
     p = el(g, lv)["params"]
@@ -251,9 +268,10 @@ def schedule_sorted(g, kind):
 
 def model_stats(g):
     out = {k: g.q(count, k) for k in ("level", "wall", "door")}
-    n = g.q(count, "slab")
-    if n:   # 슬래브가 없는 프로젝트의 응답·해시는 그대로다
-        out["slab"] = n
+    for k in ("slab", "stair", "space"):
+        n = g.q(count, k)
+        if n:   # 슬래브·계단·공간이 없는 프로젝트의 응답·해시는 그대로다
+            out[k] = n
     return out
 
 
@@ -275,8 +293,8 @@ def intent_of(g, e):
     elif row["kind"] == "wall":
         out["level"] = g.q(wall_level, e)
         out["joins"] = list(g.q(wall_joins, e))
-    elif row["kind"] == "slab":
-        out["level"] = g.q(slab_level, e)
+    elif row["kind"] in ("slab", "stair", "space"):
+        out["level"] = g.q({"slab": slab_level, "stair": stair_level, "space": space_level}[row["kind"]], e)
     elif row["kind"] == "door":
         out["host"] = g.q(door_host, e)
     return out
@@ -313,6 +331,13 @@ def ifc_spec(g, e):
         # 배치는 레벨 좌표계(원점·무회전)이고 윗면은 레벨 + top_offset 이므로 레벨 높이는 읽지 않는다(레벨을 옮기면 배치가 따라간다)
         return {"kind": kind, "name": p["name"], "level": g.q(slab_level, e), "boundary": tuple(tuple(q) for q in p["boundary"]),
                 "thickness": p["thickness"], "top_offset": p["top_offset"], "intent": intent}
+    if kind == "space":
+        return {"kind": kind, "name": p["name"], "category": p["category"], "level": g.q(space_level, e),
+                "boundary": tuple(tuple(q) for q in p["boundary"]), "height": p["height"], "intent": intent}
+    if kind == "stair":
+        # 배치는 레벨 좌표계(원점·무회전)이고 아래 끝은 레벨 + base_offset 이므로 레벨 높이는 읽지 않는다
+        return {"kind": kind, "name": p["name"], "level": g.q(stair_level, e), "run": tuple(p["run"]), "width": p["width"],
+                "height": p["height"], "risers": p["risers"], "base_offset": p["base_offset"], "intent": intent}
     w = g.q(door_host, e)
     t = el(g, w)["params"]["thickness"]
     return {"kind": kind, "name": p["name"], "host": w, "level": g.q(wall_level, w), "offset": p["offset"],
