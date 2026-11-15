@@ -175,6 +175,7 @@ def test_공간_증분이_전체_재생성과_같다(base):
             assert labels_of(base, v) == ref.q(D.view_labels, v), k
             assert lines_of(base, v) == s3lib.full_lines(base.eng, v), k
 
+    lb_init = labels_of(base, views["p"])
     check()
     mk_space(base)
     check()
@@ -185,7 +186,7 @@ def test_공간_증분이_전체_재생성과_같다(base):
     assert base.run("history.undo", {})["ok"]
     check()
     assert base.run("space.delete", {"id": F.SP1})["ok"]
-    assert labels_of(base, views["p"]) == ()
+    assert labels_of(base, views["p"]) == lb_init
     check()
 
 

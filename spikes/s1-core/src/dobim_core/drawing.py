@@ -1210,7 +1210,160 @@ def view_labels(g, v):
     out = []
     for s in g.q(scope_spaces, v):
         out.extend(g.q(plan_space_labels, v, s))
+    for w in g.q(scope_walls, v):
+        if cfg[0] == "plan":
+            out.extend(g.q(plan_fire_labels, v, w))
+        elif cfg[0] == "elev":
+            out.extend(g.q(elev_finish, v, w)[1])
     return tuple(out)
+
+
+# ================================================================ 방화(#3)·외부 마감(#6): 기존 속성만 읽는다 (새 종류 없음, 설계 8절)
+#   평면: Pset_WallCommon.FireRating 이 있는 벽 -> 중심선 파선(symbol) + "FW 등급" 문자, Pset_DoorCommon.FireRating 이 있는 문 -> "FD 등급" 문자
+#   입면: Pset_WallCommon.IsExternal 이 참이고 재료가 있는 벽 -> 앞면 보이는 부분에 45도 해치(hatch) + 재료 이름 문자
+FIRE_DASH, FIRE_GAP = 4.0, 1.2     # 방화벽 중심선 파선의 마디·간격(용지 mm)
+HATCH_STEP = 3.5                   # 해치 가로 간격(용지 mm)
+LABEL_FIRE_H = 2.0
+
+
+def _prop(g, e, pset, prop):
+    return Q.psets(g, e).get(pset, {}).get(prop)
+
+
+def fire_rating(g, e, pset):
+    """방화 등급 문자(앞 16자). 값이 없거나 문자열이 아니거나 비어 있으면 None."""
+    v = _prop(g, e, pset, "FireRating")
+    return v.strip()[:16] if isinstance(v, str) and v.strip() else None
+
+
+def _truthy(v) -> bool:
+    return v is True or (isinstance(v, str) and v.strip().lower() in ("true", "yes", "y", "1", "예", "외부"))
+
+
+def plan_fire_lines(g, v, w):
+    """방화벽(FireRating 이 있는 벽)의 중심선 파선. 마디 길이는 용지 위 일정하다."""
+    cfg = g.q(view_cfg, v)
+    if cfg is None or cfg[0] != "plan" or fire_rating(g, w, "Pset_WallCommon") is None:
+        return ()
+    x, y, c, s, _ = g.q(Q.wall_frame, w)
+    start, end, _st = g.q(Q.wall_trim, w)
+    dash, gap = FIRE_DASH * cfg[4], FIRE_GAP * cfg[4]
+    out = []
+    t = start
+    while t < end - SEG_MIN:
+        t1 = min(t + dash, end)
+        out.append(("symbol", x + c * t, y + s * t, x + c * t1, y + s * t1))
+        t = t1 + gap
+    return tuple(out)
+
+
+def plan_fire_labels(g, v, w):
+    """방화벽·방화문 문자: 벽은 왼쪽, 문은 오른쪽 바깥에 놓는다."""
+    cfg = g.q(view_cfg, v)
+    if cfg is None or cfg[0] != "plan":
+        return ()
+    x, y, c, s, _ = g.q(Q.wall_frame, w)
+    half = Q.el(g, w)["params"]["thickness"] / 2.0 + 1.6 * cfg[4]
+    out = []
+    fr = fire_rating(g, w, "Pset_WallCommon")
+    if fr is not None:
+        start, end, _st = g.q(Q.wall_trim, w)
+        m = (start + end) / 2.0
+        out.append((round(x + c * m - s * half, 3), round(y + s * m + c * half, 3), "FW " + fr, LABEL_FIRE_H, "middle"))
+    for d in g.q(Q.wall_hosted, w):
+        row = Q.el(g, d)
+        fd = fire_rating(g, d, "Pset_DoorCommon") if row is not None and row["kind"] == "door" else None
+        if fd is not None:
+            wx, wy, _z = g.q(Q.door_world, d)
+            out.append((round(wx + s * half, 3), round(wy - c * half, 3), "FD " + fd, LABEL_FIRE_H, "middle"))
+    return tuple(out)
+
+
+def _text_w(text, size):
+    """문자 층 글의 대략 폭(용지 mm). 한글 등 넓은 글자는 글자 높이만큼, 그 밖은 0.58배(drawing_export.label_width 와 같은 규칙)."""
+    return sum(size * (1.0 if ord(c) >= 0x2E80 else 0.58) for c in text)
+
+
+def _visible_slanted(e0, e1, occluders):
+    """z 가 변하는(대각선) 선분의 보이는 매개변수 구간들. 가림 조각의 z 범위 안에 드는 구간만 가려진다(수평·수직은 visible_parts)."""
+    dz = e1[2] - e0[2]
+    if abs(dz) < 1e-9:
+        return visible_parts(e0, e1, occluders)
+    hidden = []
+    for z0, z1, poly in occluders:
+        ta, tb = (z0 + EPS - e0[2]) / dz, (z1 - EPS - e0[2]) / dz
+        if ta > tb:
+            ta, tb = tb, ta
+        ta, tb = max(ta, 0.0), min(tb, 1.0)
+        if tb - ta <= 1e-9:
+            continue
+        for a, b in _hidden_h(poly, e0, e1):
+            lo, hi = max(a, ta), min(b, tb)
+            if hi - lo > 1e-9:
+                hidden.append((lo, hi))
+    if not hidden:
+        return [(0.0, 1.0)]
+    hidden.sort()
+    out, cur = [], 0.0
+    for a, b in hidden:
+        if a > cur + 1e-9:
+            out.append((cur, a))
+        cur = max(cur, b)
+    if cur < 1.0 - 1e-9:
+        out.append((cur, 1.0))
+    return out
+
+
+def elev_finish(g, v, w):
+    """입면의 외부 마감: (해치 선분들, 재료 문자들). IsExternal 이 참이고 재료 이름이 있는 벽만, 앞면의 보이는 부분에 45도 해치."""
+    cfg = g.q(view_cfg, v)
+    if cfg is None or cfg[0] != "elev" or not _truthy(_prop(g, w, "Pset_WallCommon", "IsExternal")):
+        return ((), ())
+    mat = Q.material(g, w)
+    pieces = g.q(vpieces, v, w)
+    if not isinstance(mat, str) or not mat.strip() or not pieces:
+        return ((), ())
+    occ = list(pieces)
+    for o in g.q(vnbrs, v, w):
+        occ.extend(g.q(vpieces, v, o))
+    for fe in g.q(scope_fams, v):
+        occ.extend(g.q(_fam_vpieces, v, fe))
+    for sl in g.q(scope_slabs, v):
+        occ.extend(g.q(_slab_vpieces, v, sl))
+    for st in g.q(scope_stairs, v):
+        occ.extend(g.q(_stair_vpieces, v, st))
+    step = HATCH_STEP * cfg[10]
+    text = mat.strip()[:24]
+    need = _text_w(text, LABEL_FIRE_H) * cfg[10]               # 글이 들어갈 만큼 넓은 조각에만 재료 문자를 놓는다(벽 끝면 같은 좁은 조각은 해치만)
+    lines = []
+    best = None
+    for z0, z1, poly in pieces:
+        s0, s1 = min(p[0] for p in poly), max(p[0] for p in poly)
+        wf = min(p[1] for p in poly)                           # 앞면 깊이
+        if s1 - s0 <= EPS or z1 - z0 <= EPS:
+            continue
+        mine = []
+        k = _floor((s0 - z1) / step) + 1                       # 세계 격자에 맞춘 해치선 번호(c = s - z): 이웃 조각과 선이 이어진다
+        while k * step < s1 - z0:
+            c = k * step
+            sa, sb = max(s0, c + z0), min(s1, c + z1)
+            if sb - sa > SEG_MIN:
+                e0, e1 = (sa, wf, sa - c), (sb, wf, sb - c)
+                for t0, t1 in _visible_slanted(e0, e1, occ):
+                    if (t1 - t0) * (sb - sa) * 1.4142 < SEG_MIN:   # 가림 경계에 남은 부스러기 선분은 버린다(병합 단계도 같은 길이로 거른다)
+                        continue
+                    mine.append(("hatch", e0[0] + t0 * (e1[0] - e0[0]), e0[2] + t0 * (e1[2] - e0[2]),
+                                 e0[0] + t1 * (e1[0] - e0[0]), e0[2] + t1 * (e1[2] - e0[2])))
+            k += 1
+        lines.extend(mine)
+        if mine and s1 - s0 >= need and (best is None or len(mine) > best[0]):   # 보이는 해치가 가장 많은 넓은 조각의 보이는 부분 가운데에 재료 문자를 놓는다
+            xs = [c for ln in mine for c in (ln[1], ln[3])]
+            zs = [c for ln in mine for c in (ln[2], ln[4])]
+            best = (len(mine), (min(xs) + max(xs)) / 2.0, (min(zs) + max(zs)) / 2.0)
+    labels = ()
+    if best is not None:                                        # 앞의 벽에 가려 해치가 하나도 안 보이는 벽에는 문자도 없다
+        labels = ((round(best[1], 3), round(best[2], 3), text, LABEL_FIRE_H, "middle"),)
+    return (tuple(lines), labels)
 
 
 def _door_symbol(sol, op):
@@ -1565,6 +1718,10 @@ def view_lines(g, v):
     segs = []
     for w in g.q(scope_walls, v):
         segs.extend(g.q(fn, v, w))
+        if cfg[0] == "plan":
+            segs.extend(g.q(plan_fire_lines, v, w))
+        elif cfg[0] == "elev":
+            segs.extend(g.q(elev_finish, v, w)[0])
     for e in g.q(scope_fams, v):
         segs.extend(g.q(fam_lines, v, e))
     for sl in g.q(scope_slabs, v):
@@ -1656,7 +1813,7 @@ VIEW_SCOPED = frozenset({view_cfg, scope_walls, view_omitted, plan_pieces, plan_
                          scope_fams, plan_fam_parts, _fam_vpieces, vfam_bbox, vfam_cut_rects, vfam_edges, vfam_nbr_pieces, fam_lines,
                          vfam_hosted_edges, scope_slabs, plan_slab_parts, _slab_vpieces, slab_vbbox, slab_cut_rects, slab_vedges, slab_nbr_walls, slab_lines,
                          scope_stairs, plan_stair_parts, _stair_vpieces, stair_vbbox, stair_cut_rects, stair_vedges, stair_nbr_walls, stair_lines,
-                         scope_spaces, plan_space_labels, view_labels})
+                         scope_spaces, plan_space_labels, view_labels, plan_fire_lines, plan_fire_labels, elev_finish})
 
 
 def forget_views(g, vids) -> int:
