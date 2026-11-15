@@ -279,9 +279,9 @@ def test_선택_속성과_대지_단면은_IFC로_왕복한다(tmp_path):
         b.close()
 
 
-def test_해시_형식은_12다():
+def test_해시_형식은_12_이상이다():
     from dobim_core import ifc_model
-    assert ifc_model.CLOSURE_FORMAT == "12"
+    assert int(ifc_model.CLOSURE_FORMAT) >= 12     # 12 에서 대지 선택 속성이 생겼다(13: 뷰의 선택 옵션)
 
 
 def test_배치도에_지반_표고점_높이_문자를_그린다(base):

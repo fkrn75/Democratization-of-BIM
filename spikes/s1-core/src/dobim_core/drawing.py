@@ -106,7 +106,13 @@ def view_cfg(g, v):
             return ("plan", None, 0.0, 0.0, scale)
         _, elev = g.q(Q.level_info, lv)
         return ("plan", lv, elev + p["cut_height"], p["view_depth"], scale)
-    if t == "elevation":
+    return cfg_from_params(p)
+
+
+def cfg_from_params(p):
+    """단면·입면 뷰 파라미터 -> 계산용 튜플(그래프 없이 파라미터만으로 정해진다: view.create 의 around 가 뷰를 만들기 전에 범위를 재는 데도 쓴다)."""
+    scale = p["scale"]
+    if p["type"] == "elevation":
         d = ELEV_DIR[p["dir"]]
         return ("elev", 0.0, 0.0, d[0], d[1], d[1], -d[0], -BIG, BIG, False, scale)
     x1, y1 = p["p1"]
@@ -1589,6 +1595,12 @@ def view_labels(g, v):
         out.extend(g.q(site_sign_labels, v))
     elif cfg[0] == "sec":
         out.extend(g.q(site_section_labels, v))
+    opts = g.q(view_opts, v)
+    if "crop" in opts:   # 부위 상세: 잘라낸 사각형 밖의 문자는 뺀다
+        c = opts["crop"]
+        out = [t for t in out if c[0] - EPS <= t[0] <= c[2] + EPS and c[1] - EPS <= t[1] <= c[3] + EPS]
+    if "dims" in opts:   # 계단·승강기 치수 표기에 딸린 문자(잘라내기와 무관하게 요소 곁에 놓는다)
+        out.extend(g.q(view_dim_labels, v))
     return tuple(out)
 
 
@@ -1691,9 +1703,9 @@ def _visible_slanted(e0, e1, occluders):
 def elev_finish(g, v, w):
     """입면의 외부 마감: (해치 선분들, 재료 문자들). IsExternal 이 참이고 재료 이름이 있는 벽만, 앞면의 보이는 부분에 45도 해치."""
     cfg = g.q(view_cfg, v)
-    if cfg is None or cfg[0] != "elev" or not _truthy(_prop(g, w, "Pset_WallCommon", "IsExternal")):
-        return ((), ())
-    mat = Q.material(g, w)
+    if cfg is None or cfg[0] != "elev" or "finish" not in g.q(view_opts, v) or not _truthy(_prop(g, w, "Pset_WallCommon", "IsExternal")):
+        return ((), ())   # 외부 마감 해치·재료 문자는 뷰의 finish 옵션을 켠 입면에만 그린다(관행: 벽 전체에 해치를 깔지 않는다)
+    mat = g.input(("mat", w))   # 외부 마감은 material.set 으로 지정한 마감 재료만 쓴다(층 구성의 가장 두꺼운 층 = 구조체 이름(철근콘크리트)을 입면에 깔지 않는다)
     pieces = g.q(vpieces, v, w)
     if not isinstance(mat, str) or not mat.strip() or not pieces:
         return ((), ())
@@ -2078,7 +2090,7 @@ def view_detail_lines(g, v):
             return ()
         for w in g.q(scope_walls, v):
             segs.extend(g.q(vwin_detail, v, w))
-    return merge_lines(segs)
+    return _crop_if(g, v, merge_lines(segs))
 
 
 # ================================================================ 단면·입면 (뷰 좌표 (s, w, z))
@@ -3025,7 +3037,293 @@ def view_hidden_lines(g, v):
         return ()
     vis = [("cut",) + tuple(ln[1:]) for ln in g.q(view_lines, v)]
     merged = merge_lines(vis + [("proj",) + h[1:] for h in hid])
-    return tuple(("hid",) + ln[1:] for ln in merged if ln[0] == "proj")
+    return _crop_if(g, v, tuple(("hid",) + ln[1:] for ln in merged if ln[0] == "proj"))
+
+
+# ================================================================ 부위 상세 뷰: 잘라내기(crop)·계단·승강기 치수 자동 표기(dims) (설계: elements-design.md 15절)
+# 뷰의 선택 파라미터이고 없으면 키 자체가 없다: 이 옵션이 없는 뷰는 아래 함수들이 모두 빈 값이라 도면이 바이트까지 그대로다.
+#   crop: 뷰 좌표 사각형(평면 x,y / 단면·입면 s,z)으로 선·채움·문자를 잘라 그린다(1:20~1:50 부위 상세).
+#   dims: 평면·단면에 보이는 계단·승강기의 치수를 연관 치수 항목(annot 의 "dim" 과 같은 모양, id 는 "detail:...")과 문자로 단다.
+#         계단 평면: 단 묶음의 폭·디딤판 수x깊이=길이, 층참의 깊이·폭, 챌판 수·높이·디딤 깊이 문자 / 계단 단면(걸음선이 단면과 나란한 단 묶음):
+#         첫 챌판 높이·첫 디딤판 깊이·디딤 길이 사슬·오름 높이 사슬, 난간 높이, 층참 높이 / 승강기 평면: 카·샤프트 폭·깊이 / 승강기 단면: 카 높이·오버헤드(OH)·승강로 높이·피트
+#   finish(입면): elev_finish 가 읽는다(외부 마감 해치·재료 문자).
+DIM_OFF = 6.0      # 치수선이 대상에서 떨어지는 거리(용지 mm)
+DIM_OFF2 = 12.0    # 두 번째 줄(바깥) 치수선
+
+
+def view_opts(g, v):
+    """뷰의 선택 파라미터 {"crop": (x1,y1,x2,y2), "dims": True, "finish": True}(있는 것만). 뷰가 없으면 빈 dict."""
+    row = Q.el(g, v)
+    if row is None or row["kind"] != "view":
+        return {}
+    p = row["params"]
+    out = {}
+    if "crop" in p:
+        out["crop"] = tuple(float(c) for c in p["crop"])
+    for k in ("dims", "finish"):
+        if p.get(k) is True:
+            out[k] = True
+    return out
+
+
+def _crop_seg(ln, c):
+    """선분 (등급, x0, y0, x1, y1)을 사각형 c=(x1,y1,x2,y2)로 자른다(Liang-Barsky). 밖이면 None, 안이면 그대로."""
+    cls, x0, y0, x1, y1 = ln[:5]
+    dx, dy = x1 - x0, y1 - y0
+    t0, t1 = 0.0, 1.0
+    for pp, qq in ((-dx, x0 - c[0]), (dx, c[2] - x0), (-dy, y0 - c[1]), (dy, c[3] - y0)):
+        if abs(pp) < 1e-12:
+            if qq < -EPS:
+                return None
+            continue
+        r = qq / pp
+        if pp < 0:
+            if r > t1:
+                return None
+            t0 = max(t0, r)
+        else:
+            if r < t0:
+                return None
+            t1 = min(t1, r)
+    if t1 - t0 < 1e-12:
+        return None
+    if t0 <= 0.0 and t1 >= 1.0:
+        return ln
+    return (cls, round(x0 + t0 * dx, 6), round(y0 + t0 * dy, 6), round(x0 + t1 * dx, 6), round(y0 + t1 * dy, 6)) + tuple(ln[5:])
+
+
+def _crop_lines(segs, c):
+    out = []
+    for ln in segs:
+        r = _crop_seg(ln, c)
+        if r is not None and (r[3] - r[1]) ** 2 + (r[4] - r[2]) ** 2 >= SEG_MIN * SEG_MIN:
+            out.append(r)
+    return tuple(out)
+
+
+def _crop_if(g, v, segs):
+    c = g.q(view_opts, v).get("crop")
+    return segs if c is None else _crop_lines(segs, c)
+
+
+def _crop_polys(polys, c):
+    """채움 다각형들을 사각형 c 로 자른다(Sutherland-Hodgman). 안에 든 것은 그대로, 면적이 없어진 것은 뺀다."""
+    out = []
+    for poly in polys:
+        pts = list(poly)
+        for axis, bound, keep_ge in ((0, c[0], True), (0, c[2], False), (1, c[1], True), (1, c[3], False)):
+            nxt = []
+            for i in range(len(pts)):
+                a, b = pts[i], pts[(i + 1) % len(pts)]
+                ina = (a[axis] >= bound) if keep_ge else (a[axis] <= bound)
+                inb = (b[axis] >= bound) if keep_ge else (b[axis] <= bound)
+                if ina:
+                    nxt.append(a)
+                if ina != inb:
+                    t = (bound - a[axis]) / (b[axis] - a[axis])
+                    nxt.append((bound, a[1] + t * (b[1] - a[1])) if axis == 0 else (a[0] + t * (b[0] - a[0]), bound))
+            pts = nxt
+            if not pts:
+                break
+        if len(pts) >= 3 and abs(_area2(pts)) > 2 * EPS:
+            out.append(tuple((round(p[0], 3), round(p[1], 3)) for p in pts) if tuple(pts) != tuple(poly) else tuple(poly))
+    return tuple(out)
+
+
+def _dim_off(aid, p, q, nrm, off, scale, text):
+    """p -> q 를 재는 치수 항목(annot_draw 의 "dim" 과 같은 모양). 치수선은 p·q 에서 단위 법선 nrm 방향으로 off(mm) 떨어지고,
+    보조선은 대상에서 0.8mm(용지) 띄워 시작해 치수선 너머 1.2mm 까지 간다. 길이 0 이면 None."""
+    dx, dy = q[0] - p[0], q[1] - p[1]
+    ln = sqrt(dx * dx + dy * dy)
+    if ln < 1.0:
+        return None
+    ux, uy = dx / ln, dy / ln
+    gap, ext = 0.8 * scale, 1.2 * scale
+    a = (p[0] + nrm[0] * off, p[1] + nrm[1] * off)
+    b = (q[0] + nrm[0] * off, q[1] + nrm[1] * off)
+    r = lambda *vs: tuple(round(x, 3) + 0.0 for x in vs)   # noqa: E731
+    e0 = r(p[0] + nrm[0] * gap, p[1] + nrm[1] * gap, a[0] + nrm[0] * ext, a[1] + nrm[1] * ext)
+    e1 = r(q[0] + nrm[0] * gap, q[1] + nrm[1] * gap, b[0] + nrm[0] * ext, b[1] + nrm[1] * ext)
+    return ("dim", aid, e0, e1, r(a[0], a[1], b[0], b[1]), text, r((a[0] + b[0]) / 2.0, (a[1] + b[1]) / 2.0), r(ux, uy))
+
+
+def detail_extent(g, e, kind, cfg):
+    """계단·승강기 하나가 뷰 좌표에서 차지하는 범위 (x1, y1, x2, y2). kind 는 "plan" 또는 "sec"(단면·입면), cfg 는 단면·입면의 view_cfg 튜플(평면은 None).
+    평면은 모델 x,y, 단면·입면은 가로 s 와 절대 높이 z. 계단·승강기가 아니거나 그리지 않는 것이면 None. 그래프 질의가 아니라 보통 함수다(뷰가 아직 없을 때도 잰다)."""
+    pts: list = []
+    zs: list = []
+    st = g.q(stair_info, e)
+    if st is not None:
+        flights, ld = g.q(stair_geom, e)
+        for fi in flights:
+            h = fi[7] / 2.0
+            pts += [_st_pt(fi, 0.0, h), _st_pt(fi, 0.0, -h), _st_pt(fi, fi[6], h), _st_pt(fi, fi[6], -h)]
+            zs += [fi[0] - fi[11], fi[1]]
+        if ld is not None:
+            pts += list(ld[0])
+            zs += [ld[1], ld[2]]
+    else:
+        ev = g.q(elevator_info, e)
+        if ev is None:
+            return None
+        x1, y1, x2, y2 = ev[0]
+        pts = [(x1, y1), (x2, y1), (x2, y2), (x1, y2)]
+        zs = [ev[2], ev[3]]
+    if kind == "plan":
+        return (min(p[0] for p in pts), min(p[1] for p in pts), max(p[0] for p in pts), max(p[1] for p in pts))
+    ss = [_sw(cfg, p)[0] for p in pts]
+    return (min(ss), min(zs), max(ss), max(zs))
+
+
+def _hits(ext, crop) -> bool:
+    return ext is not None and (crop is None or not (ext[2] < crop[0] or ext[0] > crop[2] or ext[3] < crop[1] or ext[1] > crop[3]))
+
+
+def _plan_stair_dims(g, s, cfg):
+    info = g.q(stair_info, s)
+    if info is None or cfg[2] < info[0] - EPS:
+        return []
+    flights, ld = g.q(stair_geom, s)
+    sc, tag = cfg[4], s[-6:]
+    out = []
+    for i, fi in enumerate(flights):
+        _zb, _zt, _x, _y, ux, uy, length, width, n, td, _rise, _sk = fi
+        h = width / 2.0
+        out.append(_dim_off(f"detail:{tag}:tread:{i}", _st_pt(fi, 0.0, h), _st_pt(fi, length, h), (-uy, ux), DIM_OFF * sc, sc, f"{_fmt_mm(td)}x{n - 1}={_fmt_mm(length)}"))
+        t_w, sg = (0.0, -1.0) if i == 0 else (length, 1.0)   # 폭 치수는 첫 단 묶음은 시작 끝에, 둘째는 위 끝에(층참 쪽을 피한다)
+        out.append(_dim_off(f"detail:{tag}:width:{i}", _st_pt(fi, t_w, h), _st_pt(fi, t_w, -h), (sg * ux, sg * uy), DIM_OFF * sc, sc, _fmt_mm(width)))
+    if ld is not None:
+        poly = ld[0]
+        sgn = 1.0 if _area2(poly) > 0 else -1.0
+        for k, nm in ((0, "a"), (1, "b")):
+            a, b = poly[k], poly[(k + 1) % len(poly)]
+            ln = sqrt((b[0] - a[0]) ** 2 + (b[1] - a[1]) ** 2)
+            if ln >= 1.0:
+                out.append(_dim_off(f"detail:{tag}:landing:{nm}", a, b, (sgn * (b[1] - a[1]) / ln, -sgn * (b[0] - a[0]) / ln), DIM_OFF * sc, sc, f"층참 {_fmt_mm(ln)}"))
+    return [d for d in out if d is not None]
+
+
+def _sec_stair_dims(g, s, cfg):
+    info = g.q(stair_info, s)
+    if info is None:
+        return []
+    flights, _ld = g.q(stair_geom, s)
+    sc, tag = cfg[10], s[-6:]
+    rx, ry = cfg[5], cfg[6]
+    out = []
+    for i, fi in enumerate(flights):
+        zb, zt, x1, y1, ux, uy, length, _w, n, td, rise, skirt = fi
+        cs = ux * rx + uy * ry
+        if abs(cs) < 0.999:   # 걸음선이 단면과 나란하지 않은 단 묶음은 옆모습이 아니라서 치수를 달지 않는다
+            continue
+        sg = 1.0 if cs > 0 else -1.0
+        s0 = _sw(cfg, (x1, y1))[0]
+        s1 = s0 + sg * length
+        out.append(_dim_off(f"detail:{tag}:run:{i}", (s0, zb - skirt), (s1, zb - skirt), (0.0, -1.0), DIM_OFF * sc, sc, f"{_fmt_mm(td)}x{n - 1}={_fmt_mm(length)}"))
+        out.append(_dim_off(f"detail:{tag}:rise:{i}", (s1, zb), (s1, zt), (sg, 0.0), DIM_OFF * sc, sc, f"{_fmt_mm(rise)}x{n}={_fmt_mm(zt - zb)}"))
+        out.append(_dim_off(f"detail:{tag}:riser:{i}", (s0, zb), (s0, zb + rise), (-sg, 0.0), DIM_OFF * 0.7 * sc, sc, _fmt_mm(rise)))
+        out.append(_dim_off(f"detail:{tag}:tread1:{i}", (s0, zb + rise), (s0 + sg * td, zb + rise), (0.0, 1.0), DIM_OFF * 0.7 * sc, sc, _fmt_mm(td)))
+    return [d for d in out if d is not None]
+
+
+def _sec_railing_dims(g, r, cfg):
+    info = g.q(railing_info, r)
+    if info is None:
+        return []
+    surf, top, _posts = info
+    x, y, z = surf[0]
+    s = _sw(cfg, (x, y))[0]
+    return [d for d in (_dim_off(f"detail:{r[-6:]}:rail", (s, z), (s, top[0][2]), (-1.0, 0.0), DIM_OFF * 0.7 * cfg[10], cfg[10], f"난간 {_fmt_mm(top[0][2] - z)}"),) if d is not None]
+
+
+def _plan_elev_dims(g, e, cfg):
+    info = g.q(elevator_info, e)
+    if info is None:
+        return []
+    (sx1, sy1, sx2, sy2), (cx1, cy1, cx2, cy2) = info[0], info[1]
+    sc, tag = cfg[4], e[-6:]
+    out = [_dim_off(f"detail:{tag}:cabw", (cx1, cy1), (cx2, cy1), (0.0, -1.0), (cy1 - sy1) + DIM_OFF * 0.8 * sc, sc, f"카 {_fmt_mm(cx2 - cx1)}"),
+           _dim_off(f"detail:{tag}:shaftw", (sx1, sy1), (sx2, sy1), (0.0, -1.0), DIM_OFF * 1.6 * sc, sc, f"샤프트 {_fmt_mm(sx2 - sx1)}"),
+           _dim_off(f"detail:{tag}:cabd", (cx2, cy1), (cx2, cy2), (1.0, 0.0), (sx2 - cx2) + DIM_OFF * 0.8 * sc, sc, f"카 {_fmt_mm(cy2 - cy1)}"),
+           _dim_off(f"detail:{tag}:shaftd", (sx2, sy1), (sx2, sy2), (1.0, 0.0), DIM_OFF * 1.6 * sc, sc, f"샤프트 {_fmt_mm(sy2 - sy1)}")]
+    return [d for d in out if d is not None]
+
+
+def _sec_elev_dims(g, e, cfg):
+    info = g.q(elevator_info, e)
+    if info is None:
+        return []
+    (x1, y1, x2, y2), _cab, z0, z1, zc = info
+    ss = [_sw(cfg, p) for p in ((x1, y1), (x2, y1), (x2, y2), (x1, y2))]
+    if max(p[1] for p in ss) < cfg[7] - EPS or min(p[1] for p in ss) > cfg[8] + EPS:   # 단면 깊이 밖
+        return []
+    smin, smax = min(p[0] for p in ss), max(p[0] for p in ss)
+    sc, tag = cfg[10], e[-6:]
+    lv = g.q(Q.level_info, g.q(Q.elevator_level, e))[1]
+    off, off2 = DIM_OFF * sc, DIM_OFF2 * sc
+    out = [_dim_off(f"detail:{tag}:cab", (smax, z0), (smax, zc), (1.0, 0.0), off, sc, f"카 {_fmt_mm(zc - z0)}"),
+           _dim_off(f"detail:{tag}:oh", (smax, zc), (smax, z1), (1.0, 0.0), off, sc, f"OH {_fmt_mm(z1 - zc)}"),
+           _dim_off(f"detail:{tag}:shaft", (smax, z0), (smax, z1), (1.0, 0.0), off2, sc, f"승강로 {_fmt_mm(z1 - z0)}")]
+    if z0 < lv - 1.0:
+        out.append(_dim_off(f"detail:{tag}:pit", (smin, z0), (smin, lv), (-1.0, 0.0), off, sc, f"피트 {_fmt_mm(lv - z0)}"))
+    return [d for d in out if d is not None]
+
+
+def view_dims(g, v):
+    """dims 옵션을 켠 평면·단면 뷰의 계단·승강기 치수 항목들(annot 의 "dim" 항목과 같은 모양). 옵션이 없으면 빈 값. crop 이 있으면 그 사각형과 겹치는 요소만."""
+    cfg = g.q(view_cfg, v)
+    opts = g.q(view_opts, v)
+    if cfg is None or "dims" not in opts or cfg[0] not in ("plan", "sec"):
+        return ()
+    crop = opts.get("crop")
+    plan = cfg[0] == "plan"
+    out = []
+    for s in g.q(scope_stairs, v):
+        if _hits(detail_extent(g, s, "plan" if plan else "sec", None if plan else cfg), crop):
+            out.extend(_plan_stair_dims(g, s, cfg) if plan else _sec_stair_dims(g, s, cfg))
+    for e in g.q(scope_elevators, v):
+        if _hits(detail_extent(g, e, "plan" if plan else "sec", None if plan else cfg), crop):
+            out.extend(_plan_elev_dims(g, e, cfg) if plan else _sec_elev_dims(g, e, cfg))
+    if not plan:
+        seen = set()   # 계단 양옆 난간처럼 단면에서 같은 자리·같은 높이로 겹치는 난간 치수는 하나만 단다
+        for r in g.q(scope_railings, v):
+            info = g.q(railing_info, r)
+            if info is None:
+                continue
+            sr = _sw(cfg, info[0][0])[0]
+            key = (round(sr, 1), round(info[0][0][2], 1), round(info[1][0][2] - info[0][0][2], 1))
+            if key not in seen and (crop is None or crop[0] <= sr <= crop[2]):
+                seen.add(key)
+                out.extend(_sec_railing_dims(g, r, cfg))
+    return tuple(out)
+
+
+def view_dim_labels(g, v):
+    """dims 옵션 뷰의 문자: 계단 평면은 단수·챌판 높이·디딤 깊이(걸음선 오른쪽), 계단 단면은 층참 높이."""
+    cfg = g.q(view_cfg, v)
+    opts = g.q(view_opts, v)
+    if cfg is None or "dims" not in opts or cfg[0] not in ("plan", "sec"):
+        return ()
+    crop = opts.get("crop")
+    plan = cfg[0] == "plan"
+    sc = cfg[4] if plan else cfg[10]
+    out = []
+    for s in g.q(scope_stairs, v):
+        info = g.q(stair_info, s)
+        if not _hits(detail_extent(g, s, "plan" if plan else "sec", None if plan else cfg), crop):
+            continue
+        flights, ld = g.q(stair_geom, s)
+        if plan:
+            if cfg[2] < info[0] - EPS:
+                continue
+            fi = flights[0]
+            h = fi[7] / 2.0
+            x, y = _st_pt(fi, fi[6] / 2.0, -h - 4.0 * sc)
+            out.append((round(x, 3), round(y, 3), f"{info[8]}단 챌판 {_fmt_mm(info[10])} 디딤 {_fmt_mm(info[9])}", LABEL_SUB_H, "middle"))
+        elif ld is not None:
+            sx = sum(_sw(cfg, q)[0] for q in ld[0]) / len(ld[0])
+            out.append((round(sx, 3), round(ld[2] + 1.5 * sc, 3), f"층참 +{_fmt_mm(ld[2] - flights[0][0])}", LABEL_SUB_H, "middle"))
+    return tuple(out)
 
 
 # ================================================================ 뷰 전체
@@ -3119,7 +3417,7 @@ def view_lines(g, v):
         segs.extend(g.q(site_sign_lines, v))
     elif cfg[0] == "sec":
         segs.extend(g.q(site_section_lines, v))
-    return merge_lines(segs)
+    return _crop_if(g, v, merge_lines(segs))
 
 
 def _falsy(v) -> bool:
@@ -3161,7 +3459,7 @@ def view_lines_hier(g, v):
         segs.extend(g.q(site_sign_lines, v))
     elif cfg[0] == "sec":
         segs.extend(g.q(site_section_lines, v))
-    return merge_lines(segs)
+    return _crop_if(g, v, merge_lines(segs))
 
 
 def view_fills(g, v):
@@ -3188,7 +3486,9 @@ def view_fills(g, v):
     for st in g.q(scope_stairs, v):
         if cfg[0] != "plan":
             out.extend(g.q(stair_cut_rects, v, st))
-    return tuple(tuple((round(p[0], 3), round(p[1], 3)) for p in poly) for poly in out)
+    res = tuple(tuple((round(p[0], 3), round(p[1], 3)) for p in poly) for poly in out)
+    crop = g.q(view_opts, v).get("crop")
+    return res if crop is None else _crop_polys(res, crop)
 
 
 def view_summary(lines):
@@ -3247,7 +3547,7 @@ VIEW_SCOPED = frozenset({view_cfg, scope_walls, view_omitted, plan_pieces, plan_
                          scope_fams, plan_fam_parts, _fam_vpieces, vfam_bbox, vfam_cut_rects, vfam_edges, vfam_nbr_pieces, fam_lines,
                          vfam_hosted_edges, scope_slabs, plan_slab_parts, _slab_vpieces, slab_vbbox, slab_cut_rects, slab_vedges, slab_nbr_walls, slab_lines,
                          scope_stairs, scope_railings, railing_lines, scope_elevators, elevator_lines, plan_elevator_labels, plan_roof_marks, plan_stair_parts, _stair_vpieces, stair_vbbox, stair_cut_rects, stair_vedges, stair_nbr_walls, stair_lines,
-                         scope_spaces, plan_space_labels, view_labels, site_lines, site_labels, site_dims, _elev_signs, site_sign_lines, site_sign_labels, _site_sec, _gl_z, site_section_lines, site_section_labels, vwall_hidden, view_hidden_lines, plan_fire_lines, plan_fire_labels, elev_finish})
+                         scope_spaces, plan_space_labels, view_labels, site_lines, site_labels, site_dims, _elev_signs, site_sign_lines, site_sign_labels, _site_sec, _gl_z, site_section_lines, site_section_labels, vwall_hidden, view_hidden_lines, plan_fire_lines, plan_fire_labels, elev_finish, view_opts, view_dims, view_dim_labels})
 
 
 def forget_views(g, vids) -> int:

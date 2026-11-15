@@ -147,17 +147,28 @@ def _door_params(p):
 _SCALE = lambda v: num_ok(v) and v > 0   # noqa: E731
 
 
+def _crop_ok(v) -> bool:
+    """뷰 잘라내기 사각형 [x1, y1, x2, y2](뷰 좌표 mm: 평면은 x,y / 단면·입면은 s,z). x1<x2, y1<y2."""
+    return isinstance(v, list) and len(v) == 4 and all(num_ok(x) for x in v) and v[0] < v[2] and v[1] < v[3]
+
+
+_TRUE = lambda v: v is True   # noqa: E731
+# 뷰의 선택 파라미터(없으면 키 자체가 없다): crop 잘라내기(부위 상세 뷰), dims 승강기·계단 치수 자동 표기(평면·단면), finish 입면의 외부 마감 해치·재료 문자(입면)
+VIEW_OPTIONAL = {"plan": ("crop", "dims"), "section": ("with_site", "crop", "dims"), "elevation": ("crop", "finish"), "site": ()}
+_VIEW_OPT_CHECK = {"with_site": _TRUE, "crop": _crop_ok, "dims": _TRUE, "finish": _TRUE}
+
+
 def _view_params(p):
     t = p.get("type") if isinstance(p, dict) else None
     if t == "plan":
-        return _check_fields("view", p, {"name": _name, "type": lambda v: v == "plan", "level": id_ok, "cut_height": num_ok,
-                                         "view_depth": lambda v: num_ok(v) and v >= 0, "scale": _SCALE})
+        return _check_opt("view", p, {"name": _name, "type": lambda v: v == "plan", "level": id_ok, "cut_height": num_ok,
+                                      "view_depth": lambda v: num_ok(v) and v >= 0, "scale": _SCALE}, {k: _VIEW_OPT_CHECK[k] for k in VIEW_OPTIONAL["plan"]})
     if t == "section":
         return _check_opt("view", p, {"name": _name, "type": lambda v: v == "section", "p1": _pt_ok, "p2": _pt_ok,
-                                      "depth": _pos, "flip": lambda v: type(v) is bool, "scale": _SCALE}, {"with_site": lambda v: v is True})
+                                      "depth": _pos, "flip": lambda v: type(v) is bool, "scale": _SCALE}, {k: _VIEW_OPT_CHECK[k] for k in VIEW_OPTIONAL["section"]})
     if t == "elevation":
-        return _check_fields("view", p, {"name": _name, "type": lambda v: v == "elevation", "dir": lambda v: v in ("N", "E", "S", "W"),
-                                         "scale": _SCALE})
+        return _check_opt("view", p, {"name": _name, "type": lambda v: v == "elevation", "dir": lambda v: v in ("N", "E", "S", "W"),
+                                      "scale": _SCALE}, {k: _VIEW_OPT_CHECK[k] for k in VIEW_OPTIONAL["elevation"]})
     if t == "site":   # 배치도: 모델 전체를 위에서 본 뷰라 레벨·절단 높이가 없다
         return _check_fields("view", p, {"name": _name, "type": lambda v: v == "site", "scale": _SCALE})
     return "view 의 종류가 올바르지 않다"

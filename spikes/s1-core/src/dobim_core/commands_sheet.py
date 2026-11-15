@@ -255,6 +255,8 @@ def sheet_define(ctx, a: SheetDefine):
         r = None
         a.id = sid = C._fresh_id(ctx, a, "sheet")
     params = a.model_dump(mode="json", exclude={"id"})
+    if params.get("north_angle") is None:   # 생략한 방위 각은 지금 대지의 정북 각(없으면 0)으로 정해 저장한다(저장 형식은 그대로 숫자)
+        params["north_angle"] = C.site_north(ctx)
     _sheet_name_free(ctx, a.name, sid if r else None)
     _check_sheet_views(ctx, params)
     ctx.put_el(sid, C.row("sheet", "", "sheet.basic", params) if r is None else dict(r, params=params))
