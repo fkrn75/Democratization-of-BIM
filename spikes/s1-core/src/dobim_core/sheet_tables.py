@@ -225,6 +225,23 @@ def bubble(sh, cx, cy, label: str, r=3.3, color=INK, size=2.3):
     sh.text(cx, cy + size * 0.35, size, label, "middle", color)
 
 
+def projection_symbol(sh, x, y, w, h, method="third"):
+    """투상법 기호(KS 제3각법·제1각법): 원뿔대를 정면에서 본 모양(사다리꼴 + 중심선)과 옆(원 둘)에서 본 모양을 나란히 놓는다.
+    제3각법은 정면도가 왼쪽·우측면도(동심원)가 오른쪽, 제1각법은 그 반대다. (x, y)는 기호 칸의 왼쪽 위, 크기 w x h(용지 mm)."""
+    sh.begin("projection-symbol", **{"data-method": "third-angle" if method == "third" else "first-angle"})
+    cy = y + h / 2.0
+    fw, circ = w * 0.36, h * 0.46
+    fx = x + (0.0 if method == "third" else w - fw)
+    cx = x + (w - circ) if method == "third" else x + circ
+    top, bot = h * 0.22, h * 0.50           # 사다리꼴 위·아래 반폭
+    sh.poly([(fx, cy - top), (fx + fw, cy - bot), (fx + fw, cy + bot), (fx, cy + top)], None, 0.25)
+    dashdot(sh, fx - 1.5, cy, fx + fw + 1.5, cy, 0.18)
+    sh.circle(cx, cy, circ, 0.25)
+    sh.circle(cx, cy, circ * 0.5, 0.25)
+    dashdot(sh, cx - circ - 1.5, cy, cx + circ + 1.5, cy, 0.18)
+    sh.end()
+
+
 def dim_run(sh, ax, ay, bx, by, off, text, h=2.5, color=None):
     """치수 한 개(용지 mm 좌표): 보조선·치수선·45도 눈금·치수 문자. off 는 a->b 방향 기준 (-uy, ux) 쪽으로 치수선이 떨어지는 거리(용지 mm)다."""
     color = color or DX.ANNOT_COLOR
@@ -236,9 +253,10 @@ def dim_run(sh, ax, ay, bx, by, off, text, h=2.5, color=None):
     nx, ny = -uy * off, ux * off
     ext = 1.5 if off >= 0 else -1.5
     ex, ey = -uy * ext, ux * ext
+    w_dim, w_ext = getattr(sh, "dim_w", (0.13, 0.13))     # 치수선·보조선 굵기(작성기준 프로파일의 선 굵기 위계). 기본은 둘 다 0.13
     for px, py in ((ax, ay), (bx, by)):
-        sh.line(px, py, px + nx + ex, py + ny + ey, 0.13, color)
-    sh.line(ax + nx, ay + ny, bx + nx, by + ny, 0.13, color)
+        sh.line(px, py, px + nx + ex, py + ny + ey, w_ext, color)
+    sh.line(ax + nx, ay + ny, bx + nx, by + ny, w_dim, color)
     kx, ky = (ux - uy) * 0.64, (uy + ux) * 0.64
     for px, py in ((ax + nx, ay + ny), (bx + nx, by + ny)):
         sh.line(px - kx, py - ky, px + kx, py + ky, 0.25, color)

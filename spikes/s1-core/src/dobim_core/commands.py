@@ -1430,7 +1430,7 @@ def _warn_omitted(ctx, omitted: dict) -> None:
                  "(외래는 형상 정보가 없고, 분리된 벽의 의도 값은 낡았다)")
 
 
-def _render_view(ctx, vid, detail=False):
+def _render_view(ctx, vid, detail=False, hidden=False):
     """뷰의 선분·채움·기준선(레벨)·제목을 내보내기용 데이터로 묶는다. detail 이면 큰 축척(1:50 이하) 상세 선을 더한다(SC-09)."""
     r = ctx.row(vid, "view")
     p = r["params"]
@@ -1439,6 +1439,8 @@ def _render_view(ctx, vid, detail=False):
     lines = ctx.g.q(D.view_lines, vid)
     if detail:
         lines = lines + ctx.g.q(D.view_detail_lines, vid)
+    if hidden:
+        lines = lines + ctx.g.q(D.view_hidden_lines, vid)
     _warn_omitted(ctx, ctx.g.q(D.view_omitted, vid))
     return {"type": p["type"], "name": p["name"], "scale": p["scale"], "lines": lines, "fills": ctx.g.q(D.view_fills, vid),
             "datums": levels, "annots": ctx.g.q(AN.view_annots, vid) + ctx.g.q(D.site_dims, vid), "labels": ctx.g.q(D.view_labels, vid)}
@@ -1541,6 +1543,9 @@ class SheetProfile(A):
     dim_decimals: Annotated[int, Field(ge=0, le=3)] | None = Field(None, description="치수 문자의 소수 자릿수(생략하면 값 그대로: 정수면 정수)")
     dim_thousands: bool | None = Field(None, description="참이면 네 자리 이상 숫자에 세 자리마다 쉼표(DM-10)")
     symbol_scale: Annotated[float, Field(ge=0.5, le=2.0, allow_inf_nan=False)] | None = Field(None, description="기호 크기 배율(그리드·단면·상세 원, 부호 태그 원·글자). 생략하면 1")
+    hidden_lines: bool | None = Field(None, description="참이면 단면·입면 뷰에 숨은 선(앞의 벽·기둥·슬래브·계단에 가려진 모서리와 개구부 윤곽)을 파선으로 더한다(LN-03). 평면·배치도는 없다")
+    line_hierarchy: bool | None = Field(None, description="참이면 선 굵기 위계를 적용한다(LN-04): 절단선 > 창호·기호선 = 치수선 > 보이는 선(입면·마감) > 가는선·해칭. 기본 체계는 치수선이 보이는 선보다 가늘다")
+    projection: Literal["third"] | None = Field(None, description="투상법. third 면 표제란에 '제3각법' 칸과 기호를 넣는다(T-11)")
 
 
 class SheetExport(SheetFrame):
@@ -1587,7 +1592,8 @@ def sheet_export(ctx, a: SheetExport):
     p, ext = _view_export_target(ctx, a)
     if len(set(a.views)) != len(a.views):
         raise DobimError("CONSTRAINT", "같은 뷰를 두 번 올릴 수 없다", path="/views")
-    datas = [dict(_render_view(ctx, v, a.detail), id=v) for v in a.views]
+    hidden = bool(a.profile is not None and a.profile.hidden_lines)
+    datas = [dict(_render_view(ctx, v, a.detail, hidden), id=v) for v in a.views]
     spec = {"paper": a.paper, "project": a.project_name or "(프로젝트명 없음)", "title": a.sheet_name or datas[0]["name"],
             "number": a.sheet_number, "date": a.date or datetime.date.today().isoformat(), "north_deg": a.north_angle}
     from dobim_core import sheet_extras as SE

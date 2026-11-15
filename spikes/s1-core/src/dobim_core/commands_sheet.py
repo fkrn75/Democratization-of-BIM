@@ -139,6 +139,20 @@ def build_profile(applied: dict | None = None) -> dict:
         if "symbol_scale" in applied:
             out["symbols_scale"] = applied["symbol_scale"]
             out["text_font"]["symbol_text_heights_mm"] = {k: round(v * applied["symbol_scale"], 3) for k, v in out["text_font"]["symbol_text_heights_mm"].items()}
+        if applied.get("line_hierarchy"):
+            st = DX.STYLE
+            out["line_hierarchy"] = {
+                "tiers": [{"rank": 1, "use": "구조체·주요 단면선(절단선)", "width_mm": st["cut"][0]},
+                          {"rank": 2, "use": "창호·기호선, 치수선", "width_mm": SH.HIER_DIM_W[0], "symbol_mm": st["symbol"][0]},
+                          {"rank": 3, "use": "마감선·입면선(보이는 선), 숨은 선, 치수 보조선", "width_mm": st["proj"][0], "extension_mm": SH.HIER_DIM_W[1]},
+                          {"rank": 4, "use": "가는선(레벨 기준선)·해칭", "width_mm": DX.DATUM_W, "hatch_mm": st["hatch"][0]}],
+                "text": "문자는 선 굵기가 아니라 용도별 높이(text_font.heights_mm)로 위계를 둔다",
+                "limit": "비내력벽을 구분하는 속성이 없어 모든 벽의 절단선을 같은 굵기로 그린다"}
+        if applied.get("hidden_lines"):
+            out["line_types"]["hidden"] = (f"숨은 선: 앞의 벽·기둥·슬래브·계단에 가려진 모서리·개구부 윤곽(파선 {SH.HIDDEN_DASH[0]:g}/{SH.HIDDEN_DASH[1]:g}mm, "
+                                           "보이는 선과 같은 굵기, 단면·입면만)")
+        if applied.get("projection"):
+            out["projection"] = {"method": "제3각법(정투상)", "symbol": "표제란 투상법 칸의 제3각법 기호(원뿔대 정면·측면)"}
         out["applied_profile"] = applied
     return out
 

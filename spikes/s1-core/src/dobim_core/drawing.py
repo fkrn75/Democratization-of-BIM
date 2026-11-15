@@ -1974,6 +1974,56 @@ def site_labels(g, v):
     return tuple(out)
 
 
+# ================================================================ 숨은 선 (옵션: sheet.export 의 profile.hidden_lines)
+def _complement(vis):
+    """보이는 구간 [(t0, t1), ...](정렬) -> 가려진 구간들(0..1 안)."""
+    out, cur = [], 0.0
+    for a, b in vis:
+        if a > cur + 1e-9:
+            out.append((cur, a))
+        cur = max(cur, b)
+    if cur < 1.0 - 1e-9:
+        out.append((cur, 1.0))
+    return out
+
+
+def vwall_hidden(g, v, w):
+    """단면·입면에서 벽 하나의 가려진 모서리 선분 (등급 "hid", s, z, s, z)들. vwall_lines 와 같은 가림 판정(visible_parts)의 여집합이다.
+    벽의 바깥 모서리와 문 개구부 윤곽이 앞에 있는 벽·기둥·슬래브·계단에 가려지는 부분이다."""
+    cfg = g.q(view_cfg, v)
+    if cfg is None or cfg[0] in ("plan", "site"):
+        return ()
+    occ = list(g.q(vpieces, v, w))
+    for o in g.q(vnbrs, v, w):
+        occ.extend(g.q(vpieces, v, o))
+    for fe in g.q(scope_fams, v):
+        occ.extend(g.q(_fam_vpieces, v, fe))
+    for sl in g.q(scope_slabs, v):
+        occ.extend(g.q(_slab_vpieces, v, sl))
+    for st in g.q(scope_stairs, v):
+        occ.extend(g.q(_stair_vpieces, v, st))
+    out = []
+    for e0, e1 in g.q(vedges, v, w) + g.q(vfam_hosted_edges, v, w):
+        for t0, t1 in _complement(visible_parts(e0, e1, occ)):
+            out.append(("hid", e0[0] + t0 * (e1[0] - e0[0]), e0[2] + t0 * (e1[2] - e0[2]), e0[0] + t1 * (e1[0] - e0[0]), e0[2] + t1 * (e1[2] - e0[2])))
+    return tuple(out)
+
+
+def view_hidden_lines(g, v):
+    """뷰의 숨은 선(파선으로 그릴 선분, 등급 "hid"). 단면·입면만 있다(평면·배치도는 없다). 보이는 선과 같은 직선 위에 겹치는 부분은 뺀다(실선이 우선)."""
+    cfg = g.q(view_cfg, v)
+    if cfg is None or cfg[0] in ("plan", "site"):
+        return ()
+    hid = []
+    for w in g.q(scope_walls, v):
+        hid.extend(g.q(vwall_hidden, v, w))
+    if not hid:
+        return ()
+    vis = [("cut",) + tuple(ln[1:]) for ln in g.q(view_lines, v)]
+    merged = merge_lines(vis + [("proj",) + h[1:] for h in hid])
+    return tuple(("hid",) + ln[1:] for ln in merged if ln[0] == "proj")
+
+
 # ================================================================ 뷰 전체
 def merge_lines(segs):
     """선분 묶음을 정규화한다: 같은 직선 위에서 겹치거나 이어진 선분은 하나로, 절단선(cut)이 덮는 부분은 아래 등급에서 지운다.
@@ -2138,7 +2188,7 @@ VIEW_SCOPED = frozenset({view_cfg, scope_walls, view_omitted, plan_pieces, plan_
                          scope_fams, plan_fam_parts, _fam_vpieces, vfam_bbox, vfam_cut_rects, vfam_edges, vfam_nbr_pieces, fam_lines,
                          vfam_hosted_edges, scope_slabs, plan_slab_parts, _slab_vpieces, slab_vbbox, slab_cut_rects, slab_vedges, slab_nbr_walls, slab_lines,
                          scope_stairs, plan_stair_parts, _stair_vpieces, stair_vbbox, stair_cut_rects, stair_vedges, stair_nbr_walls, stair_lines,
-                         scope_spaces, plan_space_labels, view_labels, site_lines, site_labels, site_dims, plan_fire_lines, plan_fire_labels, elev_finish})
+                         scope_spaces, plan_space_labels, view_labels, site_lines, site_labels, site_dims, vwall_hidden, view_hidden_lines, plan_fire_lines, plan_fire_labels, elev_finish})
 
 
 def forget_views(g, vids) -> int:
