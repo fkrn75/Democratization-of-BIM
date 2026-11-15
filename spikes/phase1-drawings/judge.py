@@ -667,7 +667,7 @@ def judge_after13_items(out: Path, run: dict, base: dict):
             and all(w in tx["ev-plan-2F"] for w in want) and exact and off["lines_equal"] and off["labels_equal"] and off["dims"] == 0):
         res["L-10"] = (OK, f"승강기 평면에 샤프트 안쪽 {_fmt(sx2 - sx1)}x{_fmt(sy2 - sy1)}·카 {_fmt(cw)}x{_fmt(cd)} 치수를 표기한다(1:100 1층 평면 dims 옵션, 1:50 1F·2F 상세 평면). "
                            "치수 글자는 내보낸 IFC 의 의도에서 다시 계산한 값과 같다. 옵션을 끄면 뷰가 일반 평면과 선·문자까지 같다(기존 승강기 도면 바이트 불변: 새 뷰 옵션으로 켠다). "
-                           "IFC 왕복 해시 3종 동일(경고 0, 옵션 뷰 파라미터 동일). 한계: 문 위치·도어 방향·기계실·피트 표기 없음")
+                           "IFC 왕복 해시 3종 동일(경고 0, 옵션 뷰 파라미터 동일). 한계: 도어 방향 없음(문 개구부 위치·피트·기계실 표기는 열네 번째 작업 A-019)")
     # ---- B-05: 계단·승강기 상세 도면
     run_txt = f"{_fmt(td)}x{n - 1}={_fmt(length)}"
     rise_txt = f"{_fmt(rs)}x{n}={_fmt(ist['height'])}"
@@ -686,6 +686,45 @@ def judge_after13_items(out: Path, run: dict, base: dict):
     # ---- VT-03: 중복 행(계단의 평면·단면, 코어, 주차경사로 상세): 계단 상세는 있고 코어·주차경사로는 없다
     if "B-05" in res:
         res["VT-03"] = (PART, "계단의 평면·단면 상세와 승강기 상세 평면·단면이 있다(A-014·A-015). 코어(계단실·승강기 통합 상세)와 주차경사로 상세는 없다")
+    return res
+
+
+def judge_after14_items(out: Path, run: dict, base: dict):
+    """열네 번째 작업(경사 지붕·파라펫·승강기 보강): sheets14/ 의 산출과 내보낸 IFC 의도에서 독립으로 다시 계산한 값(math.tan 용마루·처마 끝 높이, 파라펫 윗면, 승강기 구멍)을 맞춰
+    제도·관행 L-06(각층 및 지붕 평면도)과 DM-09(경사·물매 표기)를 판정한다. 산출이 없으면 빈 결과(이전 판정 그대로)."""
+    res: dict[str, tuple[str, str]] = {}
+    a = run.get("after14")
+    sd = out / "sheets14"
+    need = ("roof-plan", "section-EE", "elev-S-roof", "elev-E-roof", "ev-plan-1F", "ev-plan-pit", "ev-plan-machine", "ev-section-door", "A-018", "A-019")
+    if not a or not all((sd / f"{n}.svg").exists() for n in need) or not (out / "sheets" / "A-101.svg").exists():
+        return res
+    rt, ic = a["roundtrip"], a["ifc_check"]
+    exact = all(rt["hash_equal"]) and not rt["warnings"] and all(rt["params_equal"].values())
+    labs = a["labels"]["roof-plan"]
+    pitch_labels = [t for t in labs if t.startswith("물매 ") and "°(" in t]
+    exp, zs = a["roof_expected"], a["z_sets"]
+    near = lambda z, zset: any(abs(z - v) <= 0.01 for v in zset)   # noqa: E731
+    sec, es, ee = zs["section-EE"], zs["elev-S-roof"], zs["elev-E-roof"]
+    # 용마루·처마 높이: 박공(주차 캐노피)은 단면 E-E(용마루와 직각)에서, 모임(정자)은 입면에서, 외쪽(현관)은 높은 모서리·처마 높이로 본다
+    heights_ok = (near(exp["RF-PARK"]["ridge_z"], sec) and near(exp["RF-PARK"]["eave_end_z"], sec)
+                  and near(exp["RF-GAZEBO"]["ridge_z"], es + ee) and near(exp["RF-GAZEBO"]["eave_end_z"], es + ee)
+                  and near(exp["RF-ENTRY"]["eave_z"], sec) and near(exp["RF-ENTRY"]["high_z"], sec)
+                  and near(a["parapet"]["top_z"], sec))
+    ifc_ok = (ic["roofs"] == 3 and a["roof_ifc"]["RF-PARK"]["predefined"] == "GABLE_ROOF" and a["roof_ifc"]["RF-ENTRY"]["predefined"] == "SHED_ROOF" and a["roof_ifc"]["RF-GAZEBO"]["predefined"] == "HIP_ROOF"
+              and [len(a["roof_ifc"][k]["faces"]) for k in ("RF-PARK", "RF-ENTRY", "RF-GAZEBO")] == [2, 1, 4]
+              and all(c == "IfcSlab" and p == "ROOF" for k in a["roof_ifc"] for c, p in a["roof_ifc"][k]["faces"])
+              and a["parapet"]["ifc"] == [["IfcWall", "PARAPET"]] and ic["parapet_walls"] == 1)
+    rd = lambda n: (sd / f"{n}.svg").read_text(encoding="utf-8")   # noqa: E731
+    sheets = "S=1:100" in rd("A-018") and "S=1:50" in rd("A-019")
+    if (len(pitch_labels) == 7 and labs.count("용마루") == 2 and "물매 8°(1.4/10)" in pitch_labels and "물매 30°(5.8/10)" in pitch_labels and heights_ok and ifc_ok and sheets and exact):
+        res["L-06"] = (OK, "각층 평면도(시트 A-101: 1·2층)에 더해 지붕 평면도(A-018, 1:100: 2층 레벨 평면의 절단 높이를 지붕 위로)를 낸다: 경사 지붕 셋(박공 주차 캐노피·외쪽 현관 캐노피·모임 정자)의 처마 내민 윤곽·외곽(처마 선)·"
+                           "용마루·추녀마루와 경사면마다 물매 화살표·'물매 N°(가로 10 에 대한 세로)' 문자(7개)·'용마루' 문자, 평지붕 슬래브(S-ROOF)의 배수 물매·배수구·파라펫 안쪽 고리. 같은 시트에 E-E 단면(경사면을 자른 두께 띠 절단선·채움, 파라펫 절단 띠)과 남·동측 입면(경사 윤곽·가림)을 올렸다. "
+                           f"높이는 내보낸 IFC 의 의도에서 math.tan 으로 다시 계산한 값과 같다(박공 용마루 {exp['RF-PARK']['ridge_z']:.1f}·처마 끝 {exp['RF-PARK']['eave_end_z']:.1f}, 모임 용마루 {exp['RF-GAZEBO']['ridge_z']:.1f}, 외쪽 높은 모서리 {exp['RF-ENTRY']['high_z']:.1f}, "
+                           f"파라펫 윗면 {a['parapet']['top_z']:.0f}). IFC 는 IfcRoof 아래 경사면마다 IfcSlab(ROOF)(2·1·4개)과 슬래브에 집합한 IfcWall(PARAPET)로 나가고 왕복 해시 3종이 같다(경고 0, 되살린 파라미터 동일). "
+                           "한계: 지붕 외곽은 직사각형(회전 가능)뿐이고 L자·T자 지붕·다락·지붕창·홈통은 없다. 지붕을 자르는 높이의 평면에는 지붕을 그리지 않는다")
+    if "L-06" in res and "물매 8°(1.4/10)" in pitch_labels:
+        res["DM-09"] = (PART, "지붕 평면에 경사면마다 물매를 '물매 30°(5.8/10)' 형식(각도와 가로 10 에 대한 세로 비)으로 표기하고, 평지붕의 배수 물매는 기존대로 '물매 2%' 로 표기한다. "
+                              "관행 형식 '물매 1/100' 의 분수 표기·단면 도면의 경사 표기(경사 문자·기호)는 아직 없다")
     return res
 
 
@@ -776,7 +815,7 @@ def main():
     changed = []
     for judged in (judge_sheet_items(out, run, items), judge_element_items(out, run, items), judge_slab_height_items(out, run, items),
                    judge_stair_space_items(out, run, items), judge_sheet2_items(out, run, items), judge_bim_items(out, run, items), judge_after7_items(out, run, items), judge_after8_items(out, run, items), judge_after9_items(out, run, items),
-                   judge_after11_items(out, run, items), judge_after12_items(out, run, items), judge_after13_items(out, run, items)):
+                   judge_after11_items(out, run, items), judge_after12_items(out, run, items), judge_after13_items(out, run, items), judge_after14_items(out, run, items)):
         for i, (v, why) in judged.items():
             if items[i]["verdict"] != v:
                 changed.append((i, items[i]["verdict"], v))
