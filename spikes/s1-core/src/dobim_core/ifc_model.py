@@ -118,13 +118,22 @@ def material_label(m) -> str | None:
     return inner.is_a()
 
 
+def is_site_element(e) -> bool:
+    """대지 요소(site 종류)의 IFC 엔티티인가: IfcSite 이고 다른 IfcSite 에 집합돼 있고 의도(DoBIM_Intent)를 갖는다."""
+    if not e.is_a("IfcSite"):
+        return False
+    par = ue.get_aggregate(e)
+    return par is not None and par.is_a("IfcSite") and ue.get_pset(e, INTENT_PSET, should_inherit=False) is not None
+
+
 def skeleton_check(f):
     """코어가 직접 만드는 뼈대(IfcProject "dobim" > IfcSite "Site" > IfcBuilding "Building")를 구조로 알아본다. (뼈대 | None, 경고 | None).
     인식 기준은 구조(프로젝트·사이트·건물이 각각 하나이고 집합 사슬이 이어짐), 이름, 형상 없음, 항등 배치다.
     위경도·주소·설명·긴 이름 같은 **비형상 속성은 보지 않는다**: 외부 도구가 사이트에 위경도만 적어도 뼈대는 뼈대다(요소 분류에 영향이 없다).
     형상(표현·배치)이 바뀐 뼈대는 그대로 두면 아래 요소의 배치 기준이 달라지므로 보수적으로 뼈대로 보지 않고(사이트·건물은 외래 요소가 되고
     저작 요소는 분리된다) 그 사실을 경고로 알린다. GlobalId 는 프로젝트 UUID 에서 파생돼 파일마다 달라 기준으로 쓸 수 없다."""
-    projs, sites, blds = f.by_type("IfcProject"), f.by_type("IfcSite"), f.by_type("IfcBuilding")
+    # 대지 요소(site 종류: 뼈대 대지 아래의 하위 IfcSite + DoBIM_Intent)는 뼈대가 아니다: 세지 않는다
+    projs, sites, blds = f.by_type("IfcProject"), [s for s in f.by_type("IfcSite") if not is_site_element(s)], f.by_type("IfcBuilding")
     if len(projs) != 1 or len(sites) != 1 or len(blds) != 1:
         return None, None
     proj, site, bld = projs[0], sites[0], blds[0]
@@ -164,7 +173,8 @@ def detect_skeleton(f):
 #   "6" 시트 정의 신설(비 IFC 정의 속성에 sheet 가 더해진다)
 #   "7" L 조인 모서리를 코어 형상으로 닫는다(벽 윤곽 wall_footprint 가 queries.wall_extent 를 쓴다: id 작은 벽이 상대 벽 반 두께 연장).
 #       이전 형식으로 내보낸 IFC 의 L 조인 벽은 형상이 달라 가져오면 분리(동결)로 판정된다(안전한 쪽)
-CLOSURE_FORMAT = "7"
+#   "8" 대지 종류 신설(IfcSite 이 의도 복원 대상: 뼈대 대지 아래 하위 IfcSite 로 투영하고 뼈대 판정은 그것을 세지 않는다)
+CLOSURE_FORMAT = "8"
 
 
 def make_norm():
@@ -493,6 +503,7 @@ class IfcModel:
         api_aggregate.assign_object(f, products=[site], relating_object=proj)
         api_aggregate.assign_object(f, products=[bldg], relating_object=site)
         self.building = bldg
+        self.site_root = site                   # 대지 요소(site 종류)가 집합될 뼈대 대지
         self.infra = {site.GlobalId, bldg.GlobalId}
 
     # ------------------------------------------------------------ 외래 기반 (S2)
@@ -505,6 +516,7 @@ class IfcModel:
             self.infra = {sk[0].GlobalId, sk[1].GlobalId}
         blds = self.f.by_type("IfcBuilding")
         self.building = sk[1] if sk is not None else (blds[0] if blds else None)
+        self.site_root = sk[0] if sk is not None else None
         self._by_gid = {e.GlobalId: e for e in self.f.by_type("IfcProduct")}
         # 패밀리 타입(IfcTypeObject): 가져오기가 의도를 복원한 타입(ftype)만 요소가 된다. 요소가 아닌 타입은 파일에 그대로 남아야 하므로
         # 제품 색인(_by_gid, prune 이 요소 아닌 것을 지운다)과 따로 둔다
@@ -687,7 +699,7 @@ class IfcModel:
                 self.kinds[eid] = kind
                 self.ents[eid] = e
                 self.base_ents.add(eid)
-                if kind == "space":   # 공간은 층에 집합(IfcRelAggregates)으로 분해된다
+                if kind in ("space", "site"):   # 공간은 층에, 대지는 뼈대 대지에 집합(IfcRelAggregates)으로 분해된다
                     if e.Decomposes:
                         self.container_of[eid] = e.Decomposes[0].RelatingObject.GlobalId
                 elif kind != "ftype":
@@ -909,7 +921,7 @@ class IfcModel:
     def project(self, eid: str, spec: dict) -> None:
         kind = spec["kind"]
         {"level": self._project_level, "wall": self._project_wall, "door": self._project_door, "slab": self._project_slab, "stair": self._project_stair, "space": self._project_space,
-         "ftype": lambda i, sp: fp.project_type(self, i, sp), "finst": lambda i, sp: fp.project_inst(self, i, sp)}[kind](eid, spec)
+         "site": self._project_site, "ftype": lambda i, sp: fp.project_type(self, i, sp), "finst": lambda i, sp: fp.project_inst(self, i, sp)}[kind](eid, spec)
         # 의도를 IFC 에도 복제한다. 정본은 의도 저장소이고 이 속성셋은 매번 덮어쓴다.
         e = self.ents[eid]
         text = json.dumps(spec["intent"], sort_keys=True, separators=(",", ":"))
@@ -1013,6 +1025,38 @@ class IfcModel:
             self.container_of[eid] = lv
         self._place(e, self.ents[lv].ObjectPlacement, (0.0, 0.0, 0.0), (1.0, 0.0, 0.0))
         self._set_body(e, self._solid(spec["boundary"], spec["height"]))
+
+    def _project_site(self, eid, spec):
+        """대지: 뼈대 대지 아래 하위 IfcSite 로 집합하고(IfcRelAggregates), 경계는 몸체 표현(GeometricCurveSet 의 닫힌 폴리라인)으로 둔다.
+        표고는 RefElevation 이다. 방위·도로는 IFC 표준 속성이 아니라 의도(DoBIM_Intent)로 실려 왕복한다."""
+        f = self.f
+        e = self.ents[eid]
+        root = self.site_root
+        if root is None:
+            raise DobimError("UNSUPPORTED", "뼈대 대지가 없는 파일에는 대지를 추가할 수 없다")
+        e.Name = spec["name"]
+        e.CompositionType = "ELEMENT"
+        e.RefElevation = None if spec["elevation"] is None else float(spec["elevation"])
+        if self.container_of.get(eid) != root.GlobalId:
+            self.flush_rels()
+            if eid in self.container_of:
+                api_aggregate.unassign_object(f, products=[e])
+            api_aggregate.assign_object(f, products=[e], relating_object=root)
+            self.container_of[eid] = root.GlobalId
+        self._place(e, root.ObjectPlacement, (0.0, 0.0, 0.0), (1.0, 0.0, 0.0))
+        pts = list(spec["boundary"])
+        curve = f.createIfcPolyline([f.createIfcCartesianPoint([float(x), float(y)]) for x, y in pts + [pts[0]]])
+        item = f.createIfcGeometricCurveSet([curve])
+        shape = e.Representation
+        if shape is None:
+            rep = f.createIfcShapeRepresentation(self.body, "Body", "GeometricCurveSet", [item])
+            e.Representation = f.createIfcProductDefinitionShape(None, None, [rep])
+        else:
+            rep = shape.Representations[0]
+            old = list(rep.Items)
+            rep.Items = [item]
+            for o in old:
+                ue.remove_deep2(f, o)
 
     def derived_guid_for(self, label: str) -> str:
         return derived_guid(self.project_guid, label)

@@ -36,7 +36,7 @@ CORNER_FILL = Q.CORNER_EXTEND  # L 조인 모서리는 코어 형상(Q.wall_exte
 PRIORITY = {"cut": 3, "symbol": 2, "proj": 1}
 
 ELEV_DIR = {"N": (0.0, -1.0), "E": (-1.0, 0.0), "S": (0.0, 1.0), "W": (1.0, 0.0)}   # 건물을 바라보는 방향
-VIEW_TYPES = ("plan", "section", "elevation")
+VIEW_TYPES = ("plan", "section", "elevation", "site")
 
 
 # ================================================================ 범위 질의
@@ -75,7 +75,7 @@ def view_omitted(g, v):
     """뷰가 그리지 않고 생략한 모델 요소 개수 {"foreign": 외래 요소, "detached": 분리된 벽}. 생략은 조용하지 않게 응답에 알린다.
     평면은 그 레벨에 놓인 것만, 단면·입면은 모델 전체를 센다."""
     cfg = g.q(view_cfg, v)
-    if cfg is None:
+    if cfg is None or cfg[0] == "site":
         return {"foreign": 0, "detached": 0}
     if cfg[0] == "plan":
         ids = () if cfg[1] is None else Q.rel_in(g, "on_level", cfg[1])
@@ -89,12 +89,15 @@ def view_omitted(g, v):
 def view_cfg(g, v):
     """뷰 설정을 계산용 튜플로 푼다.
     평면: ("plan", 레벨, 절단 z, 보이는 깊이, 축척)
+    배치도: ("site", None, 0, 0, 축척)  (모델 전체를 위에서 본 대지·건물 외곽 뷰)
     그 밖: (종류, ox, oy, 보는방향 dx, dy, 오른쪽 rx, ry, near, far, 절단 여부, 축척)"""
     row = Q.el(g, v)
     if row is None or row["kind"] != "view":
         return None
     p = row["params"]
     t, scale = p["type"], p["scale"]
+    if t == "site":
+        return ("site", None, 0.0, 0.0, scale)
     if t == "plan":
         lv = p["level"]
         lrow = Q.el(g, lv)
@@ -117,6 +120,8 @@ def view_cfg(g, v):
 def scope_walls(g, v):
     cfg = g.q(view_cfg, v)
     if cfg is None:
+        return ()
+    if cfg[0] == "site":
         return ()
     if cfg[0] == "plan":
         return () if cfg[1] is None else g.q(level_walls, cfg[1])
@@ -527,7 +532,7 @@ def all_free_fams(g):
 def scope_fams(g, v):
     """뷰가 그리는 자립형 패밀리 인스턴스(기둥 등). 평면은 그 레벨에 놓인 것만, 단면·입면은 모델 전체."""
     cfg = g.q(view_cfg, v)
-    if cfg is None:
+    if cfg is None or cfg[0] == "site":
         return ()
     if cfg[0] == "plan":
         if cfg[1] is None:
@@ -719,7 +724,7 @@ def all_slabs(g):
 def scope_slabs(g, v):
     """뷰가 그리는 슬래브. 평면은 그 레벨에 놓인 것만, 단면·입면은 모델 전체."""
     cfg = g.q(view_cfg, v)
-    if cfg is None:
+    if cfg is None or cfg[0] == "site":
         return ()
     if cfg[0] == "plan":
         if cfg[1] is None:
@@ -935,7 +940,7 @@ def all_stairs(g):
 def scope_stairs(g, v):
     """뷰가 그리는 계단. 평면은 그 레벨에 놓인 것만, 단면·입면은 모델 전체."""
     cfg = g.q(view_cfg, v)
-    if cfg is None:
+    if cfg is None or cfg[0] == "site":
         return ()
     if cfg[0] == "plan":
         if cfg[1] is None:
@@ -1182,6 +1187,8 @@ def view_labels(g, v):
     cfg = g.q(view_cfg, v)
     if cfg is None:
         return ()
+    if cfg[0] == "site":
+        return g.q(site_labels, v)
     out = []
     for s in g.q(scope_spaces, v):
         out.extend(g.q(plan_space_labels, v, s))
@@ -1690,6 +1697,283 @@ def vwall_lines(g, v, w):
     return tuple(lines)
 
 
+# ================================================================ 대지·배치도 (kinds "site", 뷰 종류 "site")
+# 배치도 뷰는 모델 전체를 위에서 본 한 장이다: 대지 경계(굵은 1점쇄선), 건물 외곽(벽 윤곽·슬래브 경계의 합집합 바깥 선), 접한 도로(폭만큼 띠),
+# 방위표(정북 각), 대지 경계와 건물 사이 이격 거리 치수(연관 치수와 같은 주석 항목), 대지면적·도로·표고·축척 문자.
+SITE_DASH, SITE_GAP, SITE_DOT = 6.0, 1.5, 0.8   # 대지 경계 1점쇄선의 마디·간격·점(용지 mm)
+NORTH_R = 7.0                                    # 방위표 원 반지름(용지 mm)
+SITE_LABEL_H, SITE_SUB_H = 3.0, 2.5              # 문자 높이(용지 mm)
+SITE_PAD = 0.5                                   # 바깥 쪽 판정용 탐침 거리(mm)
+
+
+def site_info(g, s):
+    """(경계 다각형(반시계 튜플), 이름, 정북 각, 도로 ((이름, 변 번호, 폭), ...), 표고) 또는 None. 저작 대지만 그린다."""
+    row = Q.el(g, s)
+    if row is None or row["kind"] != "site" or row["origin"] != "authored":
+        return None
+    p = row["params"]
+    poly = tuple(tuple(q) for q in p["boundary"])
+    return (poly, p["name"], p["north_angle"], tuple((r["name"], r["edge"], r["width"]) for r in p["roads"]), p["elevation"])
+
+
+def all_sites(g):
+    out = []
+    for b in range(Q.NB):
+        out.extend(e for e in Q.bucket_ids(g, "site", b) if g.q(site_info, e) is not None)
+    return tuple(sorted(out))
+
+
+def building_polys(g):
+    """건물이 차지하는 평면 다각형들(모든 레벨의 그리는 벽 윤곽 + 저작 슬래브 경계), 모두 반시계. 레벨은 구분하지 않는다(배치도는 건물 전체의 외곽)."""
+    out = []
+    for w in g.q(all_walls):
+        x, y, c, s, _ = g.q(Q.wall_frame, w)
+        out.append(tuple((x + u * c - v * s, y + u * s + v * c) for u, v in g.q(Q.wall_footprint, w)))
+    for sl in g.q(all_slabs):
+        out.append(g.q(slab_info, sl)[2])
+    return tuple(out)
+
+
+def _hit_ts(a, b, c, d):
+    """선분 a->b 위에서 선분 c->d 와 만나는(겹치면 두 끝이 닿는) 매개변수 t 들."""
+    rx, ry = b[0] - a[0], b[1] - a[1]
+    sx, sy = d[0] - c[0], d[1] - c[1]
+    qx, qy = c[0] - a[0], c[1] - a[1]
+    l2 = rx * rx + ry * ry
+    den = rx * sy - ry * sx
+    if abs(den) <= 1e-9 * sqrt(l2) * sqrt(sx * sx + sy * sy):    # 평행
+        if abs(qx * ry - qy * rx) > EPS * sqrt(l2):
+            return ()
+        return ((qx * rx + qy * ry) / l2, ((d[0] - a[0]) * rx + (d[1] - a[1]) * ry) / l2)
+    t = (qx * sy - qy * sx) / den
+    u = (qx * ry - qy * rx) / den
+    return (t,) if -1e-9 <= u <= 1.0 + 1e-9 else ()
+
+
+def _in_poly(p, poly) -> bool:
+    inside = False
+    n = len(poly)
+    for i in range(n):
+        a, b = poly[i], poly[(i + 1) % n]
+        if (a[1] > p[1]) != (b[1] > p[1]) and p[0] < a[0] + (p[1] - a[1]) * (b[0] - a[0]) / (b[1] - a[1]):
+            inside = not inside
+    return inside
+
+
+def _poly_bbox(poly):
+    return (min(p[0] for p in poly), min(p[1] for p in poly), max(p[0] for p in poly), max(p[1] for p in poly))
+
+
+def building_outline(g):
+    """건물 다각형들의 합집합 바깥 선분: ((x0, y0, x1, y1), ...). 다른 다각형 안쪽에 들어가거나 이웃과 맞닿은 변은 뺀다.
+    각 변을 다른 다각형 변과의 교점에서 쪼개고, 조각 중점에서 바깥으로 조금 나간 점이 다른 다각형 안이면 안쪽 이음매다."""
+    polys = g.q(building_polys)
+    boxes = [_poly_bbox(p) for p in polys]
+    out = []
+    for i, P in enumerate(polys):
+        others = [polys[j] for j in range(len(polys)) if j != i and _bb_hit(boxes[i], boxes[j])]
+        n = len(P)
+        for k in range(n):
+            a, b = P[k], P[(k + 1) % n]
+            dx, dy = b[0] - a[0], b[1] - a[1]
+            length = sqrt(dx * dx + dy * dy)
+            if length < SEG_MIN:
+                continue
+            ts = [0.0, 1.0]
+            for Qp in others:
+                m = len(Qp)
+                for q in range(m):
+                    ts.extend(t for t in _hit_ts(a, b, Qp[q], Qp[(q + 1) % m]) if 0.0 < t < 1.0)
+            ts = sorted(set(round(t, 9) for t in ts))
+            nx, ny = dy / length, -dx / length      # 반시계 다각형의 바깥(진행 방향의 오른쪽)
+            for t0, t1 in zip(ts, ts[1:]):
+                if (t1 - t0) * length <= SEG_MIN:
+                    continue
+                tm = (t0 + t1) / 2.0
+                probe = (a[0] + tm * dx + nx * SITE_PAD, a[1] + tm * dy + ny * SITE_PAD)
+                if any(_in_poly(probe, Qp) for Qp in others):
+                    continue
+                out.append((a[0] + t0 * dx, a[1] + t0 * dy, a[0] + t1 * dx, a[1] + t1 * dy))
+    return tuple(out)
+
+
+def _dash_dot(x0, y0, x1, y1, scale):
+    """선분을 1점쇄선 조각(긴 마디, 간격, 점, 간격)으로 쪼갠다. 마디 길이는 용지 위 일정하다. 모두 절단선 등급이다."""
+    dx, dy = x1 - x0, y1 - y0
+    length = sqrt(dx * dx + dy * dy)
+    if length < SEG_MIN:
+        return []
+    ux, uy = dx / length, dy / length
+    pat = ((SITE_DASH * scale, True), (SITE_GAP * scale, False), (SITE_DOT * scale, True), (SITE_GAP * scale, False))
+    out, t, i = [], 0.0, 0
+    while t < length - SEG_MIN:
+        seg, on = pat[i % 4]
+        t1 = min(t + seg, length)
+        if on:
+            out.append(("cut", x0 + ux * t, y0 + uy * t, x0 + ux * t1, y0 + uy * t1))
+        t, i = t1, i + 1
+    return out
+
+
+def _edge_frame(poly, i):
+    """경계 변 i: (시작, 끝, 길이, 바깥 단위 법선)."""
+    a, b = poly[i], poly[(i + 1) % len(poly)]
+    dx, dy = b[0] - a[0], b[1] - a[1]
+    length = sqrt(dx * dx + dy * dy)
+    return a, b, length, (dy / length, -dx / length)
+
+
+def _road_box(poly, edge, width):
+    a, b, _length, (nx, ny) = _edge_frame(poly, edge)
+    xs = (a[0], b[0], a[0] + nx * width, b[0] + nx * width)
+    ys = (a[1], b[1], a[1] + ny * width, b[1] + ny * width)
+    return (min(xs), min(ys), max(xs), max(ys))
+
+
+def _site_extent(g):
+    """배치도에 놓이는 대지·도로의 경계 상자들과 방위 각. 대지가 없으면 ((), None)."""
+    boxes, north = [], None
+    for s in g.q(all_sites):
+        poly, _name, north_, roads, _el = g.q(site_info, s)
+        north = north_ if north is None else north
+        boxes.append(_poly_bbox(poly))
+        boxes.extend(_road_box(poly, edge, width) for _rn, edge, width in roads)
+    return tuple(boxes), north
+
+
+def _north_symbol(boxes, scale, north):
+    """방위표: (선분들, 문자들, 경계 상자). 대지·도로 묶음의 오른쪽 위 바깥에 놓는다. 정북은 도면 위에서 시계방향으로 north 도 돈 방향이다."""
+    r = NORTH_R * scale
+    cx, cy = max(b[2] for b in boxes) + r + 6.0 * scale, max(b[3] for b in boxes) - r
+    sn, cs = _sincos_deg(north)                  # 정북 방향 = (sin, cos)
+    pts = _circle_pts((cx, cy), r)
+    segs = [("symbol", pts[k][0], pts[k][1], pts[(k + 1) % len(pts)][0], pts[(k + 1) % len(pts)][1]) for k in range(len(pts))]
+    px, py = cs, -sn                             # 정북에 수직인 오른쪽
+    tip = (cx + sn * r * 0.92, cy + cs * r * 0.92)
+    left = (cx - sn * r * 0.62 - px * r * 0.38, cy - cs * r * 0.62 - py * r * 0.38)
+    right = (cx - sn * r * 0.62 + px * r * 0.38, cy - cs * r * 0.62 + py * r * 0.38)
+    mid = (cx - sn * r * 0.28, cy - cs * r * 0.28)
+    for p, q in ((tip, left), (left, mid), (mid, right), (right, tip)):
+        segs.append(("cut", p[0], p[1], q[0], q[1]))
+    lab = [(round(cx + sn * (r + 2.4 * scale), 3), round(cy + cs * (r + 2.4 * scale) - 1.4 * scale, 3), "N", 4.0, "middle")]
+    return segs, lab, (cx - r, cy - r, cx + r, cy + r)
+
+
+def site_setbacks(g, s):
+    """대지 경계 변마다 건물까지의 이격: ((변 번호, 거리, 경계 위 발, 건물 꼭짓점), ...). 변에 수직으로 내린 발이 변 안에 드는 건물 꼭짓점 중 가장 가까운 것.
+    거리는 경계 안쪽이 양수(건물이 경계를 넘으면 음수). 건물이 없으면 비어 있다."""
+    info = g.q(site_info, s)
+    polys = g.q(building_polys)
+    if info is None or not polys:
+        return ()
+    poly = info[0]
+    verts = sorted({(round(x, 3), round(y, 3)) for P in polys for x, y in P})
+    out = []
+    for i in range(len(poly)):
+        a, b, length, (nx, ny) = _edge_frame(poly, i)
+        ux, uy = (b[0] - a[0]) / length, (b[1] - a[1]) / length
+        best = None
+        for vx, vy in verts:
+            t = (vx - a[0]) * ux + (vy - a[1]) * uy
+            if t < -EPS or t > length + EPS:
+                continue
+            d = -((vx - a[0]) * nx + (vy - a[1]) * ny)      # 안쪽이 양수
+            if best is None or d < best[0] - 1e-9:
+                best = (d, (a[0] + t * ux, a[1] + t * uy), (vx, vy))
+        if best is not None:
+            out.append((i, best[0], best[1], best[2]))
+    return tuple(out)
+
+
+def _dim_item(aid, p, q, scale, text):
+    """p -> q 를 재는 치수 주석 항목(annot.annot_draw 의 "dim" 항목과 같은 모양: 보조선 둘, 치수선, 글, 글 위치, 치수선 방향)."""
+    dx, dy = q[0] - p[0], q[1] - p[1]
+    length = sqrt(dx * dx + dy * dy)
+    ux, uy = dx / length, dy / length
+    h = 1.2 * scale
+    r = lambda *vs: tuple(round(v, 3) + 0.0 for v in vs)   # noqa: E731
+    e0 = r(p[0] + uy * h, p[1] - ux * h, p[0] - uy * h, p[1] + ux * h)
+    e1 = r(q[0] + uy * h, q[1] - ux * h, q[0] - uy * h, q[1] + ux * h)
+    return ("dim", aid, e0, e1, r(p[0], p[1], q[0], q[1]), text, r((p[0] + q[0]) / 2.0, (p[1] + q[1]) / 2.0), r(ux, uy))
+
+
+def _fmt_mm(v) -> str:
+    r = round(v)
+    return str(int(r)) if abs(v - r) < 0.05 else f"{v:.1f}"
+
+
+def site_dims(g, v):
+    """배치도의 치수: 대지 경계에서 건물까지 이격 거리, 접한 도로의 폭. 연관 치수 주석과 같은 항목(id 는 'site:...')이다."""
+    cfg = g.q(view_cfg, v)
+    if cfg is None or cfg[0] != "site":
+        return ()
+    scale = cfg[4]
+    out = []
+    for s in g.q(all_sites):
+        poly, _name, _north, roads, _el = g.q(site_info, s)
+        for i, d, foot, vert in g.q(site_setbacks, s):
+            if abs(d) < 1.0:
+                continue
+            out.append(_dim_item(f"site:{s[-6:]}:setback:{i}", foot, vert, scale, _fmt_mm(d)))
+        for _rn, edge, width in roads:
+            a, b, _length, (nx, ny) = _edge_frame(poly, edge)
+            m = ((a[0] + b[0]) / 2.0, (a[1] + b[1]) / 2.0)
+            out.append(_dim_item(f"site:{s[-6:]}:road:{edge}", m, (m[0] + nx * width, m[1] + ny * width), scale, _fmt_mm(width)))
+    return tuple(out)
+
+
+def site_lines(g, v):
+    """배치도의 선분: 대지 경계(1점쇄선), 건물 외곽, 도로 띠(바깥 변·양 옆), 방위표."""
+    cfg = g.q(view_cfg, v)
+    if cfg is None or cfg[0] != "site":
+        return ()
+    scale = cfg[4]
+    segs = []
+    for s in g.q(all_sites):
+        poly, _name, _north, roads, _el = g.q(site_info, s)
+        for i in range(len(poly)):
+            a, b = poly[i], poly[(i + 1) % len(poly)]
+            segs.extend(_dash_dot(a[0], a[1], b[0], b[1], scale))
+        for _rn, edge, width in roads:
+            a, b, _length, (nx, ny) = _edge_frame(poly, edge)
+            a2, b2 = (a[0] + nx * width, a[1] + ny * width), (b[0] + nx * width, b[1] + ny * width)
+            segs += [("proj", a[0], a[1], a2[0], a2[1]), ("proj", b[0], b[1], b2[0], b2[1]), ("proj", a2[0], a2[1], b2[0], b2[1])]
+    segs.extend(("cut", x0, y0, x1, y1) for x0, y0, x1, y1 in g.q(building_outline))
+    boxes, north = g.q(_site_extent)
+    if boxes:
+        segs.extend(_north_symbol(boxes, scale, north)[0])
+    return merge_lines(segs)
+
+
+def site_labels(g, v):
+    """배치도의 문자: 대지 이름·면적·표고, 도로 이름·폭·접도 길이, 방위 N, 축척."""
+    cfg = g.q(view_cfg, v)
+    if cfg is None or cfg[0] != "site":
+        return ()
+    scale = cfg[4]
+    out = []
+    for s in g.q(all_sites):
+        poly, name, _north, roads, el = g.q(site_info, s)
+        cx, _cy = polygon_centroid(poly)
+        top = max(q[1] for q in poly)       # 건물과 겹치지 않게 대지 위쪽 안에 놓는다
+        out.append((round(cx, 3), round(top - 7.0 * scale, 3), name, SITE_LABEL_H, "middle"))
+        out.append((round(cx, 3), round(top - 10.0 * scale, 3), f"대지면적 {area_text(poly)}", SITE_SUB_H, "middle"))
+        if el is not None:
+            out.append((round(cx, 3), round(top - 13.0 * scale, 3), f"대지 표고 EL {el / 1000.0:+.3f}m", SITE_SUB_H, "middle"))
+        for rn, edge, width in roads:
+            a, b, length, (nx, ny) = _edge_frame(poly, edge)
+            m = (a[0] + (b[0] - a[0]) * 0.22, a[1] + (b[1] - a[1]) * 0.22)      # 변 한가운데는 폭 치수가 차지한다
+            lx, ly = m[0] + nx * width * 0.5, m[1] + ny * width * 0.5
+            out.append((round(lx, 3), round(ly + 0.6 * scale, 3), (rn + " " if rn else "") + f"도로 폭 {_fmt_mm(width)}", SITE_SUB_H, "middle"))
+            out.append((round(lx, 3), round(ly - 2.4 * scale, 3), f"접도 길이 {_fmt_mm(length)}", SITE_SUB_H, "middle"))
+    boxes, north = g.q(_site_extent)
+    if boxes:
+        _sym, lab, bb = _north_symbol(boxes, scale, north)
+        out.extend(lab)
+        out.append((round((bb[0] + bb[2]) / 2.0, 3), round(bb[1] - 4.0 * scale, 3), f"S=1:{scale}", SITE_SUB_H, "middle"))
+    return tuple(out)
+
+
 # ================================================================ 뷰 전체
 def merge_lines(segs):
     """선분 묶음을 정규화한다: 같은 직선 위에서 겹치거나 이어진 선분은 하나로, 절단선(cut)이 덮는 부분은 아래 등급에서 지운다.
@@ -1753,6 +2037,8 @@ def view_lines(g, v):
     cfg = g.q(view_cfg, v)
     if cfg is None:
         return ()
+    if cfg[0] == "site":
+        return g.q(site_lines, v)
     fn = plan_wall_lines if cfg[0] == "plan" else vwall_lines
     segs = []
     for w in g.q(scope_walls, v):
@@ -1773,7 +2059,7 @@ def view_lines(g, v):
 def view_fills(g, v):
     """절단 단면의 채움 다각형(평면: 벽 절단 사각형, 단면: 절단 사각형). 입면은 없음."""
     cfg = g.q(view_cfg, v)
-    if cfg is None:
+    if cfg is None or cfg[0] == "site":
         return ()
     out = []
     for w in g.q(scope_walls, v):
@@ -1852,7 +2138,7 @@ VIEW_SCOPED = frozenset({view_cfg, scope_walls, view_omitted, plan_pieces, plan_
                          scope_fams, plan_fam_parts, _fam_vpieces, vfam_bbox, vfam_cut_rects, vfam_edges, vfam_nbr_pieces, fam_lines,
                          vfam_hosted_edges, scope_slabs, plan_slab_parts, _slab_vpieces, slab_vbbox, slab_cut_rects, slab_vedges, slab_nbr_walls, slab_lines,
                          scope_stairs, plan_stair_parts, _stair_vpieces, stair_vbbox, stair_cut_rects, stair_vedges, stair_nbr_walls, stair_lines,
-                         scope_spaces, plan_space_labels, view_labels, plan_fire_lines, plan_fire_labels, elev_finish})
+                         scope_spaces, plan_space_labels, view_labels, site_lines, site_labels, site_dims, plan_fire_lines, plan_fire_labels, elev_finish})
 
 
 def forget_views(g, vids) -> int:

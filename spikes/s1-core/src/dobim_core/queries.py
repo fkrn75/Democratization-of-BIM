@@ -302,9 +302,9 @@ def schedule_sorted(g, kind):
 
 def model_stats(g):
     out = {k: g.q(count, k) for k in ("level", "wall", "door")}
-    for k in ("slab", "stair", "space"):
+    for k in ("slab", "stair", "space", "site"):
         n = g.q(count, k)
-        if n:   # 슬래브·계단·공간이 없는 프로젝트의 응답·해시는 그대로다
+        if n:   # 슬래브·계단·공간·대지가 없는 프로젝트의 응답·해시는 그대로다
             out[k] = n
     return out
 
@@ -365,6 +365,9 @@ def ifc_spec(g, e):
         # 배치는 레벨 좌표계(원점·무회전)이고 윗면은 레벨 + top_offset 이므로 레벨 높이는 읽지 않는다(레벨을 옮기면 배치가 따라간다)
         return {"kind": kind, "name": p["name"], "level": g.q(slab_level, e), "boundary": tuple(tuple(q) for q in p["boundary"]),
                 "thickness": p["thickness"], "top_offset": p["top_offset"], "intent": intent}
+    if kind == "site":
+        # 배치는 건물 아래 뼈대 대지 좌표계(원점·무회전)다. 방위·도로는 IFC 가 아니라 의도(DoBIM_Intent)로 왕복한다
+        return {"kind": kind, "name": p["name"], "boundary": tuple(tuple(q) for q in p["boundary"]), "elevation": p["elevation"], "intent": intent}
     if kind == "space":
         return {"kind": kind, "name": p["name"], "category": p["category"], "level": g.q(space_level, e),
                 "boundary": tuple(tuple(q) for q in p["boundary"]), "height": p["height"], "intent": intent}

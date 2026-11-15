@@ -90,7 +90,7 @@ def _name(v):
 def _parse_intent(kind: str, text: str) -> dict:
     """DoBIM_Intent 텍스트를 현재 코어 스키마로 해석한다. 못 하면 ValueError. 숫자는 float 로 맞춘다(저작 행과 같은 모양)."""
     d = json.loads(text)
-    extra = {"level": (), "wall": ("level", "joins"), "door": ("host",), "slab": ("level",), "stair": ("level",), "space": ("level",)}[kind]
+    extra = {"level": (), "wall": ("level", "joins"), "door": ("host",), "slab": ("level",), "stair": ("level",), "space": ("level",), "site": ()}[kind]
     if not isinstance(d, dict) or set(d) != {"kind", "params", "family_id", *extra} or d["kind"] != kind or d["family_id"] != FAMILY[kind]:
         raise ValueError("의도 모양이 현재 스키마와 다르다")
     p = d["params"]
@@ -133,6 +133,31 @@ def _parse_intent(kind: str, text: str) -> dict:
         if why or K.polygon_area2(pts) <= 0:
             raise ValueError(f"공간 경계가 올바르지 않다({why or '시계 방향'})")
         out = {"name": _name(p["name"]), "category": p["category"], "boundary": pts, "height": _num(p["height"], pos=True)}
+    elif kind == "site":
+        if (set(p) != {"name", "boundary", "north_angle", "roads", "elevation"} or not isinstance(p["boundary"], list) or not 3 <= len(p["boundary"]) <= 256
+                or not isinstance(p["roads"], list) or len(p["roads"]) > K.SITE_ROADS_MAX):
+            raise ValueError("대지 params 가 다르다")
+        pts = []
+        for q in p["boundary"]:
+            if not isinstance(q, list) or len(q) != 2:
+                raise ValueError("대지 경계 꼭짓점이 올바르지 않다")
+            pts.append([_num(q[0]), _num(q[1])])
+        why = K.polygon_problem(pts)
+        if why or K.polygon_area2(pts) <= 0:
+            raise ValueError(f"대지 경계가 올바르지 않다({why or '시계 방향'})")
+        roads = []
+        for r in p["roads"]:
+            if (not isinstance(r, dict) or set(r) != {"name", "edge", "width"} or not isinstance(r["name"], str) or len(r["name"]) > 64
+                    or type(r["edge"]) is not int or not 0 <= r["edge"] < len(pts)):
+                raise ValueError("대지 도로가 올바르지 않다")
+            roads.append({"name": r["name"], "edge": r["edge"], "width": _num(r["width"], pos=True)})
+        na = _num(p["north_angle"])
+        if not -360.0 <= na <= 360.0:
+            raise ValueError("대지 방위 각이 범위를 벗어났다")
+        out = {"name": _name(p["name"]), "boundary": pts, "north_angle": na, "roads": roads,
+               "elevation": None if p["elevation"] is None else _num(p["elevation"])}
+        if len({r["edge"] for r in roads}) != len(roads):
+            raise ValueError("한 변에 도로가 둘 이상이다")
     elif kind == "stair":
         if (set(p) != {"name", "run", "width", "height", "risers", "base_offset"} or not isinstance(p["run"], list) or len(p["run"]) != 4
                 or type(p["risers"]) is not int or not K.STAIR_RISERS_MIN <= p["risers"] <= K.STAIR_RISERS_MAX):
@@ -447,7 +472,7 @@ def plan_import(data: bytes) -> ImportPlan:
         if it["kind"] in ("ftype", "finst"):
             rows[g] = {"kind": it["kind"], "ifc_class": cls_of[g], "origin": "authored", "family_id": it["family_id"], "params": it["params"]}
         else:
-            cls = {"level": "IfcBuildingStorey", "wall": "IfcWall", "door": "IfcDoor", "slab": "IfcSlab", "stair": "IfcStair", "space": "IfcSpace"}[it["kind"]]
+            cls = {"level": "IfcBuildingStorey", "wall": "IfcWall", "door": "IfcDoor", "slab": "IfcSlab", "stair": "IfcStair", "space": "IfcSpace", "site": "IfcSite"}[it["kind"]]
             rows[g] = {"kind": it["kind"], "ifc_class": cls, "origin": "authored", "family_id": FAMILY[it["kind"]], "params": it["params"]}
         if it["kind"] == "wall":
             rels.add(("on_level", g, it["level"]))
