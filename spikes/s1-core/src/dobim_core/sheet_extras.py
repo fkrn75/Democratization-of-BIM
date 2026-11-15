@@ -76,6 +76,14 @@ def view_extras(ctx, a, datas) -> dict:
             if d["type"] == "plan":
                 tg[d["id"]] = SM.plan_tags(ctx.g, d["id"], set(a.tags))
         out["tags"] = tg
+    if a.dims:
+        dm = {}
+        for d in datas:
+            if d["type"] == "plan":
+                dm[d["id"]] = SM.plan_dims(ctx.g, d["id"], set(a.dims))
+            elif d["type"] == "elevation" and "elevation" in a.dims:
+                dm[d["id"]] = {"elevation": SM.elev_dims(ctx.g, d["id"])}
+        out["dims"] = dm
     if a.key_plan:
         r = ctx.row(a.key_plan, "view")
         if r["params"]["type"] != "plan":

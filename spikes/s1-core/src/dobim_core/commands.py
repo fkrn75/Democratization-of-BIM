@@ -1457,6 +1457,9 @@ class SheetExport(SheetFrame):
     tags: list[Literal["room", "opening", "wall"]] = Field(default_factory=list, max_length=3, description="평면 뷰에 부호 태그를 자동으로 단다: room 실번호, opening 문·창 부호, wall 벽체 부호")
     key_plan: Id | None = Field(None, description="키 플랜으로 쓸 평면 뷰(표제란 오른쪽 위에 줄여 그리고 해당 영역을 해칭한다)")
     key_zone: list[Num] | None = Field(None, min_length=4, max_length=4, description="키 플랜에서 해칭할 영역 [x0, y0, x1, y1](모델 mm). 생략하면 전체")
+    dims: list[Literal["elevation", "corridor", "stair"]] = Field(default_factory=list, max_length=3, description=(
+        "시트 치수 자동 배치(옵션): elevation 입면 뷰 아래에 벽 중심선 치수 사슬과 전체 폭(E-04), corridor 평면의 복도(분류·실명이 복도인 공간) 폭, "
+        "stair 평면의 계단 폭(L-09)"))
     detail: bool = Field(False, description="참이면 큰 축척(1:50 이하) 뷰에 상세 표현을 더한다(재료가 있는 벽의 마감선·문짝 두께·문턱선). 1:100 이상의 작은 축척 뷰는 그대로")
     profile: SheetProfile | None = Field(None, description="별도 작성기준 프로파일: 문자 높이·치수 형식(소수·천단위 쉼표)·기호 크기. 생략하면 기본 체계(시트는 이전과 바이트까지 같다)")
 

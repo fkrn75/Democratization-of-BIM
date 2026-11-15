@@ -9,6 +9,7 @@ from __future__ import annotations
 from math import atan2, pi, sqrt
 
 from dobim_core import drawing as D
+from dobim_core import kinds as K
 from dobim_core import queries as Q
 
 TAG_OFF = 3.6        # 부호 태그를 벽 면에서 띄우는 거리(용지 mm)
@@ -148,6 +149,66 @@ def plan_tags(g, view_id, kinds, scale_of_view=None):
         out["wall"] = items
     if "room" in kinds:
         out["room"] = room_numbers(g, view_id, sc)
+    return out
+
+
+# ---------------------------------------------------------------- 시트 치수(E-04 입면 치수, L-09 복도·계단 폭): 모델을 읽어 값만 만든다
+def _num(v: float) -> str:
+    from dobim_core import annot as AN   # 치수 문자와 같은 형식(정수면 정수, 아니면 소수 한 자리)
+    return AN.fmt_num(v)
+
+
+def elev_dims(g, view_id):
+    """입면 뷰의 가로 치수 사슬: 벽 중심선(축선) 위치들 사이 간격과 전체 폭. {"chain": [(s0, s1, 글)], "overall": (s0, s1, 글)} 또는 None.
+    보는 방향과 나란한 벽(입면에서 면이 보이는 벽)은 양 끝 위치를, 그에 수직인 벽(옆면이 보이는 벽)은 축선 위치를 낸다. 1mm 이내는 한 위치로 본다."""
+    cfg = g.q(D.view_cfg, view_id)
+    if cfg is None or cfg[0] != "elev":
+        return None
+    rx, ry = cfg[5], cfg[6]
+    xs = []
+    for w in D.all_walls(g):
+        x1, y1, x2, y2 = Q.el(g, w)["params"]["axis"]
+        ln = sqrt((x2 - x1) ** 2 + (y2 - y1) ** 2)
+        if abs(((x2 - x1) * rx + (y2 - y1) * ry) / ln) < 0.1:
+            xs.append((x1 + x2) / 2.0 * rx + (y1 + y2) / 2.0 * ry)
+        else:
+            xs += [x1 * rx + y1 * ry, x2 * rx + y2 * ry]
+    pos: list[float] = []
+    for x in sorted(xs):
+        if not pos or x - pos[-1] > 1.0:
+            pos.append(round(x, 3))
+    if len(pos) < 2:
+        return None
+    chain = [(a, b, _num(b - a)) for a, b in zip(pos, pos[1:])] if len(pos) > 2 else []
+    return {"chain": chain, "overall": (pos[0], pos[-1], _num(pos[-1] - pos[0]))}
+
+
+def plan_dims(g, view_id, kinds):
+    """평면 뷰의 폭 치수(L-09): {"corridor": [(x0, y0, x1, y1, 글)], "stair": [...]} 모델 좌표(양 끝점). 복도는 경계 외접 사각형의 짧은 변을 안목으로, 계단은 시작단의 폭을 잰다."""
+    cfg = g.q(D.view_cfg, view_id)
+    if cfg is None or cfg[0] != "plan" or cfg[1] is None:
+        return {}
+    out: dict[str, list] = {}
+    if "corridor" in kinds:
+        items = []
+        for s in g.q(D.scope_spaces, view_id):
+            poly, name, cat = g.q(D.space_info, s)
+            if not K.is_corridor(name, cat):
+                continue
+            xs, ys = [p[0] for p in poly], [p[1] for p in poly]
+            cx, cy = D.polygon_centroid(poly)
+            if max(xs) - min(xs) <= max(ys) - min(ys):
+                items.append((round(min(xs), 3), round(cy, 3), round(max(xs), 3), round(cy, 3), _num(max(xs) - min(xs))))
+            else:
+                items.append((round(cx, 3), round(min(ys), 3), round(cx, 3), round(max(ys), 3), _num(max(ys) - min(ys))))
+        out["corridor"] = items
+    if "stair" in kinds:
+        items = []
+        for s in g.q(D.scope_stairs, view_id):
+            info = g.q(D.stair_info, s)
+            a, b = D._st_pt(info, 0.0, -info[7] / 2.0), D._st_pt(info, 0.0, info[7] / 2.0)
+            items.append((round(a[0], 3), round(a[1], 3), round(b[0], 3), round(b[1], 3), _num(info[7])))
+        out["stair"] = items
     return out
 
 

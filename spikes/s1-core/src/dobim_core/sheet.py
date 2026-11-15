@@ -290,9 +290,11 @@ def build_sheet(spec: dict, views: list[dict]) -> Sheet:
     area_x0, area_y0 = OUTER + PAD, OUTER + PAD
     area_x1, area_y1 = sh.w - OUTER - TB_W - PAD, sh.h - OUTER - PAD
     nat = [_natural(v) for v in views]
+    dims = spec.get("dims") or {}
+    extra = [ST.ELEV_DIM_SPACE if (dims.get(v.get("id")) or {}).get("elevation") else 0.0 for v in views]   # 입면 치수가 있는 뷰는 아래를 더 비운다
     pos, x, y, row_h = [], area_x0, area_y0, 0.0
-    for cw, ch, *_ in nat:
-        bh = ch + CAP_H
+    for (cw, ch, *_), ex_ in zip(nat, extra):
+        bh = ch + CAP_H + ex_
         if cw > area_x1 - area_x0 or bh > area_y1 - area_y0:
             raise SheetError(f"뷰가 {sh.paper} 용지에 들어가지 않는다({cw:.0f}x{ch:.0f}mm). 더 큰 용지를 쓰거나 뷰의 축척을 키우세요(예: 1:100 -> 1:200)")
         if x > area_x0 and x + cw > area_x1:
@@ -308,7 +310,7 @@ def build_sheet(spec: dict, views: list[dict]) -> Sheet:
     gy1 = pos[-1][1] + row_h
     dx = (area_x0 + area_x1) / 2.0 - (gx0 + gx1) / 2.0
     dy = ((area_y0 + area_y1) / 2.0 - (area_y0 + gy1) / 2.0)
-    for v, (cw, ch, tx, ty, datums, ex0, ex1), (px, py) in zip(views, nat, pos):
+    for v, (cw, ch, tx, ty, datums, ex0, ex1), (px, py), ex_ in zip(views, nat, pos, extra):
         ox, oy = px + dx, py + dy
         f = DX.MARGIN
         sh.begin(f"view-{v.get('id') or len(sh.placed)}", **{"data-view": v.get("id") or "", "data-scale": v["scale"]})
@@ -317,8 +319,8 @@ def build_sheet(spec: dict, views: list[dict]) -> Sheet:
         _view_extras(sh, spec, v, TX, TY)
         cap = f"{v['name']}"
         ch_cap = ((prof or {}).get("text_height") or {}).get("caption", 4.0)
-        sh.text(ox, oy + ch + 7.0, ch_cap, cap, bold=True)
-        sh.text(ox + est_w(cap, ch_cap) + 4.0, oy + ch + 7.0, ch_cap * 0.875, f"S=1:{v['scale']}")
+        sh.text(ox, oy + ch + 7.0 + ex_, ch_cap, cap, bold=True)
+        sh.text(ox + est_w(cap, ch_cap) + 4.0, oy + ch + 7.0 + ex_, ch_cap * 0.875, f"S=1:{v['scale']}")
         sh.end()
         sh.placed.append({"view": v.get("id"), "name": v["name"], "scale": v["scale"], "x": round(ox, 2), "y": round(oy, 2),
                           "w": round(cw, 2), "h": round(ch, 2)})
@@ -354,6 +356,11 @@ def _view_extras(sh: Sheet, spec: dict, v: dict, TX, TY):
         ST.tag_items(sh, "opening-tags", tg.get("opening"), TX, TY)
         ST.tag_items(sh, "wall-tags", tg.get("wall"), TX, TY)
     ST.callouts(sh, vid, TX, TY, spec.get("callouts") or [])
+    dm = (spec.get("dims") or {}).get(vid)
+    if dm:
+        prof = spec.get("profile")
+        h = ((prof or {}).get("text_height") or {}).get("dimension", 2.5)
+        ST.view_dims(sh, v["type"], dm, v, TX, TY, lambda t: fmt_dim(t, prof), h)
 
 
 # ---------------------------------------------------------------- 색인 시트(뷰 없음): 도면목록표·범례·주기·일람표

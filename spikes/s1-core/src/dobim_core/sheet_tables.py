@@ -6,7 +6,7 @@ sheet.py 의 Sheet 에 그림 요소를 더하는 함수 모음이다(파일·�
 """
 from __future__ import annotations
 
-from math import atan2, cos, pi, sin, sqrt
+from math import atan2, cos, degrees, pi, radians, sin, sqrt
 
 from dobim_core import drawing_export as DX
 
@@ -223,6 +223,62 @@ def bubble(sh, cx, cy, label: str, r=3.3, color=INK, size=2.3):
     r, size = r * k, size * k
     sh.circle(cx, cy, r, 0.3, color)
     sh.text(cx, cy + size * 0.35, size, label, "middle", color)
+
+
+def dim_run(sh, ax, ay, bx, by, off, text, h=2.5, color=None):
+    """치수 한 개(용지 mm 좌표): 보조선·치수선·45도 눈금·치수 문자. off 는 a->b 방향 기준 (-uy, ux) 쪽으로 치수선이 떨어지는 거리(용지 mm)다."""
+    color = color or DX.ANNOT_COLOR
+    dx, dy = bx - ax, by - ay
+    ln = sqrt(dx * dx + dy * dy)
+    if ln < 1e-6:
+        return
+    ux, uy = dx / ln, dy / ln
+    nx, ny = -uy * off, ux * off
+    ext = 1.5 if off >= 0 else -1.5
+    ex, ey = -uy * ext, ux * ext
+    for px, py in ((ax, ay), (bx, by)):
+        sh.line(px, py, px + nx + ex, py + ny + ey, 0.13, color)
+    sh.line(ax + nx, ay + ny, bx + nx, by + ny, 0.13, color)
+    kx, ky = (ux - uy) * 0.64, (uy + ux) * 0.64
+    for px, py in ((ax + nx, ay + ny), (bx + nx, by + ny)):
+        sh.line(px - kx, py - ky, px + kx, py + ky, 0.25, color)
+    ang = degrees(atan2(uy, ux))
+    ang = ang - 180.0 if ang > 90.0 else (ang + 180.0 if ang <= -90.0 else ang)
+    a_ = radians(ang)
+    sh.text((ax + bx) / 2.0 + nx + 0.8 * sin(a_), (ay + by) / 2.0 + ny - 0.8 * cos(a_), h, text, "middle", color, ang)
+
+
+def view_dims(sh, vtype, dims, data, TX, TY, fmt, h):
+    """시트 치수(E-04 입면 치수 사슬, L-09 복도·계단 폭). dims 는 모델에서 뽑은 값(sheet_model), fmt 는 치수 문자 형식 함수."""
+    if not dims:
+        return
+    if vtype == "elevation":
+        e = dims.get("elevation")
+        bb = view_bounds(data)
+        if not e or bb is None:
+            return
+        n = len(e["chain"]) + 1
+        sh.begin("elevation-dims", **{"data-count": n})
+        y = TY(bb[1])
+        for a, b, t in e["chain"]:
+            dim_run(sh, TX(a), y, TX(b), y, ELEV_DIM_OFF[0], fmt(t), h)
+        a, b, t = e["overall"]
+        dim_run(sh, TX(a), y, TX(b), y, ELEV_DIM_OFF[1], fmt(t), h)
+        sh.end()
+        return
+    for key, gid in (("corridor", "corridor-dims"), ("stair", "stair-dims")):
+        items = dims.get(key)
+        if not items:
+            continue
+        sh.begin(gid, **{"data-count": len(items)})
+        for x0, y0, x1, y1, t in items:
+            dim_run(sh, TX(x0), TY(y0), TX(x1), TY(y1), PLAN_DIM_OFF, fmt(t), h)
+        sh.end()
+
+
+ELEV_DIM_OFF = (7.0, 12.0)     # 입면 치수 사슬·전체 폭의 치수선이 건물 아래로 떨어지는 거리(용지 mm)
+PLAN_DIM_OFF = 3.0             # 평면 폭 치수선이 잰 선에서 떨어지는 거리(용지 mm)
+ELEV_DIM_SPACE = 14.0          # 입면 치수가 뷰 아래에 필요로 하는 여유(용지 mm: 뷰 배치가 이만큼 더 비운다)
 
 
 def view_bounds(data):
