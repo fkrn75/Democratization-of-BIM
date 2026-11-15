@@ -182,6 +182,11 @@ def elevator_level(g, s):
     return rel_out(g, "on_level", s)[0]
 
 
+# ---------------------------------------------------------------- 지붕(경사)
+def roof_level(g, s):
+    return rel_out(g, "on_level", s)[0]
+
+
 # ---------------------------------------------------------------- 공간
 def space_level(g, s):
     return rel_out(g, "on_level", s)[0]
@@ -316,7 +321,7 @@ def schedule_sorted(g, kind):
 
 def model_stats(g):
     out = {k: g.q(count, k) for k in ("level", "wall", "door")}
-    for k in ("slab", "stair", "space", "railing", "elevator", "site"):
+    for k in ("slab", "stair", "space", "railing", "elevator", "roof", "site"):
         n = g.q(count, k)
         if n:   # 슬래브·계단·공간·난간·대지가 없는 프로젝트의 응답·해시는 그대로다
             out[k] = n
@@ -341,8 +346,8 @@ def intent_of(g, e):
     elif row["kind"] == "wall":
         out["level"] = g.q(wall_level, e)
         out["joins"] = list(g.q(wall_joins, e))
-    elif row["kind"] in ("slab", "stair", "space", "railing", "elevator"):
-        out["level"] = g.q({"slab": slab_level, "stair": stair_level, "space": space_level, "railing": railing_level, "elevator": elevator_level}[row["kind"]], e)
+    elif row["kind"] in ("slab", "stair", "space", "railing", "elevator", "roof"):
+        out["level"] = g.q({"slab": slab_level, "stair": stair_level, "space": space_level, "railing": railing_level, "elevator": elevator_level, "roof": roof_level}[row["kind"]], e)
     elif row["kind"] == "door":
         out["host"] = g.q(door_host, e)
     return out
@@ -388,6 +393,16 @@ def ifc_spec(g, e):
             spec["openings"] = tuple(tuple(tuple(q) for q in o) for o in p["openings"])
         if "use" in p:   # 지붕 슬래브(PredefinedType ROOF). 물매·배수구는 IFC 가 아니라 의도로만 왕복한다(명세에 넣지 않는다)
             spec["use"] = p["use"]
+        if "parapet" in p:   # 파라펫: 슬래브에 집합한 IfcWall(PARAPET) 부속. 없으면 명세는 이전과 같다
+            spec["parapet"] = (p["parapet"]["height"], p["parapet"]["thickness"])
+        return spec
+    if kind == "roof":
+        # 배치는 레벨 좌표계(원점·무회전)이고 처마 높이는 레벨 + base_offset 이므로 레벨 높이는 읽지 않는다
+        spec = {"kind": kind, "name": p["name"], "level": g.q(roof_level, e), "boundary": tuple(tuple(q) for q in p["boundary"]), "form": p["form"], "pitch": p["pitch"],
+                "overhang": p["overhang"], "base_offset": p["base_offset"], "thickness": p["thickness"], "intent": intent}
+        for k in ("ridge", "dir"):
+            if k in p:
+                spec[k] = p[k]
         return spec
     if kind == "site":
         # 배치는 건물 아래 뼈대 대지 좌표계(원점·무회전)다. 방위·도로는 IFC 가 아니라 의도(DoBIM_Intent)로 왕복한다

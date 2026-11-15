@@ -311,12 +311,65 @@ def _drains_ok(v) -> bool:
     return isinstance(v, list) and 1 <= len(v) <= SLAB_DRAINS_MAX and all(_pt_ok(q) for q in v)
 
 
+PARAPET_H_MAX = 3000.0     # 파라펫 높이 상한 mm
+PARAPET_T_MAX = 1000.0     # 파라펫 두께 상한 mm
+
+
+def parapet_ok(v) -> bool:
+    """파라펫 입력 = {"height": 슬래브 윗면 위로 올라온 높이 mm, "thickness": 두께 mm(슬래브 경계 안쪽으로)}."""
+    return (isinstance(v, dict) and set(v) == {"height", "thickness"} and _pos(v["height"]) and _pos(v["thickness"])
+            and v["height"] <= PARAPET_H_MAX and v["thickness"] <= PARAPET_T_MAX)
+
+
+def parapet_ring(boundary, t):
+    """파라펫의 안쪽 고리: 슬래브 경계(반시계)의 각 변을 안쪽으로 t 만큼 민 직선들의 이웃 교점(마이터). 쓸 수 없으면 None(너무 두꺼워 접히거나 자기 교차).
+    순수 함수: 그리기·IFC 가 같은 값을 쓴다. 꼭짓점 번호는 바깥 경계와 같다."""
+    n = len(boundary)
+    nrm = []
+    for i in range(n):
+        a, b = boundary[i], boundary[(i + 1) % n]
+        dx, dy = b[0] - a[0], b[1] - a[1]
+        ln = sqrt(dx * dx + dy * dy)
+        if ln < 1e-9:
+            return None
+        nrm.append((-dy / ln, dx / ln))
+    ring = []
+    for i in range(n):
+        n0, n1 = nrm[i - 1], nrm[i]
+        den = 1.0 + n0[0] * n1[0] + n0[1] * n1[1]
+        if den < 1e-6:   # 거의 180도로 되꺾이는 꼭짓점: 마이터가 무한히 길다
+            return None
+        ring.append((boundary[i][0] + t * (n0[0] + n1[0]) / den, boundary[i][1] + t * (n0[1] + n1[1]) / den))
+    if polygon_problem(ring) or polygon_area2(ring) <= 0:
+        return None
+    for i in range(n):   # 안쪽 변이 바깥 변과 같은 방향이어야 한다(두께가 변보다 커서 접히면 거꾸로 뒤집힌다)
+        a, b = boundary[i], boundary[(i + 1) % n]
+        c, d = ring[i], ring[(i + 1) % n]
+        if (b[0] - a[0]) * (d[0] - c[0]) + (b[1] - a[1]) * (d[1] - c[1]) <= 0:
+            return None
+    return ring
+
+
+def parapet_problem(p) -> str | None:
+    """슬래브(use=roof)의 파라펫이 쓸 수 있는가(안 되면 이유 문장): 안쪽 고리가 만들어지고, 구멍·배수구를 가리지 않는다."""
+    par = p["parapet"]
+    ring = parapet_ring(p["boundary"], par["thickness"])
+    if ring is None:
+        return "두께가 슬래브 경계에 비해 너무 두꺼워 안쪽 고리를 만들 수 없다"
+    if any(point_in_polygon(q, ring) < 0 for q in p.get("drains", ())):
+        return "배수구가 파라펫 위에 있다"
+    for o in p.get("openings", ()):
+        if any(point_in_polygon(q, ring) != 1 for q in o):
+            return "구멍이 파라펫(안쪽 고리) 안쪽에 있지 않다"
+    return None
+
+
 def _slab_params(p):
     err = _check_opt("slab", p, {"name": _name, "boundary": _poly_pts_ok, "thickness": _pos, "top_offset": num_ok},
                      {"layers": layers_ok, "openings": lambda v: isinstance(v, list) and 1 <= len(v) <= SLAB_OPENINGS_MAX and all(_poly_pts_ok(o) for o in v),
-                      "use": lambda v: v == "roof", "fall": fall_ok, "drains": _drains_ok})
-    if err is None and ("fall" in p or "drains" in p) and p.get("use") != "roof":
-        return "slab.fall·slab.drains 는 지붕 슬래브(use=roof)에만 둘 수 있다"
+                      "use": lambda v: v == "roof", "fall": fall_ok, "drains": _drains_ok, "parapet": parapet_ok})
+    if err is None and ("fall" in p or "drains" in p or "parapet" in p) and p.get("use") != "roof":
+        return "slab.fall·slab.drains·slab.parapet 은 지붕 슬래브(use=roof)에만 둘 수 있다"
     if err is None and "drains" in p:
         for i, q in enumerate(p["drains"]):   # 배수구는 슬래브 경계 안쪽이고 구멍 안이 아니어야 한다
             if point_in_polygon(q, p["boundary"]) != 1 or any(point_in_polygon(q, o) >= 0 for o in p.get("openings", ())):
@@ -325,6 +378,8 @@ def _slab_params(p):
         return "slab.layers 두께의 합이 슬래브 두께와 다르다"
     if err is None and "openings" in p and (why := openings_problem(p["boundary"], p["openings"])):
         return f"slab.openings: {why}"
+    if err is None and "parapet" in p and (why := parapet_problem(p)):
+        return f"slab.parapet: {why}"
     return err
 
 
@@ -470,10 +525,41 @@ def elevator_problem(p) -> str | None:
     return None
 
 
+ELEVATOR_PIT_MAX = 5000.0       # 피트 깊이 상한 mm
+ELEVATOR_MACHINE_MAX = 6000.0   # 기계실 높이 상한 mm
+ELEVATOR_STOPS_MAX = 64         # 승강장 문이 있는 층 수 상한
+ELEVATOR_HOLE_CLEAR_MAX = 500.0  # 슬래브 구멍 여유 상한 mm(elevator.cut_slabs 와 같다)
+DOOR_FACES = ("N", "E", "S", "W")   # 샤프트 면: N = +y 변, S = -y 변, E = +x 변, W = -x 변(입면 뷰 dir 과 같은 방위)
+
+
+def _ids_ok(v, hi) -> bool:
+    return isinstance(v, list) and 1 <= len(v) <= hi and all(id_ok(x) for x in v) and len(set(v)) == len(v)
+
+
+def elevator_door_ok(v) -> bool:
+    """승강장 문 개구부 = {"face": N|E|S|W(샤프트 면), "w": 폭 mm, "h": 높이 mm}. 문은 면 가운데에 놓이고 정차층(stops) 바닥에서 시작한다."""
+    return isinstance(v, dict) and set(v) == {"face", "w", "h"} and v["face"] in DOOR_FACES and _pos(v["w"]) and _pos(v["h"])
+
+
 def _elevator_params(p):
-    err = _check_fields("elevator", p, {"name": _name, "shaft": _shaft_ok, "cab": _cab_ok, "base_offset": num_ok, "rise": _pos})
+    err = _check_opt("elevator", p, {"name": _name, "shaft": _shaft_ok, "cab": _cab_ok, "base_offset": num_ok, "rise": _pos},
+                     {"pit": lambda v: _pos(v) and v <= ELEVATOR_PIT_MAX,
+                      "machine": lambda v: isinstance(v, dict) and set(v) == {"height"} and _pos(v["height"]) and v["height"] <= ELEVATOR_MACHINE_MAX,
+                      "doors": elevator_door_ok, "stops": lambda v: _ids_ok(v, ELEVATOR_STOPS_MAX),
+                      "hole_slabs": lambda v: _ids_ok(v, 128),
+                      "hole_clearance": lambda v: num_ok(v) and 0 <= v <= ELEVATOR_HOLE_CLEAR_MAX})
     if err is None and (why := elevator_problem(p)):
         return f"elevator: {why}"
+    if err is None and ("doors" in p) != ("stops" in p):
+        return "elevator.doors 와 elevator.stops 는 함께 있어야 한다"
+    if err is None and ("hole_slabs" in p) != ("hole_clearance" in p):
+        return "elevator.hole_slabs 와 elevator.hole_clearance 는 함께 있어야 한다"
+    if err is None and "doors" in p:
+        face_len = (p["shaft"][2] - p["shaft"][0]) if p["doors"]["face"] in ("N", "S") else (p["shaft"][3] - p["shaft"][1])
+        if p["doors"]["w"] > face_len - 200.0 + 1e-9:
+            return f"elevator.doors: 문 폭({p['doors']['w']:g})이 샤프트 면({face_len:g})보다 200mm 이상 좁아야 한다"
+        if p["doors"]["h"] > p["rise"] + 1e-9:
+            return "elevator.doors: 문 높이가 샤프트 높이보다 크다"
     return err
 
 
@@ -483,8 +569,185 @@ def elevator_geom(p) -> dict:
     x1, y1, x2, y2 = p["shaft"]
     w, d, h = p["cab"]
     cx, cy = (x1 + x2) / 2.0, (y1 + y2) / 2.0
-    return {"shaft": (float(x1), float(y1), float(x2), float(y2)), "cab": (cx - w / 2.0, cy - d / 2.0, cx + w / 2.0, cy + d / 2.0),
-            "z0": float(p["base_offset"]), "z1": float(p["base_offset"] + p["rise"]), "cab_z1": float(p["base_offset"] + h)}
+    z0, z1 = float(p["base_offset"]), float(p["base_offset"] + p["rise"])
+    out = {"shaft": (float(x1), float(y1), float(x2), float(y2)), "cab": (cx - w / 2.0, cy - d / 2.0, cx + w / 2.0, cy + d / 2.0),
+           "z0": z0, "z1": z1, "cab_z1": float(p["base_offset"] + h)}
+    # 선택 입력(없으면 같은 값): 피트(카 바닥 아래로 더 내려간 샤프트 바닥), 기계실(샤프트 위 상자). 카 상자·슬래브 구멍 범위(z0~z1)는 그대로다
+    out["pit_z0"] = z0 - float(p.get("pit", 0.0))
+    out["mach_z1"] = z1 + float(p["machine"]["height"]) if "machine" in p else z1
+    return out
+
+
+def elevator_door_edge(p):
+    """승강장 문의 평면 위치: ((x0,y0),(x1,y1)) 문 양끝(샤프트 면 위, 면 가운데)과 면 바깥 법선 (nx,ny). 문이 없으면 None."""
+    d = p.get("doors")
+    if d is None:
+        return None
+    x1, y1, x2, y2 = p["shaft"]
+    hw = d["w"] / 2.0
+    cx, cy = (x1 + x2) / 2.0, (y1 + y2) / 2.0
+    if d["face"] == "N":
+        return ((cx - hw, y2), (cx + hw, y2)), (0.0, 1.0)
+    if d["face"] == "S":
+        return ((cx - hw, y1), (cx + hw, y1)), (0.0, -1.0)
+    if d["face"] == "E":
+        return ((x2, cy - hw), (x2, cy + hw)), (1.0, 0.0)
+    return ((x1, cy - hw), (x1, cy + hw)), (-1.0, 0.0)
+
+
+# ---------------------------------------------------------------- 경사 지붕 (kinds "roof", 설계: elements-design.md 16절)
+ROOF_FORMS = ("gable", "hip", "shed")   # 박공(맞배)·모임(우진각)·외쪽
+ROOF_PITCH_MAX = 75.0       # 물매 각도 상한(도)
+ROOF_OVERHANG_MAX = 3000.0  # 처마 내밀기 상한 mm
+ROOF_SIDE_MIN = 500.0       # 외곽 직사각형의 최소 변 길이 mm
+
+
+def roof_rect_problem(b) -> str | None:
+    """지붕 외곽이 직사각형(회전해도 된다)인가(안 되면 이유 문장): 꼭짓점 4개, 서로 수직인 이웃 변, 반대 변 평행·같은 길이, 변 500mm 이상, 반시계."""
+    if not isinstance(b, list) or len(b) != 4 or not all(_pt_ok(q) for q in b):
+        return "외곽은 꼭짓점 4개의 직사각형이어야 한다"
+    e0 = (b[1][0] - b[0][0], b[1][1] - b[0][1])
+    e1 = (b[2][0] - b[1][0], b[2][1] - b[1][1])
+    l0, l1 = sqrt(e0[0] ** 2 + e0[1] ** 2), sqrt(e1[0] ** 2 + e1[1] ** 2)
+    if l0 < ROOF_SIDE_MIN or l1 < ROOF_SIDE_MIN:
+        return f"외곽의 변은 {ROOF_SIDE_MIN:g}mm 이상이어야 한다"
+    if abs(e0[0] * e1[0] + e0[1] * e1[1]) > 1e-4 * l0 * l1:
+        return "외곽의 이웃한 변이 수직이 아니다"
+    if abs(b[0][0] + b[2][0] - b[1][0] - b[3][0]) > 0.5 or abs(b[0][1] + b[2][1] - b[1][1] - b[3][1]) > 0.5:
+        return "외곽이 직사각형이 아니다(반대 변이 평행하지 않거나 길이가 다르다)"
+    if polygon_area2(b) <= 0:
+        return "외곽은 반시계 방향이어야 한다"
+    return None
+
+
+def _roof_params(p):
+    err = _check_opt("roof", p, {"name": _name, "boundary": lambda v: isinstance(v, list) and len(v) == 4 and all(_pt_ok(q) for q in v), "form": lambda v: v in ROOF_FORMS,
+                                 "pitch": lambda v: _pos(v) and v <= ROOF_PITCH_MAX, "overhang": lambda v: num_ok(v) and 0 <= v <= ROOF_OVERHANG_MAX,
+                                 "base_offset": num_ok, "thickness": _pos},
+                     {"ridge": lambda v: v == "short", "dir": num_ok})
+    if err is not None:
+        return err
+    if why := roof_rect_problem(p["boundary"]):
+        return f"roof.boundary: {why}"
+    if p["form"] == "shed" and "dir" not in p:
+        return "roof: 외쪽 지붕(shed)은 물이 흐르는 방향 dir 이 필요하다"
+    if p["form"] != "shed" and "dir" in p:
+        return "roof.dir 은 외쪽 지붕(shed)에만 둘 수 있다"
+    if "ridge" in p and p["form"] != "gable":
+        return "roof.ridge 는 박공 지붕(gable)에만 둘 수 있다"
+    return None
+
+
+def sincos_deg(a):
+    """도 -> (sin, cos). 플랫폼 libm 을 쓰지 않는다(결정성: 도면·IFC 가 같은 값을 쓴다): 90도 단위로 줄인 뒤 테일러 급수(사칙연산만). drawing._sincos_deg 와 같은 알고리즘이다."""
+    a = a - 360.0 * int(a / 360.0) if a >= 0 else a - 360.0 * (int(a / 360.0) - 1)
+    a = a - 360.0 if a >= 360.0 else a
+    k = int((a + 45.0) / 90.0)
+    x = (a - 90.0 * k) * 3.141592653589793 / 180.0
+    x2 = x * x
+    sn = cs = 0.0
+    tn, tc = x, 1.0
+    for i in range(1, 9):
+        sn += tn
+        cs += tc
+        tn = -tn * x2 / ((2 * i) * (2 * i + 1))
+        tc = -tc * x2 / ((2 * i - 1) * (2 * i))
+    return [(sn, cs), (cs, -sn), (-sn, -cs), (-cs, sn)][k % 4]
+
+
+def _clean_loop(pts):
+    """이웃한 같은 점을 합친다(모임 지붕의 용마루 길이가 0 이면 사다리꼴이 삼각형이 된다)."""
+    def same(a, b):
+        return abs(a[0] - b[0]) <= 1e-6 and abs(a[1] - b[1]) <= 1e-6 and abs(a[2] - b[2]) <= 1e-6
+    out = []
+    for q in pts:
+        if not out or not same(q, out[-1]):
+            out.append(q)
+    if len(out) > 1 and same(out[0], out[-1]):
+        out.pop()
+    return out
+
+
+def _plane_of(face):
+    """볼록 다각형 면(3D 점들)의 평면 z = a x + b y + c. 수직 면이면 None."""
+    (x0, y0, z0) = face[0]
+    for i in range(1, len(face) - 1):
+        (x1, y1, z1), (x2, y2, z2) = face[i], face[i + 1]
+        det = (x1 - x0) * (y2 - y0) - (x2 - x0) * (y1 - y0)
+        if abs(det) < 1e-9:
+            continue
+        a = ((z1 - z0) * (y2 - y0) - (z2 - z0) * (y1 - y0)) / det
+        b = ((x1 - x0) * (z2 - z0) - (x2 - x0) * (z1 - z0)) / det
+        return (a, b, z0 - a * x0 - b * y0)
+    return None
+
+
+def roof_geom(p) -> dict:
+    """경사 지붕의 형상(순수 함수: 그리기·IFC 투영이 같은 값을 쓴다). 좌표는 레벨 기준 상대 z, 평면 좌표는 세계 mm.
+    기준: 외곽(boundary)의 변이 처마 선(base_offset 높이)이고, 처마는 물매대로 overhang 만큼 더 내민다(끝 높이 = base_offset - tan(물매) x overhang).
+    박공·모임은 용마루가 외곽의 긴 변 방향(박공의 ridge="short" 는 짧은 변 방향)이고 경사면의 물매가 같다. 외쪽은 dir(물이 흐르는 방향 도) 한 면이다.
+      {"faces": [[(x,y,z), ...] 윗면 다각형(위에서 볼 때 반시계)], "ridges": [(p, q)] 용마루, "hips": [(p, q)] 추녀마루, "perimeter": [(x,y,z), ...] 윗면 바깥 둘레,
+       "arrows": [((cx,cy),(dx,dy))] 경사면마다 무게중심과 물이 흐르는 단위 방향, "outline": [(x,y)] 처마를 내민 외곽(반시계), "planes": [(a,b,c)] 면마다 z=ax+by+c,
+       "zlow": 둘레의 가장 낮은 z, "ztop": 가장 높은 z}"""
+    b = p["boundary"]
+    t_s, t_c = sincos_deg(float(p["pitch"]))
+    t = t_s / t_c
+    o = float(p["overhang"])
+    z0 = float(p["base_offset"])
+    cx = sum(q[0] for q in b) / 4.0
+    cy = sum(q[1] for q in b) / 4.0
+    e0 = (b[1][0] - b[0][0], b[1][1] - b[0][1])
+    e1 = (b[2][0] - b[1][0], b[2][1] - b[1][1])
+    l0, l1 = sqrt(e0[0] ** 2 + e0[1] ** 2), sqrt(e1[0] ** 2 + e1[1] ** 2)
+    long_e, long_l, short_e, short_l = (e0, l0, e1, l1) if l0 >= l1 else (e1, l1, e0, l0)
+    if p.get("ridge") == "short":   # 박공: 용마루를 짧은 변 방향으로 돌린다
+        da, A, B = short_e, short_l / 2.0, long_l / 2.0
+        ln_a = short_l
+    else:
+        da, A, B = long_e, long_l / 2.0, short_l / 2.0
+        ln_a = long_l
+    ua = (da[0] / ln_a, da[1] / ln_a)
+    ub = (-ua[1], ua[0])      # ua 의 왼쪽 법선
+
+    def W(l, s, z):
+        return (cx + l * ua[0] + s * ub[0], cy + l * ua[1] + s * ub[1], z)
+    L, S = A + o, B + o
+    ze = z0 - t * o
+    ridges, hips, arrows = [], [], []
+    form = p["form"]
+    if form == "gable":
+        zr = z0 + t * B
+        faces = [[W(-L, -S, ze), W(L, -S, ze), W(L, 0, zr), W(-L, 0, zr)], [W(-L, 0, zr), W(L, 0, zr), W(L, S, ze), W(-L, S, ze)]]
+        ridges = [(W(-L, 0, zr), W(L, 0, zr))]
+        perim = [W(-L, -S, ze), W(L, -S, ze), W(L, 0, zr), W(L, S, ze), W(-L, S, ze), W(-L, 0, zr)]
+        arrows = [((cx - ub[0] * S / 2.0, cy - ub[1] * S / 2.0), (-ub[0], -ub[1])), ((cx + ub[0] * S / 2.0, cy + ub[1] * S / 2.0), (ub[0], ub[1]))]
+    elif form == "hip":
+        # 모임 지붕의 용마루는 긴 변 방향이다(ridge 입력 없음): A >= B
+        zr = z0 + t * B
+        R = A - B
+        faces = [_clean_loop([W(-L, -S, ze), W(L, -S, ze), W(R, 0, zr), W(-R, 0, zr)]), _clean_loop([W(L, -S, ze), W(L, S, ze), W(R, 0, zr)]),
+                 _clean_loop([W(L, S, ze), W(-L, S, ze), W(-R, 0, zr), W(R, 0, zr)]), _clean_loop([W(-L, S, ze), W(-L, -S, ze), W(-R, 0, zr)])]
+        if R >= 1.0:
+            ridges = [(W(-R, 0, zr), W(R, 0, zr))]
+        hips = [(W(L, -S, ze), W(R, 0, zr)), (W(L, S, ze), W(R, 0, zr)), (W(-L, S, ze), W(-R, 0, zr)), (W(-L, -S, ze), W(-R, 0, zr))]
+        perim = [W(-L, -S, ze), W(L, -S, ze), W(L, S, ze), W(-L, S, ze)]
+        for fc, d in zip(faces, ((-ub[0], -ub[1]), (ua[0], ua[1]), (ub[0], ub[1]), (-ua[0], -ua[1]))):
+            arrows.append(((sum(q[0] for q in fc) / len(fc), sum(q[1] for q in fc) / len(fc)), d))
+    else:   # shed
+        n_s, n_c = sincos_deg(float(p["dir"]))
+        n = (n_c, n_s)
+        ext = A * abs(ua[0] * n[0] + ua[1] * n[1]) + B * abs(ub[0] * n[0] + ub[1] * n[1])   # 외곽 중심에서 물이 흐르는 쪽 끝까지
+
+        def zs(x, y):
+            return z0 + t * (ext - ((x - cx) * n[0] + (y - cy) * n[1]))
+        fc = [(q[0], q[1], zs(q[0], q[1])) for q in (W(-L, -S, 0), W(L, -S, 0), W(L, S, 0), W(-L, S, 0))]
+        faces = [fc]
+        perim = list(fc)
+        arrows = [((cx, cy), n)]
+    planes = [_plane_of(fc) for fc in faces]
+    outline = [(q[0], q[1]) for q in (W(-L, -S, 0), W(L, -S, 0), W(L, S, 0), W(-L, S, 0))]
+    return {"faces": faces, "ridges": ridges, "hips": hips, "perimeter": perim, "arrows": arrows, "outline": outline, "planes": planes,
+            "zlow": min(q[2] for q in perim), "ztop": max(q[2] for fc in faces for q in fc)}
 
 
 CORRIDOR_WORDS = ("복도", "corridor", "hallway")
@@ -649,7 +912,8 @@ ELEMENT_KINDS: dict[str, ElementKind] = {k.name: k for k in (
     ElementKind("slab", True, "IfcSlab", True, 1, _slab_params, geometric=True),
     ElementKind("stair", True, "IfcStair", True, 1, _stair_params, geometric=True),
     ElementKind("space", True, "IfcSpace", True, 1, _space_params, geometric=True),
-    ElementKind("elevator", True, "IfcTransportElement", True, 1, _elevator_params, geometric=True),
+    ElementKind("elevator", True, "IfcTransportElement", True, 1, _elevator_params, geometric=True, refs=(("stops", "ids", None), ("hole_slabs", "ids", None))),
+    ElementKind("roof", True, "IfcRoof", True, 1, _roof_params, geometric=True),
     ElementKind("railing", True, "IfcRailing", True, 1, _railing_params, geometric=True),
     ElementKind("site", True, "IfcSite", True, 0, _site_params),
     ElementKind("ftype", True, None, True, 3, _ftype_params),
@@ -671,8 +935,8 @@ FIXED_IFC_CLASS = {k: v.ifc_class for k, v in ELEMENT_KINDS.items() if v.ifc_cla
 KIND_NAMES = tuple(ELEMENT_KINDS)
 # 의도 복원(S2 가져오기)이 IFC 클래스로 종류를 정하는 것: IFC 클래스 -> 종류. 패밀리 타입·인스턴스(ftype/finst)는 클래스가 레시피마다 달라 의도가 스스로 밝힌
 # 종류를 따른다(family.restore, ADR-0014). 뷰·주석은 IFC 신원이 없어 IFC 에서 복원할 수 없다(알려진 한계)
-IMPORTABLE_BY_CLASS = {"IfcBuildingStorey": "level", "IfcWall": "wall", "IfcDoor": "door", "IfcSlab": "slab", "IfcStair": "stair", "IfcSpace": "space", "IfcRailing": "railing", "IfcTransportElement": "elevator", "IfcSite": "site"}
-FAMILY_OF_KIND = {"level": "level.basic", "wall": "wall.basic", "door": "door.single", "slab": "slab.basic", "stair": "stair.straight", "space": "space.basic", "railing": "railing.basic", "elevator": "elevator.basic", "site": "site.basic"}
+IMPORTABLE_BY_CLASS = {"IfcBuildingStorey": "level", "IfcWall": "wall", "IfcDoor": "door", "IfcSlab": "slab", "IfcStair": "stair", "IfcSpace": "space", "IfcRailing": "railing", "IfcTransportElement": "elevator", "IfcRoof": "roof", "IfcSite": "site"}
+FAMILY_OF_KIND = {"level": "level.basic", "wall": "wall.basic", "door": "door.single", "slab": "slab.basic", "stair": "stair.straight", "space": "space.basic", "railing": "railing.basic", "elevator": "elevator.basic", "roof": "roof.basic", "site": "site.basic"}
 
 
 def _remap_ref(form: str, v, m: dict):
@@ -765,7 +1029,7 @@ def _fs(*a):
 
 REL_KINDS: dict[str, RelKind] = {r.name: r for r in (
     # 레벨은 분리돼 있어도 그 위의 저작 벽이 레벨을 따른다(S2): 레벨 쪽은 막지 않고, 놓이는 요소만 저작이어야 한다
-    RelKind("on_level", _fs("wall", "slab", "stair", "space", "railing", "elevator", "finst", "foreign"), _fs("level"), guard=("src",), violation="LEVEL_DELETED", message="벽이 놓인 레벨이 지워졌다"),
+    RelKind("on_level", _fs("wall", "slab", "stair", "space", "railing", "elevator", "roof", "finst", "foreign"), _fs("level"), guard=("src",), violation="LEVEL_DELETED", message="벽이 놓인 레벨이 지워졌다"),
     RelKind("joins", _fs("wall"), _fs("wall"), guard=("src", "dst"), violation="JOIN_TARGET_DELETED", message="조인 대상 벽이 지워졌다"),
     RelKind("hosts", _fs("wall"), _fs("door", "finst"), guard=("src", "dst"), violation="HOST_DELETED",
             message="호스트 벽이 지워졌는데 문이 그 벽에 놓여 있다"),

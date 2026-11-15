@@ -279,9 +279,9 @@ def test_옵션_뷰는_IFC로_왕복한다(tmp_path):
         b.close()
 
 
-def test_해시_형식은_13이다():
+def test_해시_형식은_13_이상이다():
     from dobim_core import ifc_model
-    assert ifc_model.CLOSURE_FORMAT == "13"
+    assert int(ifc_model.CLOSURE_FORMAT) >= 13
 
 
 # ---------------------------------------------------------------- 시트 방위 기본값

@@ -43,6 +43,7 @@ MAX_IMPORT_BYTES = 256 * 1024 * 1024
 MAX_MM = 1e9   # 의도 숫자의 상한(1000 km). 이보다 큰 값은 제곱하는 계산이 넘치므로 해석하지 않고 외래로 둔다
 KIND_OF = IMPORTABLE_BY_CLASS   # 요소 종류 표의 정본은 kinds.py 다(의도를 복원할 수 있는 종류만 뽑은 것)
 FAMILY = FAMILY_OF_KIND
+K_ELEV_OPT = ("pit", "machine", "doors", "stops", "hole_slabs", "hole_clearance")   # 승강기의 선택 파라미터(commands.ELEV_OPT 와 같다)
 _ID = re.compile(r"^[0-9A-Za-z_$]{22}$")
 NAME_MAX = 255
 
@@ -104,7 +105,7 @@ def _layers(v, total: float):
 def _parse_intent(kind: str, text: str) -> dict:
     """DoBIM_Intent 텍스트를 현재 코어 스키마로 해석한다. 못 하면 ValueError. 숫자는 float 로 맞춘다(저작 행과 같은 모양)."""
     d = json.loads(text)
-    extra = {"level": (), "wall": ("level", "joins"), "door": ("host",), "slab": ("level",), "stair": ("level",), "space": ("level",), "railing": ("level",), "elevator": ("level",), "site": ()}[kind]
+    extra = {"level": (), "wall": ("level", "joins"), "door": ("host",), "slab": ("level",), "stair": ("level",), "space": ("level",), "railing": ("level",), "elevator": ("level",), "roof": ("level",), "site": ()}[kind]
     if not isinstance(d, dict) or set(d) != {"kind", "params", "family_id", *extra} or d["kind"] != kind or d["family_id"] != FAMILY[kind]:
         raise ValueError("의도 모양이 현재 스키마와 다르다")
     p = d["params"]
@@ -125,7 +126,7 @@ def _parse_intent(kind: str, text: str) -> dict:
         if "layers" in p:
             out["layers"] = _layers(p["layers"], out["thickness"])
     elif kind == "slab":
-        if set(p) - {"layers", "openings", "use", "fall", "drains"} != {"name", "boundary", "thickness", "top_offset"} or not isinstance(p["boundary"], list) or not 3 <= len(p["boundary"]) <= 256:
+        if set(p) - {"layers", "openings", "use", "fall", "drains", "parapet"} != {"name", "boundary", "thickness", "top_offset"} or not isinstance(p["boundary"], list) or not 3 <= len(p["boundary"]) <= 256:
             raise ValueError("슬래브 params 가 다르다")
         pts = []
         for q in p["boundary"]:
@@ -163,11 +164,15 @@ def _parse_intent(kind: str, text: str) -> dict:
                 if not isinstance(p["drains"], list) or any(not isinstance(q, list) or len(q) != 2 for q in p["drains"]):
                     raise ValueError("슬래브 배수구가 올바르지 않다")
                 out["drains"] = [[_num(q[0]), _num(q[1])] for q in p["drains"]]
+            if "parapet" in p:
+                if not isinstance(p["parapet"], dict) or set(p["parapet"]) != {"height", "thickness"}:
+                    raise ValueError("슬래브 파라펫이 올바르지 않다")
+                out["parapet"] = {"height": _num(p["parapet"]["height"]), "thickness": _num(p["parapet"]["thickness"])}
             why = K.row_params_error("slab", out)   # 배수구가 슬래브 위에 있는지 등(코어 행 검사와 같은 것)
             if why:
                 raise ValueError(f"슬래브가 올바르지 않다({why})")
-        elif "fall" in p or "drains" in p:
-            raise ValueError("물매·배수구는 지붕 슬래브에만 있다")
+        elif "fall" in p or "drains" in p or "parapet" in p:
+            raise ValueError("물매·배수구·파라펫은 지붕 슬래브에만 있다")
     elif kind == "space":
         if (set(p) - {"ceiling_height"} != {"name", "category", "boundary", "height"} or not isinstance(p["boundary"], list) or not 3 <= len(p["boundary"]) <= 256
                 or not isinstance(p["category"], str) or len(p["category"]) > 255):
@@ -225,12 +230,43 @@ def _parse_intent(kind: str, text: str) -> dict:
         why = K.row_params_error("railing", out)
         if why:
             raise ValueError(f"난간이 올바르지 않다({why})")
+    elif kind == "roof":
+        if (set(p) - {"ridge", "dir"} != {"name", "boundary", "form", "pitch", "overhang", "base_offset", "thickness"} or not isinstance(p["boundary"], list) or len(p["boundary"]) != 4
+                or any(not isinstance(q, list) or len(q) != 2 for q in p["boundary"])):
+            raise ValueError("지붕 params 가 다르다")
+        out = {"name": _name(p["name"]), "boundary": [[_num(q[0]), _num(q[1])] for q in p["boundary"]], "form": p["form"], "pitch": _num(p["pitch"], pos=True),
+               "overhang": _num(p["overhang"], nonneg=True), "base_offset": _num(p["base_offset"]), "thickness": _num(p["thickness"], pos=True)}
+        if "ridge" in p:
+            out["ridge"] = p["ridge"]
+        if "dir" in p:
+            out["dir"] = _num(p["dir"])
+        why = K.row_params_error("roof", out)
+        if why:
+            raise ValueError(f"지붕이 올바르지 않다({why})")
     elif kind == "elevator":
-        if (set(p) != {"name", "shaft", "cab", "base_offset", "rise"} or not isinstance(p["shaft"], list) or len(p["shaft"]) != 4
+        if (set(p) - set(K_ELEV_OPT) != {"name", "shaft", "cab", "base_offset", "rise"} or not isinstance(p["shaft"], list) or len(p["shaft"]) != 4
                 or not isinstance(p["cab"], list) or len(p["cab"]) != 3):
             raise ValueError("승강기 params 가 다르다")
         out = {"name": _name(p["name"]), "shaft": [_num(v) for v in p["shaft"]], "cab": [_num(v) for v in p["cab"]],
                "base_offset": _num(p["base_offset"]), "rise": _num(p["rise"], pos=True)}
+        if "pit" in p:   # 선택 입력(피트·기계실·승강장 문·소유 구멍): 값 검사는 코어 행 검사와 같은 것이다
+            out["pit"] = _num(p["pit"], pos=True)
+        if "machine" in p:
+            if not isinstance(p["machine"], dict) or set(p["machine"]) != {"height"}:
+                raise ValueError("승강기 기계실이 올바르지 않다")
+            out["machine"] = {"height": _num(p["machine"]["height"], pos=True)}
+        if "doors" in p:
+            dr = p["doors"]
+            if not isinstance(dr, dict) or set(dr) != {"face", "w", "h"}:
+                raise ValueError("승강기 문이 올바르지 않다")
+            out["doors"] = {"face": dr["face"], "w": _num(dr["w"], pos=True), "h": _num(dr["h"], pos=True)}
+        for k in ("stops", "hole_slabs"):
+            if k in p:
+                if not isinstance(p[k], list) or any(not isinstance(x, str) or not _ID.match(x) for x in p[k]):
+                    raise ValueError(f"승강기 {k} 가 올바르지 않다")
+                out[k] = list(p[k])
+        if "hole_clearance" in p:
+            out["hole_clearance"] = _num(p["hole_clearance"], nonneg=True)
         why = K.row_params_error("elevator", out)
         if why:
             raise ValueError(f"승강기가 올바르지 않다({why})")
@@ -265,7 +301,7 @@ def _parse_intent(kind: str, text: str) -> dict:
         if not isinstance(lv, str) or not _ID.match(lv) or not isinstance(joins, list) or not all(isinstance(j, str) and _ID.match(j) for j in joins):
             raise ValueError("레벨·조인 참조가 올바르지 않다")
         res["level"], res["joins"] = lv, sorted(set(joins))
-    elif kind in ("slab", "stair", "space", "railing", "elevator"):
+    elif kind in ("slab", "stair", "space", "railing", "elevator", "roof"):
         if not isinstance(d["level"], str) or not _ID.match(d["level"]):
             raise ValueError("레벨 참조가 올바르지 않다")
         res["level"] = d["level"]
@@ -536,7 +572,7 @@ def plan_import(data: bytes) -> ImportPlan:
                     bad = "조인 상대가 없거나 대칭이 아니다"
                 elif any(cand[j]["level"] != it["level"] for j in it["joins"]):
                     bad = "다른 레벨의 벽과 조인돼 있다"
-            elif it["kind"] in ("slab", "stair", "space", "railing", "elevator"):
+            elif it["kind"] in ("slab", "stair", "space", "railing", "elevator", "roof"):
                 if cand.get(it["level"], {}).get("kind") != "level":
                     bad = "레벨 참조가 없다"
             elif it["kind"] == "door":
@@ -559,12 +595,12 @@ def plan_import(data: bytes) -> ImportPlan:
         if it["kind"] in ("ftype", "finst"):
             rows[g] = {"kind": it["kind"], "ifc_class": cls_of[g], "origin": "authored", "family_id": it["family_id"], "params": it["params"]}
         else:
-            cls = {"level": "IfcBuildingStorey", "wall": "IfcWall", "door": "IfcDoor", "slab": "IfcSlab", "stair": "IfcStair", "space": "IfcSpace", "railing": "IfcRailing", "elevator": "IfcTransportElement", "site": "IfcSite"}[it["kind"]]
+            cls = {"level": "IfcBuildingStorey", "wall": "IfcWall", "door": "IfcDoor", "slab": "IfcSlab", "stair": "IfcStair", "space": "IfcSpace", "railing": "IfcRailing", "elevator": "IfcTransportElement", "roof": "IfcRoof", "site": "IfcSite"}[it["kind"]]
             rows[g] = {"kind": it["kind"], "ifc_class": cls, "origin": "authored", "family_id": FAMILY[it["kind"]], "params": it["params"]}
         if it["kind"] == "wall":
             rels.add(("on_level", g, it["level"]))
             rels.update(("joins", min(g, j), max(g, j)) for j in it["joins"])
-        elif it["kind"] in ("slab", "stair", "space", "railing", "elevator"):
+        elif it["kind"] in ("slab", "stair", "space", "railing", "elevator", "roof"):
             rels.add(("on_level", g, it["level"]))
         elif it["kind"] == "door":
             rels.add(("hosts", it["host"], g))
@@ -646,7 +682,7 @@ def plan_import(data: bytes) -> ImportPlan:
             for rel in f.get_inverse(f.by_guid(g)):
                 if rel.is_a("IfcRelFillsElement") and rel.RelatedBuildingElement == f.by_guid(g):
                     owned.add(rel.RelatingOpeningElement.GlobalId)
-        elif r["origin"] == "authored" and r["kind"] in ("slab", "stair"):   # 저작 슬래브의 구멍·꺾인 계단의 단 묶음·층참도 그 요소의 클로저에 속한다
+        elif r["origin"] == "authored" and r["kind"] in ("slab", "stair", "roof"):   # 저작 슬래브의 구멍·파라펫·꺾인 계단의 단 묶음·층참·지붕의 경사면도 그 요소의 클로저에 속한다
             owned.update(p.GlobalId for p in scratch.parts.get(g, {}).values())
     for p in prods:
         g = p.GlobalId

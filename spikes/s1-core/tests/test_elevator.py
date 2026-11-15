@@ -254,7 +254,7 @@ def test_승강기_증분이_전체_재생성과_같다(base):
     check()
     assert base.run("elevator.set", {"id": F.EL1, "cab": [1300, 1500, 2300], "rise": 4000})["ok"]
     check()
-    assert base.run("elevator.move", {"id": F.EL1, "dx": 300, "dy": -200})["ok"]
+    assert base.run("elevator.move", {"id": F.EL1, "dx": -300, "dy": -200})["ok"]   # 낸 슬래브 구멍이 따라 옮겨진다(경계 안에 머무는 이동)
     check()
     assert base.run("history.undo", {})["ok"]
     check()
