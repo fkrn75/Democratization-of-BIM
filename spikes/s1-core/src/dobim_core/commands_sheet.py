@@ -141,7 +141,7 @@ def build_profile() -> dict:
         "line_types": {"solid": "보이는 선·절단선", "dashed": "방화벽 중심선·레벨 기준선", "dash_dot": "통심선·단면 절단선·부위 상세 표시", "dimension": f"치수선 0.13mm, 색 {DX.ANNOT_COLOR}"},
         "line_overlap": {"priority": dict(D.PRIORITY), "rule": "같은 직선 위에서 겹치거나 이어진 선분은 하나로 병합하고, 절단선이 덮는 부분은 아래 등급의 선을 지운다. "
                                                            "그리는 순서는 해치·보이는 선·기호선·절단선(굵은 선이 위)", "draw_order": list(DX.LINE_ORDER),
-                         "corner_fill": "L 조인 모서리는 표시용 채움으로 닫는다" if D.CORNER_FILL else "없음"},
+                         "corner_fill": "L 조인 모서리는 코어 벽 형상(조인한 벽 중 id 가 작은 쪽이 상대 벽 반 두께 연장)으로 닫고 IFC 형상과 같다" if D.CORNER_FILL else "없음"},
         "hatch": {"types": [{"id": "ext-finish-45", "angle_deg": 45, "step_mm": D.HATCH_STEP, "line_mm": DX.STYLE["hatch"][0], "use": "입면 외벽 마감 재료(재료 이름 문자 병기)"},
                             {"id": "section-fill", "fill": "#cfcfcf", "use": "절단면 채움(벽·기둥·슬래브·계단)"}]},
         "text_font": {"font": SH.FONT, "pdf": "OFL 고딕 부분집합 내장", "heights_mm": {"room_name": D.LABEL_NAME_H, "room_area": D.LABEL_SUB_H, "fire_mark": D.LABEL_FIRE_H,
@@ -261,9 +261,8 @@ class SheetRender(A):
 
 def _export_args(ctx, a: SheetRender):
     """저장된 정의 -> sheet.export 인자(같은 값이라 같은 파일이 나온다). 뷰가 사라졌으면 CONSTRAINT."""
-    p = dict(ctx.row(a.id, "sheet")["params"])
-    p.pop("name")
-    missing = [v for v in [*p["views"], *([p["key_plan"]] if p["key_plan"] else [])] if v not in ctx.st.el or ctx.st.el[v]["kind"] != "view"]
+    p = {k: v for k, v in ctx.row(a.id, "sheet")["params"].items() if k != "name" and v is not None}   # 없는 선택 값(null)은 생략으로 낸다(sheet.export 가 null 을 받지 않는다)
+    missing = [v for v in [*p["views"], *([p["key_plan"]] if p.get("key_plan") else [])] if v not in ctx.st.el or ctx.st.el[v]["kind"] != "view"]
     if missing:
         raise DobimError("CONSTRAINT", f"시트가 올린 뷰가 없다: {', '.join(sorted(set(missing)))}", path="/id", hint="sheet.define 으로 시트를 고치세요")
     return C.SheetExport.model_validate(dict(p, path=a.path, overwrite=a.overwrite))

@@ -32,10 +32,12 @@ def _spec_fp(sess, w):
 
 def _ifc_range(tmp_path, sess, w):
     """내보낸 IFC 파일에서 벽 w 의 실제 형상을 읽어 벽 축선 방향 범위(mm)를 구한다(엔진 코드와 독립)."""
-    r = sess.run("ifc.export", {"path": "e.ifc", "overwrite": True})
-    tok = r["error"]["details"]["confirm_token"]
-    assert sess.run("ifc.export", {"path": "e.ifc", "overwrite": True}, confirm=tok)["ok"]
-    f = ifcopenshell.open(str(tmp_path / "e.ifc"))
+    name = f"e-{w[-4:]}-{len(list(tmp_path.glob('e-*.ifc')))}.ifc"               # 호출마다 새 파일(덮어쓰기 확인 절차를 피한다)
+    r = sess.run("ifc.export", {"path": name})
+    if not r["ok"]:
+        r = sess.run("ifc.export", {"path": name}, confirm=r["error"]["details"]["confirm_token"])
+    assert r["ok"], r
+    f = ifcopenshell.open(str(tmp_path / name))
     st = ifcopenshell.geom.settings()
     st.set("use-world-coords", True)
     shape = ifcopenshell.geom.create_shape(st, f.by_guid(w))

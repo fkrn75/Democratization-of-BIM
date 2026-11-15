@@ -396,7 +396,24 @@ def judge_sheet2_items(out: Path, run: dict, base: dict):
         ca = len(re.findall(r'stroke-width="0.35"', fa3.read_text(encoding="utf-8")))
         if c3 > ca + 5:
             res["B-09"] = (PART, f"별도 작성기준을 선 굵기 프로파일로 받아 적용할 수 있다(A-003: 절단선 0.35mm 선 {c3}개, 기본 시트 {ca}개). 문자·기호·치수 기준은 입력 경로가 없다")
-    return res | judge_sheet_def(run)
+    return res
+
+
+def judge_bim_items(out: Path, run: dict, base: dict):
+    """여섯 번째 작업 항목(B-02 추출 형상, B-04 뷰 원본 저장)을 run.json 의 probe 로 판정한다."""
+    return judge_corner(run) | judge_sheet_def(run)
+
+
+def judge_corner(run: dict):
+    """B-02 추출 형상 변경 금지: 도면이 그리는 모든 벽의 범위가 내보낸 IFC 파일의 실제 형상과 같고(0.01mm 이내), 예전에 도면만 채우던 L 조인 모서리가
+    IFC 형상에도 들어 있을 때만 충족이다. 도면 내용 = BIM 데이터(IFC)의 정의를 따른다."""
+    pr = run.get("corner_probe")
+    if not pr:
+        return {}
+    if pr["max_diff_mm"] < 0.01 and pr["extended_walls"] > 0:
+        return {"B-02": (OK, f"벽 {pr['walls']}개 모두 도면이 그리는 범위와 내보낸 IFC 파일의 실제 형상이 같다(최대 차이 {pr['max_diff_mm']}mm). "
+                             f"L 조인 모서리를 연장한 벽 {pr['extended_walls']}개는 IFC 형상에도 연장이 들어 있다(코어 조인 형상). 논리 길이·치수 참조·일람표 길이는 그대로")}
+    return {"B-02": (PART, f"도면과 IFC 형상이 일부 다르다(최대 차이 {pr['max_diff_mm']}mm, 연장 벽 {pr['extended_walls']}개)")}
 
 
 def judge_sheet_def(run: dict):
@@ -468,7 +485,7 @@ def main():
     dg = digest_same(out, Path(o.g1) if o.g1 else None)
     changed = []
     for judged in (judge_sheet_items(out, run, items), judge_element_items(out, run, items), judge_slab_height_items(out, run, items),
-                   judge_stair_space_items(out, run, items), judge_sheet2_items(out, run, items)):
+                   judge_stair_space_items(out, run, items), judge_sheet2_items(out, run, items), judge_bim_items(out, run, items)):
         for i, (v, why) in judged.items():
             if items[i]["verdict"] != v:
                 changed.append((i, items[i]["verdict"], v))

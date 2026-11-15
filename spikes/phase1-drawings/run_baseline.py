@@ -53,8 +53,50 @@ def export(sess, name, args, out_path: Path):
     """확인 토큰 2단계 호출로 내보낸다. 응답 result 를 돌려준다."""
     a = {**args, "path": out_path.name, "overwrite": True}
     r = sess.run(name, a)
+    if r.get("ok"):   # 덮어쓸 파일이 없으면 확인 절차 없이 쓴다
+        return r["result"]
     tok = r["error"]["details"]["confirm_token"]
     return ok(sess.run(name, a, confirm=tok))
+
+
+def ifc_out(sess, name):
+    """IFC 를 내보낸다(ifc.export 는 overwrite 인자가 없고 기존 파일이면 확인 토큰이 필요하다)."""
+    r = sess.run("ifc.export", {"path": name})
+    if not r.get("ok"):
+        r = sess.run("ifc.export", {"path": name}, confirm=r["error"]["details"]["confirm_token"])
+    return ok(r)
+
+
+def cornerprobe(sess, log, work):
+    """여섯 번째 작업(B-02): 모든 벽에서 도면이 그리는 벽 범위(drawing.wall_range)와 내보낸 IFC 파일의 실제 형상(축선 방향 범위)이 같은지 잰다.
+    IFC 는 파일을 열어 형상을 직접 만든 정점으로 읽는다(엔진 코드와 독립). 연장된 끝(L 조인 모서리)의 길이도 기록한다. 결과는 run.json 의 corner_probe."""
+    from math import sqrt
+
+    import ifcopenshell
+    import ifcopenshell.geom
+    from dobim_core import queries as Q
+    ifc_out(sess, "corner.ifc")
+    sess.eng.sync()
+    sess.eng._touch_pending()
+    g = sess.eng.g
+    f = ifcopenshell.open(str(work / "corner.ifc"))
+    st = ifcopenshell.geom.settings()
+    st.set("use-world-coords", True)
+    rows = []
+    for w in sorted(sess.eng.st.by_kind.get("wall", ())):
+        x1, y1, x2, y2 = sess.eng.st.el[w]["params"]["axis"]
+        ln = sqrt((x2 - x1) ** 2 + (y2 - y1) ** 2)
+        c, s_ = (x2 - x1) / ln, (y2 - y1) / ln
+        v = ifcopenshell.geom.create_shape(st, f.by_guid(w)).geometry.verts
+        ts = [((v[i] * 1000.0 - x1) * c + (v[i + 1] * 1000.0 - y1) * s_) for i in range(0, len(v), 3)]
+        lo, hi = min(ts), max(ts)
+        rng = g.q(D.wall_range, w)
+        trim = g.q(Q.wall_trim, w)
+        rows.append({"id": w, "ifc": [round(lo, 3), round(hi, 3)], "drawing": [round(rng[0], 3), round(rng[1], 3)], "trim": [round(trim[0], 3), round(trim[1], 3)],
+                     "diff_mm": round(max(abs(lo - rng[0]), abs(hi - rng[1])), 4), "extended_mm": round((trim[0] - rng[0]) + (rng[1] - trim[1]), 3)})
+    log["corner_probe"] = {"walls": len(rows), "extended_walls": sum(1 for r in rows if r["extended_mm"] > 0), "max_diff_mm": max(r["diff_mm"] for r in rows),
+                           "legacy_notch_walls": sum(1 for r in rows if r["extended_mm"] > 0 and abs(r["ifc"][0] - r["trim"][0]) < 1e-3 and abs(r["ifc"][1] - r["trim"][1]) < 1e-3),
+                           "rows": rows}
 
 
 def sheetdef(sess, saved, log, out, work, sheets_dir):
@@ -72,7 +114,7 @@ def sheetdef(sess, saved, log, out, work, sheets_dir):
             export(sess, "sheet.render", {"id": sid}, work / f"def-{nm}.{ext}")
             same[f"{nm}.{ext}"] = (work / f"def-{nm}.{ext}").read_bytes() == (sheets_dir / f"{nm}.{ext}").read_bytes()
     h0 = ok(sess.run("model.hash", {}))
-    export(sess, "ifc.export", {}, work / "sheetdef.ifc")
+    ifc_out(sess, "sheetdef.ifc")
     imp = ok(dispatch.run(sess.env, "ifc.import", {"source": "sheetdef.ifc", "path": "sheetdef-imp.dobim"}))
     h1 = ok(dispatch.run(sess.env, "model.hash", {}, project="sheetdef-imp.dobim"))
     lst2 = ok(dispatch.run(sess.env, "sheet.list", {}, project="sheetdef-imp.dobim"))
@@ -325,6 +367,7 @@ def main():
         saved.update(sheet2(sess, ids, views, log, out, work, sheets_dir, exp_views, sheet, spec))
         if not o.no_sheetdef:
             sheetdef(sess, saved, log, out, work, sheets_dir)
+            cornerprobe(sess, log, work)
     (out / "run.json").write_text(json.dumps({"views": views, "ids": ids, **log}, ensure_ascii=False, indent=1), encoding="utf-8")
     print(json.dumps(log, ensure_ascii=False)[:1500])
 

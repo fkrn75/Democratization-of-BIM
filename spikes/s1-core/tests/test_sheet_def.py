@@ -100,6 +100,11 @@ def test_s1c_저장한_정의로_낸_파일은_같은_인자로_낸_시트와_�
             saved = _render(b, SH1, f"s.{ext}")
             assert (tmp_path / f"d.{ext}").read_bytes() == (tmp_path / f"s.{ext}").read_bytes()
             assert saved["views"] == direct["result"]["views"]
+        _ok(b.run("sheet.define", _second(), project="src.dobim"))               # 키 플랜·key_zone·date 가 없는 정의도 낸다(저장값 null 은 생략으로)
+        d2 = b.destructive("sheet.export", {k: v for k, v in _second().items() if k not in ("id", "name")} | {"path": "d2.svg", "overwrite": True}, "src.dobim")
+        assert d2["ok"], d2
+        _render(b, SH2, "s3.svg")
+        assert (tmp_path / "d2.svg").read_bytes() == (tmp_path / "s3.svg").read_bytes()
         again = _render(b, SH1, "s2.svg")                                       # 결정성: 두 번 내도 같다
         assert (tmp_path / "s.svg").read_bytes() == (tmp_path / "s2.svg").read_bytes() and again["bytes"] > 0
     finally:
