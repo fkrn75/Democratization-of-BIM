@@ -657,6 +657,8 @@ def vfam_nbr_pieces(g, v, e):
             occ.extend(g.q(_fam_vpieces, v, o))
     for sl in g.q(scope_slabs, v):
         occ.extend(g.q(_slab_vpieces, v, sl))
+    for st in g.q(scope_stairs, v):
+        occ.extend(g.q(_stair_vpieces, v, st))
     return tuple(occ)
 
 
@@ -908,6 +910,8 @@ def slab_lines(g, v, s):
     for o in g.q(scope_slabs, v):
         if o != s:
             occ.extend(g.q(_slab_vpieces, v, o))
+    for st in g.q(scope_stairs, v):
+        occ.extend(g.q(_stair_vpieces, v, st))
     for fe in g.q(scope_fams, v):
         occ.extend(g.q(_fam_vpieces, v, fe))
     lines = []
@@ -920,6 +924,215 @@ def slab_lines(g, v, s):
         rects = g.q(slab_cut_rects, v, s)
         if rects:
             others = [(w, q) for w in nb for q in g.q(vcut_rects, v, w)]
+            lines += [("cut", a[0], a[1], b[0], b[1]) for a, b in outline_edges(list(rects), others, s)]
+    return tuple(lines)
+
+
+# ================================================================ 계단 (kinds "stair": 직선 계단, 설계: elements-design.md 6절)
+# 계단은 디딤판마다 속이 찬 볼록 각기둥(아래 끝 ~ 그 디딤판 윗면)의 모임이다. 디딤판은 챌판 수 - 1 개(마지막 챌판 위는 위층 바닥).
+#   평면: 윤곽·디딤판 선(투영선), 걸음선 + 화살촉(symbol), 절단 높이가 계단 높이 안이면 그 위치의 절단선(cut)과 그 위쪽 생략
+#   단면: 절단면과 만나는 디딤 조각마다 (s, z) 사각형(cut 선 + 채움), 벽·슬래브와 합집합 윤곽
+#   입면: 옆모습 윤곽(양 옆면)과 디딤판 앞 모서리를 투영선으로
+STAIR_ARROW = 0.3   # 화살촉 길이 = 폭 x STAIR_ARROW (mm, 상한 400)
+
+
+def stair_info(g, s):
+    """(아래 z, 위 z, 시작 x, y, 걸음 방향 ux, uy, 걸음선 길이, 폭, 챌판 수, 디딤판 깊이, 챌판 높이) 또는 None. 저작 계단만 그린다."""
+    row = Q.el(g, s)
+    if row is None or row["kind"] != "stair" or row["origin"] != "authored":
+        return None
+    zb, zt = g.q(Q.stair_zrange, s)
+    p = row["params"]
+    x1, y1, x2, y2 = p["run"]
+    dx, dy = x2 - x1, y2 - y1
+    length = sqrt(dx * dx + dy * dy)
+    n = p["risers"]
+    return (zb, zt, x1, y1, dx / length, dy / length, length, p["width"], n, length / (n - 1), (zt - zb) / n)
+
+
+def all_stairs(g):
+    out = []
+    for b in range(Q.NB):
+        out.extend(e for e in Q.bucket_ids(g, "stair", b) if g.q(stair_info, e) is not None)
+    return tuple(sorted(out))
+
+
+def scope_stairs(g, v):
+    """뷰가 그리는 계단. 평면은 그 레벨에 놓인 것만, 단면·입면은 모델 전체."""
+    cfg = g.q(view_cfg, v)
+    if cfg is None:
+        return ()
+    if cfg[0] == "plan":
+        if cfg[1] is None:
+            return ()
+        return tuple(e for e in sorted(Q.rel_in(g, "on_level", cfg[1])) if g.q(stair_info, e) is not None)
+    return g.q(all_stairs)
+
+
+def _st_pt(info, t, m):
+    """걸음선 위 t(mm), 왼쪽으로 m(mm) 만큼 떨어진 점의 세계 좌표."""
+    return (info[2] + info[4] * t - info[5] * m, info[3] + info[5] * t + info[4] * m)
+
+
+def plan_stair_parts(g, v, s):
+    """평면의 계단: (선분들, 채움들). 채움은 없다."""
+    cfg = g.q(view_cfg, v)
+    info = g.q(stair_info, s)
+    if info is None or cfg is None or cfg[0] != "plan" or cfg[2] < info[0] - EPS:
+        return ((), ())
+    zb, zt, _, _, _, _, length, width, n, td, rise = info
+    h = width / 2.0
+    broken = cfg[2] < zt - EPS
+    k_b = min(_floor((cfg[2] - zb) / rise), n - 1) if broken else n - 1
+    tmax = k_b * td if broken else length
+    segs = []
+
+    def seg(cls, a, b):
+        segs.append((cls, a[0], a[1], b[0], b[1]))
+
+    seg("proj", _st_pt(info, 0.0, h), _st_pt(info, 0.0, -h))                  # 첫 챌판 쪽 끝선
+    seg("proj", _st_pt(info, 0.0, h), _st_pt(info, tmax, h))                  # 양 옆선
+    seg("proj", _st_pt(info, 0.0, -h), _st_pt(info, tmax, -h))
+    if not broken:
+        seg("proj", _st_pt(info, length, h), _st_pt(info, length, -h))
+    for k in range(1, n - 1):                                                 # 디딤판 사이 선(절단 위치 아래만)
+        if k * td < tmax - EPS:
+            seg("proj", _st_pt(info, k * td, h), _st_pt(info, k * td, -h))
+    # 걸음선과 오르는 방향 화살촉
+    t_start = min(td * 0.5, tmax)
+    t_end = tmax - min(td * 0.3, tmax * 0.1) if broken else length - min(td * 0.5, length * 0.1)
+    if t_end - t_start > EPS:
+        seg("symbol", _st_pt(info, t_start, 0.0), _st_pt(info, t_end, 0.0))
+        hl = min(width * STAIR_ARROW, 400.0, t_end - t_start)
+        for sgn in (1.0, -1.0):
+            seg("symbol", _st_pt(info, t_end, 0.0), _st_pt(info, t_end - hl, sgn * hl * 0.4))
+    if broken:                                                                # 절단선: 계단을 가로지르는 대각선
+        e = min(td * 0.5, 150.0)
+        seg("cut", _st_pt(info, tmax - e, h), _st_pt(info, tmax + e, -h))
+    return (tuple(segs), ())
+
+
+def _stair_vpieces(g, v, s):
+    """단면·입면에서 계단의 속이 찬 볼록 조각 ((z0, z1, 다각형(s,w)), ...): 디딤판마다 하나."""
+    cfg = g.q(view_cfg, v)
+    info = g.q(stair_info, s)
+    if info is None or cfg is None or cfg[0] == "plan":
+        return ()
+    zb, _, _, _, _, _, _, width, n, td, rise = info
+    h = width / 2.0
+    out = []
+    for k in range(n - 1):
+        quad = [_sw(cfg, _st_pt(info, t, m)) for t, m in ((k * td, -h), ((k + 1) * td, -h), ((k + 1) * td, h), (k * td, h))]
+        if _area2(quad) < 0:
+            quad.reverse()
+        quad = _clip_w(quad, cfg[7], cfg[8])
+        if len(quad) >= 3 and _area2(quad) > 2 * EPS:
+            out.append((zb, zb + (k + 1) * rise, tuple(quad)))
+    return tuple(out)
+
+
+def stair_vbbox(g, v, s):
+    ps = g.q(_stair_vpieces, v, s)
+    if not ps:
+        return None
+    ss = [p[0] for _, _, poly in ps for p in poly]
+    return (min(ss), min(z0 for z0, _, _ in ps), max(ss), max(z1 for _, z1, _ in ps))
+
+
+def stair_cut_rects(g, v, s):
+    """단면: 절단면(w=near)과 각 디딤 조각의 교차 구간 x (바닥 ~ 디딤판 윗면) 사각형."""
+    cfg = g.q(view_cfg, v)
+    if cfg is None or cfg[0] == "plan" or not cfg[9]:
+        return ()
+    near = cfg[7]
+    rects = []
+    for z0, z1, poly in g.q(_stair_vpieces, v, s):
+        xs = []
+        n = len(poly)
+        for i in range(n):
+            a, b = poly[i], poly[(i + 1) % n]
+            if abs(a[1] - near) <= EPS:
+                xs.append(a[0])
+            if (a[1] < near - EPS) != (b[1] < near - EPS) and abs(b[1] - a[1]) > EPS:
+                xs.append(a[0] + (near - a[1]) / (b[1] - a[1]) * (b[0] - a[0]))
+        if len(xs) >= 2 and max(xs) - min(xs) > EPS:
+            s0, s1 = min(xs), max(xs)
+            rects.append(((s0, z0), (s1, z0), (s1, z1), (s0, z1)))
+    return tuple(rects)
+
+
+def stair_vedges(g, v, s):
+    """계단의 모서리(뷰 좌표 3D 선분 (s,w,z)): 양 옆면의 톱니 윤곽과 디딤판 앞 모서리(폭 방향)."""
+    cfg = g.q(view_cfg, v)
+    info = g.q(stair_info, s)
+    if info is None or cfg is None or cfg[0] == "plan":
+        return ()
+    zb, _, _, _, _, _, length, width, n, td, rise = info
+    h = width / 2.0
+    prof = [(0.0, zb)]
+    for k in range(n):
+        prof.append((k * td, zb + (k + 1) * rise))
+        if k < n - 1:
+            prof.append(((k + 1) * td, zb + (k + 1) * rise))
+    prof.append((length, zb))
+    raw = []
+    for m in (-h, h):
+        pts = [(_sw(cfg, _st_pt(info, t, m)), z) for t, z in prof]
+        for i in range(len(pts)):
+            (a, za), (b, zb2) = pts[i], pts[(i + 1) % len(pts)]
+            raw.append(((a[0], a[1], za), (b[0], b[1], zb2)))
+    for t, z in prof[1:-1]:                                                   # 디딤판·챌판 모서리가 만나는 꼭짓점마다 폭 방향 선
+        a, b = _sw(cfg, _st_pt(info, t, -h)), _sw(cfg, _st_pt(info, t, h))
+        raw.append(((a[0], a[1], z), (b[0], b[1], z)))
+    out = []
+    for e0, e1 in raw:
+        if abs(e1[0] - e0[0]) < EPS and abs(e1[1] - e0[1]) < EPS and abs(e1[2] - e0[2]) < EPS:
+            continue
+        c = _clip_edge(e0, e1, cfg[7], cfg[8])
+        if c is not None:
+            out.append(c)
+    return tuple(out)
+
+
+def stair_nbr_walls(g, v, s):
+    """계단과 경계 상자가 겹치는 같은 뷰의 벽(가림 후보·절단 윤곽 합집합 상대)."""
+    me = g.q(stair_vbbox, v, s)
+    if me is None:
+        return ()
+    return tuple(w for w in g.q(scope_walls, v) if (bb := g.q(vbbox, v, w)) is not None and _bb_hit(me, bb))
+
+
+def stair_lines(g, v, s):
+    """계단 하나가 뷰에 기여하는 선분."""
+    cfg = g.q(view_cfg, v)
+    if cfg is None:
+        return ()
+    if cfg[0] == "plan":
+        return g.q(plan_stair_parts, v, s)[0]
+    mine = list(g.q(_stair_vpieces, v, s))
+    nb = g.q(stair_nbr_walls, v, s)
+    occ = mine[:]
+    for w in nb:
+        occ.extend(g.q(vpieces, v, w))
+    for o in g.q(scope_stairs, v):
+        if o != s:
+            occ.extend(g.q(_stair_vpieces, v, o))
+    for sl in g.q(scope_slabs, v):
+        occ.extend(g.q(_slab_vpieces, v, sl))
+    for fe in g.q(scope_fams, v):
+        occ.extend(g.q(_fam_vpieces, v, fe))
+    lines = []
+    if occ:
+        for e0, e1 in g.q(stair_vedges, v, s):
+            for t0, t1 in visible_parts(e0, e1, occ):
+                lines.append(("proj", e0[0] + t0 * (e1[0] - e0[0]), e0[2] + t0 * (e1[2] - e0[2]),
+                              e0[0] + t1 * (e1[0] - e0[0]), e0[2] + t1 * (e1[2] - e0[2])))
+    if cfg[9]:
+        rects = g.q(stair_cut_rects, v, s)
+        if rects:
+            others = [(w, q) for w in nb for q in g.q(vcut_rects, v, w)]
+            others += [(sl, q) for sl in g.q(scope_slabs, v) for q in g.q(slab_cut_rects, v, sl)]
+            others += [(o, q) for o in g.q(scope_stairs, v) if o != s for q in g.q(stair_cut_rects, v, o)]
             lines += [("cut", a[0], a[1], b[0], b[1]) for a, b in outline_edges(list(rects), others, s)]
     return tuple(lines)
 
@@ -1190,6 +1403,8 @@ def vwall_lines(g, v, w):
     sls = g.q(scope_slabs, v)
     for sl in sls:                                      # 슬래브가 앞에 있으면 벽 선을 가린다
         occ.extend(g.q(_slab_vpieces, v, sl))
+    for st in g.q(scope_stairs, v):                     # 계단이 앞에 있으면 벽 선을 가린다
+        occ.extend(g.q(_stair_vpieces, v, st))
     lines = []
     if occ:
         for e0, e1 in g.q(vedges, v, w) + g.q(vfam_hosted_edges, v, w):
@@ -1202,6 +1417,7 @@ def vwall_lines(g, v, w):
         if mine:
             others = [(o, q) for o in nb for q in g.q(vcut_rects, v, o)]
             others += [(sl, q) for sl in sls for q in g.q(slab_cut_rects, v, sl)]   # 벽과 슬래브가 맞닿은 이음매 선을 지운다
+            others += [(st, q) for st in g.q(scope_stairs, v) for q in g.q(stair_cut_rects, v, st)]   # 계단도 같다
             lines += [("cut", a[0], a[1], b[0], b[1]) for a, b in outline_edges(list(mine), others, w)]
     return tuple(lines)
 
@@ -1277,6 +1493,8 @@ def view_lines(g, v):
         segs.extend(g.q(fam_lines, v, e))
     for sl in g.q(scope_slabs, v):
         segs.extend(g.q(slab_lines, v, sl))
+    for st in g.q(scope_stairs, v):
+        segs.extend(g.q(stair_lines, v, st))
     return merge_lines(segs)
 
 
@@ -1301,6 +1519,9 @@ def view_fills(g, v):
             out.extend(g.q(plan_slab_parts, v, sl)[1])
         else:
             out.extend(g.q(slab_cut_rects, v, sl))
+    for st in g.q(scope_stairs, v):
+        if cfg[0] != "plan":
+            out.extend(g.q(stair_cut_rects, v, st))
     return tuple(tuple((round(p[0], 3), round(p[1], 3)) for p in poly) for poly in out)
 
 
@@ -1357,7 +1578,8 @@ def views_depending_on(g, input_keys, vids, include_not_fresh=True):
 VIEW_SCOPED = frozenset({view_cfg, scope_walls, view_omitted, plan_pieces, plan_bbox, plan_nbrs, plan_wall_lines, vpieces, vbbox, vnbrs,
                          vcut_rects, vedges, vwall_lines, view_lines, view_fills,
                          scope_fams, plan_fam_parts, _fam_vpieces, vfam_bbox, vfam_cut_rects, vfam_edges, vfam_nbr_pieces, fam_lines,
-                         vfam_hosted_edges, scope_slabs, plan_slab_parts, _slab_vpieces, slab_vbbox, slab_cut_rects, slab_vedges, slab_nbr_walls, slab_lines})
+                         vfam_hosted_edges, scope_slabs, plan_slab_parts, _slab_vpieces, slab_vbbox, slab_cut_rects, slab_vedges, slab_nbr_walls, slab_lines,
+                         scope_stairs, plan_stair_parts, _stair_vpieces, stair_vbbox, stair_cut_rects, stair_vedges, stair_nbr_walls, stair_lines})
 
 
 def forget_views(g, vids) -> int:

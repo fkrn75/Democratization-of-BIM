@@ -159,7 +159,8 @@ def detect_skeleton(f):
 # 가져올 때 저장한 element.projection_hash 가 이 형식의 해시이므로, 열 때 번호가 다르면 가져온 프로젝트를 다시 판정한다(Engine._rejudge_import).
 #   "1" S2 스파이크(IfcProduct 만 참조로 접는다)   "2" 통합(IfcTypeObject 도 참조로 접는다: 패밀리 타입, S4)
 #   "3" 슬래브 종류 신설(IfcSlab 이 의도 복원 대상: 가져온 프로젝트를 다시 판정한다)
-CLOSURE_FORMAT = "3"
+#   "4" 계단 종류 신설(IfcStair 이 의도 복원 대상)
+CLOSURE_FORMAT = "4"
 
 
 def make_norm():
@@ -900,7 +901,7 @@ class IfcModel:
     # ------------------------------------------------------------ 투영 (늦게)
     def project(self, eid: str, spec: dict) -> None:
         kind = spec["kind"]
-        {"level": self._project_level, "wall": self._project_wall, "door": self._project_door, "slab": self._project_slab,
+        {"level": self._project_level, "wall": self._project_wall, "door": self._project_door, "slab": self._project_slab, "stair": self._project_stair,
          "ftype": lambda i, sp: fp.project_type(self, i, sp), "finst": lambda i, sp: fp.project_inst(self, i, sp)}[kind](eid, spec)
         # 의도를 IFC 에도 복제한다. 정본은 의도 저장소이고 이 속성셋은 매번 덮어쓴다.
         e = self.ents[eid]
@@ -959,6 +960,34 @@ class IfcModel:
         self._contain(eid, spec["level"])
         self._place(e, self.ents[spec["level"]].ObjectPlacement, (0.0, 0.0, 0.0), (1.0, 0.0, 0.0))
         self._set_body(e, self._solid(spec["boundary"], spec["thickness"], z0=spec["top_offset"] - spec["thickness"]))
+
+    def _project_stair(self, eid, spec):
+        """직선 계단: 톱니 옆모습(걸음선 길이 x 높이 평면)을 폭 방향으로 압출한 솔리드 하나. 압출 방향은 걸음선의 오른쪽 법선이다(그러면 옆모습의 y 가 위쪽이 된다)."""
+        f = self.f
+        e = self.ents[eid]
+        e.Name = spec["name"]
+        e.PredefinedType = "STRAIGHT_RUN_STAIR"
+        self._contain(eid, spec["level"])
+        self._place(e, self.ents[spec["level"]].ObjectPlacement, (0.0, 0.0, 0.0), (1.0, 0.0, 0.0))
+        x1, y1, x2, y2 = spec["run"]
+        n = spec["risers"]
+        length = ((x2 - x1) ** 2 + (y2 - y1) ** 2) ** 0.5
+        ux, uy = (x2 - x1) / length, (y2 - y1) / length
+        w = spec["width"]
+        z0, rise, td = spec["base_offset"], spec["height"] / n, length / (n - 1)
+        pts = [(0.0, z0)]
+        for k in range(n):
+            pts.append((k * td, z0 + (k + 1) * rise))
+            if k < n - 1:
+                pts.append(((k + 1) * td, z0 + (k + 1) * rise))
+        pts.append((length, z0))
+        pl = f.createIfcPolyline([f.createIfcCartesianPoint([float(a), float(b)]) for a, b in pts + [pts[0]]])
+        prof = f.createIfcArbitraryClosedProfileDef("AREA", None, pl)
+        # 솔리드 좌표계: 원점 = 걸음선 시작점에서 왼쪽으로 폭의 절반, 축(압출) = 오른쪽 법선, 기준 방향 = 걸음선 방향
+        ox, oy = x1 - uy * w / 2.0, y1 + ux * w / 2.0
+        pos = f.createIfcAxis2Placement3D(f.createIfcCartesianPoint([float(ox), float(oy), 0.0]),
+                                          f.createIfcDirection([float(uy), float(-ux), 0.0]), f.createIfcDirection([float(ux), float(uy), 0.0]))
+        self._set_body(e, f.createIfcExtrudedAreaSolid(prof, pos, f.createIfcDirection([0.0, 0.0, 1.0]), float(w)))
 
     def derived_guid_for(self, label: str) -> str:
         return derived_guid(self.project_guid, label)

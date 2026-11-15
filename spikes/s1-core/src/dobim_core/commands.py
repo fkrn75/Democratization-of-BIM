@@ -688,6 +688,92 @@ def slab_delete(ctx, a: IdArg):
     return {"deleted": [a.id]}
 
 
+# ---------------------------------------------------------------- 계단 (설계: spikes/phase1-drawings/elements-design.md 6절)
+StairRun = Annotated[list[SlabCoord], Field(min_length=4, max_length=4, description="걸음선 [x1,y1,x2,y2] mm(±1e7). 아래 첫 챌판에서 위 끝(위층 바닥 가장자리)까지, 길이 1mm 이상")]
+StairRisers = Annotated[int, Field(ge=2, le=100, description="챌판 수(디딤판은 하나 적다)")]
+
+
+def _stair_run(run) -> list:
+    r = [float(v) for v in run]
+    if _axis_len2(r) < 1.0:
+        raise DobimError("CONSTRAINT", "계단 걸음선 길이는 1mm 이상이어야 한다", path="/run")
+    return r
+
+
+class StairCreate(A):
+    id: Id | None = None
+    level: Id
+    run: StairRun
+    width: Pos = 1200.0
+    height: Pos = Field(3000.0, gt=0, allow_inf_nan=False, description="전체 오름 mm(아래 끝에서 위층 바닥까지)")
+    risers: StairRisers = 18
+    base_offset: Num = Field(0.0, description="레벨 높이에서 아래 끝까지 mm")
+    name: Name | None = None
+
+
+@command("stair.create", kind="mutation", risk="write", group="model.stair", summary="직선 계단 생성(레벨 + 걸음선 + 폭 + 오름 + 챌판 수)",
+         args=StairCreate, since="0.2",
+         examples=[{"level": F.LV1, "run": [1000, 1000, 5000, 1000], "width": 1200, "height": 3000, "risers": 18}])
+def stair_create(ctx, a: StairCreate):
+    _fresh_id(ctx, a, "stair")
+    ctx.authored(a.level, "level", what="레벨에 계단을 추가하는 것")
+    run = _stair_run(a.run)
+    a.name = a.name or f"ST-{a.id[-6:]}"
+    ctx.put_el(a.id, row("stair", "IfcStair", "stair.straight", {"name": a.name, "run": run, "width": a.width, "height": a.height,
+                                                               "risers": a.risers, "base_offset": a.base_offset}))
+    ctx.rel("on_level", a.id, a.level, True)
+    return {"id": a.id}
+
+
+class StairSet(A):
+    forbid_null = True
+    id: Id
+    name: Name | None = None
+    run: StairRun | None = None
+    width: Pos | None = None
+    height: Pos | None = None
+    risers: StairRisers | None = None
+    base_offset: Num | None = None
+
+    @model_validator(mode="after")
+    def _any(self):
+        if all(v is None for v in (self.name, self.run, self.width, self.height, self.risers, self.base_offset)):
+            raise ValueError("바꿀 필드가 하나도 없다")
+        return self
+
+
+@command("stair.set", kind="mutation", risk="write", group="model.stair", summary="계단 속성 변경(걸음선·폭·오름·챌판 수·오프셋·이름)",
+         args=StairSet, since="0.2", examples=[{"id": F.ST1, "risers": 17}])
+def stair_set(ctx, a: StairSet):
+    r = ctx.authored(a.id, "stair")
+    p = dict(r["params"])
+    for k in ("name", "width", "height", "risers", "base_offset"):
+        if getattr(a, k) is not None:
+            p[k] = getattr(a, k)
+    if a.run is not None:
+        p["run"] = _stair_run(a.run)
+    ctx.put_el(a.id, dict(r, params=p))
+    return {"id": a.id}
+
+
+@command("stair.move", kind="mutation", risk="write", group="model.stair", summary="계단을 평행 이동한다",
+         args=SlabMove, since="0.2", examples=[{"id": F.ST1, "dx": 600, "dy": 0}])
+def stair_move(ctx, a: SlabMove):
+    r = ctx.authored(a.id, "stair")
+    x1, y1, x2, y2 = r["params"]["run"]
+    run = [x1 + a.dx, y1 + a.dy, x2 + a.dx, y2 + a.dy]
+    ctx.put_el(a.id, dict(r, params=dict(r["params"], run=run)))
+    return {"id": a.id, "run": run}
+
+
+@command("stair.delete", kind="mutation", risk="write", group="model.stair", summary="계단 삭제",
+         args=IdArg, since="0.2", examples=[{"id": F.ST1}])
+def stair_delete(ctx, a: IdArg):
+    ctx.authored(a.id, "stair", what="삭제")
+    _delete_one(ctx, a.id)
+    return {"deleted": [a.id]}
+
+
 class PsetSet(A):
     id: Id
     pset: PsetName
@@ -782,6 +868,11 @@ def element_get(ctx, a: ElementGet):
     elif r["kind"] == "slab":
         zb, zt = ctx.g.q(Q.slab_zrange, a.id)
         out["derived"] = {"bottom": zb, "top": zt}
+    elif r["kind"] == "stair":
+        zb, zt = ctx.g.q(Q.stair_zrange, a.id)
+        p = r["params"]
+        out["derived"] = {"bottom": zb, "top": zt, "riser_height": p["height"] / p["risers"],
+                          "tread_depth": sqrt(_axis_len2(p["run"])) / (p["risers"] - 1)}
     # 속성: (속성셋, 속성) 순서로 펼쳐 키셋 커서로 나눈다. 값이 길어 상한을 넘는 옛 값은 앞 255자만 보이고 clipped 에 적는다.
     psets = ctx.psets(a.id)
     pairs = [[ps, pr, psets[ps][pr]] for ps in sorted(psets) for pr in sorted(psets[ps])]

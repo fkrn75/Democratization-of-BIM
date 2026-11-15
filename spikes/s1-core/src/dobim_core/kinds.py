@@ -197,6 +197,16 @@ def _slab_params(p):
     return _check_fields("slab", p, {"name": _name, "boundary": boundary, "thickness": _pos, "top_offset": num_ok})
 
 
+STAIR_RISERS_MIN, STAIR_RISERS_MAX = 2, 100
+
+
+def _stair_params(p):
+    def run(v):   # 걸음선 길이 1mm 이상
+        return (isinstance(v, list) and len(v) == 4 and all(num_ok(x) for x in v) and (v[2] - v[0]) ** 2 + (v[3] - v[1]) ** 2 >= 1.0)
+    return _check_fields("stair", p, {"name": _name, "run": run, "width": _pos, "height": _pos,
+                                      "risers": lambda v: type(v) is int and STAIR_RISERS_MIN <= v <= STAIR_RISERS_MAX, "base_offset": num_ok})
+
+
 def _foreign_params(p):
     return _check_fields("foreign", p, {"name": lambda v: text_ok(v, 0, 255)})
 
@@ -222,6 +232,7 @@ ELEMENT_KINDS: dict[str, ElementKind] = {k.name: k for k in (
     ElementKind("wall", True, "IfcWall", True, 1, _wall_params, geometric=True),
     ElementKind("door", True, "IfcDoor", True, 2, _door_params, geometric=True),
     ElementKind("slab", True, "IfcSlab", True, 1, _slab_params, geometric=True),
+    ElementKind("stair", True, "IfcStair", True, 1, _stair_params, geometric=True),
     ElementKind("ftype", True, None, True, 3, _ftype_params),
     ElementKind("finst", True, None, True, 4, _finst_params, geometric=True, refs=(("type", "id", "of_type"),)),
     ElementKind("foreign", True, None, False, 5, _foreign_params),
@@ -238,8 +249,8 @@ FIXED_IFC_CLASS = {k: v.ifc_class for k, v in ELEMENT_KINDS.items() if v.ifc_cla
 KIND_NAMES = tuple(ELEMENT_KINDS)
 # 의도 복원(S2 가져오기)이 IFC 클래스로 종류를 정하는 것: IFC 클래스 -> 종류. 패밀리 타입·인스턴스(ftype/finst)는 클래스가 레시피마다 달라 의도가 스스로 밝힌
 # 종류를 따른다(family.restore, ADR-0014). 뷰·주석은 IFC 신원이 없어 IFC 에서 복원할 수 없다(알려진 한계)
-IMPORTABLE_BY_CLASS = {"IfcBuildingStorey": "level", "IfcWall": "wall", "IfcDoor": "door", "IfcSlab": "slab"}
-FAMILY_OF_KIND = {"level": "level.basic", "wall": "wall.basic", "door": "door.single", "slab": "slab.basic"}
+IMPORTABLE_BY_CLASS = {"IfcBuildingStorey": "level", "IfcWall": "wall", "IfcDoor": "door", "IfcSlab": "slab", "IfcStair": "stair"}
+FAMILY_OF_KIND = {"level": "level.basic", "wall": "wall.basic", "door": "door.single", "slab": "slab.basic", "stair": "stair.straight"}
 
 
 def _remap_ref(form: str, v, m: dict):
@@ -324,7 +335,7 @@ def _fs(*a):
 
 REL_KINDS: dict[str, RelKind] = {r.name: r for r in (
     # 레벨은 분리돼 있어도 그 위의 저작 벽이 레벨을 따른다(S2): 레벨 쪽은 막지 않고, 놓이는 요소만 저작이어야 한다
-    RelKind("on_level", _fs("wall", "slab", "finst", "foreign"), _fs("level"), guard=("src",), violation="LEVEL_DELETED", message="벽이 놓인 레벨이 지워졌다"),
+    RelKind("on_level", _fs("wall", "slab", "stair", "finst", "foreign"), _fs("level"), guard=("src",), violation="LEVEL_DELETED", message="벽이 놓인 레벨이 지워졌다"),
     RelKind("joins", _fs("wall"), _fs("wall"), guard=("src", "dst"), violation="JOIN_TARGET_DELETED", message="조인 대상 벽이 지워졌다"),
     RelKind("hosts", _fs("wall"), _fs("door", "finst"), guard=("src", "dst"), violation="HOST_DELETED",
             message="호스트 벽이 지워졌는데 문이 그 벽에 놓여 있다"),
