@@ -679,11 +679,24 @@ def _slab_openings(pts_list) -> list:
 
 
 def _slab_checked(p: dict) -> dict:
-    """슬래브 params 의 검사(구멍이 경계 안쪽·서로 겹치지 않음 포함). 안 되면 CONSTRAINT."""
+    """슬래브 params 의 검사(구멍이 경계 안쪽·서로 겹치지 않음, 지붕의 물매·배수구 포함). 안 되면 CONSTRAINT."""
     why = K.row_params_error("slab", p)
     if why:
         raise DobimError("CONSTRAINT", f"슬래브가 올바르지 않다: {why}", path="/openings")
     return p
+
+
+class SlabFall(A):
+    """지붕 슬래브의 배수 물매(표기용: 슬래브 형상은 평평하다. 물매는 마감 모르타르 등으로 만든다)."""
+    dir: Num = Field(description="물이 흐르는 방향 도(+x 가 0, 반시계). 지붕 평면에 화살표로 그린다")
+    pct: Annotated[float, Field(gt=0, le=K.ROOF_FALL_PCT_MAX, allow_inf_nan=False)] = Field(description="물매 %(예: 2 = 1/50)")
+
+
+SlabDrains = Annotated[list[SlabPt], Field(min_length=1, max_length=32, description="배수구(드레인) 위치 [[x,y],...] mm(최대 32). 슬래브 경계 안쪽·구멍 밖이어야 한다")]
+
+
+def _slab_roof_params(p: dict) -> bool:
+    return "use" in p or "fall" in p or "drains" in p
 
 
 class SlabCreate(A):
@@ -694,11 +707,15 @@ class SlabCreate(A):
     top_offset: Num = Field(0.0, description="레벨 높이에서 윗면까지 mm (윗면 = 레벨 + top_offset, 두께는 아래로)")
     name: Name | None = None
     openings: SlabOpenings | None = Field(None, description="구멍(계단실·샤프트) 다각형 목록. 평면에 X 표시로 그리고 면적에서 뺀다. IFC 는 IfcOpeningElement + IfcRelVoidsElement 로 나간다")
+    use: Literal["roof"] | None = Field(None, description="roof 이면 지붕 슬래브다(IFC PredefinedType ROOF). 지붕 평면 뷰가 윤곽·물매 화살표·배수구를 그린다")
+    fall: SlabFall | None = Field(None, description="지붕 슬래브의 배수 물매(방향·%). use=roof 일 때만")
+    drains: SlabDrains | None = Field(None, description="지붕 슬래브의 배수구 위치. use=roof 일 때만")
 
 
 @command("slab.create", kind="mutation", risk="write", group="model.slab", summary="슬래브 생성(레벨 + 경계 다각형 + 두께)",
          args=SlabCreate, since="0.2",
-         examples=[{"level": F.LV1, "boundary": [[0, 0], [6000, 0], [6000, 4000], [0, 4000]], "thickness": 200}])
+         examples=[{"level": F.LV1, "boundary": [[0, 0], [6000, 0], [6000, 4000], [0, 4000]], "thickness": 200},
+                   {"level": F.LV2, "boundary": [[0, 0], [6000, 0], [6000, 4000], [0, 4000]], "use": "roof", "fall": {"dir": 180, "pct": 2}, "drains": [[500, 2000]]}])
 def slab_create(ctx, a: SlabCreate):
     _fresh_id(ctx, a, "slab")
     ctx.authored(a.level, "level", what="레벨에 슬래브를 추가하는 것")
@@ -707,6 +724,13 @@ def slab_create(ctx, a: SlabCreate):
     sp = {"name": a.name, "boundary": boundary, "thickness": a.thickness, "top_offset": a.top_offset}
     if a.openings is not None:
         sp["openings"] = _slab_openings(a.openings)
+    if a.use is not None:
+        sp["use"] = a.use
+    if a.fall is not None:
+        sp["fall"] = {"dir": float(a.fall.dir), "pct": float(a.fall.pct)}
+    if a.drains is not None:
+        sp["drains"] = [[float(x), float(y)] for x, y in a.drains]
+    if "openings" in sp or _slab_roof_params(sp):
         _slab_checked(sp)
     ctx.put_el(a.id, row("slab", "IfcSlab", "slab.basic", sp))
     ctx.rel("on_level", a.id, a.level, True)
@@ -722,13 +746,21 @@ class SlabSet(A):
     top_offset: Num | None = None
     openings: SlabOpenings | None = Field(None, description="구멍 목록을 이 값으로 바꾼다(전체 교체)")
     clear_openings: bool = Field(False, description="참이면 구멍을 모두 지운다")
+    use: Literal["floor", "roof"] | None = Field(None, description="roof = 지붕 슬래브로 바꾼다, floor = 일반 슬래브로 되돌린다(물매·배수구도 함께 지운다)")
+    fall: SlabFall | None = Field(None, description="지붕 슬래브의 배수 물매를 이 값으로 바꾼다")
+    clear_fall: bool = Field(False, description="참이면 배수 물매를 지운다")
+    drains: SlabDrains | None = Field(None, description="배수구 목록을 이 값으로 바꾼다(전체 교체)")
+    clear_drains: bool = Field(False, description="참이면 배수구를 모두 지운다")
 
     @model_validator(mode="after")
     def _any(self):
-        if all(v is None for v in (self.name, self.boundary, self.thickness, self.top_offset, self.openings)) and not self.clear_openings:
+        if (all(v is None for v in (self.name, self.boundary, self.thickness, self.top_offset, self.openings, self.use, self.fall, self.drains))
+                and not (self.clear_openings or self.clear_fall or self.clear_drains)):
             raise ValueError("바꿀 필드가 하나도 없다")
         if self.openings is not None and self.clear_openings:
             raise ValueError("openings 와 clear_openings 를 함께 줄 수 없다")
+        if (self.fall is not None and self.clear_fall) or (self.drains is not None and self.clear_drains):
+            raise ValueError("fall·drains 와 그 clear_ 를 함께 줄 수 없다")
         return self
 
 
@@ -748,7 +780,20 @@ def slab_set(ctx, a: SlabSet):
         p["openings"] = _slab_openings(a.openings)
     if a.clear_openings:
         p.pop("openings", None)
-    if "openings" in p:
+    if a.use == "floor":   # 일반 슬래브로 되돌리면 지붕 전용 입력도 함께 간다
+        for k in ("use", "fall", "drains"):
+            p.pop(k, None)
+    elif a.use == "roof":
+        p["use"] = "roof"
+    if a.fall is not None:
+        p["fall"] = {"dir": float(a.fall.dir), "pct": float(a.fall.pct)}
+    if a.clear_fall:
+        p.pop("fall", None)
+    if a.drains is not None:
+        p["drains"] = [[float(x), float(y)] for x, y in a.drains]
+    if a.clear_drains:
+        p.pop("drains", None)
+    if "openings" in p or _slab_roof_params(p):
         _slab_checked(p)
     ctx.put_el(a.id, dict(r, params=p))
     return {"id": a.id}
@@ -792,6 +837,8 @@ def slab_move(ctx, a: SlabMove):
     p = dict(r["params"], boundary=b)
     if "openings" in p:   # 구멍도 함께 옮긴다
         p["openings"] = [[[x + a.dx, y + a.dy] for x, y in o] for o in p["openings"]]
+    if "drains" in p:   # 배수구도 함께 옮긴다
+        p["drains"] = [[x + a.dx, y + a.dy] for x, y in p["drains"]]
     ctx.put_el(a.id, dict(r, params=p))
     return {"id": a.id, "boundary": b}
 
@@ -1276,6 +1323,146 @@ def space_from_walls(ctx, a: SpaceFromWalls):
     return {"created": created, "skipped": skipped, "regions": len(picked)}
 
 
+# ---------------------------------------------------------------- 승강기 (설계: elements-design.md 13절)
+ElevatorShaft = Annotated[list[SlabCoord], Field(min_length=4, max_length=4, description="샤프트 안쪽 사각형 [x1,y1,x2,y2] mm(두 모서리, 순서 무관. 각 변 800mm 이상). 카는 이 가운데에 놓인다")]
+ElevatorCab = Annotated[list[Pos], Field(min_length=3, max_length=3, description="카 크기 [폭(x), 깊이(y), 높이] mm. 폭·깊이는 샤프트 안쪽 이하, 높이는 샤프트 높이 이하")]
+
+
+def _elevator_row(name, shaft, cab, base_offset, rise) -> dict:
+    x1, y1, x2, y2 = (float(v) for v in shaft)
+    p = {"name": name, "shaft": [min(x1, x2), min(y1, y2), max(x1, x2), max(y1, y2)], "cab": [float(v) for v in cab],
+         "base_offset": float(base_offset), "rise": float(rise)}
+    why = K.row_params_error("elevator", p)
+    if why:
+        raise DobimError("CONSTRAINT", f"승강기가 올바르지 않다: {why}", path="/shaft")
+    return p
+
+
+class ElevatorCreate(A):
+    id: Id | None = None
+    level: Id = Field(description="가장 아래 정차층(카가 서는 레벨)")
+    shaft: ElevatorShaft
+    cab: ElevatorCab | None = Field(None, description="카 크기. 비우면 1100x1400x2200")
+    base_offset: Num = Field(0.0, description="레벨 높이에서 카 바닥(샤프트 아래)까지 mm")
+    rise: Pos | None = Field(None, description="샤프트 높이 mm(카 바닥에서 샤프트 위까지). to_level 과 둘 중 하나를 준다")
+    to_level: Id | None = Field(None, description="가장 위 정차층. 주면 샤프트 위 = 그 레벨 높이 + overrun 이 되도록 rise 를 정한다(그때의 값이 저장된다: 이후 레벨을 옮겨도 따라가지 않는다)")
+    overrun: Num = Field(0.0, ge=0, description="to_level 위로 더 올라가는 샤프트 높이 mm(승강로 오버헤드). to_level 과 함께만 쓴다")
+    name: Name | None = None
+
+    @model_validator(mode="after")
+    def _one(self):
+        if (self.rise is None) == (self.to_level is None):
+            raise ValueError("rise 와 to_level 중 정확히 하나를 줘야 한다")
+        if self.to_level is None and self.overrun:
+            raise ValueError("overrun 은 to_level 과 함께만 쓴다")
+        return self
+
+
+@command("elevator.create", kind="mutation", risk="write", group="model.elevator",
+         summary="승강기 생성(샤프트 안쪽 사각형 + 카 크기 + 높이 또는 위 정차층). IFC 는 IfcTransportElement(ELEVATOR) 카 상자로 나간다",
+         args=ElevatorCreate, since="0.3", examples=[{"level": F.LV1, "shaft": [4000, 500, 5800, 2300], "rise": 6000}])
+def elevator_create(ctx, a: ElevatorCreate):
+    _fresh_id(ctx, a, "elevator")
+    lv = ctx.authored(a.level, "level", what="레벨에 승강기를 추가하는 것")
+    rise = a.rise
+    if a.to_level is not None:
+        top = ctx.authored(a.to_level, "level", what="승강기의 위 정차층")
+        rise = top["params"]["elevation"] + a.overrun - (lv["params"]["elevation"] + a.base_offset)
+        if rise <= 0:
+            raise DobimError("CONSTRAINT", "위 정차층이 카 바닥보다 높아야 한다", path="/to_level")
+    a.name = a.name or f"EV-{a.id[-6:]}"
+    ctx.put_el(a.id, row("elevator", "IfcTransportElement", "elevator.basic", _elevator_row(a.name, a.shaft, a.cab or K.ELEVATOR_CAB_DEFAULT, a.base_offset, rise)))
+    ctx.rel("on_level", a.id, a.level, True)
+    return {"id": a.id, "rise": rise}
+
+
+class ElevatorSet(A):
+    forbid_null = True
+    id: Id
+    name: Name | None = None
+    shaft: ElevatorShaft | None = None
+    cab: ElevatorCab | None = None
+    base_offset: Num | None = None
+    rise: Pos | None = None
+
+    @model_validator(mode="after")
+    def _any(self):
+        if all(v is None for v in (self.name, self.shaft, self.cab, self.base_offset, self.rise)):
+            raise ValueError("바꿀 필드가 하나도 없다")
+        return self
+
+
+@command("elevator.set", kind="mutation", risk="write", group="model.elevator", summary="승강기 속성 변경(샤프트·카 크기·카 바닥 높이·샤프트 높이·이름)",
+         args=ElevatorSet, since="0.3", examples=[{"id": F.EL1, "cab": [1400, 1600, 2300]}])
+def elevator_set(ctx, a: ElevatorSet):
+    r = ctx.authored(a.id, "elevator")
+    p = dict(r["params"])
+    for k in ("name", "shaft", "cab", "base_offset", "rise"):
+        if getattr(a, k) is not None:
+            p[k] = getattr(a, k)
+    ctx.put_el(a.id, dict(r, params=_elevator_row(p["name"], p["shaft"], p["cab"], p["base_offset"], p["rise"])))
+    return {"id": a.id}
+
+
+@command("elevator.move", kind="mutation", risk="write", group="model.elevator", summary="승강기를 평행 이동한다(샤프트가 따라간다. 이미 낸 슬래브 구멍은 따로 옮기지 않는다)",
+         args=SlabMove, since="0.3", examples=[{"id": F.EL1, "dx": 600, "dy": 0}])
+def elevator_move(ctx, a: SlabMove):
+    r = ctx.authored(a.id, "elevator")
+    x1, y1, x2, y2 = r["params"]["shaft"]
+    shaft = [x1 + a.dx, y1 + a.dy, x2 + a.dx, y2 + a.dy]
+    ctx.put_el(a.id, dict(r, params=dict(r["params"], shaft=shaft)))
+    return {"id": a.id, "shaft": shaft}
+
+
+@command("elevator.delete", kind="mutation", risk="write", group="model.elevator", summary="승강기 삭제(슬래브 구멍은 남는다)",
+         args=IdArg, since="0.3", examples=[{"id": F.EL1}])
+def elevator_delete(ctx, a: IdArg):
+    ctx.authored(a.id, "elevator", what="삭제")
+    _delete_one(ctx, a.id)
+    return {"deleted": [a.id]}
+
+
+class ElevatorCutSlabs(A):
+    id: Id
+    clearance: Num = Field(0.0, ge=0, le=500, description="샤프트 안쪽 사각형을 사방으로 이만큼(mm) 넓혀 구멍을 낸다")
+
+
+@command("elevator.cut_slabs", kind="mutation", risk="write", group="model.elevator",
+         summary="승강기 샤프트가 지나는 슬래브(밑면이 샤프트 위 아래, 윗면이 샤프트 바닥 위인 저작 슬래브)에 샤프트 모양의 구멍을 낸다. 이미 같은 구멍이 있으면 건너뛰고, 경계 밖·다른 구멍과 겹치면 건너뛰며 이유를 알린다. 같은 입력이면 같은 결과",
+         args=ElevatorCutSlabs, since="0.3", examples=[{"id": F.EL1}])
+def elevator_cut_slabs(ctx, a: ElevatorCutSlabs):
+    r = ctx.authored(a.id, "elevator", what="슬래브 구멍을 내는 것")
+    g = ctx.fresh()
+    gm = K.elevator_geom(r["params"])
+    lv = g.q(Q.level_info, ctx.rels_out("on_level", a.id)[0])[1]
+    z0, z1 = lv + gm["z0"], lv + gm["z1"]
+    x1, y1, x2, y2 = gm["shaft"]
+    c = a.clearance
+    hole = [[x1 - c, y1 - c], [x2 + c, y1 - c], [x2 + c, y2 + c], [x1 - c, y2 + c]]
+    cut, already, skipped = [], [], []
+    for sid in sorted(ctx.st.by_kind.get("slab", ())):
+        sr = ctx.st.el[sid]
+        if sr["origin"] != "authored":
+            continue
+        zb, zt = g.q(Q.slab_zrange, sid)
+        if not (zt > z0 + 1.0 and zb < z1 - 1.0):   # 샤프트의 높이 범위를 지나지 않는 슬래브(카가 서는 바닥 슬래브 포함)는 건드리지 않는다
+            continue
+        p = sr["params"]
+        have = [sorted(map(tuple, o)) for o in p.get("openings", ())]
+        if sorted(map(tuple, hole)) in have:
+            already.append(sid)
+            continue
+        why = K.openings_problem(p["boundary"], [*p.get("openings", ()), hole])
+        if why:
+            skipped.append({"slab": sid, "reason": why})
+            continue
+        ctx.put_el(sid, dict(sr, params=dict(p, openings=[*p.get("openings", ()), hole])))
+        cut.append(sid)
+    if not cut and not already:
+        ctx.warn("샤프트가 지나는 슬래브가 없거나 모두 구멍을 낼 수 없었다")
+    return {"cut": cut, "already": already, "skipped": skipped}
+
+
 # ---------------------------------------------------------------- 대지 (설계: elements-design.md 9절)
 class SiteRoad(A):
     name: Text = Field("", max_length=64, description="도로 이름(비워도 된다)")
@@ -1467,6 +1654,8 @@ def element_get(ctx, a: ElementGet):
     elif r["kind"] == "slab":
         zb, zt = ctx.g.q(Q.slab_zrange, a.id)
         out["derived"] = {"bottom": zb, "top": zt}
+        if r["params"].get("use") == "roof":   # 지붕 슬래브만 더해진다(일반 슬래브의 응답은 그대로)
+            out["derived"].update({"roof": True, "drains": len(r["params"].get("drains", ()))})
         if "openings" in r["params"]:   # 구멍이 있으면 면적(㎡)은 구멍을 뺀 값이다(구멍 없는 슬래브의 응답은 그대로)
             gross = abs(polygon_area2(r["params"]["boundary"])) / 2.0 / 1e6
             holes = sum(abs(polygon_area2(o)) for o in r["params"]["openings"]) / 2.0 / 1e6
@@ -1482,6 +1671,12 @@ def element_get(ctx, a: ElementGet):
         p = r["params"]
         out["derived"] = {"bottom": zb, "top": zt, "riser_height": p["height"] / p["risers"],
                           "tread_depth": sqrt(_axis_len2(p["run"])) / (p["risers"] - 1)}
+    elif r["kind"] == "elevator":
+        gm = K.elevator_geom(r["params"])
+        lv = ctx.g.q(Q.level_info, ctx.g.q(Q.elevator_level, a.id))[1]
+        sx, sy = gm["shaft"][2] - gm["shaft"][0], gm["shaft"][3] - gm["shaft"][1]
+        out["derived"] = {"bottom": lv + gm["z0"], "top": lv + gm["z1"], "shaft_area_m2": sx * sy / 1e6,
+                          "cab_area_m2": r["params"]["cab"][0] * r["params"]["cab"][1] / 1e6}
     elif r["kind"] == "railing":
         gm = K.railing_geom(r["params"])
         lv = ctx.g.q(Q.level_info, ctx.g.q(Q.railing_level, a.id))[1]

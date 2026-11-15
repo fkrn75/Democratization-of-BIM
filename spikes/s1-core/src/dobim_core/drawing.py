@@ -808,14 +808,66 @@ def plan_slab_parts(g, v, s):
             m = len(o)
             segs += tuple(("cut", o[i][0], o[i][1], o[(i + 1) % m][0], o[(i + 1) % m][1]) for i in range(m))
         return (segs, (poly,))
-    if holes and cfg[2] > info[1] + EPS:
+    if cfg[2] > info[1] + EPS:
         segs = []
         for o in holes:
             m = len(o)
             segs += [("proj", o[i][0], o[i][1], o[(i + 1) % m][0], o[(i + 1) % m][1]) for i in range(m)]
             segs += [("symbol", a[0], a[1], b[0], b[1]) for a, b in _hole_x(o)]
-        return (tuple(segs), ())
+        segs += g.q(plan_roof_marks, v, s)[0]   # 지붕 슬래브(use=roof)만 윤곽·물매 화살표·배수구가 더해진다
+        if segs:
+            return (tuple(segs), ())
     return ((), ())
+
+
+# ---- 지붕 평면 (설계: elements-design.md 13절): use=roof 슬래브가 절단 높이 아래에 있을 때 윤곽(proj), 배수 방향 화살표(symbol), 배수구(symbol), 물매 문자
+ROOF_ARROW_LEN = 12.0      # 물매 화살표 길이(용지 mm)
+ROOF_DRAIN_R = 1.5         # 배수구 기호 반지름(용지 mm)
+
+
+def slab_roof(g, s):
+    """지붕 슬래브의 ((물이 흐르는 방향 도, 물매 %) 또는 None, 배수구들) 또는 None(지붕이 아니다)."""
+    row = Q.el(g, s)
+    if row is None or row["kind"] != "slab" or row["origin"] != "authored" or row["params"].get("use") != "roof":
+        return None
+    p = row["params"]
+    fall = p.get("fall")
+    return ((fall["dir"], fall["pct"]) if fall else None, tuple(tuple(q) for q in p.get("drains", ())))
+
+
+def plan_roof_marks(g, v, s):
+    """평면의 지붕 슬래브 하나: (선분들, 문자들). 절단 높이가 슬래브 윗면 아래가 아닌 평면(= 지붕을 내려다보는 지붕 평면)에서만 만든다."""
+    cfg = g.q(view_cfg, v)
+    info = g.q(slab_info, s)
+    roof = g.q(slab_roof, s)
+    if cfg is None or cfg[0] != "plan" or info is None or roof is None or cfg[2] <= info[1] + EPS:
+        return ((), ())
+    poly = info[2]
+    n = len(poly)
+    sc = cfg[4]
+    segs = [("proj", poly[i][0], poly[i][1], poly[(i + 1) % n][0], poly[(i + 1) % n][1]) for i in range(n)]
+    labels = []
+    fall, drains = roof
+    if fall is not None:
+        cx, cy = polygon_centroid(poly)
+        xs, ys = [q[0] for q in poly], [q[1] for q in poly]
+        ln = min(ROOF_ARROW_LEN * sc, 0.4 * min(max(xs) - min(xs), max(ys) - min(ys)))
+        sn, cs = _sincos_deg(fall[0])
+        if ln > SEG_MIN:
+            tail, head = (cx - cs * ln / 2.0, cy - sn * ln / 2.0), (cx + cs * ln / 2.0, cy + sn * ln / 2.0)
+            segs.append(("symbol", tail[0], tail[1], head[0], head[1]))
+            hl = ln * 0.25
+            for sg in (1.0, -1.0):   # 화살촉: 진행 방향 뒤로 ±20도 벌어진 두 선
+                bs, bc = _sincos_deg(fall[0] + 180.0 + sg * 20.0)
+                segs.append(("symbol", head[0], head[1], head[0] + bc * hl, head[1] + bs * hl))
+            labels.append((round(cx - sn * 1.8 * sc, 3), round(cy + cs * 1.8 * sc, 3), f"물매 {fall[1]:g}%", LABEL_SUB_H, "middle"))
+    for d in drains:   # 배수구: 원과 십자
+        r = ROOF_DRAIN_R * sc
+        ring = _circle_pts(d, r, 12)
+        segs += [("symbol", ring[i][0], ring[i][1], ring[(i + 1) % 12][0], ring[(i + 1) % 12][1]) for i in range(12)]
+        segs.append(("symbol", d[0] - r, d[1], d[0] + r, d[1]))
+        segs.append(("symbol", d[0], d[1] - r, d[0], d[1] + r))
+    return (tuple(segs), tuple(labels))
 
 
 def _slab_vpieces(g, v, s):
@@ -1299,6 +1351,100 @@ def railing_lines(g, v, r):
     return tuple(lines)
 
 
+# ================================================================ 승강기 (kinds "elevator": 샤프트 안쪽 사각형 + 카, 설계: elements-design.md 13절)
+# 형상은 kinds.elevator_geom 이 정한다(IFC 투영·슬래브 구멍과 같은 값).
+#   평면: 절단 높이가 샤프트 높이 범위에 드는 평면마다(승강기가 놓인 레벨만이 아니라 지나는 모든 층) 샤프트 윤곽·카 윤곽(proj), 카의 대각 X(symbol), "EV" 문자
+#   단면·입면: 샤프트 상자와 카 상자의 모서리를 투영선으로(앞의 벽·슬래브·계단·패밀리가 가린다). 승강기는 다른 요소를 가리지 않는다
+def elevator_info(g, e):
+    """(샤프트 사각형 (x1,y1,x2,y2), 카 사각형, 샤프트 아래 z, 샤프트 위 z, 카 천장 z) 절대 높이, 또는 None. 저작 승강기만 그린다."""
+    row = Q.el(g, e)
+    if row is None or row["kind"] != "elevator" or row["origin"] != "authored":
+        return None
+    lv = g.q(Q.level_info, g.q(Q.elevator_level, e))[1]
+    gm = K.elevator_geom(row["params"])
+    return (gm["shaft"], gm["cab"], gm["z0"] + lv, gm["z1"] + lv, gm["cab_z1"] + lv)
+
+
+def all_elevators(g):
+    out = []
+    for b in range(Q.NB):
+        out.extend(e for e in Q.bucket_ids(g, "elevator", b) if g.q(elevator_info, e) is not None)
+    return tuple(sorted(out))
+
+
+def scope_elevators(g, v):
+    """뷰가 그리는 승강기. 평면은 절단 높이가 샤프트 높이 범위(아래·위 포함)에 드는 것 전부, 단면·입면은 모델 전체."""
+    cfg = g.q(view_cfg, v)
+    if cfg is None or cfg[0] == "site":
+        return ()
+    allv = g.q(all_elevators)
+    if cfg[0] == "plan":
+        if cfg[1] is None:
+            return ()
+        return tuple(e for e in allv if (info := g.q(elevator_info, e))[2] - EPS <= cfg[2] <= info[3] + EPS)
+    return allv
+
+
+def _box_edges(x1, y1, x2, y2, z0, z1):
+    """직육면체의 12 모서리(3D 선분)."""
+    c = ((x1, y1), (x2, y1), (x2, y2), (x1, y2))
+    out = [((x, y, z0), (x, y, z1)) for x, y in c]
+    for z in (z0, z1):
+        out += [((c[i][0], c[i][1], z), (c[(i + 1) % 4][0], c[(i + 1) % 4][1], z)) for i in range(4)]
+    return out
+
+
+def plan_elevator_labels(g, v, e):
+    cfg = g.q(view_cfg, v)
+    info = g.q(elevator_info, e)
+    if info is None or cfg is None or cfg[0] != "plan":
+        return ()
+    x1, y1, x2, y2 = info[1]
+    return ((round((x1 + x2) / 2.0, 3), round((y1 + y2) / 2.0 + 0.6 * cfg[4], 3), "EV", LABEL_SUB_H, "middle"),)
+
+
+def elevator_lines(g, v, e):
+    """승강기 하나가 뷰에 기여하는 선분."""
+    cfg = g.q(view_cfg, v)
+    info = g.q(elevator_info, e)
+    if cfg is None or info is None:
+        return ()
+    shaft, cab, z0, z1, zc = info
+    if cfg[0] == "plan":
+        out = []
+        for (x1, y1, x2, y2) in (shaft, cab):
+            pts = ((x1, y1), (x2, y1), (x2, y2), (x1, y2))
+            out += [("proj", pts[i][0], pts[i][1], pts[(i + 1) % 4][0], pts[(i + 1) % 4][1]) for i in range(4)]
+        x1, y1, x2, y2 = cab
+        out += [("symbol", x1, y1, x2, y2), ("symbol", x1, y2, x2, y1)]
+        return tuple(out)
+    raw = _box_edges(*shaft, z0, z1) + _box_edges(*cab, z0, zc)
+    occ = []
+    for w in g.q(scope_walls, v):
+        occ.extend(g.q(vpieces, v, w))
+    for sl in g.q(scope_slabs, v):
+        occ.extend(g.q(_slab_vpieces, v, sl))
+    for st in g.q(scope_stairs, v):
+        occ.extend(g.q(_stair_vpieces, v, st))
+    for fe in g.q(scope_fams, v):
+        occ.extend(g.q(_fam_vpieces, v, fe))
+    lines = []
+    for a, b in raw:
+        pa, pb = _sw(cfg, a), _sw(cfg, b)
+        e0, e1 = (pa[0], pa[1], a[2]), (pb[0], pb[1], b[2])
+        if abs(e1[0] - e0[0]) < EPS and abs(e1[1] - e0[1]) < EPS and abs(e1[2] - e0[2]) < EPS:
+            continue
+        c = _clip_edge(e0, e1, cfg[7], cfg[8])
+        if c is None:
+            continue
+        e0, e1 = c
+        if abs(e1[0] - e0[0]) < EPS and abs(e1[2] - e0[2]) < EPS:   # 보는 방향과 나란한 모서리(점으로 보인다)
+            continue
+        for t0, t1 in (visible_parts(e0, e1, occ) if occ else [(0.0, 1.0)]):
+            lines.append(("proj", e0[0] + t0 * (e1[0] - e0[0]), e0[2] + t0 * (e1[2] - e0[2]), e0[0] + t1 * (e1[0] - e0[0]), e0[2] + t1 * (e1[2] - e0[2])))
+    return tuple(lines)
+
+
 # ================================================================ 공간 (kinds "space") 과 문자 층
 # 공간은 선·채움을 만들지 않는다(윤곽은 벽이 준다). 평면에 실명과 면적 문자(labels)만 놓는다.
 # 문자 항목: (x, y, 문자, 글자 높이 mm(용지 위), 앵커 "middle"). 좌표는 선분과 같은 뷰 좌표(평면 x,y / 단면·입면 s,z).
@@ -1374,6 +1520,11 @@ def view_labels(g, v):
     out = []
     for s in g.q(scope_spaces, v):
         out.extend(g.q(plan_space_labels, v, s))
+    if cfg[0] == "plan":
+        for sl in g.q(scope_slabs, v):
+            out.extend(g.q(plan_roof_marks, v, sl)[1])   # 지붕 슬래브의 물매 문자(지붕이 아니면 없다)
+        for e in g.q(scope_elevators, v):
+            out.extend(g.q(plan_elevator_labels, v, e))
     for w in g.q(scope_walls, v):
         if cfg[0] == "plan":
             out.extend(g.q(plan_fire_labels, v, w))
@@ -2584,6 +2735,8 @@ def view_lines(g, v):
         segs.extend(g.q(stair_lines, v, st))
     for rl in g.q(scope_railings, v):
         segs.extend(g.q(railing_lines, v, rl))
+    for ev in g.q(scope_elevators, v):
+        segs.extend(g.q(elevator_lines, v, ev))
     return merge_lines(segs)
 
 
@@ -2620,6 +2773,8 @@ def view_lines_hier(g, v):
         segs.extend(g.q(stair_lines, v, st))
     for rl in g.q(scope_railings, v):
         segs.extend(g.q(railing_lines, v, rl))
+    for ev in g.q(scope_elevators, v):
+        segs.extend(g.q(elevator_lines, v, ev))
     return merge_lines(segs)
 
 
@@ -2705,7 +2860,7 @@ VIEW_SCOPED = frozenset({view_cfg, scope_walls, view_omitted, plan_pieces, plan_
                          vcut_rects, vedges, vwall_lines, view_lines, view_fills,
                          scope_fams, plan_fam_parts, _fam_vpieces, vfam_bbox, vfam_cut_rects, vfam_edges, vfam_nbr_pieces, fam_lines,
                          vfam_hosted_edges, scope_slabs, plan_slab_parts, _slab_vpieces, slab_vbbox, slab_cut_rects, slab_vedges, slab_nbr_walls, slab_lines,
-                         scope_stairs, scope_railings, railing_lines, plan_stair_parts, _stair_vpieces, stair_vbbox, stair_cut_rects, stair_vedges, stair_nbr_walls, stair_lines,
+                         scope_stairs, scope_railings, railing_lines, scope_elevators, elevator_lines, plan_elevator_labels, plan_roof_marks, plan_stair_parts, _stair_vpieces, stair_vbbox, stair_cut_rects, stair_vedges, stair_nbr_walls, stair_lines,
                          scope_spaces, plan_space_labels, view_labels, site_lines, site_labels, site_dims, vwall_hidden, view_hidden_lines, plan_fire_lines, plan_fire_labels, elev_finish})
 
 

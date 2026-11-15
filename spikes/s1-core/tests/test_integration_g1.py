@@ -392,7 +392,7 @@ def test_9_종류_레지스트리가_모든_모듈과_맞는다(tmp_path):
     assert queries.NON_IFC_KINDS == NON_IFC_KINDS and ifc_model.IFC_CLASS == FIXED_IFC_CLASS
     assert merge.GENESIS_OP == E.GENESIS_OP
     assert set(commands.DELETE_REL_NAMES) == {k for k, r in REL_KINDS.items() if not r.dangling_ok}
-    assert PROJECTED_KINDS == ("level", "site", "railing", "slab", "space", "stair", "wall", "door", "ftype", "finst")   # 호스트·타입이 의존하는 것보다 먼저(슬래브는 레벨에만 의존)
+    assert PROJECTED_KINDS == ("level", "site", "elevator", "railing", "slab", "space", "stair", "wall", "door", "ftype", "finst")   # 호스트·타입이 의존하는 것보다 먼저(슬래브는 레벨에만 의존)
     # 모든 효과 태그는 뒤집으면 원래대로 돌아오고, 키 계산이 정의돼 있다
     for t in EFFECT_TAGS:
         assert EFFECTS[t].keys is not None
@@ -410,6 +410,9 @@ def test_9_종류_레지스트리가_모든_모듈과_맞는다(tmp_path):
         _ok(b.run("stair.create", {"id": F.ST1, "level": F.LV1, "run": [1000, 1000, 5000, 1000]}, project=p))   # 계단도
         _ok(b.run("space.create", {"id": F.SP1, "level": F.LV1, "boundary": [[0, 0], [6000, 0], [6000, 4000], [0, 4000]], "name": "사무실"}, project=p))   # 공간도
         _ok(b.run("railing.create", {"id": F.RL1, "level": F.LV1, "path": [[0, 0], [3000, 0]]}, project=p))   # 난간
+        _ok(b.run("elevator.create", {"id": F.EL1, "level": F.LV1, "shaft": [4000, 500, 5800, 2300], "to_level": F.LV2}, project=p))   # 승강기
+        _ok(b.run("slab.create", {"id": "6" + "0" * 20 + "2", "level": F.LV2, "boundary": [[0, 0], [3000, 0], [3000, 3000], [0, 3000]], "use": "roof",
+                                  "fall": {"dir": 90, "pct": 2}, "drains": [[1500, 1500]]}, project=p))   # 지붕 슬래브
         _ok(b.run("site.create", {"id": F.SI1, "boundary": [[-6000, -6000], [18000, -6000], [18000, 14000], [-6000, 14000]], "name": "대지"}, project=p))   # 대지도
         _ok(b.run("sheet.define", {"id": F.SH1, "name": "시트", "views": [F.V1]}, project=p))   # 시트 정의도
     finally:
