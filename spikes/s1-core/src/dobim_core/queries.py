@@ -110,6 +110,18 @@ def wall_hosted(g, w):
     return rel_out(g, "hosts", w)
 
 
+# ---------------------------------------------------------------- 슬래브
+def slab_level(g, s):
+    return rel_out(g, "on_level", s)[0]
+
+
+def slab_zrange(g, s):
+    """(밑면 z, 윗면 z) 절대 높이. 윗면 = 레벨 높이 + top_offset, 두께는 윗면에서 아래로."""
+    p = el(g, s)["params"]
+    top = g.q(level_info, g.q(slab_level, s))[1] + p["top_offset"]
+    return (top - p["thickness"], top)
+
+
 # ---------------------------------------------------------------- 레벨
 def level_info(g, lv):
     p = el(g, lv)["params"]
@@ -238,7 +250,11 @@ def schedule_sorted(g, kind):
 
 
 def model_stats(g):
-    return {k: g.q(count, k) for k in ("level", "wall", "door")}
+    out = {k: g.q(count, k) for k in ("level", "wall", "door")}
+    n = g.q(count, "slab")
+    if n:   # 슬래브가 없는 프로젝트의 응답·해시는 그대로다
+        out["slab"] = n
+    return out
 
 
 def t0_state(g):
@@ -259,6 +275,8 @@ def intent_of(g, e):
     elif row["kind"] == "wall":
         out["level"] = g.q(wall_level, e)
         out["joins"] = list(g.q(wall_joins, e))
+    elif row["kind"] == "slab":
+        out["level"] = g.q(slab_level, e)
     elif row["kind"] == "door":
         out["host"] = g.q(door_host, e)
     return out
@@ -291,6 +309,10 @@ def ifc_spec(g, e):
         x, y, c, s, _ = g.q(wall_frame, e)
         return {"kind": kind, "name": p["name"], "level": g.q(wall_level, e), "origin": (x, y), "xdir": (c, s),
                 "footprint": g.q(wall_footprint, e), "height": p["height"], "intent": intent}
+    if kind == "slab":
+        # 배치는 레벨 좌표계(원점·무회전)이고 윗면은 레벨 + top_offset 이므로 레벨 높이는 읽지 않는다(레벨을 옮기면 배치가 따라간다)
+        return {"kind": kind, "name": p["name"], "level": g.q(slab_level, e), "boundary": tuple(tuple(q) for q in p["boundary"]),
+                "thickness": p["thickness"], "top_offset": p["top_offset"], "intent": intent}
     w = g.q(door_host, e)
     t = el(g, w)["params"]["thickness"]
     return {"kind": kind, "name": p["name"], "host": w, "level": g.q(wall_level, w), "offset": p["offset"],

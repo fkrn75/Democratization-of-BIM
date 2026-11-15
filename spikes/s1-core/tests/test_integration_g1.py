@@ -392,7 +392,7 @@ def test_9_종류_레지스트리가_모든_모듈과_맞는다(tmp_path):
     assert queries.NON_IFC_KINDS == NON_IFC_KINDS and ifc_model.IFC_CLASS == FIXED_IFC_CLASS
     assert merge.GENESIS_OP == E.GENESIS_OP
     assert set(commands.DELETE_REL_NAMES) == {k for k, r in REL_KINDS.items() if not r.dangling_ok}
-    assert PROJECTED_KINDS == ("level", "wall", "door", "ftype", "finst")   # 호스트·타입이 의존하는 것보다 먼저
+    assert PROJECTED_KINDS == ("level", "slab", "wall", "door", "ftype", "finst")   # 호스트·타입이 의존하는 것보다 먼저(슬래브는 레벨에만 의존)
     # 모든 효과 태그는 뒤집으면 원래대로 돌아오고, 키 계산이 정의돼 있다
     for t in EFFECT_TAGS:
         assert EFFECTS[t].keys is not None
@@ -406,6 +406,7 @@ def test_9_종류_레지스트리가_모든_모듈과_맞는다(tmp_path):
         _rich_branch(b, p, wall=F.W3)
         _ok(b.run("annot.tag.create", {"view": F.V1, "target": F.W3, "fields": ["name"]}, project=p))
         _ok(b.run("wall.split", {"id": F.W3, "at": 2000}, project=p))
+        _ok(b.run("slab.create", {"id": F.S1, "level": F.LV2, "boundary": [[0, 0], [6000, 0], [6000, 4000], [0, 4000]]}, project=p))   # 모든 종류(슬래브 포함)
     finally:
         b.close()
     eng = Engine(tmp_path / p, "t", create=False)

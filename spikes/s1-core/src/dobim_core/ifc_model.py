@@ -158,7 +158,8 @@ def detect_skeleton(f):
 # 요소 클로저·의미 해시가 쓰는 정규화(make_norm)와 클로저 구성의 형식 번호. 정규화나 클로저 구성을 바꾸면 올린다.
 # 가져올 때 저장한 element.projection_hash 가 이 형식의 해시이므로, 열 때 번호가 다르면 가져온 프로젝트를 다시 판정한다(Engine._rejudge_import).
 #   "1" S2 스파이크(IfcProduct 만 참조로 접는다)   "2" 통합(IfcTypeObject 도 참조로 접는다: 패밀리 타입, S4)
-CLOSURE_FORMAT = "2"
+#   "3" 슬래브 종류 신설(IfcSlab 이 의도 복원 대상: 가져온 프로젝트를 다시 판정한다)
+CLOSURE_FORMAT = "3"
 
 
 def make_norm():
@@ -899,7 +900,7 @@ class IfcModel:
     # ------------------------------------------------------------ 투영 (늦게)
     def project(self, eid: str, spec: dict) -> None:
         kind = spec["kind"]
-        {"level": self._project_level, "wall": self._project_wall, "door": self._project_door,
+        {"level": self._project_level, "wall": self._project_wall, "door": self._project_door, "slab": self._project_slab,
          "ftype": lambda i, sp: fp.project_type(self, i, sp), "finst": lambda i, sp: fp.project_inst(self, i, sp)}[kind](eid, spec)
         # 의도를 IFC 에도 복제한다. 정본은 의도 저장소이고 이 속성셋은 매번 덮어쓴다.
         e = self.ents[eid]
@@ -949,6 +950,15 @@ class IfcModel:
         self._contain(eid, spec["level"])
         self._place(e, self.ents[spec["level"]].ObjectPlacement, (x, y, 0.0), (c, sn, 0.0))
         self._set_body(e, self._solid(spec["footprint"], spec["height"]))
+
+    def _project_slab(self, eid, spec):
+        """슬래브: 레벨 좌표계 원점에 경계 프로필을 압출한다. 윗면 = 레벨 + top_offset 이므로 솔리드는 (top_offset - 두께)에서 두께만큼 +Z 로 올린다."""
+        e = self.ents[eid]
+        e.Name = spec["name"]
+        e.PredefinedType = "FLOOR"
+        self._contain(eid, spec["level"])
+        self._place(e, self.ents[spec["level"]].ObjectPlacement, (0.0, 0.0, 0.0), (1.0, 0.0, 0.0))
+        self._set_body(e, self._solid(spec["boundary"], spec["thickness"], z0=spec["top_offset"] - spec["thickness"]))
 
     def derived_guid_for(self, label: str) -> str:
         return derived_guid(self.project_guid, label)

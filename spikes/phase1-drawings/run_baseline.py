@@ -3,9 +3,18 @@
 
 G1 때와 같은 방식으로 도면을 다시 뽑는다(s3lib.build 의 RA-01 코어 범위 모델). 산출 파일은 저장소 밖 폴더(--out)에 둔다.
 
-사용:  PYTHONPATH=<worktree>/spikes/s1-core/src  <python> run_baseline.py --out <폴더> [--sheets]
+사용:  PYTHONPATH=<worktree>/spikes/s1-core/src  <python> run_baseline.py --out <폴더> [--sheets] [--no-slabs]
   기본          : base/(기본 7뷰) annot/(치수·태그 포함 7뷰) fam/(창·기둥 배치 + 전체높이 치수) xsec/(종단면)  각 SVG·PDF
   --sheets      : 위에 더해 sheets/ 아래에 시트(A3·A1) SVG·PDF(한글 포함)를 뽑는다
+  --no-slabs    : 입력에서 슬래브 3개를 뺀다(이전 단계 산출과 같은 입력으로 되돌려 바이트 비교할 때)
+  --no-heights  : 높이 치수 자동 배치(heights/)를 건너뛴다
+
+높이 치수(두 번째 작업): 단면·입면 6뷰(단면 2·입면 4)에 annot.dim.heights 로 층고·반자높이(슬래브 밑면 기준 안목)·최고 높이를 자동 배치하고
+  heights/ 에 낸다. 같은 뷰에 손으로 만든 높이 치수(annot/ 용 level 사이 치수)는 지우고 자동 치수로 바꾼 뒤 시트를 뽑는다.
+
+입력 변경(세 번째 작업): RA-01 코어 범위 모델에 슬래브 3개를 더한다(RA-01 에는 슬래브 3개가 있다. g2-gate 5-1절). 기본 켜짐.
+  S-GND  1F 바닥 슬래브(1F 윗면 0, 두께 200, 외벽 바깥면까지)   S-2F  2F 바닥 슬래브(2F 윗면, 두께 200, 외벽 축선 안쪽)
+  S-ROOF 지붕 슬래브(2F 벽 윗면 6600 = 2F + 3300, 두께 200, 외벽 바깥면까지)
 """
 from __future__ import annotations
 
@@ -19,6 +28,7 @@ sys.path.insert(0, str(HERE.parent / "s3-drawings"))
 sys.path.insert(0, str(HERE.parent / "s1-core" / "tools"))
 
 import s3lib  # noqa: E402
+from dobim_core import drawing as D  # noqa: E402
 
 
 def ok(r):
@@ -38,6 +48,8 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--out", required=True)
     ap.add_argument("--sheets", action="store_true")
+    ap.add_argument("--no-slabs", action="store_true")
+    ap.add_argument("--no-heights", action="store_true")
     o = ap.parse_args()
     out = Path(o.out).resolve()
     out.mkdir(parents=True, exist_ok=True)
@@ -47,7 +59,32 @@ def main():
     if proj.exists():
         proj.unlink()
     sess, ids, views = s3lib.build(proj)
-    log = {"exports": []}
+    log = {"exports": [], "slabs": []}
+    # 종단면은 뷰 묶음(7뷰)과 따로 만들어 두었다가 나중에 views 에 넣는다(base/·annot/ 의 뷰 목록은 그대로)
+    vc0 = ok(sess.run("view.create", {"id": "4" + "0" * 20 + "9", "name": "A-A 종단면", "type": "section", "p1": [2000.0, -1000.0], "p2": [2000.0, 9000.0]}))
+    probe_views = {**views, "xsec-AA": vc0["id"]}
+
+    def measure():
+        sess.eng.sync()
+        sess.eng._touch_pending()
+        return {k: {"segments": len(sess.eng.g.q(D.view_lines, v)), "fills": len(sess.eng.g.q(D.view_fills, v))} for k, v in probe_views.items()}
+
+    before = measure()
+    if not o.no_slabs:
+        # 입력 변경: 슬래브 3개(RA-01 슬래브 수). 외벽 두께 320: 바깥면 = 축선 바깥 160
+        lx, ly, ho = s3lib.LX, s3lib.LY, s3lib.EXT_T / 2
+        outer = [[-ho, -ho], [lx + ho, -ho], [lx + ho, ly + ho], [-ho, ly + ho]]
+        axis = [[0.0, 0.0], [lx, 0.0], [lx, ly], [0.0, ly]]
+        for k, (nm, lv, b, off) in enumerate((("S-GND", "1F", outer, 0.0), ("S-2F", "2F", axis, 0.0), ("S-ROOF", "2F", outer, s3lib.STOREY)), 1):
+            sid = "6" + f"{k:021d}"
+            ids[nm] = sid
+            ok(sess.run("slab.create", {"id": sid, "level": ids[lv], "boundary": b, "thickness": 200.0, "top_offset": off, "name": nm}))
+            log["slabs"].append({"name": nm, "id": sid, "level": lv, "top_offset": off})
+        after = measure()
+        cuts = {k: sum(len(sess.eng.g.q(D.slab_cut_rects, probe_views[k], sl["id"])) for sl in log["slabs"]) for k in probe_views}
+        log["slab_probe"] = {"slabs": [sl["name"] for sl in log["slabs"]],
+                             "views": {k: {"segments_before": before[k]["segments"], "segments_after": after[k]["segments"], "fills_before": before[k]["fills"],
+                                           "fills_after": after[k]["fills"], "slab_cut_rects": cuts[k]} for k in probe_views}}
 
     def exp_views(sub, keys):
         d = out / sub
@@ -64,10 +101,11 @@ def main():
     # 주석: 평면 치수 3개·태그 4개, 단면·입면 높이 치수
     w1, w2 = ids["ext-1F"][0], ids["ext-1F"][1]
     dim = lambda view, a, b, **kw: ok(sess.run("annot.dim.create", {"view": views[view], "a": a, "b": b, **kw}))   # noqa: E731
+    manual_heights = []
     dim("plan-1F", f"wall:{w1}#trim.start", f"wall:{w1}#trim.end")
     dim("plan-1F", f"wall:{w2}#trim.start", f"wall:{w2}#trim.end", offset=900.0)
     for k in ("section-BB", "elev-S"):
-        dim(k, f"level:{ids['1F']}#elevation", f"level:{ids['2F']}#elevation", at=[-600.0, 0.0])
+        manual_heights.append(dim(k, f"level:{ids['1F']}#elevation", f"level:{ids['2F']}#elevation", at=[-600.0, 0.0])["id"])
     for t in (ids["D-01"], ids["D-02"], ids["D-03"], ids["ext-1F"][0]):
         ok(sess.run("annot.tag.create", {"view": views["plan-1F"], "target": t, "fields": ["name"]}))
     exp_views("annot", keys)
@@ -78,31 +116,46 @@ def main():
     r = sess.run("family.place", {"id": "0" * 20 + "c1", "family": "column.section", "type_values": {"section": "round"}, "level": ids["1F"], "position": [4000.0, 4000.0]})
     log["family"].append({"column": 1, "ok": bool(r.get("ok")), "err": (r.get("error") or {}).get("message")})
     exp_views("fam", ["plan-1F", "section-BB"])
-    vc = ok(sess.run("view.create", {"id": "4" + "0" * 20 + "9", "name": "A-A 종단면", "type": "section", "p1": [2000.0, -1000.0], "p2": [2000.0, 9000.0]}))
-    views["xsec-AA"] = vc["id"]
+    views["xsec-AA"] = vc0["id"]
     exp_views("xsec", ["xsec-AA"])
 
+    plans = [views["plan-1F"], views["plan-2F"]]
+    elevs = [views[f"elev-{x}"] for x in "NESW"]
+    spec = {"project_name": "RA-01 예시 주택", "date": "2026-11-15"}
+    sheets_dir = out / "sheets"
     if o.sheets:
-        d = out / "sheets"
-        d.mkdir(exist_ok=True)
-        plans = [views["plan-1F"], views["plan-2F"]]
-        elevs = [views[f"elev-{x}"] for x in "NESW"]
-        spec = {"project_name": "RA-01 예시 주택", "date": "2026-11-15"}
-        for nm, a in (("A3-plans", {"views": plans, "paper": "A3", "sheet_name": "1·2층 평면도", "sheet_number": "A-101"}),
-                      ("A1-all", {"views": plans + [views["section-BB"], views["xsec-AA"]] + elevs, "paper": "A1", "sheet_name": "평면도·단면도·입면도", "sheet_number": "A-001"})):
-            for ext in ("svg", "pdf"):
-                r = export(sess, "sheet.export", {**spec, **a}, work / f"sheet_{nm}.{ext}")
-                (d / f"{nm}.{ext}").write_bytes((work / f"sheet_{nm}.{ext}").read_bytes())
-                log["exports"].append({"dir": "sheets", "sheet": nm, "ext": ext, "bytes": r["bytes"], "font_embedded": r["font_embedded"],
-                                       "non_ascii_dropped": r["non_ascii_dropped"], "views": len(r["views"])})
-        # 혼합 축척 시트: 북측 입면만 1:50 으로 바꿔 한 장에 올린다(표제란 '도면참조', 뷰별 S=1:N)
-        ok(sess.run("view.set", {"id": views["elev-N"], "scale": 50}))
+        sheets_dir.mkdir(exist_ok=True)
+
+    def sheet(nm, a, extra=None):
         for ext in ("svg", "pdf"):
-            r = export(sess, "sheet.export", {**spec, "views": [views["plan-1F"], views["elev-N"]], "paper": "A3", "sheet_name": "혼합 축척 예", "sheet_number": "A-201", "north_angle": 30.0},
-                       work / f"sheet_A3-mixed.{ext}")
-            (d / f"A3-mixed.{ext}").write_bytes((work / f"sheet_A3-mixed.{ext}").read_bytes())
-            log["exports"].append({"dir": "sheets", "sheet": "A3-mixed", "ext": ext, "bytes": r["bytes"], "font_embedded": r["font_embedded"],
+            r = export(sess, "sheet.export", {**spec, **a}, work / f"sheet_{nm}.{ext}")
+            (sheets_dir / f"{nm}.{ext}").write_bytes((work / f"sheet_{nm}.{ext}").read_bytes())
+            log["exports"].append({"dir": "sheets", "sheet": nm, "ext": ext, "bytes": r["bytes"], "font_embedded": r["font_embedded"],
                                    "non_ascii_dropped": r["non_ascii_dropped"], "views": len(r["views"])})
+
+    if o.sheets:
+        sheet("A3-plans", {"views": plans, "paper": "A3", "sheet_name": "1·2층 평면도", "sheet_number": "A-101"})
+        # 혼합 축척 시트: 북측 입면만 1:50 으로 바꿔 한 장에 올린다(표제란 '도면참조', 뷰별 S=1:N). 높이 치수가 붙기 전에 뽑고 축척은 되돌린다
+        ok(sess.run("view.set", {"id": views["elev-N"], "scale": 50}))
+        sheet("A3-mixed", {"views": [views["plan-1F"], views["elev-N"]], "paper": "A3", "sheet_name": "혼합 축척 예", "sheet_number": "A-201", "north_angle": 30.0})
+        ok(sess.run("view.set", {"id": views["elev-N"], "scale": 100}))
+
+    if not o.no_heights:
+        # 높이 치수 자동 배치: 손으로 만든 층 사이 치수(위 annot/ 용)는 자동 치수가 대신하므로 지운다
+        for d_id in manual_heights:
+            ok(sess.run("annot.delete", {"id": d_id}))
+        d = out / "heights"
+        d.mkdir(exist_ok=True)
+        hv = ["section-BB", "xsec-AA", "elev-N", "elev-E", "elev-S", "elev-W"]
+        res = {k: ok(sess.run("annot.dim.heights", {"view": views[k]})) for k in hv}
+        exp_views("heights", hv)
+        dims = res["section-BB"]["dims"]
+        by = lambda kind: [x["value"] for x in dims if x["kind"] == kind]   # noqa: E731
+        log["heights"] = {"views": hv, "dims": {k: [{x: y[x] for x in ("kind", "name", "value")} for y in r["dims"]] for k, r in res.items()},
+                          "expected": {"floor": by("floor"), "clear": by("clear"), "overall": (by("overall") or [None])[0]}}
+
+    if o.sheets:
+        sheet("A1-all", {"views": plans + [views["section-BB"], views["xsec-AA"]] + elevs, "paper": "A1", "sheet_name": "평면도·단면도·입면도", "sheet_number": "A-001"})
     (out / "run.json").write_text(json.dumps({"views": views, "ids": ids, **log}, ensure_ascii=False, indent=1), encoding="utf-8")
     print(json.dumps(log, ensure_ascii=False)[:1500])
 

@@ -25,7 +25,7 @@ from dobim_core import limits, merge
 from dobim_core import queries as Q
 from dobim_core import registry
 from dobim_core.errors import DobimError
-from dobim_core.kinds import KIND_NAMES, READ_REL_NAMES, REL_KINDS, param_ref_targets
+from dobim_core.kinds import KIND_NAMES, READ_REL_NAMES, REL_KINDS, param_ref_targets, polygon_area2, polygon_problem
 from dobim_core.paths import resolve_in_workspace
 from dobim_core.registry import command
 
@@ -598,6 +598,96 @@ def element_delete(ctx, a: IdArg):
     return {"deleted": gone}
 
 
+# ---------------------------------------------------------------- 슬래브 (설계: spikes/phase1-drawings/elements-design.md 4절)
+SlabCoord = Annotated[float, Field(allow_inf_nan=False, ge=-1e7, le=1e7)]
+SlabPt = Annotated[list[SlabCoord], Field(min_length=2, max_length=2, description="[x,y] mm (±1e7)")]
+SlabBoundary = Annotated[list[SlabPt], Field(min_length=3, max_length=256,
+                                              description="경계 다각형 꼭짓점 [[x,y],...] mm(3~256개). 시계 방향으로 주면 반시계로 뒤집어 저장한다. 자기 교차 금지")]
+
+
+def _slab_boundary(pts) -> list:
+    """경계를 float 쌍 목록으로 정규화한다(반시계로 저장). 쓸 수 없는 모양이면 CONSTRAINT."""
+    b = [[float(x), float(y)] for x, y in pts]
+    why = polygon_problem(b)
+    if why:
+        raise DobimError("CONSTRAINT", f"슬래브 경계가 올바르지 않다: {why}", path="/boundary")
+    return b if polygon_area2(b) > 0 else b[::-1]
+
+
+class SlabCreate(A):
+    id: Id | None = None
+    level: Id
+    boundary: SlabBoundary
+    thickness: Pos = 200.0
+    top_offset: Num = Field(0.0, description="레벨 높이에서 윗면까지 mm (윗면 = 레벨 + top_offset, 두께는 아래로)")
+    name: Name | None = None
+
+
+@command("slab.create", kind="mutation", risk="write", group="model.slab", summary="슬래브 생성(레벨 + 경계 다각형 + 두께)",
+         args=SlabCreate, since="0.2",
+         examples=[{"level": F.LV1, "boundary": [[0, 0], [6000, 0], [6000, 4000], [0, 4000]], "thickness": 200}])
+def slab_create(ctx, a: SlabCreate):
+    _fresh_id(ctx, a, "slab")
+    ctx.authored(a.level, "level", what="레벨에 슬래브를 추가하는 것")
+    boundary = _slab_boundary(a.boundary)
+    a.name = a.name or f"S-{a.id[-6:]}"
+    ctx.put_el(a.id, row("slab", "IfcSlab", "slab.basic", {"name": a.name, "boundary": boundary, "thickness": a.thickness, "top_offset": a.top_offset}))
+    ctx.rel("on_level", a.id, a.level, True)
+    return {"id": a.id}
+
+
+class SlabSet(A):
+    forbid_null = True
+    id: Id
+    name: Name | None = None
+    boundary: SlabBoundary | None = None
+    thickness: Pos | None = None
+    top_offset: Num | None = None
+
+    @model_validator(mode="after")
+    def _any(self):
+        if all(v is None for v in (self.name, self.boundary, self.thickness, self.top_offset)):
+            raise ValueError("바꿀 필드가 하나도 없다")
+        return self
+
+
+@command("slab.set", kind="mutation", risk="write", group="model.slab", summary="슬래브 속성 변경(경계·두께·윗면 오프셋·이름)",
+         args=SlabSet, since="0.2", examples=[{"id": F.S1, "thickness": 250}])
+def slab_set(ctx, a: SlabSet):
+    r = ctx.authored(a.id, "slab")
+    p = dict(r["params"])
+    for k in ("name", "thickness", "top_offset"):
+        if getattr(a, k) is not None:
+            p[k] = getattr(a, k)
+    if a.boundary is not None:
+        p["boundary"] = _slab_boundary(a.boundary)
+    ctx.put_el(a.id, dict(r, params=p))
+    return {"id": a.id}
+
+
+class SlabMove(A):
+    id: Id
+    dx: Num = 0.0
+    dy: Num = 0.0
+
+
+@command("slab.move", kind="mutation", risk="write", group="model.slab", summary="슬래브를 평행 이동한다",
+         args=SlabMove, since="0.2", examples=[{"id": F.S1, "dx": 600, "dy": 0}])
+def slab_move(ctx, a: SlabMove):
+    r = ctx.authored(a.id, "slab")
+    b = [[x + a.dx, y + a.dy] for x, y in r["params"]["boundary"]]
+    ctx.put_el(a.id, dict(r, params=dict(r["params"], boundary=b)))
+    return {"id": a.id, "boundary": b}
+
+
+@command("slab.delete", kind="mutation", risk="write", group="model.slab", summary="슬래브 삭제",
+         args=IdArg, since="0.2", examples=[{"id": F.S1}])
+def slab_delete(ctx, a: IdArg):
+    ctx.authored(a.id, "slab", what="삭제")
+    _delete_one(ctx, a.id)
+    return {"deleted": [a.id]}
+
+
 class PsetSet(A):
     id: Id
     pset: PsetName
@@ -689,6 +779,9 @@ def element_get(ctx, a: ElementGet):
         out["derived"] = {"trim_start": start, "trim_end": end, "length": end - start, "status": status}
     elif r["kind"] == "door":
         out["derived"] = {"world": list(ctx.g.q(Q.door_world, a.id)), "status": ctx.g.q(Q.door_status, a.id)}
+    elif r["kind"] == "slab":
+        zb, zt = ctx.g.q(Q.slab_zrange, a.id)
+        out["derived"] = {"bottom": zb, "top": zt}
     # 속성: (속성셋, 속성) 순서로 펼쳐 키셋 커서로 나눈다. 값이 길어 상한을 넘는 옛 값은 앞 255자만 보이고 clipped 에 적는다.
     psets = ctx.psets(a.id)
     pairs = [[ps, pr, psets[ps][pr]] for ps in sorted(psets) for pr in sorted(psets[ps])]
@@ -1224,8 +1317,8 @@ def view_affected(ctx, a: ViewAffected):
 # ================================================================ 주석: 치수·태그 (S5)
 # 주석은 의도 요소(kind dim, tag)이고 IFC 로 투영하지 않는다(IFC 해시 불변). 값은 저장하지 않고 항상 파생이다(그래프 질의).
 # 대상이 사라지면 조용히 지우지 않고 고아로 표시한다(annot.check). 뷰를 지우면 그 뷰의 주석도 같이 지운다(응답에 나열, undo 로 복귀).
-RefStr = Annotated[str, Field(pattern=r"^(wall|door|level):[0-9A-Za-z_$]{22}#[a-z]{3,9}(\.[a-z]{3,9}){0,2}$", max_length=48,
-                              description="안정 참조 '종류:id#역할'. wall: axis.start axis.end(분할 뒤에도 원래 끝) own.end(이 벽 자신의 끝) trim.start trim.end own.trim.end axis face.left face.right base top / door: center jamb.start jamb.end sill head / level: elevation")]
+RefStr = Annotated[str, Field(pattern=r"^(wall|door|level|slab):[0-9A-Za-z_$]{22}#[a-z]{3,9}(\.[a-z]{3,9}){0,2}$", max_length=48,
+                              description="안정 참조 '종류:id#역할'. wall: axis.start axis.end(분할 뒤에도 원래 끝) own.end(이 벽 자신의 끝) trim.start trim.end own.trim.end axis face.left face.right base top / door: center jamb.start jamb.end sill head / level: elevation / slab: top bottom")]
 Off = Annotated[float, Field(allow_inf_nan=False, ge=-1e5, le=1e5)]
 _ANNOT_KINDS = ("dim", "tag")
 
@@ -1319,6 +1412,90 @@ def annot_dim_create(ctx, a: DimCreate):
     (ax, ay), (bx, by) = AN.dim_ends(g, params, ra, rb)
     params["home"] = [round((ax + bx) / 2, 3), round((ay + by) / 2, 3)]
     return _new_annot(ctx, a, "dim", params)
+
+
+# ---------------------------------------------------------------- 높이 치수 자동 배치 (법정 별표 2: 건축물 높이·각 층 높이·반자높이)
+HEIGHT_KINDS = ("floor", "clear", "overall")
+HEIGHT_OFF = {"floor": 600.0, "clear": 1300.0, "overall": 2000.0}   # 치수선이 대상에서 왼쪽으로 떨어지는 거리(mm). 안쪽부터 층고·반자·전체 순
+HEIGHT_GAP = 500.0                                                  # 뷰 그림의 왼쪽 끝에서 보조선 기준선까지의 여유(mm)
+HEIGHT_PREFIX = "H-"                                                # 자동 높이 치수의 이름 접두사: 다시 실행하면 이 접두사의 치수를 지우고 다시 만든다
+_ID_ALPHA = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz_$"
+
+
+def _det_id(*parts) -> str:
+    """부분 문자열들에서 결정적으로 얻는 22자 id(IFC GlobalId 와 같은 알파벳, 첫 글자 0~3). 같은 입력은 어느 PC·프로세스에서나 같은 id 다."""
+    import hashlib
+    n = int.from_bytes(hashlib.sha256("\x1f".join(parts).encode("utf-8")).digest()[:16], "big")
+    out = []
+    for _ in range(22):
+        out.append(_ID_ALPHA[n & 63])
+        n >>= 6
+    return "".join(reversed(out))
+
+
+class DimHeights(A):
+    view: Id = Field(description="단면·입면 뷰")
+    kinds: Annotated[list[Literal["floor", "clear", "overall"]], Field(
+        min_length=1, max_length=3,
+        description="floor=각 층의 높이(층고: 이웃한 레벨 사이), clear=반자높이(안목: 레벨에서 그 위 가장 가까운 슬래브 밑면, 천장 요소가 없어 슬래브 밑면으로 근사), "
+                    "overall=건축물 최고 높이(가장 낮은 레벨에서 벽·슬래브의 가장 높은 윗면)")] = ["floor", "clear", "overall"]
+    at: Point2 | None = Field(None, description="치수선을 그릴 평면 위치 [x,y]. 생략하면 뷰 그림의 왼쪽 바깥에 자동으로 둔다")
+
+
+@command("annot.dim.heights", kind="mutation", risk="write", group="annot",
+         summary="단면·입면에 높이 치수(층고·반자높이·최고 높이)를 자동 배치한다. 다시 실행하면 이전 자동 치수를 지우고 다시 만든다",
+         args=DimHeights, since="0.2", examples=[{"view": F.V2, "kinds": ["floor", "overall"]}])
+def annot_dim_heights(ctx, a: DimHeights):
+    vr = ctx.row(a.view, "view")
+    if vr["params"]["type"] == "plan":
+        raise DobimError("CONSTRAINT", "높이 치수는 단면·입면 뷰에 둔다", path="/view")
+    g = ctx.fresh()
+    st = ctx.st
+    levels = sorted(((st.el[i]["params"]["elevation"], i) for i in st.by_kind.get("level", ()) if st.el[i]["origin"] == "authored"))
+    if not levels:
+        raise DobimError("CONSTRAINT", "높이 치수를 만들 레벨이 없다", path="/view", hint="level.create 로 레벨을 먼저 만드세요")
+    walls = [(i, g.q(AN.ref_resolve, f"wall:{i}#top")[1]) for i in sorted(st.by_kind.get("wall", ())) if st.el[i]["origin"] == "authored"]
+    slabs = [(i, g.q(Q.slab_zrange, i)) for i in sorted(st.by_kind.get("slab", ())) if st.el[i]["origin"] == "authored"]
+    plan: list = []   # [(종류, 이름, a 참조, b 참조)]
+    if "floor" in a.kinds:
+        for (e0, l0), (e1, l1) in zip(levels, levels[1:]):
+            if e1 > e0:
+                plan.append(("floor", f"{HEIGHT_PREFIX}층고-{st.el[l0]['params']['name']}", f"level:{l0}#elevation", f"level:{l1}#elevation"))
+    if "clear" in a.kinds:
+        for e0, l0 in levels:
+            above = sorted((zr[0], i) for i, zr in slabs if zr[0] > e0 + 1.0)   # 레벨 위의 슬래브 중 밑면이 가장 낮은 것(자기 바닥 슬래브는 밑면이 레벨 아래라 빠진다)
+            if above:
+                plan.append(("clear", f"{HEIGHT_PREFIX}반자-{st.el[l0]['params']['name']}", f"level:{l0}#elevation", f"slab:{above[0][1]}#bottom"))
+    if "overall" in a.kinds:
+        tops = [(z, "wall", i) for i, z in walls] + [(zr[1], "slab", i) for i, zr in slabs]
+        if tops:
+            ztop, kind, tid = sorted(tops, key=lambda t: (-t[0], t[1] != "wall", t[2]))[0]   # 같은 높이면 벽을 우선한다
+            low_e, low_l = levels[0]
+            if ztop > low_e:
+                plan.append(("overall", f"{HEIGHT_PREFIX}최고높이", f"level:{low_l}#elevation", f"{kind}:{tid}#top"))
+    removed = []
+    for an in sorted(ctx.rels_in("annot_of", a.view)):   # 이전 자동 치수는 지운다(같은 id 로 다시 만든다)
+        r = st.el[an]
+        if r["kind"] == "dim" and r["params"]["name"].startswith(HEIGHT_PREFIX):
+            _delete_one(ctx, an)
+            removed.append(an)
+    if not plan:
+        ctx.warn("만들 높이 치수가 없다(레벨이 하나뿐이거나 벽·슬래브가 없다)")
+        return {"view": a.view, "created": [], "removed": removed, "dims": []}
+    if a.at is not None:
+        at = list(a.at)
+    else:
+        cfg = g.q(D.view_cfg, a.view)
+        lines = g.q(D.view_lines, a.view)
+        s0 = min((min(ln[1], ln[3]) for ln in lines), default=0.0) - HEIGHT_GAP
+        at = [round(cfg[1] + s0 * cfg[5], 3), round(cfg[2] + s0 * cfg[6], 3)]   # 보는 방향 기준 s 가 s0 인 평면 위치(뷰의 오른쪽 방향 = cfg[5], cfg[6])
+    out = []
+    for kind, name, ra, rb in plan:
+        did = _det_id("annot.dim.heights", a.view, name)
+        r = annot_dim_create(ctx, DimCreate(id=did, view=a.view, a=ra, b=rb, offset=HEIGHT_OFF[kind], at=at, name=name))
+        val = AN.measure(g.q(AN.ref_resolve, ra), g.q(AN.ref_resolve, rb))
+        out.append({"id": r["id"], "kind": kind, "name": name, "a": ra, "b": rb, "value": val[1] if val[0] == "ok" else None})
+    return {"view": a.view, "created": [d["id"] for d in out], "removed": removed, "dims": out}
 
 
 class TagCreate(A):
