@@ -409,6 +409,7 @@ def test_9_종류_레지스트리가_모든_모듈과_맞는다(tmp_path):
         _ok(b.run("slab.create", {"id": F.S1, "level": F.LV2, "boundary": [[0, 0], [6000, 0], [6000, 4000], [0, 4000]]}, project=p))   # 모든 종류(슬래브 포함)
         _ok(b.run("stair.create", {"id": F.ST1, "level": F.LV1, "run": [1000, 1000, 5000, 1000]}, project=p))   # 계단도
         _ok(b.run("space.create", {"id": F.SP1, "level": F.LV1, "boundary": [[0, 0], [6000, 0], [6000, 4000], [0, 4000]], "name": "사무실"}, project=p))   # 공간도
+        _ok(b.run("railing.create", {"id": F.RL1, "level": F.LV1, "path": [[0, 0], [3000, 0]]}, project=p))   # 난간
         _ok(b.run("site.create", {"id": F.SI1, "boundary": [[-6000, -6000], [18000, -6000], [18000, 14000], [-6000, 14000]], "name": "대지"}, project=p))   # 대지도
         _ok(b.run("sheet.define", {"id": F.SH1, "name": "시트", "views": [F.V1]}, project=p))   # 시트 정의도
     finally:
