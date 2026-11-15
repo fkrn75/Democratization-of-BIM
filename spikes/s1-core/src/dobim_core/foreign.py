@@ -290,7 +290,7 @@ def _restore_defs(f, rows: dict, rels: set, taken: set, plan: "ImportPlan") -> N
                 skip(eid, "평면 뷰가 가리키는 레벨이 저작이 아니다(분리·외래·다른 종류)")
                 continue
         ok[eid] = parsed[eid]
-    for eid in sorted(e for e, d in parsed.items() if d["kind"] != "view"):
+    for eid in sorted(e for e, d in parsed.items() if d["kind"] in ("dim", "tag")):
         d = parsed[eid]
         p = d["params"]
         v = ok.get(p["view"])
@@ -321,10 +321,25 @@ def _restore_defs(f, rows: dict, rels: set, taken: set, plan: "ImportPlan") -> N
             skip(eid, why)
             continue
         ok[eid] = d
+    # 시트 정의: 올린 뷰가 모두 되살려진 뷰여야 하고(하나라도 없으면 시트 전체를 되살리지 않는다: 일부만 남기면 다른 도면이 된다), 이름이 겹치지 않는다
+    snames: dict[str, list] = {}
+    for eid in sorted(e for e, d in parsed.items() if d["kind"] == "sheet"):
+        snames.setdefault(parsed[eid]["params"]["name"], []).append(eid)
+    for nm, ids in sorted(snames.items()):
+        for eid in ids:
+            p = parsed[eid]["params"]
+            if len(ids) > 1:
+                skip(eid, "같은 이름의 시트가 더 있다")
+            elif any(ok.get(v) is None or ok[v]["kind"] != "view" for v in p["views"]):
+                skip(eid, "시트가 올린 뷰가 없거나 되살려지지 않았다")
+            elif p["key_plan"] is not None and (ok.get(p["key_plan"]) is None or ok[p["key_plan"]]["kind"] != "view" or ok[p["key_plan"]]["params"]["type"] != "plan"):
+                skip(eid, "키 플랜이 평면 뷰가 아니거나 되살려지지 않았다")
+            else:
+                ok[eid] = parsed[eid]
     for eid, d in ok.items():
         rows[eid] = {"kind": d["kind"], "ifc_class": "", "origin": "authored", "family_id": d["family_id"], "params": d["params"],
                      "projection_hash": None}
-        if d["kind"] != "view":
+        if d["kind"] in ("dim", "tag"):
             rels.add(("annot_of", eid, d["params"]["view"]))
 
 

@@ -161,7 +161,10 @@ def detect_skeleton(f):
 #   "3" 슬래브 종류 신설(IfcSlab 이 의도 복원 대상: 가져온 프로젝트를 다시 판정한다)
 #   "4" 계단 종류 신설(IfcStair 이 의도 복원 대상)
 #   "5" 공간 종류 신설(IfcSpace 이 의도 복원 대상)
-CLOSURE_FORMAT = "5"
+#   "6" 시트 정의 신설(비 IFC 정의 속성에 sheet 가 더해진다)
+#   "7" L 조인 모서리를 코어 형상으로 닫는다(벽 윤곽 wall_footprint 가 queries.wall_extent 를 쓴다: id 작은 벽이 상대 벽 반 두께 연장).
+#       이전 형식으로 내보낸 IFC 의 L 조인 벽은 형상이 달라 가져오면 분리(동결)로 판정된다(안전한 쪽)
+CLOSURE_FORMAT = "7"
 
 
 def make_norm():

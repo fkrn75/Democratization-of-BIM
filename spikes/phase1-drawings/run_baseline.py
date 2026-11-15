@@ -9,6 +9,7 @@ G1 때와 같은 방식으로 도면을 다시 뽑는다(s3lib.build 의 RA-01 �
   --no-slabs    : 입력에서 슬래브 3개를 뺀다(이전 단계 산출과 같은 입력으로 되돌려 바이트 비교할 때)
   --no-heights  : 높이 치수 자동 배치(heights/)를 건너뛴다
   --no-stairs / --no-spaces / --no-fire / --no-finish : 계단·공간·방화 등급·외벽 마감 입력을 뺀다(네 번째 작업 이전 입력)
+  --no-sheetdef : 여섯 번째 작업(시트 정의 저장·왕복 probe)을 건너뛴다
   --no-sheet2   : 다섯 번째 작업(색인 시트·통심선·기호·태그·키 플랜·개정·서명·선 굵기 프로파일·작성기준 프로파일)을 건너뛴다
 
 다섯 번째 작업 산출(--sheets): sheets/A-000(색인: 도면목록·범례·주기·레벨 노트·창호/벽체 일람표·재료표), sheets/A-002(통심선·단면·입면 기호·부위 상세·부호 태그·키 플랜·
@@ -52,14 +53,92 @@ def export(sess, name, args, out_path: Path):
     """확인 토큰 2단계 호출로 내보낸다. 응답 result 를 돌려준다."""
     a = {**args, "path": out_path.name, "overwrite": True}
     r = sess.run(name, a)
+    if r.get("ok"):   # 덮어쓸 파일이 없으면 확인 절차 없이 쓴다
+        return r["result"]
     tok = r["error"]["details"]["confirm_token"]
     return ok(sess.run(name, a, confirm=tok))
 
 
+def ifc_out(sess, name):
+    """IFC 를 내보낸다(ifc.export 는 overwrite 인자가 없고 기존 파일이면 확인 토큰이 필요하다)."""
+    r = sess.run("ifc.export", {"path": name})
+    if not r.get("ok"):
+        r = sess.run("ifc.export", {"path": name}, confirm=r["error"]["details"]["confirm_token"])
+    return ok(r)
+
+
+def cornerprobe(sess, log, work):
+    """여섯 번째 작업(B-02): 모든 벽에서 도면이 그리는 벽 범위(drawing.wall_range)와 내보낸 IFC 파일의 실제 형상(축선 방향 범위)이 같은지 잰다.
+    IFC 는 파일을 열어 형상을 직접 만든 정점으로 읽는다(엔진 코드와 독립). 연장된 끝(L 조인 모서리)의 길이도 기록한다. 결과는 run.json 의 corner_probe."""
+    from math import sqrt
+
+    import ifcopenshell
+    import ifcopenshell.geom
+    from dobim_core import queries as Q
+    ifc_out(sess, "corner.ifc")
+    sess.eng.sync()
+    sess.eng._touch_pending()
+    g = sess.eng.g
+    f = ifcopenshell.open(str(work / "corner.ifc"))
+    st = ifcopenshell.geom.settings()
+    st.set("use-world-coords", True)
+    rows = []
+    for w in sorted(sess.eng.st.by_kind.get("wall", ())):
+        x1, y1, x2, y2 = sess.eng.st.el[w]["params"]["axis"]
+        ln = sqrt((x2 - x1) ** 2 + (y2 - y1) ** 2)
+        c, s_ = (x2 - x1) / ln, (y2 - y1) / ln
+        v = ifcopenshell.geom.create_shape(st, f.by_guid(w)).geometry.verts
+        ts = [((v[i] * 1000.0 - x1) * c + (v[i + 1] * 1000.0 - y1) * s_) for i in range(0, len(v), 3)]
+        lo, hi = min(ts), max(ts)
+        rng = g.q(D.wall_range, w)
+        trim = g.q(Q.wall_trim, w)
+        rows.append({"id": w, "ifc": [round(lo, 3), round(hi, 3)], "drawing": [round(rng[0], 3), round(rng[1], 3)], "trim": [round(trim[0], 3), round(trim[1], 3)],
+                     "diff_mm": round(max(abs(lo - rng[0]), abs(hi - rng[1])), 4), "extended_mm": round((trim[0] - rng[0]) + (rng[1] - trim[1]), 3)})
+    log["corner_probe"] = {"walls": len(rows), "extended_walls": sum(1 for r in rows if r["extended_mm"] > 0), "max_diff_mm": max(r["diff_mm"] for r in rows),
+                           "legacy_notch_walls": sum(1 for r in rows if r["extended_mm"] > 0 and abs(r["ifc"][0] - r["trim"][0]) < 1e-3 and abs(r["ifc"][1] - r["trim"][1]) < 1e-3),
+                           "rows": rows}
+
+
+def sheetdef(sess, saved, log, out, work, sheets_dir):
+    """여섯 번째 작업(B-04): 낸 시트의 인자를 sheet.define 으로 모델에 저장하고, 저장한 정의로 다시 내 파일이 sheet.export 산출과 바이트까지 같은지,
+    IFC 로 내보냈다 가져와도 시트가 되살고 해시 3종·시트 산출이 같은지 확인한다. 결과는 run.json 의 sheet_def_probe 로 남는다(판정기의 근거)."""
+    from dobim_core import dispatch
+    names = sorted(saved)
+    for nm in names:
+        ok(sess.run("sheet.define", {"name": nm, **{k: v for k, v in saved[nm].items() if k not in ("path", "overwrite")}}))
+    lst = ok(sess.run("sheet.list", {}))
+    same = {}
+    for nm in names:
+        sid = next(i["id"] for i in lst["items"] if i["name"] == nm)
+        for ext in ("svg", "pdf"):
+            export(sess, "sheet.render", {"id": sid}, work / f"def-{nm}.{ext}")
+            same[f"{nm}.{ext}"] = (work / f"def-{nm}.{ext}").read_bytes() == (sheets_dir / f"{nm}.{ext}").read_bytes()
+    h0 = ok(sess.run("model.hash", {}))
+    ifc_out(sess, "sheetdef.ifc")
+    imp = ok(dispatch.run(sess.env, "ifc.import", {"source": "sheetdef.ifc", "path": "sheetdef-imp.dobim"}))
+    h1 = ok(dispatch.run(sess.env, "model.hash", {}, project="sheetdef-imp.dobim"))
+    lst2 = ok(dispatch.run(sess.env, "sheet.list", {}, project="sheetdef-imp.dobim"))
+    rt_same = {}
+    for nm in names:
+        sid = next(i["id"] for i in lst2["items"] if i["name"] == nm)
+        for ext in ("svg", "pdf"):
+            a = {"id": sid, "path": f"imp-{nm}.{ext}", "overwrite": True}
+            r1 = dispatch.run(sess.env, "sheet.render", a, project="sheetdef-imp.dobim")
+            tok = r1["error"]["details"]["confirm_token"]
+            ok(dispatch.run(sess.env, "sheet.render", a, project="sheetdef-imp.dobim", confirm=tok))
+            rt_same[f"{nm}.{ext}"] = (work / f"imp-{nm}.{ext}").read_bytes() == (sheets_dir / f"{nm}.{ext}").read_bytes()
+    log["sheet_def_probe"] = {"sheets": names, "views_per_sheet": {i["name"]: len(i["views"]) for i in lst["items"]}, "missing_views": sum(len(i["missing_views"]) for i in lst["items"]),
+                              "render_equals_export": same, "import_elements": imp["elements"], "import_warnings": imp["warnings"], "restored": sorted(i["name"] for i in lst2["items"]),
+                              "hash_equal": [h0[k] == h1[k] for k in ("state", "derived", "ifc")], "roundtrip_render_equals_export": rt_same}
+
+
 def sheet2(sess, ids, views, log, out, work, sheets_dir, exp_views, sheet, spec):
-    """다섯 번째 작업 산출. 색인 시트, 확장 시트(통심선·기호·태그·키 플랜·개정·서명), 선 굵기 프로파일 시트, 작성기준 프로파일."""
+    """다섯 번째 작업 산출. 색인 시트, 확장 시트(통심선·기호·태그·키 플랜·개정·서명), 선 굵기 프로파일 시트, 작성기준 프로파일. 낸 시트 인자를 돌려준다."""
+    saved = {}
+
     def sheet_n(nm, a):
         """파일 이름이 도면번호와 같게 내보낸다(T-04 파일명 일치)."""
+        saved[nm] = {**spec, **a}
         for ext in ("svg", "pdf"):
             r_ = export(sess, "sheet.export", {**spec, **a}, work / f"{nm}.{ext}")
             (sheets_dir / f"{nm}.{ext}").write_bytes((work / f"{nm}.{ext}").read_bytes())
@@ -93,6 +172,7 @@ def sheet2(sess, ids, views, log, out, work, sheets_dir, exp_views, sheet, spec)
                                "non_ascii_dropped": r_["non_ascii_dropped"], "rows": r_["rows"], "number_check": r_["number_check"], "number": r_["sheet_number"]})
     prof = ok(sess.run("drawing.profile", {}))
     (out / "profile.json").write_text(json.dumps(prof, ensure_ascii=False, indent=1), encoding="utf-8")
+    return saved
 
 
 def main():
@@ -102,6 +182,7 @@ def main():
     ap.add_argument("--no-slabs", action="store_true")
     ap.add_argument("--no-heights", action="store_true")
     ap.add_argument("--no-sheet2", action="store_true")
+    ap.add_argument("--no-sheetdef", action="store_true")
     for f in ("stairs", "spaces", "fire", "finish"):
         ap.add_argument(f"--no-{f}", action="store_true")
     o = ap.parse_args()
@@ -248,7 +329,11 @@ def main():
     if o.sheets:
         sheets_dir.mkdir(exist_ok=True)
 
+    saved: dict = {}
+
     def sheet(nm, a, extra=None):
+        if nm != "A-201":   # 혼합 축척 시트는 뷰 축척을 잠깐 바꿔 뽑으므로 정의로 다시 내면 달라진다: 저장 대상이 아니다
+            saved[nm] = {**spec, **a}
         for ext in ("svg", "pdf"):
             r = export(sess, "sheet.export", {**spec, **a}, work / f"{nm}.{ext}")
             (sheets_dir / f"{nm}.{ext}").write_bytes((work / f"{nm}.{ext}").read_bytes())
@@ -279,7 +364,10 @@ def main():
     if o.sheets:
         sheet("A-001", {"views": plans + [views["section-BB"], views["xsec-AA"]] + elevs, "paper": "A1", "sheet_name": "평면도·단면도·입면도", "sheet_number": "A-001"})
     if o.sheets and not o.no_sheet2:
-        sheet2(sess, ids, views, log, out, work, sheets_dir, exp_views, sheet, spec)
+        saved.update(sheet2(sess, ids, views, log, out, work, sheets_dir, exp_views, sheet, spec))
+        if not o.no_sheetdef:
+            sheetdef(sess, saved, log, out, work, sheets_dir)
+            cornerprobe(sess, log, work)
     (out / "run.json").write_text(json.dumps({"views": views, "ids": ids, **log}, ensure_ascii=False, indent=1), encoding="utf-8")
     print(json.dumps(log, ensure_ascii=False)[:1500])
 

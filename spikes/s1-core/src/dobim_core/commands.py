@@ -143,7 +143,7 @@ def _fresh_id(ctx, a, kind):
     if _in_split_history(ctx, a.id):   # 지워진 벽의 id 를 다시 쓰면 분할 이력을 따라가는 참조가 엉뚱한 새 벽을 가리킨다
         raise DobimError("CONSTRAINT", f"벽 분할 이력에 쓰인 id 라 다시 쓸 수 없다: {a.id}", path="/id",
                          hint="새 id 를 쓰거나 생략하세요")
-    if kind in ("view", "dim", "tag") and ctx.external_def(a.id):   # 가져온 파일에 되살리지 않은 외부 정의가 이 id 로 있다
+    if kind in ("view", "dim", "tag", "sheet") and ctx.external_def(a.id):   # 가져온 파일에 되살리지 않은 외부 정의가 이 id 로 있다
         ctx.warn(f"가져온 파일에 이 id 의 {kind} 정의가 되살려지지 않은 채 남아 있다: 새 정의가 그 속성을 덮어쓴다(지우거나 되돌리면 원래 정의가 돌아온다)")
     return a.id
 
@@ -1263,6 +1263,9 @@ def view_set(ctx, a: ViewSet):
          args=IdArg, since="0.1", examples=[{"id": F.V1}])
 def view_delete(ctx, a: IdArg):
     ctx.row(a.id, "view")
+    used = sorted(sid for sid in ctx.st.by_kind.get("sheet", ()) if a.id in ctx.st.el[sid]["params"]["views"] or ctx.st.el[sid]["params"]["key_plan"] == a.id)
+    if used:   # 시트 정의가 이 뷰를 올리고 있다: 조용히 시트를 고치거나 지우지 않는다
+        raise DobimError("CONSTRAINT", f"시트가 이 뷰를 쓴다: {', '.join(used)}", path="/id", hint="sheet.define 으로 시트에서 뷰를 빼거나 sheet.delete 로 시트를 지우세요")
     gone = _cascade_view_annots(ctx, a.id)
     ctx.put_el(a.id, None)
     return {"deleted": [a.id, *gone]}

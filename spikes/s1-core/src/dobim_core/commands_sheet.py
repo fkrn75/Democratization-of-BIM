@@ -10,11 +10,12 @@ from __future__ import annotations
 
 from typing import Literal
 
-from pydantic import Field
+from pydantic import Field, create_model, model_validator
 
 from dobim_core import commands as C
 from dobim_core import drawing as D
 from dobim_core import drawing_export as DX
+from dobim_core import fixture as F
 from dobim_core.commands import A, Id, Name, Num, Text, command
 from dobim_core.errors import DobimError
 
@@ -140,7 +141,7 @@ def build_profile() -> dict:
         "line_types": {"solid": "보이는 선·절단선", "dashed": "방화벽 중심선·레벨 기준선", "dash_dot": "통심선·단면 절단선·부위 상세 표시", "dimension": f"치수선 0.13mm, 색 {DX.ANNOT_COLOR}"},
         "line_overlap": {"priority": dict(D.PRIORITY), "rule": "같은 직선 위에서 겹치거나 이어진 선분은 하나로 병합하고, 절단선이 덮는 부분은 아래 등급의 선을 지운다. "
                                                            "그리는 순서는 해치·보이는 선·기호선·절단선(굵은 선이 위)", "draw_order": list(DX.LINE_ORDER),
-                         "corner_fill": "L 조인 모서리는 표시용 채움으로 닫는다" if D.CORNER_FILL else "없음"},
+                         "corner_fill": "L 조인 모서리는 코어 벽 형상(조인한 벽 중 id 가 작은 쪽이 상대 벽 반 두께 연장)으로 닫고 IFC 형상과 같다" if D.CORNER_FILL else "없음"},
         "hatch": {"types": [{"id": "ext-finish-45", "angle_deg": 45, "step_mm": D.HATCH_STEP, "line_mm": DX.STYLE["hatch"][0], "use": "입면 외벽 마감 재료(재료 이름 문자 병기)"},
                             {"id": "section-fill", "fill": "#cfcfcf", "use": "절단면 채움(벽·기둥·슬래브·계단)"}]},
         "text_font": {"font": SH.FONT, "pdf": "OFL 고딕 부분집합 내장", "heights_mm": {"room_name": D.LABEL_NAME_H, "room_area": D.LABEL_SUB_H, "fire_mark": D.LABEL_FIRE_H,
@@ -160,3 +161,121 @@ def build_profile() -> dict:
 def drawing_profile(ctx, a: DrawingProfile):
     """이 엔진의 도면 작성 기준 값(용지·배치·방위·레벨·표제란·축척·선 굵기·선 겹침·해치·문자·치수·기호)."""
     return build_profile()
+
+
+# ================================================================ 시트 정의의 저장·왕복 (B-04)
+# 시트(뷰 배치·표제란 인자)는 뷰와 같은 비 IFC 의도 요소(kind sheet)로 모델에 저장한다. 정의는 DoBIM_Defs 속성으로 IFC 에 실려 왕복한다(viewdefs).
+# 시트 파일(SVG·PDF)은 정의에서 다시 만드는 파생물이다. sheet.export 의 인자와 같은 값을 저장하므로 저장한 정의로 낸 파일은 같은 인자로 낸 것과 바이트까지 같다.
+def _sheet_def_check(self):
+    """시트 정의가 스스로 맞아야 하는 것(커맨드와 가져오기가 함께 쓴다): 뷰는 한 번씩, 개정 구름·부위 상세는 올린 뷰만 가리킨다."""
+    if len(set(self.views)) != len(self.views):
+        raise ValueError("같은 뷰를 두 번 올릴 수 없다")
+    on = set(self.views)
+    if any(r.view and r.view not in on for r in self.revisions):
+        raise ValueError("개정 구름을 둘 뷰가 시트에 없다")
+    if any(c.view not in on for c in self.callouts):
+        raise ValueError("부위 상세 표시를 둘 뷰가 시트에 없다")
+    if self.key_zone is not None and self.key_plan is None:
+        raise ValueError("key_zone 은 key_plan 과 함께 준다")
+    return self
+
+
+_DEF_FIELDS = {n: (f.annotation, f) for n, f in C.SheetExport.model_fields.items() if n not in ("path", "overwrite")}
+SheetDef = create_model(
+    "SheetDef", __base__=A, __validators__={"_chk": model_validator(mode="after")(_sheet_def_check)},
+    name=(Name, Field(description="시트 이름(시트끼리 겹치지 않는다)")), **_DEF_FIELDS)
+
+
+class SheetDefine(SheetDef):
+    id: Id | None = Field(None, description="시트 id. 이미 있는 시트 id 면 그 정의를 통째로 바꾸고, 생략하면 새로 만든다")
+
+
+def _sheet_name_free(ctx, name, except_id=None):
+    for s in ctx.st.by_kind.get("sheet", ()):
+        if s != except_id and ctx.st.el[s]["params"]["name"] == name:
+            raise DobimError("CONSTRAINT", f"같은 이름의 시트가 있다: {name}", path="/name")
+
+
+def _check_sheet_views(ctx, params) -> None:
+    for v in params["views"]:
+        ctx.row(v, "view")
+    if params["key_plan"] is not None:
+        if ctx.row(params["key_plan"], "view")["params"]["type"] != "plan":
+            raise DobimError("CONSTRAINT", "키 플랜은 평면 뷰여야 한다", path="/key_plan")
+
+
+@command("sheet.define", kind="mutation", risk="write", group="view",
+         summary="시트 정의(뷰 배치·표제란 인자)를 모델에 저장",
+         args=SheetDefine, since="0.4",
+         examples=[{"id": F.SH1, "name": "A-101 1층 평면", "views": [F.V1], "paper": "A3", "project_name": "예시 프로젝트", "sheet_number": "A-101", "date": "2026-01-01"}])
+def sheet_define(ctx, a: SheetDefine):
+    """시트를 저장한다. 저장한 정의는 모델과 함께 .dobim·IFC 로 왕복하고 병합·실행 취소를 따른다. 파일로 내는 것은 sheet.render 다."""
+    sid = a.id
+    if sid is not None and sid in ctx.st.el:
+        r = ctx.row(sid, "sheet")
+    else:
+        r = None
+        a.id = sid = C._fresh_id(ctx, a, "sheet")
+    params = a.model_dump(mode="json", exclude={"id"})
+    _sheet_name_free(ctx, a.name, sid if r else None)
+    _check_sheet_views(ctx, params)
+    ctx.put_el(sid, C.row("sheet", "", "sheet.basic", params) if r is None else dict(r, params=params))
+    return {"id": sid, "created": r is None}
+
+
+@command("sheet.delete", kind="mutation", risk="write", group="view", summary="시트 정의를 지운다(뷰는 그대로)",
+         args=C.IdArg, since="0.4", examples=[{"id": F.SH1}])
+def sheet_delete(ctx, a: C.IdArg):
+    ctx.row(a.id, "sheet")
+    ctx.put_el(a.id, None)
+    return {"deleted": [a.id]}
+
+
+class SheetList(A):
+    pass
+
+
+def sheets_using(st, vid) -> list[str]:
+    """뷰 vid 를 올린 시트 id(정렬)."""
+    return sorted(s for s in st.by_kind.get("sheet", ()) if vid in st.el[s]["params"]["views"] or st.el[s]["params"]["key_plan"] == vid)
+
+
+@command("sheet.list", kind="query", risk="read", group="view", summary="저장된 시트 정의 목록",
+         args=SheetList, idempotent=True, examples=[{}])
+def sheet_list(ctx, a: SheetList):
+    st = ctx.st
+    items = []
+    for s in sorted(st.by_kind.get("sheet", ())):
+        p = st.el[s]["params"]
+        used = list(p["views"]) + ([p["key_plan"]] if p["key_plan"] else [])
+        items.append({"id": s, "name": p["name"], "sheet_number": p["sheet_number"], "paper": p["paper"], "views": list(p["views"]),
+                      "missing_views": sorted({v for v in used if v not in st.el or st.el[v]["kind"] != "view"})})
+    return {"items": items, "count": len(items)}
+
+
+class SheetRender(A):
+    id: Id = Field(description="저장된 시트 정의의 id")
+    path: str = Field(max_length=260, description="작업 폴더 안의 .svg 또는 .pdf 경로")
+    overwrite: bool = Field(False, description="거짓이면 이미 있는 파일을 덮어쓰지 않는다. 참이면 덮어쓰며 덮어쓰기 전에 자동 스냅숏을 남긴다(확인 토큰 필요)")
+
+
+def _export_args(ctx, a: SheetRender):
+    """저장된 정의 -> sheet.export 인자(같은 값이라 같은 파일이 나온다). 뷰가 사라졌으면 CONSTRAINT."""
+    p = {k: v for k, v in ctx.row(a.id, "sheet")["params"].items() if k != "name" and v is not None}   # 없는 선택 값(null)은 생략으로 낸다(sheet.export 가 null 을 받지 않는다)
+    missing = [v for v in [*p["views"], *([p["key_plan"]] if p.get("key_plan") else [])] if v not in ctx.st.el or ctx.st.el[v]["kind"] != "view"]
+    if missing:
+        raise DobimError("CONSTRAINT", f"시트가 올린 뷰가 없다: {', '.join(sorted(set(missing)))}", path="/id", hint="sheet.define 으로 시트를 고치세요")
+    return C.SheetExport.model_validate(dict(p, path=a.path, overwrite=a.overwrite))
+
+
+def _render_preview(ctx, a: SheetRender):
+    return C._sheet_preview(ctx, _export_args(ctx, a))
+
+
+@command("sheet.render", kind="session", risk="destructive", group="view",
+         summary="저장된 시트 정의로 SVG·PDF 내보내기",
+         args=SheetRender, since="0.4", preview=_render_preview,
+         examples=[{"id": F.SH1, "path": "sheet-saved-example.svg", "overwrite": True}])
+def sheet_render(ctx, a: SheetRender):
+    """저장된 시트 정의를 sheet.export 와 같은 방식으로 파일에 낸다."""
+    return C.sheet_export(ctx, _export_args(ctx, a))

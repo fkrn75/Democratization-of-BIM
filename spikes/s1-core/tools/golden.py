@@ -103,7 +103,9 @@ def _check_golden(work: Path) -> list[str]:
     solid = wl.Representation.Representations[0].Items[0]
     expect("IFC 벽 압출 깊이", solid.Depth, 3000.0)
     pts = [tuple(p.Coordinates) for p in solid.SweptArea.OuterCurve.Points]
-    expect("IFC 벽 윤곽", pts, [(0.0, -100.0), (6000.0, -100.0), (6000.0, 100.0), (0.0, 100.0), (0.0, -100.0)])
+    # 손계산: W1 은 끝(6000)에서 W2(두께 200, 수직) 와 L 조인이고 id 가 더 작아, 상대 벽 반 두께(100)만큼 연장해 모서리를 닫는다(6000 -> 6100).
+    # 조인 없이 6000 에서 끝나면 모서리에 반 두께 노치가 남는다(B-02: 도면과 IFC 형상이 같아야 한다)
+    expect("IFC 벽 윤곽", pts, [(0.0, -100.0), (6100.0, -100.0), (6100.0, 100.0), (0.0, 100.0), (0.0, -100.0)])
     s.close()
 
     # ---- 2. 경계: 문이 정리된 호스트 시작선에 정확히 닿으면 ok, 0.1mm 벗어나면 outside

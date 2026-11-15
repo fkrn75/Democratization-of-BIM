@@ -12,6 +12,8 @@ from dobim_core.family import spec as FS
 
 JOIN_MAX_EXT = 1000.0   # 조인 지점이 벽 끝에서 이 거리 안일 때만 조인이 성립
 MIN_TRIMMED = 1.0       # 조인 후 벽 길이 하한. 미달이면 조인을 무시하고 경고 상태로 둔다
+MIN_SIN = 0.2           # 조인 각이 너무 얕으면(sin 이 이보다 작으면) L 조인 모서리 연장을 하지 않는다
+CORNER_EXTEND = True    # L 조인 모서리를 코어 형상으로 닫는다(id 가 작은 벽이 상대 벽 반 두께만큼 더 나간다). 도면과 IFC 가 같은 형상을 쓴다(BIM 지침 B-02)
 PARALLEL_EPS = 1e-9
 
 
@@ -94,14 +96,46 @@ def wall_trim(g, w):
     return (start, end, "ok")
 
 
+def wall_extent(g, w):
+    """벽 형상의 지역 x 범위(시작, 끝). 조인 자르기(wall_trim)가 축선 교점에서 자르면 L 조인 바깥 모서리에 반 두께 노치가 남는다.
+    그래서 id 가 작은 벽이 상대 벽 반 두께(/|sin|)만큼 더 나가 모서리를 닫는다. T 조인(상대 벽 중간에 닿음)·얕은 각·퇴화한 조인은 연장하지 않는다.
+    IFC 투영의 벽 윤곽(wall_footprint)과 도면(drawing.wall_range)이 모두 이 값을 쓴다: 도면과 IFC 가 같은 형상이다.
+    wall_trim(논리 길이: 치수 참조·일람표 길이·문 범위)은 그대로 축선 교점이다."""
+    start, end, status = g.q(wall_trim, w)
+    if not CORNER_EXTEND or status != "ok":
+        return (start, end)
+    x, y, c, s, length = g.q(wall_frame, w)
+    for o in g.q(wall_joins, w):
+        if not w < o:
+            continue
+        pt = g.q(join_point, w, o)
+        if pt is None:
+            continue
+        ox, oy, oc, os_, olen = g.q(wall_frame, o)
+        t = (pt[0] - x) * c + (pt[1] - y) * s
+        to = (pt[0] - ox) * oc + (pt[1] - oy) * os_
+        if min(abs(to), abs(to - olen)) > JOIN_MAX_EXT:
+            continue                                      # 상대 벽의 끝이 아니라 중간에 닿는 T 조인: 연장 없음
+        sin = c * os_ - s * oc
+        if abs(sin) < MIN_SIN:
+            continue
+        ext = el(g, o)["params"]["thickness"] / 2.0 / abs(sin)
+        if abs(t) <= abs(t - length):
+            if abs(t) <= JOIN_MAX_EXT:
+                start = min(start, t - ext)
+        elif abs(t - length) <= JOIN_MAX_EXT:
+            end = max(end, t + ext)
+    return (start, end)
+
+
 def wall_length(g, w):
     start, end, _ = g.q(wall_trim, w)
     return end - start
 
 
 def wall_footprint(g, w):
-    """벽 지역 좌표의 평면 윤곽. 벽을 평행 이동해도 조인이 그대로면 값이 같다(조기 차단)."""
-    start, end, _ = g.q(wall_trim, w)
+    """벽 지역 좌표의 평면 윤곽(L 조인 모서리 연장 포함: wall_extent). 벽을 평행 이동해도 조인이 그대로면 값이 같다(조기 차단)."""
+    start, end = g.q(wall_extent, w)
     half = el(g, w)["params"]["thickness"] / 2.0
     return ((start, -half), (end, -half), (end, half), (start, half))
 

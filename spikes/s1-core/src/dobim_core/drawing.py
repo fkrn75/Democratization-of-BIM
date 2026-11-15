@@ -32,8 +32,7 @@ ARC_N = 8           # 문 회전 호의 분할 수(90도당)
 CIRC_N = 24         # 원 단면을 다각형으로 근사할 때 분할 수
 PI = 3.141592653589793
 NBR_PAD = 1.0       # 이웃 판정 경계 상자 여유(mm)
-CORNER_FILL = True  # L 조인 모서리를 채워 그린다 (코어 투영은 축선 교점까지만 잘라 모서리가 비어 있다)
-MIN_SIN = 0.2       # 조인 각이 너무 얕으면(sin 이 이보다 작으면) 모서리 보정을 하지 않는다
+CORNER_FILL = Q.CORNER_EXTEND  # L 조인 모서리는 코어 형상(Q.wall_extent)이 닫는다: 도면과 IFC 가 같다
 PRIORITY = {"cut": 3, "symbol": 2, "proj": 1}
 
 ELEV_DIR = {"N": (0.0, -1.0), "E": (-1.0, 0.0), "S": (0.0, 1.0), "W": (1.0, 0.0)}   # 건물을 바라보는 방향
@@ -126,32 +125,8 @@ def scope_walls(g, v):
 
 # ================================================================ 벽 형상 (뷰와 무관)
 def wall_range(g, w):
-    """벽 지역 x 범위. 코어의 조인 자르기(wall_trim)에 L 조인 모서리 보정을 더한다: id 가 작은 벽이 상대 벽 반 두께만큼 더 나간다."""
-    start, end, status = g.q(Q.wall_trim, w)
-    if not CORNER_FILL or status != "ok":
-        return (start, end)
-    x, y, c, s, length = g.q(Q.wall_frame, w)
-    for o in g.q(Q.wall_joins, w):
-        if not w < o:
-            continue
-        pt = g.q(Q.join_point, w, o)
-        if pt is None:
-            continue
-        ox, oy, oc, os_, olen = g.q(Q.wall_frame, o)
-        t = (pt[0] - x) * c + (pt[1] - y) * s
-        to = (pt[0] - ox) * oc + (pt[1] - oy) * os_
-        if min(abs(to), abs(to - olen)) > Q.JOIN_MAX_EXT:
-            continue                                      # 상대 벽의 끝이 아니라 중간에 닿는 T 조인: 보정 없음
-        sin = c * os_ - s * oc
-        if abs(sin) < MIN_SIN:
-            continue
-        ext = Q.el(g, o)["params"]["thickness"] / 2.0 / abs(sin)
-        if abs(t) <= abs(t - length):
-            if abs(t) <= Q.JOIN_MAX_EXT:
-                start = min(start, t - ext)
-        elif abs(t - length) <= Q.JOIN_MAX_EXT:
-            end = max(end, t + ext)
-    return (start, end)
+    """벽 지역 x 범위: 코어의 벽 형상 범위(Q.wall_extent: 조인 자르기 + L 조인 모서리 연장)다. IFC 투영과 같은 값이라 도면과 IFC 형상이 같다."""
+    return g.q(Q.wall_extent, w)
 
 
 def hosted_opening(g, d, elev):

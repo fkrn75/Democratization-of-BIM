@@ -399,6 +399,38 @@ def judge_sheet2_items(out: Path, run: dict, base: dict):
     return res
 
 
+def judge_bim_items(out: Path, run: dict, base: dict):
+    """여섯 번째 작업 항목(B-02 추출 형상, B-04 뷰 원본 저장)을 run.json 의 probe 로 판정한다."""
+    return judge_corner(run) | judge_sheet_def(run)
+
+
+def judge_corner(run: dict):
+    """B-02 추출 형상 변경 금지: 도면이 그리는 모든 벽의 범위가 내보낸 IFC 파일의 실제 형상과 같고(0.01mm 이내), 예전에 도면만 채우던 L 조인 모서리가
+    IFC 형상에도 들어 있을 때만 충족이다. 도면 내용 = BIM 데이터(IFC)의 정의를 따른다."""
+    pr = run.get("corner_probe")
+    if not pr:
+        return {}
+    if pr["max_diff_mm"] < 0.01 and pr["extended_walls"] > 0:
+        return {"B-02": (OK, f"벽 {pr['walls']}개 모두 도면이 그리는 범위와 내보낸 IFC 파일의 실제 형상이 같다(최대 차이 {pr['max_diff_mm']}mm). "
+                             f"L 조인 모서리를 연장한 벽 {pr['extended_walls']}개는 IFC 형상에도 연장이 들어 있다(코어 조인 형상). 논리 길이·치수 참조·일람표 길이는 그대로")}
+    return {"B-02": (PART, f"도면과 IFC 형상이 일부 다르다(최대 차이 {pr['max_diff_mm']}mm, 연장 벽 {pr['extended_walls']}개)")}
+
+
+def judge_sheet_def(run: dict):
+    """B-04 도면 뷰의 원본 저장: 시트 정의(뷰 배치·표제란 인자)를 모델에 저장하고(sheet.define), 저장한 정의로 낸 파일이 직접 낸 시트와 바이트까지 같고,
+    IFC 로 내보냈다 가져와도 정의가 되살고(해시 3종 같음) 되살린 정의로 낸 파일도 같을 때만 충족이다. 뷰·주석 정의의 IFC 왕복은 이전부터 있었다(ADR-0015)."""
+    pr = run.get("sheet_def_probe")
+    if not pr:
+        return {}
+    n = len(pr["sheets"])
+    ok_all = (n >= 3 and all(pr["render_equals_export"].values()) and all(pr["hash_equal"]) and pr["restored"] == pr["sheets"] and not pr["import_warnings"]
+              and all(pr["roundtrip_render_equals_export"].values()) and pr["missing_views"] == 0)
+    if ok_all:
+        return {"B-04": (OK, f"시트 정의 {n}개를 모델에 저장(sheet.define): 저장한 정의로 낸 SVG·PDF {len(pr['render_equals_export'])}개가 sheet.export 산출과 바이트까지 같다. "
+                             f"IFC 로 내보냈다 가져오면 정의 {len(pr['restored'])}개가 되살고 해시 3종이 같으며, 되살린 정의로 낸 파일도 같다(경고 0). 뷰·주석 정의는 이전부터 IFC 로 왕복한다")}
+    return {"B-04": (PART, f"시트 정의 저장은 있으나 검증이 일부 어긋났다: {json.dumps(pr, ensure_ascii=False)[:300]}")}
+
+
 def judge_gate(items: dict, out: Path, run: dict):
     """G2 5-1절 자동 표현 대상 8항목 중 이번 작업이 다루는 #2·#7·#8 을 근거와 함께 낸다(128항목 집계와 별개). 반환: [(번호, 항목, 판정, 근거)]"""
     rows = [("2", "기둥·벽·창문 위치", items["L-02"]["verdict"], items["L-02"]["reason"])]
@@ -453,7 +485,7 @@ def main():
     dg = digest_same(out, Path(o.g1) if o.g1 else None)
     changed = []
     for judged in (judge_sheet_items(out, run, items), judge_element_items(out, run, items), judge_slab_height_items(out, run, items),
-                   judge_stair_space_items(out, run, items), judge_sheet2_items(out, run, items)):
+                   judge_stair_space_items(out, run, items), judge_sheet2_items(out, run, items), judge_bim_items(out, run, items)):
         for i, (v, why) in judged.items():
             if items[i]["verdict"] != v:
                 changed.append((i, items[i]["verdict"], v))
