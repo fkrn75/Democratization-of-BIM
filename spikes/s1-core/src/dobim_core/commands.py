@@ -25,7 +25,7 @@ from dobim_core import limits, merge
 from dobim_core import queries as Q
 from dobim_core import registry
 from dobim_core.errors import DobimError
-from dobim_core.kinds import KIND_NAMES, READ_REL_NAMES, REL_KINDS, param_ref_targets, polygon_area2, polygon_problem
+from dobim_core.kinds import KIND_NAMES, READ_REL_NAMES, REL_KINDS, is_corridor, param_ref_targets, polygon_area2, polygon_problem
 from dobim_core.paths import resolve_in_workspace
 from dobim_core.registry import command
 
@@ -774,6 +774,75 @@ def stair_delete(ctx, a: IdArg):
     return {"deleted": [a.id]}
 
 
+# ---------------------------------------------------------------- 공간 (설계: elements-design.md 7절)
+class SpaceCreate(A):
+    id: Id | None = None
+    level: Id
+    boundary: SlabBoundary
+    name: Name | None = None
+    category: Text = Field("", description="분류(예: 복도, 사무실). 비어 있어도 된다. 복도 판정에 쓴다")
+    height: Pos = 2700.0
+
+
+@command("space.create", kind="mutation", risk="write", group="model.space", summary="공간(방) 생성(레벨 + 경계 다각형 + 실명·분류)",
+         args=SpaceCreate, since="0.2",
+         examples=[{"level": F.LV1, "boundary": [[0, 0], [6000, 0], [6000, 4000], [0, 4000]], "name": "사무실", "category": "사무실"}])
+def space_create(ctx, a: SpaceCreate):
+    _fresh_id(ctx, a, "space")
+    ctx.authored(a.level, "level", what="레벨에 공간을 추가하는 것")
+    boundary = _slab_boundary(a.boundary)
+    a.name = a.name or f"SP-{a.id[-6:]}"
+    ctx.put_el(a.id, row("space", "IfcSpace", "space.basic", {"name": a.name, "category": a.category, "boundary": boundary, "height": a.height}))
+    ctx.rel("on_level", a.id, a.level, True)
+    return {"id": a.id}
+
+
+class SpaceSet(A):
+    forbid_null = True
+    id: Id
+    name: Name | None = None
+    category: Text | None = None
+    boundary: SlabBoundary | None = None
+    height: Pos | None = None
+
+    @model_validator(mode="after")
+    def _any(self):
+        if all(v is None for v in (self.name, self.category, self.boundary, self.height)):
+            raise ValueError("바꿀 필드가 하나도 없다")
+        return self
+
+
+@command("space.set", kind="mutation", risk="write", group="model.space", summary="공간 속성 변경(실명·분류·경계·높이)",
+         args=SpaceSet, since="0.2", examples=[{"id": F.SP1, "category": "복도"}])
+def space_set(ctx, a: SpaceSet):
+    r = ctx.authored(a.id, "space")
+    p = dict(r["params"])
+    for k in ("name", "category", "height"):
+        if getattr(a, k) is not None:
+            p[k] = getattr(a, k)
+    if a.boundary is not None:
+        p["boundary"] = _slab_boundary(a.boundary)
+    ctx.put_el(a.id, dict(r, params=p))
+    return {"id": a.id}
+
+
+@command("space.move", kind="mutation", risk="write", group="model.space", summary="공간을 평행 이동한다",
+         args=SlabMove, since="0.2", examples=[{"id": F.SP1, "dx": 600, "dy": 0}])
+def space_move(ctx, a: SlabMove):
+    r = ctx.authored(a.id, "space")
+    b = [[x + a.dx, y + a.dy] for x, y in r["params"]["boundary"]]
+    ctx.put_el(a.id, dict(r, params=dict(r["params"], boundary=b)))
+    return {"id": a.id, "boundary": b}
+
+
+@command("space.delete", kind="mutation", risk="write", group="model.space", summary="공간 삭제",
+         args=IdArg, since="0.2", examples=[{"id": F.SP1}])
+def space_delete(ctx, a: IdArg):
+    ctx.authored(a.id, "space", what="삭제")
+    _delete_one(ctx, a.id)
+    return {"deleted": [a.id]}
+
+
 class PsetSet(A):
     id: Id
     pset: PsetName
@@ -868,6 +937,9 @@ def element_get(ctx, a: ElementGet):
     elif r["kind"] == "slab":
         zb, zt = ctx.g.q(Q.slab_zrange, a.id)
         out["derived"] = {"bottom": zb, "top": zt}
+    elif r["kind"] == "space":
+        b = r["params"]["boundary"]
+        out["derived"] = {"area_m2": abs(polygon_area2(b)) / 2.0 / 1e6, "corridor": is_corridor(r["params"]["name"], r["params"]["category"])}
     elif r["kind"] == "stair":
         zb, zt = ctx.g.q(Q.stair_zrange, a.id)
         p = r["params"]
@@ -1262,7 +1334,7 @@ def _render_view(ctx, vid):
     lines = ctx.g.q(D.view_lines, vid)
     _warn_omitted(ctx, ctx.g.q(D.view_omitted, vid))
     return {"type": p["type"], "name": p["name"], "scale": p["scale"], "lines": lines, "fills": ctx.g.q(D.view_fills, vid),
-            "datums": levels, "annots": ctx.g.q(AN.view_annots, vid)}
+            "datums": levels, "annots": ctx.g.q(AN.view_annots, vid), "labels": ctx.g.q(D.view_labels, vid)}
 
 
 def _view_export_target(ctx, a: ViewExport):
@@ -1313,7 +1385,7 @@ def view_export(ctx, a: ViewExport):
     except BaseException:   # 쓰지 못했으면 방금 만든 스냅숏은 필요 없다(재시도마다 쌓이지 않게)
         _drop_snapshot(p, snap, ctx.eng.workspace)
         raise
-    return {"path": p.name, "bytes": len(blob), "format": ext[1:], "segments": len(data["lines"]), "fills": len(data["fills"]), "annotations": len(data["annots"]),
+    return {"path": p.name, "bytes": len(blob), "format": ext[1:], "segments": len(data["lines"]), "fills": len(data["fills"]), "annotations": len(data["annots"]), "labels": len(data["labels"]),
             "font_embedded": font_name, "non_ascii_dropped": dropped, "digest": D.view_summary(data["lines"])["digest"], "rev": ctx.eng.rev, "snapshot": snap}
 
 

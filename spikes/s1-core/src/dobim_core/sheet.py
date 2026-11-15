@@ -91,10 +91,12 @@ def view_prims(sh: Sheet, data, tx, ty, datums, dx0, dx1):
     for name, z in datums:
         sh.line(tx(dx0), ty(z), tx(dx1), ty(z), DX.DATUM_W, "#555555", (3.0, 1.5))
         sh.text(tx(dx0) + 1.0, ty(z) - 0.8, 2.6, DX.datum_label(name, z), color="#555555")
-    for cls in ("proj", "symbol", "cut"):
+    for cls in DX.LINE_ORDER:
         wd, col = DX.STYLE[cls]
         for _, x0, y0, x1, y1 in (ln for ln in data["lines"] if ln[0] == cls):
             sh.line(tx(x0), ty(y0), tx(x1), ty(y1), wd, col)
+    for x, y, text, size, anchor in data.get("labels", ()):
+        sh.text(tx(x), ty(y), size, text, anchor, "#000000")
     for it in data.get("annots", ()):
         t, aid = it[0], it[1]
         if t == "dim":

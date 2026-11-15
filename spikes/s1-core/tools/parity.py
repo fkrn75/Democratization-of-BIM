@@ -33,12 +33,14 @@ _FAMILY_PRE = ("family.place", {"id": "0" * 21 + "1", "family": "door.single", "
 _V2 = ("view.create", {"id": F.V2, "name": "B-B 단면", "type": "section", "p1": [-1000, 2000], "p2": [7000, 2000]})   # 높이 치수 자동 배치 예시의 준비(단면 뷰)
 _S1 = ("slab.create", {"id": F.S1, "level": F.LV1, "boundary": [[0, 0], [6000, 0], [6000, 4000], [0, 4000]], "thickness": 200})
 _ST1 = ("stair.create", {"id": F.ST1, "level": F.LV1, "run": [1000, 1000, 5000, 1000], "width": 1200, "height": 3000, "risers": 18})
+_SP1 = ("space.create", {"id": F.SP1, "level": F.LV1, "boundary": [[0, 0], [6000, 0], [6000, 4000], [0, 4000]], "name": "사무실", "category": "사무실"})
 PRE = {"history.redo": [("history.undo", {})], "ifc.restore": [_EXP, _EXP], "ifc.snapshots": [_EXP, _EXP],
        "view.set": [_V1], "view.delete": [_V1], "view.list": [_V1], "view.linework": [_V1], "view.export": [_V1], "view.affected": [_V1],
        "annot.dim.create": [_V1], "annot.tag.create": [_V1], "annot.rebind": [_V1, _A1], "annot.delete": [_V1, _A1],
        "annot.list": [_V1, _A1], "annot.check": [_V1, _A1],
        "family.set": [_FAMILY_PRE], "annot.dim.heights": [_V2], "slab.set": [_S1], "slab.move": [_S1], "slab.delete": [_S1],
-       "stair.set": [_ST1], "stair.move": [_ST1], "stair.delete": [_ST1]}
+       "stair.set": [_ST1], "stair.move": [_ST1], "stair.delete": [_ST1],
+       "space.set": [_SP1], "space.move": [_SP1], "space.delete": [_SP1]}
 ERROR_CASES = [
     ("없는 커맨드", "no.such.command", {}, {}),
     ("스키마 오류(타입)", "wall.move", {"id": F.W1, "dx": "abc"}, {}),

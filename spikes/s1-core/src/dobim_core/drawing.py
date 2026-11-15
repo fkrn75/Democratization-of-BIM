@@ -1137,6 +1137,82 @@ def stair_lines(g, v, s):
     return tuple(lines)
 
 
+# ================================================================ 공간 (kinds "space") 과 문자 층
+# 공간은 선·채움을 만들지 않는다(윤곽은 벽이 준다). 평면에 실명과 면적 문자(labels)만 놓는다.
+# 문자 항목: (x, y, 문자, 글자 높이 mm(용지 위), 앵커 "middle"). 좌표는 선분과 같은 뷰 좌표(평면 x,y / 단면·입면 s,z).
+LABEL_NAME_H, LABEL_SUB_H = 2.5, 2.0
+
+
+def space_info(g, s):
+    """(경계 다각형(반시계 튜플), 실명, 분류) 또는 None. 저작 공간만 그린다."""
+    row = Q.el(g, s)
+    if row is None or row["kind"] != "space" or row["origin"] != "authored":
+        return None
+    p = row["params"]
+    poly = [tuple(q) for q in p["boundary"]]
+    if _area2(poly) < 0:
+        poly.reverse()
+    return (tuple(poly), p["name"], p["category"])
+
+
+def all_spaces(g):
+    out = []
+    for b in range(Q.NB):
+        out.extend(e for e in Q.bucket_ids(g, "space", b) if g.q(space_info, e) is not None)
+    return tuple(sorted(out))
+
+
+def scope_spaces(g, v):
+    """평면은 그 레벨에 놓인 공간만, 단면·입면은 없다."""
+    cfg = g.q(view_cfg, v)
+    if cfg is None or cfg[0] != "plan" or cfg[1] is None:
+        return ()
+    return tuple(e for e in sorted(Q.rel_in(g, "on_level", cfg[1])) if g.q(space_info, e) is not None)
+
+
+def polygon_centroid(poly):
+    """다각형의 면적 무게중심. 면적이 0 에 가까우면 꼭짓점 평균."""
+    a2 = _area2(poly)
+    n = len(poly)
+    if abs(a2) < 1e-6:
+        return (sum(p[0] for p in poly) / n, sum(p[1] for p in poly) / n)
+    cx = cy = 0.0
+    for i in range(n):
+        p, q = poly[i], poly[(i + 1) % n]
+        c = p[0] * q[1] - q[0] * p[1]
+        cx += (p[0] + q[0]) * c
+        cy += (p[1] + q[1]) * c
+    return (cx / (3.0 * a2), cy / (3.0 * a2))
+
+
+def area_text(poly) -> str:
+    """면적 문자: ㎡, 소수 둘째 자리."""
+    return f"{abs(_area2(poly)) / 2.0 / 1.0e6:.2f}㎡"
+
+
+def plan_space_labels(g, v, s):
+    """평면의 공간 하나: 실명(위)과 면적(아래) 문자."""
+    cfg = g.q(view_cfg, v)
+    info = g.q(space_info, s)
+    if info is None or cfg is None or cfg[0] != "plan":
+        return ()
+    cx, cy = polygon_centroid(info[0])
+    sc = cfg[4]
+    return ((round(cx, 3), round(cy + 0.9 * sc, 3), info[1], LABEL_NAME_H, "middle"),
+            (round(cx, 3), round(cy - 2.0 * sc, 3), area_text(info[0]), LABEL_SUB_H, "middle"))
+
+
+def view_labels(g, v):
+    """뷰의 문자 층: ((x, y, 문자, 높이 mm, 앵커), ...). 선분과 달리 병합하지 않고 만든 순서(공간 id 순 등)를 유지한다."""
+    cfg = g.q(view_cfg, v)
+    if cfg is None:
+        return ()
+    out = []
+    for s in g.q(scope_spaces, v):
+        out.extend(g.q(plan_space_labels, v, s))
+    return tuple(out)
+
+
 def _door_symbol(sol, op):
     """문 한 개의 평면 기호: 열린 문짝 선 + 1/4 원 호. +v 쪽으로 열리고 경첩은 개구부의 시작 쪽이다.
     호는 유리식 매개화로 sin/cos 없이 그린다: 각 = 2*atan(t) (t 0..1 -> 0..90도)."""
@@ -1579,7 +1655,8 @@ VIEW_SCOPED = frozenset({view_cfg, scope_walls, view_omitted, plan_pieces, plan_
                          vcut_rects, vedges, vwall_lines, view_lines, view_fills,
                          scope_fams, plan_fam_parts, _fam_vpieces, vfam_bbox, vfam_cut_rects, vfam_edges, vfam_nbr_pieces, fam_lines,
                          vfam_hosted_edges, scope_slabs, plan_slab_parts, _slab_vpieces, slab_vbbox, slab_cut_rects, slab_vedges, slab_nbr_walls, slab_lines,
-                         scope_stairs, plan_stair_parts, _stair_vpieces, stair_vbbox, stair_cut_rects, stair_vedges, stair_nbr_walls, stair_lines})
+                         scope_stairs, plan_stair_parts, _stair_vpieces, stair_vbbox, stair_cut_rects, stair_vedges, stair_nbr_walls, stair_lines,
+                         scope_spaces, plan_space_labels, view_labels})
 
 
 def forget_views(g, vids) -> int:

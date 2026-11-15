@@ -90,7 +90,7 @@ def _name(v):
 def _parse_intent(kind: str, text: str) -> dict:
     """DoBIM_Intent 텍스트를 현재 코어 스키마로 해석한다. 못 하면 ValueError. 숫자는 float 로 맞춘다(저작 행과 같은 모양)."""
     d = json.loads(text)
-    extra = {"level": (), "wall": ("level", "joins"), "door": ("host",), "slab": ("level",), "stair": ("level",)}[kind]
+    extra = {"level": (), "wall": ("level", "joins"), "door": ("host",), "slab": ("level",), "stair": ("level",), "space": ("level",)}[kind]
     if not isinstance(d, dict) or set(d) != {"kind", "params", "family_id", *extra} or d["kind"] != kind or d["family_id"] != FAMILY[kind]:
         raise ValueError("의도 모양이 현재 스키마와 다르다")
     p = d["params"]
@@ -120,6 +120,19 @@ def _parse_intent(kind: str, text: str) -> dict:
         if why or K.polygon_area2(pts) <= 0:   # 의도는 반시계로 저장한다(slab.create 가 정규화)
             raise ValueError(f"슬래브 경계가 올바르지 않다({why or '시계 방향'})")
         out = {"name": _name(p["name"]), "boundary": pts, "thickness": _num(p["thickness"], pos=True), "top_offset": _num(p["top_offset"])}
+    elif kind == "space":
+        if (set(p) != {"name", "category", "boundary", "height"} or not isinstance(p["boundary"], list) or not 3 <= len(p["boundary"]) <= 256
+                or not isinstance(p["category"], str) or len(p["category"]) > 255):
+            raise ValueError("공간 params 가 다르다")
+        pts = []
+        for q in p["boundary"]:
+            if not isinstance(q, list) or len(q) != 2:
+                raise ValueError("공간 경계 꼭짓점이 올바르지 않다")
+            pts.append([_num(q[0]), _num(q[1])])
+        why = K.polygon_problem(pts)
+        if why or K.polygon_area2(pts) <= 0:
+            raise ValueError(f"공간 경계가 올바르지 않다({why or '시계 방향'})")
+        out = {"name": _name(p["name"]), "category": p["category"], "boundary": pts, "height": _num(p["height"], pos=True)}
     elif kind == "stair":
         if (set(p) != {"name", "run", "width", "height", "risers", "base_offset"} or not isinstance(p["run"], list) or len(p["run"]) != 4
                 or type(p["risers"]) is not int or not K.STAIR_RISERS_MIN <= p["risers"] <= K.STAIR_RISERS_MAX):
@@ -140,7 +153,7 @@ def _parse_intent(kind: str, text: str) -> dict:
         if not isinstance(lv, str) or not _ID.match(lv) or not isinstance(joins, list) or not all(isinstance(j, str) and _ID.match(j) for j in joins):
             raise ValueError("레벨·조인 참조가 올바르지 않다")
         res["level"], res["joins"] = lv, sorted(set(joins))
-    elif kind in ("slab", "stair"):
+    elif kind in ("slab", "stair", "space"):
         if not isinstance(d["level"], str) or not _ID.match(d["level"]):
             raise ValueError("레벨 참조가 올바르지 않다")
         res["level"] = d["level"]
@@ -396,7 +409,7 @@ def plan_import(data: bytes) -> ImportPlan:
                     bad = "조인 상대가 없거나 대칭이 아니다"
                 elif any(cand[j]["level"] != it["level"] for j in it["joins"]):
                     bad = "다른 레벨의 벽과 조인돼 있다"
-            elif it["kind"] in ("slab", "stair"):
+            elif it["kind"] in ("slab", "stair", "space"):
                 if cand.get(it["level"], {}).get("kind") != "level":
                     bad = "레벨 참조가 없다"
             elif it["kind"] == "door":
@@ -419,12 +432,12 @@ def plan_import(data: bytes) -> ImportPlan:
         if it["kind"] in ("ftype", "finst"):
             rows[g] = {"kind": it["kind"], "ifc_class": cls_of[g], "origin": "authored", "family_id": it["family_id"], "params": it["params"]}
         else:
-            cls = {"level": "IfcBuildingStorey", "wall": "IfcWall", "door": "IfcDoor", "slab": "IfcSlab", "stair": "IfcStair"}[it["kind"]]
+            cls = {"level": "IfcBuildingStorey", "wall": "IfcWall", "door": "IfcDoor", "slab": "IfcSlab", "stair": "IfcStair", "space": "IfcSpace"}[it["kind"]]
             rows[g] = {"kind": it["kind"], "ifc_class": cls, "origin": "authored", "family_id": FAMILY[it["kind"]], "params": it["params"]}
         if it["kind"] == "wall":
             rels.add(("on_level", g, it["level"]))
             rels.update(("joins", min(g, j), max(g, j)) for j in it["joins"])
-        elif it["kind"] in ("slab", "stair"):
+        elif it["kind"] in ("slab", "stair", "space"):
             rels.add(("on_level", g, it["level"]))
         elif it["kind"] == "door":
             rels.add(("hosts", it["host"], g))

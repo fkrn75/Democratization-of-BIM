@@ -149,6 +149,11 @@
 ### 캐시·해시 영향
 공간이 없으면 도면 바이트·해시가 그대로다. 평면 뷰는 그 레벨의 공간·방화 속성·재료만 읽는다(뷰 범위 노드 `scope_spaces`·`plan_space_labels`).
 
+### 구현 결과 (phase1/drawing-stairs)
+- 종류·커맨드: `kinds.ELEMENT_KINDS["space"]`(IfcSpace, 투영 순서 1), `space.create/set/move/delete`(그룹 `model.space`). 경계 검사는 슬래브와 같다(`kinds.polygon_problem`). 복도 판정은 `kinds.is_corridor(이름, 분류)` 한 곳이다. `element.get` 파생값에 `area_m2` 와 `corridor` 가 나온다. 병합 검증은 레벨 없는 공간을 `LEVEL_MISSING` 으로 잡는다.
+- IFC: 경계 프로필 압출, 층 소속은 `IfcRelAggregates`(층이 바뀌면 다시 집합). 가져오기는 집합 관계에서 층을 이어받는다. 해시 형식 번호 "5". 왕복 뒤 의도·파생 해시가 같다.
+- 도면: 뷰 데이터에 문자 층 `labels`(`(x, y, 문자, 높이 mm, 앵커)`)를 더했다. `drawing.view_labels` 가 만들고 SVG(`<g id="labels">`)·PDF·시트가 그린다. 평면 문자는 실명(위)과 면적(아래, `24.00㎡`), 위치는 경계 면적 무게중심이고 간격은 용지 위 일정(축척 곱)이다. 문자가 없으면 출력 바이트가 같다(시험으로 고정). 선 종류 `hatch` 는 8절에서 추가한다.
+
 ## 8. 방화(#3)와 외부 마감(#6): 새 종류 없이
 
 기존 속성 체계(`Pset_WallCommon`·`Pset_DoorCommon` 의 `FireRating`, `IsExternal`, 재료)만 읽는다. 속성이 없으면 도면 바이트가 그대로다.

@@ -450,6 +450,9 @@ def violations(view: View) -> list[dict]:
     for sl in view.ids("slab"):
         if sl not in leveled:
             out.append(_v("LEVEL_MISSING", (sl,), "슬래브에 레벨이 없다"))
+    for sp_ in view.ids("space"):
+        if sp_ not in leveled:
+            out.append(_v("LEVEL_MISSING", (sp_,), "공간에 레벨이 없다"))
     for st_ in view.ids("stair"):
         if st_ not in leveled:
             out.append(_v("LEVEL_MISSING", (st_,), "계단에 레벨이 없다"))

@@ -24,8 +24,14 @@ def _esc(s) -> str:
 MARGIN = 15.0          # 용지 여백 mm
 TITLE_H = 16.0         # 제목 블록 높이 mm
 FONT = "'Malgun Gothic','Noto Sans KR','Apple SD Gothic Neo',sans-serif"
-STYLE = {"cut": (0.50, "#000000"), "proj": (0.18, "#000000"), "symbol": (0.25, "#333333")}
+STYLE = {"cut": (0.50, "#000000"), "proj": (0.18, "#000000"), "symbol": (0.25, "#333333"), "hatch": (0.09, "#555555")}
+LINE_ORDER = ("hatch", "proj", "symbol", "cut")                   # 굵은 선이 위로 온다
 DATUM_W = 0.13
+
+
+def label_width(s: str, size: float) -> float:
+    """문자 층 글의 대략 폭(용지 mm). 정확한 폭은 글꼴이 정하므로 배치·범위 계산에만 쓴다."""
+    return sum(size * (1.0 if ord(c) >= 0x2E80 else 0.58) for c in s)
 
 
 def _frame(data):
@@ -37,6 +43,9 @@ def _frame(data):
         pts += list(poly)
     for it in data.get("annots", ()):
         pts += _annot_pts(it)
+    for lb in data.get("labels", ()):
+        half = label_width(lb[2], lb[3]) * scale / 2.0
+        pts += [(lb[0] - half, lb[1]), (lb[0] + half, lb[1] + lb[3] * scale)]
     if pts:
         x0, x1 = min(p[0] for p in pts), max(p[0] for p in pts)
         y0, y1 = min(p[1] for p in pts), max(p[1] for p in pts)
@@ -147,7 +156,7 @@ def render_svg(data) -> bytes:
             out.append(f'<line x1="{tx(dx0):.3f}" y1="{ty(z):.3f}" x2="{tx(dx1):.3f}" y2="{ty(z):.3f}"/>')
             out.append(f'<text x="{tx(dx0) + 1:.3f}" y="{ty(z) - 0.8:.3f}" stroke="none">{_esc(datum_label(name, z))}</text>')
         out.append("</g>")
-    for cls in ("proj", "symbol", "cut"):                    # 굵은 선이 위로 온다
+    for cls in LINE_ORDER:
         sel = [ln for ln in data["lines"] if ln[0] == cls]
         if not sel:
             continue
@@ -155,6 +164,12 @@ def render_svg(data) -> bytes:
         out.append(f'<g id="lines-{cls}" stroke="{col}" stroke-width="{wd}" stroke-linecap="round" fill="none">')
         for _, x0, y0, x1, y1 in sel:
             out.append(f'<line x1="{tx(x0):.3f}" y1="{ty(y0):.3f}" x2="{tx(x1):.3f}" y2="{ty(y1):.3f}"/>')
+        out.append("</g>")
+    labels = data.get("labels", ())
+    if labels:
+        out.append('<g id="labels" fill="#000000" stroke="none" text-anchor="middle">')
+        for x, y, text, size, _anchor in labels:
+            out.append(f'<text x="{tx(x):.3f}" y="{ty(y):.3f}" font-size="{size}">{_esc(text)}</text>')
         out.append("</g>")
     out += annot_svg(data, tx, ty)
     out.append(f'<text x="{MARGIN}" y="{h - 5:.2f}" font-size="5" fill="#000000">{_esc(title_text(data))}</text>')
@@ -203,13 +218,15 @@ def render_pdf(data, font=None) -> tuple[bytes, bool]:
             c.append(f"BT /F1 {2.6 * k:.2f} Tf {tx(dx0) * k + 3:.2f} {(h - ty(z) + 0.8) * k:.2f} Td {txt(datum_label(name, z))} Tj ET")
         c.append("0 g")
     c.append("0 G")
-    for cls in ("proj", "symbol", "cut"):
+    for cls in LINE_ORDER:
         sel = [ln for ln in data["lines"] if ln[0] == cls]
         if not sel:
             continue
         c.append(f"{STYLE[cls][0] * k:.3f} w")
         for _, x0, y0, x1, y1 in sel:
             c.append(f"{px(x0)} {py(y0)} m {px(x1)} {py(y1)} l S")
+    for x, y, text, size, _anchor in data.get("labels", ()):
+        c.append(f"BT /F1 {size * k:.2f} Tf {(tx(x) - label_width(text, size) / 2.0) * k:.2f} {(h - ty(y)) * k:.2f} Td {txt(text)} Tj ET")
     c.append("0.1 0.3 0.63 RG 0.1 0.3 0.63 rg")
     for it in data.get("annots", ()):
         if it[0] == "dim":

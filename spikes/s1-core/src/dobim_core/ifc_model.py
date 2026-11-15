@@ -160,7 +160,8 @@ def detect_skeleton(f):
 #   "1" S2 스파이크(IfcProduct 만 참조로 접는다)   "2" 통합(IfcTypeObject 도 참조로 접는다: 패밀리 타입, S4)
 #   "3" 슬래브 종류 신설(IfcSlab 이 의도 복원 대상: 가져온 프로젝트를 다시 판정한다)
 #   "4" 계단 종류 신설(IfcStair 이 의도 복원 대상)
-CLOSURE_FORMAT = "4"
+#   "5" 공간 종류 신설(IfcSpace 이 의도 복원 대상)
+CLOSURE_FORMAT = "5"
 
 
 def make_norm():
@@ -683,7 +684,10 @@ class IfcModel:
                 self.kinds[eid] = kind
                 self.ents[eid] = e
                 self.base_ents.add(eid)
-                if kind != "ftype":
+                if kind == "space":   # 공간은 층에 집합(IfcRelAggregates)으로 분해된다
+                    if e.Decomposes:
+                        self.container_of[eid] = e.Decomposes[0].RelatingObject.GlobalId
+                elif kind != "ftype":
                     c = ue.get_container(e, should_get_direct=True)
                     if c is not None:
                         self.container_of[eid] = c.GlobalId
@@ -901,7 +905,7 @@ class IfcModel:
     # ------------------------------------------------------------ 투영 (늦게)
     def project(self, eid: str, spec: dict) -> None:
         kind = spec["kind"]
-        {"level": self._project_level, "wall": self._project_wall, "door": self._project_door, "slab": self._project_slab, "stair": self._project_stair,
+        {"level": self._project_level, "wall": self._project_wall, "door": self._project_door, "slab": self._project_slab, "stair": self._project_stair, "space": self._project_space,
          "ftype": lambda i, sp: fp.project_type(self, i, sp), "finst": lambda i, sp: fp.project_inst(self, i, sp)}[kind](eid, spec)
         # 의도를 IFC 에도 복제한다. 정본은 의도 저장소이고 이 속성셋은 매번 덮어쓴다.
         e = self.ents[eid]
@@ -988,6 +992,24 @@ class IfcModel:
         pos = f.createIfcAxis2Placement3D(f.createIfcCartesianPoint([float(ox), float(oy), 0.0]),
                                           f.createIfcDirection([float(uy), float(-ux), 0.0]), f.createIfcDirection([float(ux), float(uy), 0.0]))
         self._set_body(e, f.createIfcExtrudedAreaSolid(prof, pos, f.createIfcDirection([0.0, 0.0, 1.0]), float(w)))
+
+    def _project_space(self, eid, spec):
+        """공간: 경계 프로필을 레벨 좌표계 원점에서 높이만큼 압출한다. 층 소속은 포함(IfcRelContainedInSpatialStructure)이 아니라 집합(IfcRelAggregates)이다.
+        분류는 ObjectType 에 둔다(비어 있으면 비운다)."""
+        f = self.f
+        e = self.ents[eid]
+        e.Name = spec["name"]
+        e.ObjectType = spec["category"] or None
+        e.PredefinedType = "INTERNAL"
+        lv = spec["level"]
+        if self.container_of.get(eid) != lv:
+            self.flush_rels()
+            if eid in self.container_of:
+                api_aggregate.unassign_object(f, products=[e])
+            api_aggregate.assign_object(f, products=[e], relating_object=self.ents[lv])
+            self.container_of[eid] = lv
+        self._place(e, self.ents[lv].ObjectPlacement, (0.0, 0.0, 0.0), (1.0, 0.0, 0.0))
+        self._set_body(e, self._solid(spec["boundary"], spec["height"]))
 
     def derived_guid_for(self, label: str) -> str:
         return derived_guid(self.project_guid, label)
