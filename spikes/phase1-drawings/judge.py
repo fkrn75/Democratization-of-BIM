@@ -13,6 +13,8 @@ G1 판정(항목 ID·층·판정만 carried_g1.json 에 옮겼다)을 출발점�
     산출이 없으면 G1 판정 그대로다. 법정 #7 의 계단 단면 표현은 stair_probe 의 단면 뷰 채움 증가로 확인한다.
  5) 여덟 번째 작업(대지·배치도·숨은 선·선 굵기 위계·제3각법): run.json 의 after8 와 sheets8/(A-006 배치도, A-007 입면, A-000b 도면목록)을 직접 검사해 법정 P-01·P-02·P-04,
     D-01·N-06·N-08·LN-03·LN-04·T-11·B-05 를 판정한다(judge_after8_items). 이격은 내보낸 IFC 에서 엔진과 독립으로 다시 잰 값과 맞춘다.
+ 6) 아홉 번째 작업(벽·슬래브 층 구성·문짝 두께·천장 높이·1:50 단면·입면 상세·비내력벽 절단선): run.json 의 after9 와 sheets9/(A-008 평면, A-009 종단면, A-010 입면)을 직접 검사해
+    SC-09·B-17·X-04·LN-04 를 판정한다(judge_after9_items). 층 구성은 내보낸 IFC 에서 엔진과 독립으로 다시 잰 형상 두께와 맞춘다.
 집계 규칙은 G1 과 같다: 중복 행은 뺀다, 해당없음은 분모에서 뺀다, 법정 16 = 별표 2 고유 항목(높이 3개 행은 한 묶음 판정).
 
 사용: <python> judge.py --out <산출 폴더> [--g1 <G1 산출 폴더>] [--md <출력.md>]
@@ -509,6 +511,52 @@ def judge_after8_items(out: Path, run: dict, base: dict):
     return res
 
 
+def judge_after9_items(out: Path, run: dict, base: dict):
+    """아홉 번째 작업 항목을 sheets9/ 산출(A-008 1:50 평면, A-009 1:50 종단면, A-010 1:50 입면)과 같은 인자의 기본 시트(-default)·내보낸 IFC 독립 검산 대비로 판정한다.
+    SC-09(축척별 표현 상세)·B-17(1/50 수준) = 평면 층 경계선·문짝 두께 + 단면 벽·슬래브 층 경계선·층별 해치·천장선 + 입면 창대,
+    X-04(반자높이) = 천장 높이 입력 기준 치수, LN-04(굵기 위계) = 비내력벽 절단선. 근거가 하나라도 없으면 판정을 만들지 않는다(이전 판정 그대로)."""
+    res: dict[str, tuple[str, str]] = {}
+    a9, sd = run.get("after9"), out / "sheets9"
+    names = ("A-008", "A-008-default", "A-009", "A-009-default", "A-010", "A-010-default")
+    if not a9 or not all((sd / f"{n}.svg").exists() for n in names):
+        return res
+    s8, s8d, s9, s9d, s10, s10d = ((sd / f"{n}.svg").read_text(encoding="utf-8") for n in names)
+    dl, ck, rt = a9["detail_lines"], a9["ifc_check"], a9["roundtrip"]
+    nl = lambda svg: svg.count("<line")   # noqa: E731
+    add = {k: sum(v["added"].values()) for k, v in dl.items()}
+    plan_ok = add["plan"] >= 10 and nl(s8) >= nl(s8d) + add["plan"] - 2
+    sec_ok = (dl["section"]["added"].get("hatch", 0) >= 20 and dl["section"]["added"].get("proj", 0) == len(a9["ceiling_lines"]) >= 1
+              and nl(s9) >= nl(s9d) + add["section"] - 2)
+    elev_ok = add["elev_e"] + add["elev_n"] >= 1 and nl(s10) >= nl(s10d) + add["elev_e"] + add["elev_n"] - 2
+    same = all(v["empty_args_equal_default"] for v in a9["sheets"].values())
+    ifc_ok = ck["wall_thickness_equal"] and ck["offset_is_first_face"] and ck["slab_thickness_equal"] and ck["layer_sets"] >= 1
+    inp = a9["inputs"]
+    rt_ok = (all(rt["hash_equal"]) and not rt["warnings"] and rt["wall_layers_back"] and rt["wall_origin"] == "authored"
+             and rt["door_leaf_back"] == inp["door_leaf"]["D-01"] and rt["ceiling_back"] == inp["ceiling_height"])
+    if plan_ok and sec_ok and elev_ok and same and ifc_ok and rt_ok:
+        hatch_n = dl["section"]["added"].get("hatch", 0)
+        why = (f"1:50 상세를 모델 입력으로 그린다. 평면(A-008): 층 구성이 있는 벽 {inp['ext_walls'] + inp['int_walls']}개의 층 경계선과 문짝 두께(입력 {inp['door_leaf']['D-01']:g}mm) 선 {add['plan']}개. "
+               f"단면(A-009): 벽·슬래브({inp['slabs']}개)의 층 경계선과 층별 절단 해치, 천장 높이 {inp['ceiling_height']:g}mm 의 천장선 {len(a9['ceiling_lines'])}개(해치·경계선 {hatch_n}개). "
+               f"입면(A-010): 창대 {add['elev_e'] + add['elev_n']}개(창 프레임 폭·유리·멀리언은 창 패밀리 형상이라 기본 입면이 이미 그린다). "
+               f"입력은 IFC 층 구성(IfcMaterialLayerSetUsage)으로 왕복하고(해시 3종 동일, 경고 0) 내보낸 IFC 형상 두께와 층 두께 합이 벽 {len(ck['walls'])}개·슬래브 {len(ck['slabs'])}개 모두 같다(엔진 코드와 독립 검산). "
+               "입력이 없거나 1:100 이거나 detail 을 안 켜면 기본 시트와 바이트까지 같다. 한계: 층 해치 무늬는 재료 이름으로 정해지는 3종(해칭 유형 규정 LN-07 은 아님)이고 용지 위 1.5mm 미만의 얇은 층은 경계선만 긋는다")
+        res["SC-09"] = (OK, why)
+        res["B-17"] = (OK, "조달 도면의 1/50 수준 표현: 큰 축척(1:50) 평면·단면·입면이 층 구성(마감 층 포함)·문짝 두께·슬래브 두께 층·천장선·창대를 그린다(SC-09 근거 참조). 작은 축척 도면은 그대로")
+    heights = a9["heights"]["dims"]
+    clear = [d for d in heights if d["kind"] == "clear"]
+    t9 = _texts(s9)
+    if clear and all(d["b"].startswith("space:") for d in clear) and all(_fmt(d["value"]) in t9 for d in clear) and all(abs(d["value"] - inp["ceiling_height"]) < 1e-6 for d in clear):
+        res["X-04"] = (OK, f"반자높이를 공간의 천장 마감 높이 입력(space.ceiling_height {inp['ceiling_height']:g}mm)까지의 치수({'·'.join(_fmt(d['value']) for d in clear)})로 자동 표기한다(A-009, 참조 space:id#ceiling). "
+                           "천장 입력이 없는 레벨은 이전처럼 슬래브 밑면 근사. 한 레벨에 천장 높이가 다른 공간이 여럿이면 가장 낮은 천장을 쓴다")
+    cc = a9["cut_classes"]["plan"]
+    n_nb = cc["hier"].get("cutn", 0)
+    if n_nb >= 1 and _gsum(s8, "cut-nonbearing") == n_nb and "cut-nonbearing" not in s8d and a9["sheets"]["A-008"]["empty_args_equal_default"] and cc["plain"].get("cutn", 0) == 0:
+        res["LN-04"] = (OK, f"선 굵기 위계(profile.line_hierarchy)에서 Pset_WallCommon.LoadBearing 이 명시적으로 거짓인 벽({inp['load_bearing']['false']}개)의 절단선 {n_nb}개를 한 단계 가는 0.35mm 로 그린다"
+                            f"(내력벽 {inp['load_bearing']['true']}개·값 없는 벽은 절단선 0.50). 절단선 0.50 > 비내력벽 절단선 0.35 > 창호·기호선·치수선 0.25 > 보이는 선·보조선 0.18 > 가는선·해칭 0.09. "
+                            "위계를 켜지 않으면 기본 시트와 바이트까지 같다(A-008). 한계: LoadBearing 값이 없는 벽은 구분하지 않는다")
+    return res
+
+
 def judge_bim_items(out: Path, run: dict, base: dict):
     """여섯 번째 작업 항목(B-02 추출 형상, B-04 뷰 원본 저장)을 run.json 의 probe 로 판정한다."""
     return judge_corner(run) | judge_sheet_def(run)
@@ -565,7 +613,7 @@ def judge_gate(items: dict, out: Path, run: dict):
         verdict = OK if all(v == OK for v in hv) else PART
         rows.append(("8", "건축물 높이·각 층 높이(G2: 반자높이 세부 제외)", verdict,
                      f"층고·최고 높이 자동 치수(X-02 {items['X-02']['verdict']}, X-03 {items['X-03']['verdict']}). "
-                     f"반자높이는 X-04 {items['X-04']['verdict']}(슬래브 밑면 근사): G2 5-1절이 천장 요소 없음으로 제외한 세부"))
+                     f"반자높이는 X-04 {items['X-04']['verdict']}({'천장 마감 높이 입력 기준' if items['X-04']['verdict'] == OK else '슬래브 밑면 근사'}): G2 5-1절이 천장 요소 없음으로 제외한 세부"))
     else:
         rows.append(("8", "건축물 높이·각 층 높이(G2: 반자높이 세부 제외)", PART, "높이 자동 치수 산출 없음"))
     return rows
@@ -595,7 +643,7 @@ def main():
     dg = digest_same(out, Path(o.g1) if o.g1 else None)
     changed = []
     for judged in (judge_sheet_items(out, run, items), judge_element_items(out, run, items), judge_slab_height_items(out, run, items),
-                   judge_stair_space_items(out, run, items), judge_sheet2_items(out, run, items), judge_bim_items(out, run, items), judge_after7_items(out, run, items), judge_after8_items(out, run, items)):
+                   judge_stair_space_items(out, run, items), judge_sheet2_items(out, run, items), judge_bim_items(out, run, items), judge_after7_items(out, run, items), judge_after8_items(out, run, items), judge_after9_items(out, run, items)):
         for i, (v, why) in judged.items():
             if items[i]["verdict"] != v:
                 changed.append((i, items[i]["verdict"], v))

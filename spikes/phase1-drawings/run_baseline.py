@@ -13,6 +13,7 @@ G1 때와 같은 방식으로 도면을 다시 뽑는다(s3lib.build 의 RA-01 �
   --no-after7   : 일곱 번째 작업(작성기준 프로파일·1:50 상세·시트 치수 A-004·A-005)을 건너뛴다
   --no-after8   : 여덟 번째 작업(대지·배치도 A-006, 숨은 선·선 굵기 위계·제3각법 A-007, 도면목록 A-000b)을 통째로 건너뛴다
   --no-site     : 여덟 번째 작업 중 대지 입력과 배치도(A-006·도면목록의 배치도 행)만 뺀다(숨은 선·위계·제3각법은 그대로)
+  --no-after9   : 아홉 번째 작업(벽·슬래브 층 구성, 문짝 두께, 천장 높이, 1:50 단면·입면 상세, 비내력벽 절단선 A-008~A-010)을 건너뛴다
   --no-sheet2   : 다섯 번째 작업(색인 시트·통심선·기호·태그·키 플랜·개정·서명·선 굵기 프로파일·작성기준 프로파일)을 건너뛴다
 
 다섯 번째 작업 산출(--sheets): sheets/A-000(색인: 도면목록·범례·주기·레벨 노트·창호/벽체 일람표·재료표), sheets/A-002(통심선·단면·입면 기호·부위 상세·부호 태그·키 플랜·
@@ -338,6 +339,122 @@ def after8(sess, ids, views, log, out, work, spec, site=True):
     log["after8"] = probe
 
 
+def after9(sess, ids, views, log, out, work, spec):
+    """아홉 번째 작업: 벽·슬래브 층 구성(wall.layers·slab.layers), 문짝 두께(door.set leaf), 공간 천장 높이(space.set ceiling_height), 비내력벽(LoadBearing)을 입력으로 더하고
+    1:50 평면·단면·입면 상세(detail)·비내력벽 절단선(line_hierarchy)·천장 기준 반자높이 치수(annot.dim.heights)를 낸다. 산출은 sheets9/ 에 둔다.
+    이 입력은 모든 기존 산출을 뽑은 뒤에 더하므로 기존 파일은 바이트가 그대로다. 같은 인자에서 새 입력(detail·profile)만 뺀 기본 시트를 함께 내고,
+    run.json 의 after9 로 남긴다(판정기의 근거)."""
+    from math import sqrt
+
+    import ifcopenshell
+    import ifcopenshell.geom
+    import ifcopenshell.util.element as ue
+    from dobim_core import dispatch
+    sd = out / "sheets9"
+    sd.mkdir(exist_ok=True)
+    probe: dict = {"exports": [], "sheets": {}}
+    ly = s3lib.LY
+    ext_ly = [("외장 치장벽돌", 50.0), ("단열재", 50.0), ("철근콘크리트", 200.0), ("내부 석고보드", 20.0)]     # 320 = 외벽 두께. 외벽 축선은 반시계라 첫 층이 바깥
+    int_ly = [("석고보드", 20.0), ("경량철골 스터드·단열", 60.0), ("석고보드", 20.0)]                       # 100 = 칸막이벽 두께
+    slab_ly = [("마감 모르타르", 50.0), ("철근콘크리트", 150.0)]                                          # 200 = 슬래브 두께, 윗면에서 아래로
+    as_in = lambda ls: [{"material": m, "thickness": t} for m, t in ls]   # noqa: E731
+    walls = {"ext": [w for lv in ("1F", "2F") for w in ids[f"ext-{lv}"]], "int": [w for lv in ("1F", "2F") for w in ids[f"int-{lv}"]]}
+    for w in walls["ext"]:
+        ok(sess.run("wall.layers", {"id": w, "layers": as_in(ext_ly)}))
+        ok(sess.run("pset.set", {"id": w, "pset": "Pset_WallCommon", "prop": "LoadBearing", "value": True}))
+    for w in walls["int"]:
+        ok(sess.run("wall.layers", {"id": w, "layers": as_in(int_ly)}))
+        ok(sess.run("pset.set", {"id": w, "pset": "Pset_WallCommon", "prop": "LoadBearing", "value": False}))
+    slabs = [ids[k] for k in ("S-GND", "S-2F", "S-ROOF") if k in ids]
+    for sid in slabs:
+        ok(sess.run("slab.layers", {"id": sid, "layers": as_in(slab_ly)}))
+    ok(sess.run("door.set", {"id": ids["D-01"], "leaf": 45.0}))
+    spaces = [ids[k] for k in ids if k.startswith("SP-")]
+    for sp in spaces:
+        ok(sess.run("space.set", {"id": sp, "ceiling_height": 2400.0}))
+    probe["inputs"] = {"ext_walls": len(walls["ext"]), "int_walls": len(walls["int"]), "ext_layers": ext_ly, "int_layers": int_ly, "slabs": len(slabs), "slab_layers": slab_ly,
+                       "door_leaf": {"D-01": 45.0}, "spaces_with_ceiling": len(spaces), "ceiling_height": 2400.0, "space_height": 2700.0,
+                       "load_bearing": {"true": len(walls["ext"]), "false": len(walls["int"])}}
+    # ---- 뷰(1:50): 1층 평면, 단면(x=2000 을 지나는 남북 종단: 남측 외벽·거실·슬래브를 자른다), 동·북측 입면(창이 있다)
+    vid = lambda k: "4" + "0" * 19 + k   # noqa: E731
+    v_plan = ok(sess.run("view.create", {"id": vid("c1"), "name": "1층 평면도 1:50(층 구성)", "type": "plan", "level": ids["1F"], "scale": 50}))["id"]
+    v_sec = ok(sess.run("view.create", {"id": vid("c2"), "name": "C-C 종단면 1:50", "type": "section", "p1": [2000.0, -1000.0], "p2": [2000.0, ly + 1000.0], "scale": 50}))["id"]
+    v_e = ok(sess.run("view.create", {"id": vid("c3"), "name": "동측 입면 1:50", "type": "elevation", "dir": "E", "scale": 50}))["id"]
+    v_n = ok(sess.run("view.create", {"id": vid("c4"), "name": "북측 입면 1:50", "type": "elevation", "dir": "N", "scale": 50}))["id"]
+    heights = ok(sess.run("annot.dim.heights", {"view": v_sec}))
+    probe["views"] = {"plan": v_plan, "section": v_sec, "elev_e": v_e, "elev_n": v_n}
+    probe["heights"] = {"dims": [{k: d[k] for k in ("kind", "name", "value", "a", "b")} for d in heights["dims"]]}
+
+    def one(nm, args, exts=("svg", "pdf")):
+        for ext in exts:
+            r = export(sess, "sheet.export", args, work / f"{nm}.{ext}")
+            (sd / f"{nm}.{ext}").write_bytes((work / f"{nm}.{ext}").read_bytes())
+            probe["exports"].append({"dir": "sheets9", "sheet": nm, "ext": ext, "bytes": r["bytes"], "font_embedded": r["font_embedded"], "non_ascii_dropped": r["non_ascii_dropped"],
+                                     "number_check": r.get("number_check"), "number": r.get("sheet_number")})
+
+    new_a = {"detail": True, "profile": {"line_hierarchy": True}}
+    sheets = (("A-008", v_plan, "1층 평면도 1:50(층 구성·문짝 두께·비내력벽)", ["room", "opening"]), ("A-009", v_sec, "C-C 종단면 1:50(벽·슬래브 층·천장선)", []))
+    for nm, v, title, tags in sheets:
+        base_a = {**spec, "views": [v], "paper": "A1", "sheet_name": title, "sheet_number": nm, "tags": tags}
+        one(nm, {**base_a, **new_a})
+        one(f"{nm}-default", base_a, ("svg",))
+        one(f"{nm}-empty", {**base_a, "detail": False, "profile": {"line_hierarchy": False}}, ("svg",))
+        probe["sheets"][nm] = {"view": v, "empty_args_equal_default": (sd / f"{nm}-empty.svg").read_bytes() == (sd / f"{nm}-default.svg").read_bytes()}
+    base_e = {**spec, "views": [v_e, v_n], "paper": "A1", "sheet_name": "동·북측 입면도 1:50(창대)", "sheet_number": "A-010"}
+    one("A-010", {**base_e, "detail": True})
+    one("A-010-default", base_e, ("svg",))
+    one("A-010-empty", {**base_e, "detail": False}, ("svg",))
+    probe["sheets"]["A-010"] = {"views": [v_e, v_n], "empty_args_equal_default": (sd / "A-010-empty.svg").read_bytes() == (sd / "A-010-default.svg").read_bytes()}
+    # ---- 뷰별 상세 선·절단선 수(재현·판정용)
+    sess.eng.sync()
+    sess.eng._touch_pending()
+    g = sess.eng.g
+    by = lambda ls: {c: sum(1 for x in ls if x[0] == c) for c in sorted({x[0] for x in ls})}   # noqa: E731
+    probe["detail_lines"] = {k: {"before": len(g.q(D.view_lines, v)), "added": by(g.q(D.view_detail_lines, v))} for k, v in
+                             (("plan", v_plan), ("section", v_sec), ("elev_e", v_e), ("elev_n", v_n))}
+    probe["cut_classes"] = {k: {"hier": by(g.q(D.view_lines_hier, v)), "plain": by(g.q(D.view_lines, v))} for k, v in (("plan", v_plan), ("section", v_sec))}
+    probe["ceiling_lines"] = [list(x) for sp in spaces for x in g.q(D.space_ceiling_lines, v_sec, sp)]
+    # ---- 독립 검산: 내보낸 IFC 를 열어(엔진 코드와 독립) 층 구성 두께 합이 형상의 실제 두께와 같은지, 슬래브 층이 형상 두께와 같은지
+    ifc_out(sess, "after9.ifc")
+    f = ifcopenshell.open(str(work / "after9.ifc"))
+    gs = ifcopenshell.geom.settings()
+    gs.set("use-world-coords", True)
+    rows = []
+    for w in walls["ext"] + walls["int"]:
+        x1, y1, x2, y2 = sess.eng.st.el[w]["params"]["axis"]
+        ln = sqrt((x2 - x1) ** 2 + (y2 - y1) ** 2)
+        c, s_ = (x2 - x1) / ln, (y2 - y1) / ln
+        v = ifcopenshell.geom.create_shape(gs, f.by_guid(w)).geometry.verts
+        ns = [(-(v[i] * 1000.0 - x1) * s_ + (v[i + 1] * 1000.0 - y1) * c) for i in range(0, len(v), 3)]
+        u = ue.get_material(f.by_guid(w), should_inherit=False)
+        lays = [(lr.Material.Name, lr.LayerThickness) for lr in u.ForLayerSet.MaterialLayers]
+        rows.append({"wall": w, "geom_thickness": round(max(ns) - min(ns), 3), "layer_sum": sum(t for _, t in lays), "layers": [list(x) for x in lays],
+                     "offset": u.OffsetFromReferenceLine, "first_layer_face": round(min(ns), 3), "usage": u.is_a()})
+    probe["ifc_check"] = {"walls": rows, "wall_thickness_equal": all(abs(r["geom_thickness"] - r["layer_sum"]) < 0.01 for r in rows),
+                          "offset_is_first_face": all(abs(r["offset"] - r["first_layer_face"]) < 0.01 for r in rows)}
+    srows = []
+    for sid in slabs:
+        v = ifcopenshell.geom.create_shape(gs, f.by_guid(sid)).geometry.verts
+        zs = [v[i + 2] * 1000.0 for i in range(0, len(v), 3)]
+        u = ue.get_material(f.by_guid(sid), should_inherit=False)
+        lays = [(lr.Material.Name, lr.LayerThickness) for lr in u.ForLayerSet.MaterialLayers]
+        srows.append({"slab": sid, "geom_thickness": round(max(zs) - min(zs), 3), "layer_sum": sum(t for _, t in lays), "ifc_layers_bottom_to_top": [list(x) for x in lays]})
+    probe["ifc_check"]["slabs"] = srows
+    probe["ifc_check"]["slab_thickness_equal"] = all(abs(r["geom_thickness"] - r["layer_sum"]) < 0.01 for r in srows)
+    probe["ifc_check"]["layer_sets"] = len(f.by_type("IfcMaterialLayerSet"))
+    # ---- IFC 왕복: 가져와도 층 구성·문짝 두께·천장 높이가 되살고 해시 3종이 같다
+    h0 = ok(sess.run("model.hash", {}))
+    imp = ok(dispatch.run(sess.env, "ifc.import", {"source": "after9.ifc", "path": "after9-imp.dobim"}))
+    h1 = ok(dispatch.run(sess.env, "model.hash", {}, project="after9-imp.dobim"))
+    wg = ok(dispatch.run(sess.env, "element.get", {"id": walls["ext"][0]}, project="after9-imp.dobim"))
+    dg = ok(dispatch.run(sess.env, "element.get", {"id": ids["D-01"]}, project="after9-imp.dobim"))
+    sg = ok(dispatch.run(sess.env, "element.get", {"id": spaces[0]}, project="after9-imp.dobim"))
+    probe["roundtrip"] = {"warnings": imp["warnings"], "elements": imp["elements"], "hash_equal": [h0[k] == h1[k] for k in ("state", "derived", "ifc")],
+                          "wall_layers_back": wg["params"].get("layers") == as_in(ext_ly), "wall_origin": wg["origin"], "door_leaf_back": dg["params"].get("leaf"),
+                          "ceiling_back": sg["params"].get("ceiling_height")}
+    log["after9"] = probe
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--out", required=True)
@@ -348,6 +465,7 @@ def main():
     ap.add_argument("--no-sheetdef", action="store_true")
     ap.add_argument("--no-after7", action="store_true")
     ap.add_argument("--no-after8", action="store_true")
+    ap.add_argument("--no-after9", action="store_true")
     ap.add_argument("--no-site", action="store_true")
     for f in ("stairs", "spaces", "fire", "finish"):
         ap.add_argument(f"--no-{f}", action="store_true")
@@ -538,6 +656,8 @@ def main():
         after7(sess, ids, views, log, out, work, spec)
     if o.sheets and not o.no_sheet2 and not o.no_after8:
         after8(sess, ids, views, log, out, work, spec, site=not o.no_site)
+    if o.sheets and not o.no_sheet2 and not o.no_after9:
+        after9(sess, ids, views, log, out, work, spec)
     (out / "run.json").write_text(json.dumps({"views": views, "ids": ids, **log}, ensure_ascii=False, indent=1), encoding="utf-8")
     print(json.dumps(log, ensure_ascii=False)[:1500])
 
