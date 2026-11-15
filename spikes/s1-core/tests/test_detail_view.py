@@ -160,6 +160,7 @@ def test_계단_단면_dims_는_챌판_디딤판_오름_난간_높이를_단다(
     d = data_of(base, v)
     t = dim_texts(d)
     assert {"244.4x18=4400", "173.7x19=3300", "173.7", "244.4", "난간 1100"} <= set(t)
+    assert t.count("난간 1100") == 1                                                                              # 같은 자리·높이의 난간은 치수 하나
     rise = next(x for x in d["dims"] if x[5].startswith("173.7x19"))
     assert abs(abs(rise[4][3] - rise[4][1]) - 3300) < 1e-6                                                         # 오름 치수선 높이 = 3300
     # 걸음선과 나란하지 않은 단면(걸음선에 수직)은 계단 치수를 달지 않는다

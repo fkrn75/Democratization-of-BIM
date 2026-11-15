@@ -264,6 +264,20 @@ def judge_stair_space_items(out: Path, run: dict, base: dict):
         svg_h = [k for k in elevs if _svg_lines(out / "base" / f"{k}.svg", "lines-hatch") > 0]
         ok_ = len(hatched) == len(elevs) > 0 and shown == mats and len(svg_h) == len(elevs)
         res["E-02"] = ((OK if ok_ else PART), f"입면 {len(hatched)}/{len(elevs)}개에 외벽 해치(hatch 선 {sum(fin['views'][k]['after']['by_class'].get('hatch', 0) for k in elevs)}개), 재료 문자 {sorted(shown)}")
+    # 열세 번째 작업부터 외부 마감 해치·재료 문자는 뷰의 finish 옵션을 켠 입면에만 그린다: 기본 입면은 해치가 없고 finish 입면(sheets13/elevfin-*)에만 있다
+    fc = (run.get("after13") or {}).get("finish_check")
+    if fc:
+        sd = out / "sheets13"
+        elevs = sorted(k for k in fc["views"] if k.startswith("elevfin"))
+        plain = sorted(k for k in fc["views"] if k.startswith("elev-"))
+        mats = set(fc["materials"])
+        hatched = [k for k in elevs if fc["views"][k]["hatch"] > 0]
+        shown = {m for k in elevs for m in _svg_texts(sd / f"{k}.svg", "labels") if m in mats}
+        svg_h = [k for k in elevs if _svg_lines(sd / f"{k}.svg", "lines-hatch") > 0]
+        plain_clean = bool(plain) and all(fc["views"][k]["hatch"] == 0 and not fc["views"][k]["labels"] for k in plain)
+        ok_ = len(hatched) == len(elevs) == 4 and shown == mats and len(svg_h) == 4 and plain_clean
+        res["E-02"] = ((OK if ok_ else PART), f"finish 옵션 입면 {len(hatched)}/{len(elevs)}개에 외벽 해치(hatch 선 {sum(fc['views'][k]['hatch'] for k in elevs)}개)와 마감 재료 문자 {sorted(shown)}. "
+                                              f"옵션이 없는 기본 입면 {len(plain)}개는 해치·재료 문자가 없다({'확인' if plain_clean else '불일치'}: 벽 전체에 해치·구조체 이름을 깔지 않는다)")
     return res
 
 
@@ -622,6 +636,59 @@ def judge_after12_items(out: Path, run: dict, base: dict):
     return res
 
 
+def judge_after13_items(out: Path, run: dict, base: dict):
+    """열세 번째 작업(수직동선 상세·승강기 치수): sheets13/ 의 상세 뷰 SVG 를 직접 읽어 제도·관행 L-10(승강기 위치·치수)·VT-03(수직동선 상세)과 BIM B-05(수직동선 상세 도면)를 판정한다.
+    기대 치수 문자는 내보낸 IFC 의 DoBIM_Intent(계단 걸음선·폭·챌판·높이, 승강기 샤프트·카·높이)에서 엔진 코드와 독립으로 다시 계산해 SVG 의 치수 글자와 맞춘다.
+    산출이 없으면 빈 결과(이전 판정 그대로)."""
+    res: dict[str, tuple[str, str]] = {}
+    a = run.get("after13")
+    sd = out / "sheets13"
+    need = ("stair-plan", "stair-section", "ev-plan-1F", "ev-plan-2F", "ev-section", "plan-1F-dims")
+    if not a or not all((sd / f"{n}.svg").exists() for n in need):
+        return res
+    rd = lambda n: (sd / f"{n}.svg").read_text(encoding="utf-8")   # noqa: E731
+    tx = {n: _texts(rd(n)) for n in need}
+    ist, iev = a["ifc_intent"]["stair"], a["ifc_intent"]["elevator"]
+    x1, y1, x2, y2 = ist["run"]
+    length = ((x2 - x1) ** 2 + (y2 - y1) ** 2) ** 0.5
+    n = ist["risers"]
+    td, rs = length / (n - 1), ist["height"] / n
+    sx1, sy1, sx2, sy2 = iev["shaft"]
+    cw, cd, _ch = iev["cab"]
+    z0, z1, cab_top = iev["base_offset"], iev["base_offset"] + iev["rise"], iev["base_offset"] + iev["cab"][2]
+    rt = a["roundtrip"]
+    exact = all(rt["hash_equal"]) and not rt["warnings"] and all(rt["view_params_equal"].values())
+    off = a["option_off"]
+    # ---- L-10: 승강기 평면의 샤프트·카 치수
+    want = [f"샤프트 {_fmt(sx2 - sx1)}", f"샤프트 {_fmt(sy2 - sy1)}", f"카 {_fmt(cw)}", f"카 {_fmt(cd)}"]
+    t1 = tx["plan-1F-dims"]
+    t_ev = tx["ev-plan-1F"]
+    if (all(t1.count(w) >= (2 if w in want[:2] and want[0] == want[1] else 1) for w in set(want)) and "EV" in t1 and all(w in t_ev for w in want) and "EV" in tx["ev-plan-2F"]
+            and all(w in tx["ev-plan-2F"] for w in want) and exact and off["lines_equal"] and off["labels_equal"] and off["dims"] == 0):
+        res["L-10"] = (OK, f"승강기 평면에 샤프트 안쪽 {_fmt(sx2 - sx1)}x{_fmt(sy2 - sy1)}·카 {_fmt(cw)}x{_fmt(cd)} 치수를 표기한다(1:100 1층 평면 dims 옵션, 1:50 1F·2F 상세 평면). "
+                           "치수 글자는 내보낸 IFC 의 의도에서 다시 계산한 값과 같다. 옵션을 끄면 뷰가 일반 평면과 선·문자까지 같다(기존 승강기 도면 바이트 불변: 새 뷰 옵션으로 켠다). "
+                           "IFC 왕복 해시 3종 동일(경고 0, 옵션 뷰 파라미터 동일). 한계: 문 위치·도어 방향·기계실·피트 표기 없음")
+    # ---- B-05: 계단·승강기 상세 도면
+    run_txt = f"{_fmt(td)}x{n - 1}={_fmt(length)}"
+    rise_txt = f"{_fmt(rs)}x{n}={_fmt(ist['height'])}"
+    sp, ss, es = tx["stair-plan"], tx["stair-section"], tx["ev-section"]
+    stair_ok_ = (run_txt in sp and _fmt(ist["width"]) in sp and f"{n}단 챌판 {_fmt(rs)} 디딤 {_fmt(td)}" in sp
+                 and {run_txt, rise_txt, _fmt(rs), _fmt(td)} <= set(ss) and any(t.startswith("난간 ") for t in ss))
+    ev_ok_ = (f"카 {_fmt(cab_top - z0)}" in es and f"OH {_fmt(z1 - cab_top)}" in es and f"승강로 {_fmt(z1 - z0)}" in es)
+    segs = {(e["view"], e["ext"]): e["segments"] for e in a["exports"] if "view" in e}
+    small = segs.get(("stair-plan", "svg"), 1 << 30) < segs.get(("plan-1F", "svg"), 0)
+    sheets = all((sd / f"{s}.svg").exists() for s in ("A-014", "A-015"))
+    scales = [rd(n).count("S=1:20") + rd(n).count("S=1:50") for n in ("A-014", "A-015")] if sheets else [0]
+    if stair_ok_ and ev_ok_ and small and sheets and all(scales) and exact:
+        res["B-05"] = (OK, f"수직동선 상세 도면이 있다. 계단 상세(A-014): 평면 1:20(걸음선 {_fmt(length)}={n - 1}x{_fmt(td)}·폭 {_fmt(ist['width'])} 치수·'{n}단 챌판 {_fmt(rs)} 디딤 {_fmt(td)}')과 단면 1:20(첫 챌판 {_fmt(rs)}·디딤 {_fmt(td)}·"
+                           f"오름 {rise_txt}·디딤 사슬 {run_txt}·난간 높이). 승강기 상세(A-015): 1F·2F 평면 1:50(샤프트·카 폭·깊이)과 단면 1:50(카 {_fmt(cab_top - z0)}·오버헤드 OH {_fmt(z1 - cab_top)}·승강로 {_fmt(z1 - z0)}). "
+                           "치수 글자는 내보낸 IFC 의 의도에서 다시 계산한 값과 같고, 상세는 요소 범위로 잘라낸 부위 뷰다(crop). IFC 왕복 해시 3종 동일. 한계: 코어(계단실+승강기) 통합 상세·주차경사로·피트(샤프트 바닥이 카 바닥) 별도 표기는 없다")
+    # ---- VT-03: 중복 행(계단의 평면·단면, 코어, 주차경사로 상세): 계단 상세는 있고 코어·주차경사로는 없다
+    if "B-05" in res:
+        res["VT-03"] = (PART, "계단의 평면·단면 상세와 승강기 상세 평면·단면이 있다(A-014·A-015). 코어(계단실·승강기 통합 상세)와 주차경사로 상세는 없다")
+    return res
+
+
 def judge_bim_items(out: Path, run: dict, base: dict):
     """여섯 번째 작업 항목(B-02 추출 형상, B-04 뷰 원본 저장)을 run.json 의 probe 로 판정한다."""
     return judge_corner(run) | judge_sheet_def(run)
@@ -709,7 +776,7 @@ def main():
     changed = []
     for judged in (judge_sheet_items(out, run, items), judge_element_items(out, run, items), judge_slab_height_items(out, run, items),
                    judge_stair_space_items(out, run, items), judge_sheet2_items(out, run, items), judge_bim_items(out, run, items), judge_after7_items(out, run, items), judge_after8_items(out, run, items), judge_after9_items(out, run, items),
-                   judge_after11_items(out, run, items), judge_after12_items(out, run, items)):
+                   judge_after11_items(out, run, items), judge_after12_items(out, run, items), judge_after13_items(out, run, items)):
         for i, (v, why) in judged.items():
             if items[i]["verdict"] != v:
                 changed.append((i, items[i]["verdict"], v))

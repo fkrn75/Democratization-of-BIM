@@ -16,6 +16,7 @@ G1 때와 같은 방식으로 도면을 다시 뽑는다(s3lib.build 의 RA-01 �
   --no-after9   : 아홉 번째 작업(벽·슬래브 층 구성, 문짝 두께, 천장 높이, 1:50 단면·입면 상세, 비내력벽 절단선 A-008~A-010)을 건너뛴다
   --no-after11  : 열한 번째 작업(승강기·지붕 입력과 승강기 표시 평면)을 건너뛴다
   --no-after12  : 열두 번째 작업(대지 단면·조경·주차·간판 입력과 산출)을 건너뛴다
+  --no-after13  : 열세 번째 작업(계단·승강기 상세 뷰, 승강기 평면 치수, 문·창을 지나는 단면, 방위 기본값)을 건너뛴다
   --no-sheet2   : 다섯 번째 작업(색인 시트·통심선·기호·태그·키 플랜·개정·서명·선 굵기 프로파일·작성기준 프로파일)을 건너뛴다
 
 다섯 번째 작업 산출(--sheets): sheets/A-000(색인: 도면목록·범례·주기·레벨 노트·창호/벽체 일람표·재료표), sheets/A-002(통심선·단면·입면 기호·부위 상세·부호 태그·키 플랜·
@@ -595,6 +596,130 @@ def after12(sess, ids, views, log, out, work, spec):
     log["after12"] = probe
 
 
+def after13(sess, ids, views, log, out, work, spec):
+    """열세 번째 작업: 수직동선 상세(B-05)·승강기 치수(L-10)·도면 품질 개선(입면 마감 옵션·시트 방위 기본값·문/창을 지나는 단면). 산출은 sheets13/ 에 둔다.
+    모든 기존 산출을 뽑은 뒤에 더한다(난간은 이 단계에서 계단 양옆에 더해 단면 난간 높이 치수를 만든다).
+    - 계단 상세: 평면 1:20(crop = 계단 범위 + 여유, dims)·단면 1:20(걸음선을 지나는 절단선, 단높이·디딤·오름·난간 치수)
+    - 승강기 상세: 1F·2F 평면 1:50(샤프트·카 치수)·단면 1:50(카 높이·오버헤드·승강로 높이)과 일반 1:100 1층 평면(dims 옵션)
+    - 입면: 기본(해치 없음)과 finish 옵션(외부 마감 해치·재료 문자) 비교
+    - 단면 D-D: 절단선이 문·창을 지난다(개구부가 보인다). 문·창 통과 여부는 모델의 벽 축선·개구부 범위에서 다시 센다
+    독립 검산: 내보낸 IFC 의 DoBIM_Intent 에서 계단(걸음선·폭·챌판)·승강기(샤프트·카)를 다시 읽어 판정이 치수 문자를 직접 계산한다."""
+    import ifcopenshell
+    import ifcopenshell.util.element as ue
+
+    from dobim_core import dispatch
+    from dobim_core import queries as Q
+    sd = out / "sheets13"
+    sd.mkdir(exist_ok=True)
+    probe: dict = {"exports": []}
+    sid, eid = ids["ST-1F"], ids["EV-1"]
+    vid = lambda k: "4" + "0" * 19 + k   # noqa: E731
+    rails = ok(sess.run("railing.from_stair", {"stair": sid, "side": "both"}))
+    probe["railings"] = rails
+    mk = lambda k, a: ok(sess.run("view.create", {"id": vid(k), **a}))   # noqa: E731
+    v = {}
+    v["stair-plan"] = mk("g1", {"name": "계단 상세 평면", "type": "plan", "level": ids["1F"], "scale": 20, "around": sid, "margin": 800.0, "dims": True})
+    v["stair-section"] = mk("g2", {"name": "계단 상세 단면", "type": "section", "p1": [4000.0, 5000.0], "p2": [10500.0, 5000.0], "scale": 20, "around": sid, "margin": 800.0, "dims": True})
+    v["ev-plan-1F"] = mk("g3", {"name": "승강기 상세 1F 평면", "type": "plan", "level": ids["1F"], "scale": 50, "around": eid, "margin": 1500.0, "dims": True})
+    v["ev-plan-2F"] = mk("g4", {"name": "승강기 상세 2F 평면", "type": "plan", "level": ids["2F"], "scale": 50, "around": eid, "margin": 1500.0, "dims": True})
+    v["ev-section"] = mk("g5", {"name": "승강기 상세 단면", "type": "section", "p1": [-500.0, 6500.0], "p2": [3500.0, 6500.0], "scale": 50, "around": eid, "margin": 1500.0, "dims": True})
+    v["plan-1F-dims"] = mk("g6", {"name": "1F 평면 승강기·계단 치수", "type": "plan", "level": ids["1F"], "scale": 100, "dims": True})
+    v["section-DD"] = mk("g7", {"name": "D-D 단면(문·창 통과)", "type": "section", "p1": [8300.0, -1000.0], "p2": [8300.0, 9000.0], "scale": 100})
+    v["elev-S-finish"] = mk("g8", {"name": "남측 입면 마감", "type": "elevation", "dir": "S", "finish": True})
+    ids13 = {k: x["id"] for k, x in v.items()}
+    probe["views"] = ids13
+    probe["crops"] = {k: v[k]["crop"] for k in ("stair-plan", "stair-section", "ev-plan-1F", "ev-plan-2F", "ev-section")}
+    pairs = list(ids13.items()) + [("elev-S", views["elev-S"]), ("plan-1F", views["plan-1F"])]
+    for nm, vv in pairs:
+        for ext in ("svg", "pdf"):
+            r = export(sess, "view.export", {"id": vv}, work / f"s13_{nm}.{ext}")
+            (sd / f"{nm}.{ext}").write_bytes((work / f"s13_{nm}.{ext}").read_bytes())
+            probe["exports"].append({"dir": "sheets13", "view": nm, "ext": ext, "bytes": r["bytes"], "segments": r["segments"], "labels": r["labels"], "annotations": r["annotations"]})
+    for nm, ks, title, paper, extra in (
+            ("A-014", [ids13["stair-plan"], ids13["stair-section"]], "계단 상세도", "A1", {"north_angle": 15.0}),
+            ("A-015", [ids13["ev-plan-1F"], ids13["ev-plan-2F"], ids13["ev-section"]], "승강기 상세도", "A1", {"north_angle": 15.0}),
+            ("A-016", [ids13["plan-1F-dims"]], "1층 평면도(승강기·계단 치수)", "A1", {}),                  # 방위 각을 주지 않는다: 대지의 정북 각이 기본이다
+            ("A-017", [ids13["section-DD"], views["section-BB"]], "단면도(문·창을 지나는 절단선)", "A3", {})):
+        a = {**spec, "views": ks, "paper": paper, "sheet_name": title, "sheet_number": nm, "dims": [], **extra}
+        for ext in ("svg", "pdf"):
+            r = export(sess, "sheet.export", a, work / f"{nm}.{ext}")
+            (sd / f"{nm}.{ext}").write_bytes((work / f"{nm}.{ext}").read_bytes())
+            probe["exports"].append({"dir": "sheets13", "sheet": nm, "ext": ext, "bytes": r["bytes"], "font_embedded": r["font_embedded"], "non_ascii_dropped": r["non_ascii_dropped"]})
+    sess.eng.sync()
+    sess.eng._touch_pending()
+    g = sess.eng.g
+    # ---- 엔진 값: 뷰마다 치수 문자, 입면 마감 비교
+    probe["dims"] = {k: [d[5] for d in g.q(D.view_dims, x)] for k, x in ids13.items()}
+    probe["finish"] = {k: {"hatch": sum(1 for ln in g.q(D.view_lines, vv) if ln[0] == "hatch"), "labels": [t[2] for t in g.q(D.view_labels, vv) if t[2] in ("치장벽돌", "스터코", "철근콘크리트")]}
+                       for k, vv in (("elev-S", views["elev-S"]), ("elev-S-finish", ids13["elev-S-finish"]))}
+
+    # ---- (c) 절단선이 지나는 문·창: 모델의 벽 축선과 개구부 범위에서 센다(그리기 코드와 독립)
+    def crossing(x_cut, y_lo, y_hi):
+        cr = {"door": 0, "window": 0}
+        for w in g.q(D.all_walls):
+            x, y, c, sn, length = g.q(Q.wall_frame, w)
+            if abs(c) < 1e-9:
+                continue
+            u = (x_cut - x) / c
+            if not (0.0 <= u <= length and y_lo <= y + sn * u <= y_hi):
+                continue
+            cr["door"] += sum(1 for op in g.q(D.wall_door_openings, w) if op[0] - 1e-6 <= u <= op[1] + 1e-6)
+            cr["window"] += sum(1 for fm in g.q(D.hosted_fam, w) if fm[0] - 1e-6 <= u <= fm[1] + 1e-6)
+        return cr
+    probe["section_dd_openings"] = crossing(8300.0, -1000.0, 9000.0)
+    probe["section_aa_openings"] = crossing(2000.0, -1000.0, 9000.0)
+    # ---- 독립 검산: 내보낸 IFC 의 의도에서 계단·승강기 값을 다시 읽는다
+    ifc_out(sess, "after13.ifc")
+    f = ifcopenshell.open(str(work / "after13.ifc"))
+    ist = json.loads(ue.get_pset(f.by_guid(sid), "DoBIM_Intent")["Intent"])["params"]
+    iev = json.loads(ue.get_pset(f.by_guid(eid), "DoBIM_Intent")["Intent"])["params"]
+    probe["ifc_intent"] = {"stair": {k: ist[k] for k in ("run", "width", "risers", "height")}, "elevator": {k: iev[k] for k in ("shaft", "cab", "base_offset", "rise")}}
+    probe["ifc_check"] = {"railings": len(f.by_type("IfcRailing")), "stairs": len(f.by_type("IfcStair")), "transport": len(f.by_type("IfcTransportElement"))}
+    probe["north"] = {"site": ok(sess.run("element.get", {"id": ids["SITE"]}))["params"]["north_angle"]}
+    # ---- IFC 왕복: 옵션 뷰(crop·dims·finish)가 되살고 해시 3종이 같다
+    h0 = ok(sess.run("model.hash", {}))
+    imp = ok(dispatch.run(sess.env, "ifc.import", {"source": "after13.ifc", "path": "after13-imp.dobim"}))
+    h1 = ok(dispatch.run(sess.env, "model.hash", {}, project="after13-imp.dobim"))
+    same = {}
+    for k, vv in ids13.items():
+        a0 = ok(sess.run("element.get", {"id": vv}))["params"]
+        a1 = ok(dispatch.run(sess.env, "element.get", {"id": vv}, project="after13-imp.dobim"))["params"]
+        same[k] = a0 == a1
+    probe["roundtrip"] = {"warnings": imp["warnings"], "hash_equal": [h0[k] == h1[k] for k in ("state", "derived", "ifc")], "view_params_equal": same}
+    # ---- 옵션을 끄면 뷰가 옵션 없는 뷰와 같다(바이트 불변의 근거): 1:100 1F 평면에서 dims 를 끄면 일반 1F 평면(같은 레벨·절단 높이·축척)과 선·문자가 같다
+    ok(sess.run("view.set", {"id": ids13["plan-1F-dims"], "dims": False}))
+    sess.eng.sync()
+    sess.eng._touch_pending()
+    g = sess.eng.g
+    probe["option_off"] = {"lines_equal": g.q(D.view_lines, ids13["plan-1F-dims"]) == g.q(D.view_lines, views["plan-1F"]), "labels_equal": g.q(D.view_labels, ids13["plan-1F-dims"]) == g.q(D.view_labels, views["plan-1F"]),
+                           "dims": len(g.q(D.view_dims, ids13["plan-1F-dims"]))}
+    ok(sess.run("view.set", {"id": ids13["plan-1F-dims"], "dims": True}))
+    # ---- 입면 외부 마감(E-02): finish 옵션은 마감 재료를 지정한 벽에만 해치·문자를 그린다. 외벽은 9단계에서 층 구성을 받아 지정 재료가 지워졌으므로(층 구성이 재료를 정한다)
+    # 이 모델 변경(맨 끝이라 앞 산출에 영향 없음)으로 층 구성을 떼고 4단계와 같은 재료(1F 치장벽돌, 2F 스터코)를 다시 지정한 뒤 finish 입면 4개와 기본 입면 4개를 잰다
+    for lv, mat in (("1F", "치장벽돌"), ("2F", "스터코")):
+        for w in ids[f"ext-{lv}"]:
+            ok(sess.run("wall.layers", {"id": w, "layers": None}))
+            ok(sess.run("material.set", {"id": w, "name": mat}))
+    fin_views = {}
+    for i_, d in enumerate("NESW", 1):
+        fin_views[f"elevfin-{d}"] = ok(sess.run("view.create", {"id": vid(f"h{i_}"), "name": f"{ {'N': '북', 'E': '동', 'S': '남', 'W': '서'}[d] }측 입면 마감(E-02)", "type": "elevation", "dir": d, "finish": True}))["id"]
+    sess.eng.sync()
+    sess.eng._touch_pending()
+    g = sess.eng.g
+    mats = ["치장벽돌", "스터코"]
+    chk = {}
+    for k, vv in [(f"elev-{d}", views[f"elev-{d}"]) for d in "NESW"] + list(fin_views.items()):
+        ln = g.q(D.view_lines, vv)
+        chk[k] = {"hatch": sum(1 for x in ln if x[0] == "hatch"), "labels": sorted({t[2] for t in g.q(D.view_labels, vv) if t[2] in mats})}
+    for k, vv in fin_views.items():
+        for ext in ("svg", "pdf"):
+            r = export(sess, "view.export", {"id": vv}, work / f"s13_{k}.{ext}")
+            (sd / f"{k}.{ext}").write_bytes((work / f"s13_{k}.{ext}").read_bytes())
+            probe["exports"].append({"dir": "sheets13", "view": k, "ext": ext, "bytes": r["bytes"], "segments": r["segments"], "labels": r["labels"]})
+    probe["finish_check"] = {"materials": mats, "views": chk}
+    log["after13"] = probe
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--out", required=True)
@@ -608,6 +733,7 @@ def main():
     ap.add_argument("--no-after9", action="store_true")
     ap.add_argument("--no-after11", action="store_true")
     ap.add_argument("--no-after12", action="store_true")
+    ap.add_argument("--no-after13", action="store_true")
     ap.add_argument("--no-site", action="store_true")
     for f in ("stairs", "spaces", "fire", "finish"):
         ap.add_argument(f"--no-{f}", action="store_true")
@@ -804,6 +930,8 @@ def main():
         after11(sess, ids, views, log, out, work, spec)
     if o.sheets and not o.no_sheet2 and not o.no_after8 and not o.no_site and not o.no_after12:
         after12(sess, ids, views, log, out, work, spec)
+    if o.sheets and not o.no_sheet2 and not o.no_after8 and not o.no_site and not o.no_after11 and not o.no_after13:
+        after13(sess, ids, views, log, out, work, spec)
     (out / "run.json").write_text(json.dumps({"views": views, "ids": ids, **log}, ensure_ascii=False, indent=1), encoding="utf-8")
     print(json.dumps(log, ensure_ascii=False)[:1500])
 

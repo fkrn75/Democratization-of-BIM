@@ -3285,12 +3285,15 @@ def view_dims(g, v):
         if _hits(detail_extent(g, e, "plan" if plan else "sec", None if plan else cfg), crop):
             out.extend(_plan_elev_dims(g, e, cfg) if plan else _sec_elev_dims(g, e, cfg))
     if not plan:
+        seen = set()   # 계단 양옆 난간처럼 단면에서 같은 자리·같은 높이로 겹치는 난간 치수는 하나만 단다
         for r in g.q(scope_railings, v):
             info = g.q(railing_info, r)
             if info is None:
                 continue
             sr = _sw(cfg, info[0][0])[0]
-            if crop is None or crop[0] <= sr <= crop[2]:
+            key = (round(sr, 1), round(info[0][0][2], 1), round(info[1][0][2] - info[0][0][2], 1))
+            if key not in seen and (crop is None or crop[0] <= sr <= crop[2]):
+                seen.add(key)
                 out.extend(_sec_railing_dims(g, r, cfg))
     return tuple(out)
 
