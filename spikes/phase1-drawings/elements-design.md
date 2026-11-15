@@ -166,3 +166,13 @@
 - 방화(평면): `drawing.plan_fire_lines`(방화벽 중심선 파선: 마디 4mm·간격 1.2mm x 축척, 걸음은 조인으로 줄인 벽 범위), `plan_fire_labels`(`FW <등급>` 벽 왼쪽 바깥, `FD <등급>` 문 오른쪽 바깥, 벽 두께 절반 + 1.6mm 간격). 등급은 문자열만 읽고 앞 16자까지다. 값이 없으면 아무것도 더하지 않는다.
 - 외부 마감(입면): `drawing.elev_finish`. 벽 조각(개구부로 나뉜 띠)마다 앞면 깊이에 세계 격자(`s - z` = 간격 정수배)에 맞춘 45도 해치를 긋고, 가림 판정은 대각선용 `_visible_slanted`(수평·수직용 `visible_parts` 를 대각선으로 넓힌 것)로 한다. 뒤쪽 벽은 앞벽에 가려 해치가 안 나오고, 가림 경계의 부스러기(SEG_MIN 미만)는 버린다. 재료 문자는 보이는 해치가 가장 많은 충분히 넓은 조각의 해치 범위 가운데에 한 번, 해치가 하나도 안 보이면 없다. `IsExternal` 은 IFC 불린이라 문자열 "false" 가 참으로 저장되는 점에 주의(시험은 불린 값을 쓴다).
 - 새 선 종류 `hatch`(굵기 0.09, #555555): `drawing_export.STYLE`·`LINE_ORDER`(SVG·PDF·시트가 같은 순서·굵기를 쓴다). 해치가 없으면 출력 바이트가 같다. `run_baseline.py --no-stairs --no-spaces --no-fire --no-finish` 산출은 이전 단계(phase1-after3)의 SVG 와 바이트 단위로 같다(baseline.md 8절).
+
+## 9. 시트 정의의 저장 (BIM 지침 B-04): 새 비 IFC 종류 `sheet`
+
+뷰·치수·태그처럼 IFC 신원이 없는 의도 요소다(`kinds.NON_IFC_KINDS`). 시트 파일(SVG·PDF)은 정의에서 다시 만드는 파생물이다.
+
+- 파라미터: `sheet.export` 의 인자에서 `path`·`overwrite` 를 뺀 것 전부와 이름(`name`)이다: 올린 뷰 목록(`views`, 앞에서부터 왼쪽 위 -> 오른쪽 -> 아래 배치), 용지, 표제란(프로젝트명·도면명·도면번호·작성일·북각·건축주·설계사무소·서명 영역), 개정 이력, 통심선, 부위 상세, 단면·입면 기호(`marks`), 부호 태그, 키 플랜, 선 굵기 프로파일. 값은 항상 전부 적는다(생략한 선택 값은 기본값으로 채워 정규형으로 저장).
+- 커맨드: `sheet.define`(만들기·같은 id 면 통째로 바꾸기), `sheet.delete`, `sheet.list`(뷰가 사라진 시트는 `missing_views` 로 알린다), `sheet.render`(저장한 정의로 SVG·PDF 내보내기: `sheet.export` 와 같은 코드 경로라 같은 인자면 바이트까지 같다). 모두 CLI·MCP 에 함께 열린다.
+- 뷰 참조: 시트가 올린 뷰를 `view.delete` 가 조용히 지우거나 고치지 않는다: 시트가 쓰는 뷰는 지울 수 없다(CONSTRAINT, 시트를 고치거나 지운 뒤에 지운다). 병합으로 뷰가 사라진 시트는 `sheet.list` 의 `missing_views`·`sheet.render` 의 CONSTRAINT 로 드러난다. 참조 id 를 새로 매기는 병합(`remap_params`)은 목록(`views`)·중첩(개정 구름·부위 상세의 `view`)·`key_plan` 을 함께 옮긴다.
+- IFC 왕복(ADR-0015 확장): 정의는 `DoBIM_Defs` 속성 하나(이름 = 시트 id)로 실리고 값에 변조 탐지 해시(check)가 든다. 가져올 때 `viewdefs._sheet_values` 가 커맨드와 같은 모델(`commands_sheet.SheetDef`)로 값을 다시 검사하고 정규형(저장 형식과 같은 값)만 받는다. 올린 뷰가 하나라도 되살려지지 않았거나 키 플랜이 평면 뷰가 아니거나 같은 이름의 시트가 더 있으면 그 시트만 되살리지 않는다(경고, 정의는 파일에 그대로 남는다).
+- 해시: 시트가 없으면 `state`·`derived`·`ifc` 가 모두 이전과 같다(시트 흔적 없음). 시트가 있으면 `state`(요소 행)와 `ifc`(정의 속성)에만 반영되고 `derived`(그래프 파생값)에는 들어가지 않는다. 해시 형식(`ifc_model.CLOSURE_FORMAT`)을 6 으로 올린다: 제품 클로저는 같고, 가져온 프로젝트를 한 번 다시 판정할 뿐이다.

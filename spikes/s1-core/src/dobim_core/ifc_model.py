@@ -161,7 +161,8 @@ def detect_skeleton(f):
 #   "3" 슬래브 종류 신설(IfcSlab 이 의도 복원 대상: 가져온 프로젝트를 다시 판정한다)
 #   "4" 계단 종류 신설(IfcStair 이 의도 복원 대상)
 #   "5" 공간 종류 신설(IfcSpace 이 의도 복원 대상)
-CLOSURE_FORMAT = "5"
+#   "6" 시트 정의 신설(비 IFC 정의 속성에 sheet 가 더해진다. 제품 클로저는 같다: 가져온 프로젝트를 다시 판정할 뿐 요소 해시는 그대로다)
+CLOSURE_FORMAT = "6"
 
 
 def make_norm():

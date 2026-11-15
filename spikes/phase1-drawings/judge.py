@@ -396,7 +396,22 @@ def judge_sheet2_items(out: Path, run: dict, base: dict):
         ca = len(re.findall(r'stroke-width="0.35"', fa3.read_text(encoding="utf-8")))
         if c3 > ca + 5:
             res["B-09"] = (PART, f"별도 작성기준을 선 굵기 프로파일로 받아 적용할 수 있다(A-003: 절단선 0.35mm 선 {c3}개, 기본 시트 {ca}개). 문자·기호·치수 기준은 입력 경로가 없다")
-    return res
+    return res | judge_sheet_def(run)
+
+
+def judge_sheet_def(run: dict):
+    """B-04 도면 뷰의 원본 저장: 시트 정의(뷰 배치·표제란 인자)를 모델에 저장하고(sheet.define), 저장한 정의로 낸 파일이 직접 낸 시트와 바이트까지 같고,
+    IFC 로 내보냈다 가져와도 정의가 되살고(해시 3종 같음) 되살린 정의로 낸 파일도 같을 때만 충족이다. 뷰·주석 정의의 IFC 왕복은 이전부터 있었다(ADR-0015)."""
+    pr = run.get("sheet_def_probe")
+    if not pr:
+        return {}
+    n = len(pr["sheets"])
+    ok_all = (n >= 3 and all(pr["render_equals_export"].values()) and all(pr["hash_equal"]) and pr["restored"] == pr["sheets"] and not pr["import_warnings"]
+              and all(pr["roundtrip_render_equals_export"].values()) and pr["missing_views"] == 0)
+    if ok_all:
+        return {"B-04": (OK, f"시트 정의 {n}개를 모델에 저장(sheet.define): 저장한 정의로 낸 SVG·PDF {len(pr['render_equals_export'])}개가 sheet.export 산출과 바이트까지 같다. "
+                             f"IFC 로 내보냈다 가져오면 정의 {len(pr['restored'])}개가 되살고 해시 3종이 같으며, 되살린 정의로 낸 파일도 같다(경고 0). 뷰·주석 정의는 이전부터 IFC 로 왕복한다")}
+    return {"B-04": (PART, f"시트 정의 저장은 있으나 검증이 일부 어긋났다: {json.dumps(pr, ensure_ascii=False)[:300]}")}
 
 
 def judge_gate(items: dict, out: Path, run: dict):

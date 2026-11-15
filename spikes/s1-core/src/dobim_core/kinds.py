@@ -223,6 +223,23 @@ def _space_params(p):
     return _check_fields("space", p, {"name": _name, "category": lambda v: text_ok(v, 0, 255), "boundary": boundary, "height": _pos})
 
 
+SHEET_KEYS = ("name", "views", "paper", "project_name", "sheet_name", "sheet_number", "date", "north_angle", "client", "office", "signers", "revisions",
+              "grids", "callouts", "marks", "tags", "key_plan", "key_zone", "line_profile")   # 시트 정의(sheet.define)가 저장하는 값 전부(빠짐없이 적는다)
+
+
+def _sheet_params(p):
+    """시트 정의: 뷰 배치(앞에서부터 왼쪽 위 -> 오른쪽 -> 아래)와 표제란 인자. 값의 범위·참조는 정의를 되살릴 때(viewdefs) 마저 검사한다."""
+    return _check_fields("sheet", p, {
+        "name": _name, "views": lambda v: isinstance(v, list) and 1 <= len(v) <= 12 and all(id_ok(x) for x in v),
+        "paper": lambda v: v in ("A1", "A3"), "project_name": lambda v: text_ok(v), "sheet_name": lambda v: text_ok(v), "sheet_number": lambda v: text_ok(v),
+        "date": lambda v: v is None or text_ok(v, 10, 10), "north_angle": num_ok, "client": lambda v: text_ok(v), "office": lambda v: text_ok(v),
+        "signers": lambda v: _json_ok(v) and isinstance(v, list), "revisions": lambda v: _json_ok(v) and isinstance(v, list),
+        "grids": lambda v: _json_ok(v) and isinstance(v, list), "callouts": lambda v: _json_ok(v) and isinstance(v, list), "marks": lambda v: type(v) is bool,
+        "tags": lambda v: isinstance(v, list) and all(text_ok(x, 1, 16) for x in v), "key_plan": lambda v: v is None or id_ok(v),
+        "key_zone": lambda v: v is None or (isinstance(v, list) and len(v) == 4 and all(num_ok(x) for x in v)),
+        "line_profile": lambda v: v is None or (_json_ok(v) and isinstance(v, dict))})
+
+
 def _foreign_params(p):
     return _check_fields("foreign", p, {"name": lambda v: text_ok(v, 0, 255)})
 
@@ -258,6 +275,9 @@ ELEMENT_KINDS: dict[str, ElementKind] = {k.name: k for k in (
                 ref_kinds=(("view", ("view",)),)),
     ElementKind("tag", False, None, False, 7, _tag_params, refs=(("view", "id", "annot_of"), ("target", "id", None)),
                 ref_kinds=(("view", ("view",)), ("target", ("wall", "door")))),
+    # 시트 정의(뷰 배치·표제란 인자): 뷰와 같은 비 IFC 의도 요소다. 뷰를 가리키는 참조는 목록(views)·중첩(revisions·callouts 의 view)이라 관계로 묻지 않는다
+    ElementKind("sheet", False, None, False, 8, _sheet_params, refs=(("views", "ids", None), ("key_plan", "id", None)),
+                ref_kinds=(("key_plan", ("view",)),)),
 )}
 
 NON_IFC_KINDS = frozenset(k for k, v in ELEMENT_KINDS.items() if not v.ifc)      # 신원·속성셋·재료가 없는 의도 요소(뷰 정의, 치수·태그)
@@ -272,6 +292,8 @@ FAMILY_OF_KIND = {"level": "level.basic", "wall": "wall.basic", "door": "door.si
 
 def _remap_ref(form: str, v, m: dict):
     """참조 값 하나에서 id 를 m(옛 id -> 새 id)으로 바꾼다. 모양이 다른 값은 그대로 둔다(검사는 다른 곳의 일이다)."""
+    if form == "ids":   # id 목록(시트가 올린 뷰)
+        return [m.get(x, x) if isinstance(x, str) else x for x in v] if isinstance(v, list) else v
     if not isinstance(v, str):
         return v
     if form == "id":
@@ -290,6 +312,12 @@ def remap_params(kind: str, params, m: dict):
     for name, form, _rel in k.refs:
         if name in params and (nv := _remap_ref(form, params[name], m)) != params[name]:
             out = dict(out, **{name: nv})
+    if kind == "sheet":   # 개정 구름·부위 상세가 가리키는 뷰(목록 안의 객체)
+        for name in ("revisions", "callouts"):
+            if isinstance(out.get(name), list):
+                nv = [dict(x, view=m.get(x["view"], x["view"])) if isinstance(x, dict) and isinstance(x.get("view"), str) else x for x in out[name]]
+                if nv != out[name]:
+                    out = dict(out, **{name: nv})
     return out
 
 

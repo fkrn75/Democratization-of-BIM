@@ -20,8 +20,8 @@ from dobim_core import annot as AN
 from dobim_core import kinds as K
 from dobim_core.family.recipe import FamilyError, load_json_text
 
-DEF_KINDS = ("view", "dim", "tag")                                      # 정의를 IFC 에 싣는 종류(kinds.NON_IFC_KINDS 와 같은 집합)
-FAMILY_ID = {"view": "view.basic", "dim": "annot.dim", "tag": "annot.tag"}   # 커맨드가 만드는 행의 family_id
+DEF_KINDS = ("view", "dim", "tag", "sheet")                                    # 정의를 IFC 에 싣는 종류(kinds.NON_IFC_KINDS 와 같은 집합)
+FAMILY_ID = {"view": "view.basic", "dim": "annot.dim", "tag": "annot.tag", "sheet": "sheet.basic"}   # 커맨드가 만드는 행의 family_id
 DEFS_PSET = "DoBIM_Defs"                                                # IfcProject 의 예약 속성셋 이름
 MAX_DEF_CHARS = 16 * 1024                                               # 정의 하나의 텍스트 상한(정상 정의는 1KB 안팎)
 MAX_DEFS = 100_000                                                      # 한 파일에서 읽는 정의 수 상한(넘으면 나머지는 읽지 않고 경고)
@@ -105,6 +105,17 @@ def _tag_values(p: dict) -> None:
         raise ValueError("태그에 없는 표시 필드가 있다")
 
 
+def _sheet_values(p: dict) -> None:
+    """시트 정의의 값: 커맨드(sheet.define)가 쓰는 같은 모델로 검사하고, 다시 쓴 값이 저장된 값과 같은(정규형) 것만 받는다."""
+    from dobim_core import commands_sheet as CS   # 늦게 불러온다: 커맨드 모듈은 이 모듈을 쓰는 엔진보다 늦게 읽힌다
+    try:
+        d = CS.SheetDef.model_validate({k: v for k, v in p.items() if v is not None}).model_dump(mode="json")   # 값이 없는 선택 필드(null)는 생략으로 읽는다
+    except ValueError as ex:   # pydantic ValidationError 는 ValueError 다
+        raise ValueError(f"시트 값이 올바르지 않다({str(ex).splitlines()[0][:60]})") from None
+    if canon(d) != canon(p):
+        raise ValueError("시트 정의가 정규형이 아니다")
+
+
 def parse_def(eid: str, text) -> dict:
     """속성 하나(이름 = 요소 id, 값 = 텍스트) -> {"kind", "params", "family_id"}. 못 읽으면 ValueError(호출자는 이 정의를 되살리지 않는다)."""
     if not K.id_ok(eid):
@@ -125,9 +136,9 @@ def parse_def(eid: str, text) -> dict:
     if (err := K.row_params_error(kind, params)) is not None:
         raise ValueError(err)
     try:
-        if not _name_ok(params["name"]):
+        if not _name_ok(params["name"]) or (kind == "sheet" and not all(_name_ok(params[k]) for k in ("project_name", "sheet_name", "sheet_number", "client", "office"))):
             raise ValueError("이름에 짝 없는 서로게이트가 있다")
-        {"view": _view_values, "dim": _dim_values, "tag": _tag_values}[kind](params)
+        {"view": _view_values, "dim": _dim_values, "tag": _tag_values, "sheet": _sheet_values}[kind](params)
     except (KeyError, TypeError, IndexError) as ex:
         raise ValueError(f"정의 값이 올바르지 않다({type(ex).__name__})") from None
     if d["check"] != check_of(eid, kind, params):

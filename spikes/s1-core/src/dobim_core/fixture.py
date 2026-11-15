@@ -13,6 +13,7 @@ def _id(prefix: str, n: int) -> str:
 LV1, LV2 = _id("3", 1), _id("3", 2)
 W1, W2, W3 = _id("1", 1), _id("1", 2), _id("1", 3)
 D1, D2 = _id("2", 1), _id("2", 2)
+SH1 = _id("9", 1)   # 시트 정의 예시용 고정 id (SCRIPT 에는 넣지 않는다)
 SP1 = _id("8", 1)   # 공간 예시용 고정 id (SCRIPT 에는 넣지 않는다)
 ST1 = _id("7", 1)   # 계단 예시용 고정 id (SCRIPT 에는 넣지 않는다)
 S1 = _id("6", 1)   # 슬래브 예시용 고정 id (SCRIPT 에는 넣지 않는다)
