@@ -1585,6 +1585,10 @@ def view_labels(g, v):
             out.extend(g.q(plan_fire_labels, v, w))
         elif cfg[0] == "elev":
             out.extend(g.q(elev_finish, v, w)[1])
+    if cfg[0] == "elev":
+        out.extend(g.q(site_sign_labels, v))
+    elif cfg[0] == "sec":
+        out.extend(g.q(site_section_labels, v))
     return tuple(out)
 
 
@@ -2621,6 +2625,7 @@ def site_lines(g, v):
             a, b, _length, (nx, ny) = _edge_frame(poly, edge)
             a2, b2 = (a[0] + nx * width, a[1] + ny * width), (b[0] + nx * width, b[1] + ny * width)
             segs += [("proj", a[0], a[1], a2[0], a2[1]), ("proj", b[0], b[1], b2[0], b2[1]), ("proj", a2[0], a2[1], b2[0], b2[1])]
+        segs.extend(site_extra_lines(g, s, scale))       # 조경·공개공지·주차(없으면 비어 있다)
     segs.extend(("cut", x0, y0, x1, y1) for x0, y0, x1, y1 in g.q(building_outline))
     boxes, north = g.q(_site_extent)
     if boxes:
@@ -2649,11 +2654,329 @@ def site_labels(g, v):
             lx, ly = m[0] + nx * width * 0.5, m[1] + ny * width * 0.5
             out.append((round(lx, 3), round(ly + 0.6 * scale, 3), f"{rn or '도로'} 폭 {_fmt_mm(width)}", SITE_SUB_H, "middle"))
             out.append((round(lx, 3), round(ly - 2.4 * scale, 3), f"접도 길이 {_fmt_mm(length)}", SITE_SUB_H, "middle"))
+        out.extend(site_extra_labels(g, s, poly, scale))
     boxes, north = g.q(_site_extent)
     if boxes:
         _sym, lab, bb = _north_symbol(boxes, scale, north)
         out.extend(lab)
         out.append((round((bb[0] + bb[2]) / 2.0, 3), round(bb[1] - 4.0 * scale, 3), f"S=1:{scale}", SITE_SUB_H, "middle"))
+    return tuple(out)
+
+
+# ================================================================ 대지의 선택 속성 (설계: elements-design.md 14절)
+# 지반 표고점(terrain)·조경/공개공지 영역(zones)·주차 계획(parking)·간판(signs)은 site 행의 선택 파라미터다. 없으면 아래 함수는 모두 빈 값이고
+# 기존 도면은 바이트까지 그대로다. 배치도에는 영역 해치·면적·주차면·차로·동선을, 입면에는 간판 사각형을, 대지 단면 뷰(section 의 with_site)에는 지반선을 그린다.
+ZONE_LABEL = {"landscape": "조경", "open_space": "공개공지"}
+SIGN_LABEL = {"sign": "간판", "address": "건물번호판"}
+ARROW_L, ARROW_COS, ARROW_SIN = 3.0, 0.9063077870366499, 0.42261826174069944   # 동선 화살표 머리 길이(용지 mm)와 25도의 cos·sin
+SEC_STEP = 1000.0            # 대지 단면 지반선의 표본 간격(mm)
+SEC_STEP_MAX = 400           # 지반선 표본 수 상한
+SEC_TICK = 500.0             # 지반선 아래 사선 눈금 길이(mm)
+SEC_MARK_DOWN, SEC_MARK_UP = 1500.0, 3000.0   # 대지 경계 표시 세로선이 지반 아래·위로 뻗는 길이(mm)
+
+
+def site_extra(g, s):
+    """대지의 선택 속성 중 있는 것만 담은 dict(없으면 빈 dict). 저작 대지만."""
+    row = Q.el(g, s)
+    if row is None or row["kind"] != "site" or row["origin"] != "authored":
+        return {}
+    p = row["params"]
+    return {k: p[k] for k in K.SITE_OPTIONAL if k in p}
+
+
+def terrain_z(pts, x, y):
+    """지반 표고 보간: 표고점 [[x,y,z],...] 에서 거리 제곱 역가중 평균(점 위면 그 점의 z). 사칙연산만이라 결정적이다."""
+    num = den = 0.0
+    for px, py, pz in pts:
+        d2 = (px - x) * (px - x) + (py - y) * (py - y)
+        if d2 < 1e-6:
+            return pz
+        w = 1.0 / d2
+        num += w * pz
+        den += w
+    return num / den
+
+
+def _poly_hatch(poly, use, step_mm):
+    """다각형 안의 해치 선분. 조경 = 45도, 공개공지 = 135도. 선은 세계 격자(간격의 정수배)에 맞춘다(영역이 달라도 무늬가 이어진다)."""
+    k = -1.0 if use == "landscape" else 1.0           # f = k*x + y 가 일정한 선
+    dc = step_mm * 1.4142135623730951
+    fs = [k * q[0] + q[1] for q in poly]
+    lo, hi = min(fs), max(fs)
+    out = []
+    n = len(poly)
+    m = _floor(lo / dc) + 1
+    while m * dc < hi:
+        c = m * dc
+        m += 1
+        xs = []
+        for i in range(n):
+            a, b = poly[i], poly[(i + 1) % n]
+            fa, fb = fs[i], fs[(i + 1) % n]
+            if (fa <= c < fb) or (fb <= c < fa):
+                t = (c - fa) / (fb - fa)
+                xs.append((a[0] + t * (b[0] - a[0]), a[1] + t * (b[1] - a[1])))
+        xs.sort()
+        for j in range(0, len(xs) - 1, 2):
+            if abs(xs[j + 1][0] - xs[j][0]) > SEG_MIN:
+                out.append(("hatch", xs[j][0], xs[j][1], xs[j + 1][0], xs[j + 1][1]))
+    return out
+
+
+def zone_totals(zones):
+    """(조경 면적 ㎡ 합, 공개공지 면적 ㎡ 합). 영역끼리 겹치는지는 보지 않는다(입력 책임)."""
+    t = {"landscape": 0.0, "open_space": 0.0}
+    for z in zones:
+        t[z["use"]] += abs(_area2(z["boundary"])) / 2.0 / 1.0e6
+    return t["landscape"], t["open_space"]
+
+
+def parking_bays(pk):
+    """주차면 배열 -> [(배열 번호, 장애인 여부, 사각형 꼭짓점 4개), ...]. 배열은 시작 모서리에서 angle 방향으로 폭 w 씩, 깊이 d 는 그 왼쪽으로 뻗는다."""
+    out = []
+    for gi, b in enumerate(pk.get("bays", ())):
+        sn, cs = _sincos_deg(b["angle"])
+        ox, oy = b["origin"]
+        for i in range(b["count"]):
+            p0 = (ox + cs * b["w"] * i, oy + sn * b["w"] * i)
+            p1 = (p0[0] + cs * b["w"], p0[1] + sn * b["w"])
+            p2 = (p1[0] - sn * b["d"], p1[1] + cs * b["d"])
+            p3 = (p0[0] - sn * b["d"], p0[1] + cs * b["d"])
+            out.append((gi, bool(b.get("accessible")), (p0, p1, p2, p3)))
+    return out
+
+
+def parking_counts(pk):
+    """(주차 대수 합, 그 중 장애인 전용). 주차면 배열이 없으면 (0, 0)."""
+    total = sum(b["count"] for b in pk.get("bays", ()))
+    acc = sum(b["count"] for b in pk.get("bays", ()) if b.get("accessible"))
+    return total, acc
+
+
+def site_extra_lines(g, s, scale):
+    """배치도에 더하는 선분: 조경·공개공지 영역 윤곽(proj)과 해치, 주차면(proj)·차로 양쪽 선(proj)·진출입 동선과 화살표(symbol)."""
+    ex = g.q(site_extra, s)
+    segs = []
+    for z in ex.get("zones", ()):
+        b = z["boundary"]
+        segs.extend(("proj", b[i][0], b[i][1], b[(i + 1) % len(b)][0], b[(i + 1) % len(b)][1]) for i in range(len(b)))
+        segs.extend(_poly_hatch(b, z["use"], HATCH_STEP * scale))
+    for px, py, _pz in ex.get("terrain", ()):   # 지반 표고점: 작은 십자(문자는 site_extra_labels)
+        h = 1.0 * scale
+        segs += [("symbol", px - h, py, px + h, py), ("symbol", px, py - h, px, py + h)]
+    pk = ex.get("parking")
+    if pk:
+        for _gi, _acc, c in parking_bays(pk):
+            segs.extend(("proj", c[i][0], c[i][1], c[(i + 1) % 4][0], c[(i + 1) % 4][1]) for i in range(4))
+        for a in pk.get("aisles", ()):
+            path, h = a["path"], a["width"] / 2.0
+            for i in range(len(path) - 1):
+                (x0, y0), (x1, y1) = path[i], path[i + 1]
+                dx, dy = x1 - x0, y1 - y0
+                ln = sqrt(dx * dx + dy * dy)
+                if ln < SEG_MIN:
+                    continue
+                nx, ny = -dy / ln * h, dx / ln * h
+                segs.append(("proj", x0 + nx, y0 + ny, x1 + nx, y1 + ny))
+                segs.append(("proj", x0 - nx, y0 - ny, x1 - nx, y1 - ny))
+        for r in pk.get("routes", ()):
+            path = r["path"]
+            for i in range(len(path) - 1):
+                segs.append(("symbol", path[i][0], path[i][1], path[i + 1][0], path[i + 1][1]))
+            (x0, y0), (x1, y1) = path[-2], path[-1]
+            dx, dy = x1 - x0, y1 - y0
+            ln = sqrt(dx * dx + dy * dy)
+            if ln >= SEG_MIN:
+                ux, uy = dx / ln, dy / ln
+                hl = ARROW_L * scale
+                for sg in (1.0, -1.0):                     # 화살표 머리: 끝점에서 뒤로 ±25도
+                    wx = ux * ARROW_COS - sg * uy * ARROW_SIN
+                    wy = uy * ARROW_COS + sg * ux * ARROW_SIN
+                    segs.append(("symbol", x1, y1, x1 - wx * hl, y1 - wy * hl))
+            sx, sy = path[0]                                # 진입 표시: 시작점의 짧은 가로대
+            dx, dy = path[1][0] - sx, path[1][1] - sy
+            ln = sqrt(dx * dx + dy * dy)
+            if ln >= SEG_MIN:
+                bx, by = -dy / ln * ARROW_L * scale / 2.0, dx / ln * ARROW_L * scale / 2.0
+                segs.append(("symbol", sx + bx, sy + by, sx - bx, sy - by))
+    return segs
+
+
+def site_extra_labels(g, s, poly, scale):
+    """배치도에 더하는 문자: 영역 이름·면적, 영역 합계, 주차 대수(배열마다와 합계)."""
+    ex = g.q(site_extra, s)
+    out = []
+    cx, _cy = polygon_centroid(poly)
+    top = max(q[1] for q in poly)
+    for px, py, pz in ex.get("terrain", ()):   # 지반 표고점의 높이(모델 기준 mm): 배치도에 대지의 고저차를 보인다
+        out.append((round(px, 3), round(py + 1.4 * scale, 3), f"지반 {pz:+.0f}", SITE_SUB_H, "middle"))
+    zones = ex.get("zones", ())
+    for z in zones:
+        zx, zy = polygon_centroid(z["boundary"])
+        out.append((round(zx, 3), round(zy, 3), f"{z['name'] or ZONE_LABEL[z['use']]} {area_text(z['boundary'])}", SITE_SUB_H, "middle"))
+    site_a = abs(_area2(poly)) / 2.0 / 1.0e6
+    row = 16.0
+    if zones:
+        la, op = zone_totals(zones)
+        for use, a in (("landscape", la), ("open_space", op)):
+            if any(z["use"] == use for z in zones):
+                out.append((round(cx, 3), round(top - row * scale, 3), f"{ZONE_LABEL[use]} 면적 합계 {a:.2f}㎡(대지면적의 {a / site_a * 100.0:.1f}%)", SITE_SUB_H, "middle"))
+                row += 3.0
+    pk = ex.get("parking")
+    if pk and pk.get("bays"):
+        total, acc = parking_counts(pk)
+        for b in pk["bays"]:
+            sn, cs = _sincos_deg(b["angle"])
+            ox, oy = b["origin"]
+            ex_, ey_ = b["w"] * b["count"] / 2.0, b["d"] / 2.0         # 배열의 가운데(깊이 쪽 절반)
+            out.append((round(ox + cs * ex_ - sn * ey_, 3), round(oy + sn * ex_ + cs * ey_, 3),
+                        ("장애인 " if b.get("accessible") else "주차 ") + f"{b['count']}대", SITE_SUB_H, "middle"))
+        out.append((round(cx, 3), round(top - row * scale, 3), f"주차 합계 {total}대" + (f"(장애인 전용 {acc}대)" if acc else ""), SITE_SUB_H, "middle"))
+    return out
+
+
+def _elev_signs(g, v):
+    """입면 뷰가 바라보는 면에 붙은 간판·번호판: ((간판 dict, 가로 시작 s0, 끝 s1, 아래 z0, 위 z1), ...). 없으면 빈 튜플."""
+    cfg = g.q(view_cfg, v)
+    if cfg is None or cfg[0] != "elev":
+        return ()
+    d = Q.el(g, v)["params"]["dir"]
+    out = []
+    for s in g.q(all_sites):
+        for sg in g.q(site_extra, s).get("signs", ()):
+            if sg["face"] != d:
+                continue
+            sx = _sw(cfg, sg["center"])[0]
+            out.append((sg, sx - sg["w"] / 2.0, sx + sg["w"] / 2.0, sg["z"], sg["z"] + sg["h"]))
+    return tuple(out)
+
+
+def site_sign_lines(g, v):
+    """입면의 간판·건물번호판 사각형 윤곽(symbol)."""
+    segs = []
+    for _sg, s0, s1, z0, z1 in g.q(_elev_signs, v):
+        segs += [("symbol", s0, z0, s1, z0), ("symbol", s1, z0, s1, z1), ("symbol", s1, z1, s0, z1), ("symbol", s0, z1, s0, z0)]
+    return tuple(segs)
+
+
+def site_sign_labels(g, v):
+    """입면의 간판·건물번호판 문자: 사각형 위에 종류·이름·크기(폭x높이), 안에 문구."""
+    cfg = g.q(view_cfg, v)
+    out = []
+    for sg, s0, s1, z0, z1 in g.q(_elev_signs, v):
+        sc = cfg[10]
+        mid = (s0 + s1) / 2.0
+        out.append((round(mid, 3), round(z1 + 1.0 * sc, 3), f"{SIGN_LABEL[sg['kind']]} {sg['name']} {_fmt_mm(sg['w'])}x{_fmt_mm(sg['h'])}", SITE_SUB_H, "middle"))
+        if sg["text"]:
+            out.append((round(mid, 3), round((z0 + z1) / 2.0 - 0.8 * sc, 3), sg["text"], 2.0, "middle"))
+    return tuple(out)
+
+
+def _site_sec(g, v):
+    """대지 단면 뷰(section 의 with_site)가 지나는 대지 구간: (뷰 파라미터, ((대지 id, ((t0, t1), ...)), ...)). 구간은 절단선(0..1) 중 대지 경계 안쪽이다.
+    with_site 가 아닌 뷰는 None."""
+    cfg = g.q(view_cfg, v)
+    if cfg is None or cfg[0] != "sec":
+        return None
+    p = Q.el(g, v)["params"]
+    if not p.get("with_site"):
+        return None
+    a, b = tuple(p["p1"]), tuple(p["p2"])
+    out = []
+    for s in g.q(all_sites):
+        poly = g.q(site_info, s)[0]
+        ts = {0.0, 1.0}
+        for i in range(len(poly)):
+            ts.update(t for t in _hit_ts(a, b, poly[i], poly[(i + 1) % len(poly)]) if 0.0 < t < 1.0)
+        ts = sorted(ts)
+        inside = []
+        for t0, t1 in zip(ts, ts[1:]):
+            tm = (t0 + t1) / 2.0
+            if K.point_in_polygon((a[0] + (b[0] - a[0]) * tm, a[1] + (b[1] - a[1]) * tm), [list(q) for q in poly]) >= 0:
+                if inside and abs(inside[-1][1] - t0) < 1e-12:
+                    inside[-1] = (inside[-1][0], t1)
+                else:
+                    inside.append((t0, t1))
+        out.append((s, tuple(inside)))
+    return p, tuple(out)
+
+
+def _gl_z(g, s):
+    """GL(지표면 기준선) 높이: 건물 외곽 경계 상자 가운데의 지반 표고. 건물이 없으면 표고점 z 의 평균. 표고점이 없으면 0."""
+    polys = g.q(building_polys)
+    pts = g.q(site_extra, s).get("terrain", ())
+    if not pts:
+        return 0.0
+    if polys:
+        x0 = min(q[0] for P in polys for q in P)
+        x1 = max(q[0] for P in polys for q in P)
+        y0 = min(q[1] for P in polys for q in P)
+        y1 = max(q[1] for P in polys for q in P)
+        return terrain_z(pts, (x0 + x1) / 2.0, (y0 + y1) / 2.0)
+    return sum(q[2] for q in pts) / len(pts)
+
+
+def site_section_lines(g, v):
+    """대지 단면(section 의 with_site): 지반선(cut), 지반 아래 사선 눈금(hatch), GL 수평선(proj), 대지 경계 표시 세로선(symbol). 건물은 단면 뷰가 이미 그린다."""
+    cfg = g.q(view_cfg, v)
+    info = g.q(_site_sec, v)
+    if info is None:
+        return ()
+    p, sites = info
+    a, b = p["p1"], p["p2"]
+    dx, dy = b[0] - a[0], b[1] - a[1]
+    length = sqrt(dx * dx + dy * dy)
+    segs = []
+    for s, inside in sites:
+        pts = g.q(site_extra, s).get("terrain", ())
+        gl = g.q(_gl_z, s)
+        for t0, t1 in inside:
+            n = min(SEC_STEP_MAX, int((t1 - t0) * length / SEC_STEP) + 1)
+            prev = None
+            for i in range(n + 1):
+                t = t0 + (t1 - t0) * i / n
+                x, y = a[0] + dx * t, a[1] + dy * t
+                z = terrain_z(pts, x, y) if pts else 0.0
+                sx = _sw(cfg, (x, y))[0]
+                if prev is not None:
+                    segs.append(("cut", prev[0], prev[1], sx, z))
+                    segs.append(("hatch", sx, z, sx - SEC_TICK, z - SEC_TICK))
+                prev = (sx, z)
+            s0, s1 = _sw(cfg, (a[0] + dx * t0, a[1] + dy * t0))[0], _sw(cfg, (a[0] + dx * t1, a[1] + dy * t1))[0]
+            segs.append(("proj", s0, gl, s1, gl))
+            for t in (t0, t1):
+                if 1e-9 < t < 1.0 - 1e-9:
+                    x, y = a[0] + dx * t, a[1] + dy * t
+                    z = terrain_z(pts, x, y) if pts else 0.0
+                    sx = _sw(cfg, (x, y))[0]
+                    segs.append(("symbol", sx, z - SEC_MARK_DOWN, sx, z + SEC_MARK_UP))
+    return tuple(segs)
+
+
+def site_section_labels(g, v):
+    """대지 단면의 문자: GL 높이(모델 기준·표고가 있으면 EL 도), 대지 경계 표시."""
+    cfg = g.q(view_cfg, v)
+    info = g.q(_site_sec, v)
+    if info is None:
+        return ()
+    p, sites = info
+    a, b = p["p1"], p["p2"]
+    dx, dy = b[0] - a[0], b[1] - a[1]
+    out = []
+    for s, inside in sites:
+        ex = g.q(site_extra, s)
+        pts = ex.get("terrain", ())
+        gl = g.q(_gl_z, s)
+        el = g.q(site_info, s)[4]
+        for t0, t1 in inside:
+            s0 = _sw(cfg, (a[0] + dx * t0, a[1] + dy * t0))[0]
+            txt = f"GL {gl:+.0f}" + (f"(EL {(el + gl) / 1000.0:+.3f}m)" if el is not None else "")
+            out.append((round(s0 + 4000.0, 3), round(gl + 0.8 * cfg[10], 3), txt, SITE_SUB_H, "middle"))
+            for t in (t0, t1):
+                if 1e-9 < t < 1.0 - 1e-9:
+                    x, y = a[0] + dx * t, a[1] + dy * t
+                    z = terrain_z(pts, x, y) if pts else 0.0
+                    out.append((round(_sw(cfg, (x, y))[0], 3), round(z + SEC_MARK_UP + 0.8 * cfg[10], 3), "대지 경계", SITE_SUB_H, "middle"))
     return tuple(out)
 
 
@@ -2792,6 +3115,10 @@ def view_lines(g, v):
         segs.extend(g.q(railing_lines, v, rl))
     for ev in g.q(scope_elevators, v):
         segs.extend(g.q(elevator_lines, v, ev))
+    if cfg[0] == "elev":
+        segs.extend(g.q(site_sign_lines, v))
+    elif cfg[0] == "sec":
+        segs.extend(g.q(site_section_lines, v))
     return merge_lines(segs)
 
 
@@ -2830,6 +3157,10 @@ def view_lines_hier(g, v):
         segs.extend(g.q(railing_lines, v, rl))
     for ev in g.q(scope_elevators, v):
         segs.extend(g.q(elevator_lines, v, ev))
+    if cfg[0] == "elev":
+        segs.extend(g.q(site_sign_lines, v))
+    elif cfg[0] == "sec":
+        segs.extend(g.q(site_section_lines, v))
     return merge_lines(segs)
 
 
@@ -2916,7 +3247,7 @@ VIEW_SCOPED = frozenset({view_cfg, scope_walls, view_omitted, plan_pieces, plan_
                          scope_fams, plan_fam_parts, _fam_vpieces, vfam_bbox, vfam_cut_rects, vfam_edges, vfam_nbr_pieces, fam_lines,
                          vfam_hosted_edges, scope_slabs, plan_slab_parts, _slab_vpieces, slab_vbbox, slab_cut_rects, slab_vedges, slab_nbr_walls, slab_lines,
                          scope_stairs, scope_railings, railing_lines, scope_elevators, elevator_lines, plan_elevator_labels, plan_roof_marks, plan_stair_parts, _stair_vpieces, stair_vbbox, stair_cut_rects, stair_vedges, stair_nbr_walls, stair_lines,
-                         scope_spaces, plan_space_labels, view_labels, site_lines, site_labels, site_dims, vwall_hidden, view_hidden_lines, plan_fire_lines, plan_fire_labels, elev_finish})
+                         scope_spaces, plan_space_labels, view_labels, site_lines, site_labels, site_dims, _elev_signs, site_sign_lines, site_sign_labels, _site_sec, _gl_z, site_section_lines, site_section_labels, vwall_hidden, view_hidden_lines, plan_fire_lines, plan_fire_labels, elev_finish})
 
 
 def forget_views(g, vids) -> int:

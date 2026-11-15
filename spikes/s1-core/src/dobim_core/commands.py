@@ -1473,6 +1473,100 @@ class SiteRoad(A):
 SiteRoads = Annotated[list[SiteRoad], Field(max_length=8, description="대지에 접한 도로(변마다 하나)")]
 
 
+# 14절: 대지의 선택 속성(지반 표고점·조경/공개공지 영역·주차 계획·간판). 없으면 행에 키가 없다(입력이 없는 프로젝트는 저장 형식·해시가 그대로)
+SiteTerrain = Annotated[list[Annotated[list[Num], Field(min_length=3, max_length=3)]], Field(
+    min_length=1, max_length=K.SITE_TERRAIN_MAX,
+    description="지반 표고점 [[x,y,z],...] mm(최대 64). z 는 모델 기준 높이(1층 바닥 0, 아래는 음수). 단면의 지반선은 이 점들을 거리 역가중으로 보간한다")]
+
+
+class SiteZone(A):
+    use: Literal["landscape", "open_space"] = Field(description="landscape = 조경, open_space = 공개공지")
+    name: Annotated[str, Field(max_length=64), AfterValidator(_text_ok)] = ""
+    boundary: SlabBoundary = Field(description="영역 다각형 [[x,y],...] mm. 대지 경계 안(경계 위 포함)이어야 한다. 시계 방향이면 반시계로 저장")
+
+
+SiteZones = Annotated[list[SiteZone], Field(min_length=1, max_length=K.SITE_ZONES_MAX, description="조경·공개공지 영역(최대 32). 배치도에 해치·면적 문자와 합계를 그린다")]
+SitePath = Annotated[list[SlabPt], Field(min_length=2, max_length=K.PARK_PATH_PTS_MAX, description="꺾임점 [[x,y],...] (2~16개)")]
+
+
+class ParkBay(A):
+    origin: SlabPt = Field(description="배열 시작 모서리 [x,y] mm. 대지 안이어야 한다")
+    angle: Num = Field(0.0, ge=-360.0, le=360.0, description="배열 방향 각(도, +x 가 0, 반시계). 주차면은 이 방향으로 나란히 놓이고 깊이는 그 왼쪽으로 뻗는다")
+    count: int = Field(ge=1, le=K.PARK_COUNT_MAX, description="주차면 수")
+    w: Pos = Field(2500.0, description="주차면 폭(배열 방향) mm")
+    d: Pos = Field(5000.0, description="주차면 깊이 mm")
+    accessible: bool = Field(False, description="참이면 장애인 전용 배열(대수를 따로 센다)")
+
+
+class ParkAisle(A):
+    path: SitePath
+    width: Pos = Field(6000.0, description="차로 폭 mm")
+
+
+class ParkRoute(A):
+    path: SitePath = Field(description="진출입 동선 [[x,y],...]: 첫 점이 진입, 끝 점이 화살표 머리")
+
+
+class SiteParking(A):
+    bays: list[ParkBay] | None = Field(None, min_length=1, max_length=K.PARK_BAY_GROUPS_MAX, description="주차면 배열(규격 사각형을 나란히)")
+    aisles: list[ParkAisle] | None = Field(None, min_length=1, max_length=K.PARK_PATHS_MAX, description="차로")
+    routes: list[ParkRoute] | None = Field(None, min_length=1, max_length=K.PARK_PATHS_MAX, description="진출입 동선 화살표")
+
+    @model_validator(mode="after")
+    def _some(self):
+        if self.bays is None and self.aisles is None and self.routes is None:
+            raise ValueError("bays, aisles, routes 중 하나는 있어야 한다")
+        return self
+
+
+class SiteSign(A):
+    name: Name
+    kind: Literal["sign", "address"] = Field("sign", description="sign = 간판, address = 건물번호판")
+    face: Literal["N", "E", "S", "W"] = Field(description="붙는 벽 면이 바라보는 방위(입면 뷰 dir 과 같은 면에 그려진다)")
+    center: SlabPt = Field(description="면 위 중심의 평면 위치 [x,y] mm")
+    z: Num = Field(description="아래 모서리 높이(모델 기준, 1층 바닥 0) mm")
+    w: Pos = Field(description="폭 mm")
+    h: Pos = Field(description="높이 mm")
+    text: Annotated[str, Field(max_length=64), AfterValidator(_text_ok)] = ""
+
+
+SiteSigns = Annotated[list[SiteSign], Field(min_length=1, max_length=K.SITE_SIGNS_MAX, description="간판·건물번호판(최대 32). 입면 뷰에 사각형과 크기 문자를 그린다")]
+
+
+def _ccw(b):
+    return b if polygon_area2(b) > 0 else b[::-1]
+
+
+def _site_extras(terrain, zones, parking, signs) -> dict:
+    """대지 선택 속성 입력을 저장 모양(숫자 float, 영역은 반시계, accessible 은 참일 때만)으로 만든다. 주지 않은 것은 키가 없다."""
+    out: dict = {}
+    if terrain is not None:
+        out["terrain"] = [[float(v) for v in q] for q in terrain]
+    if zones is not None:
+        out["zones"] = [{"use": z.use, "name": z.name, "boundary": _ccw([[float(x), float(y)] for x, y in z.boundary])} for z in zones]
+    if parking is not None:
+        pk: dict = {}
+        if parking.bays is not None:
+            pk["bays"] = [dict({"origin": [float(b.origin[0]), float(b.origin[1])], "angle": float(b.angle), "count": b.count, "w": float(b.w), "d": float(b.d)},
+                               **({"accessible": True} if b.accessible else {})) for b in parking.bays]
+        if parking.aisles is not None:
+            pk["aisles"] = [{"path": [[float(x), float(y)] for x, y in a.path], "width": float(a.width)} for a in parking.aisles]
+        if parking.routes is not None:
+            pk["routes"] = [{"path": [[float(x), float(y)] for x, y in r.path]} for r in parking.routes]
+        out["parking"] = pk
+    if signs is not None:
+        out["signs"] = [{"name": g.name, "kind": g.kind, "face": g.face, "center": [float(g.center[0]), float(g.center[1])], "z": float(g.z), "w": float(g.w),
+                         "h": float(g.h), "text": g.text} for g in signs]
+    return out
+
+
+def _site_check(params) -> None:
+    """대지 행 검사(영역·주차면 시작점이 대지 안인지 등). 코어 행 검사와 같은 것이다."""
+    why = K.row_params_error("site", params)
+    if why:
+        raise DobimError("CONSTRAINT", f"대지가 올바르지 않다: {why}")
+
+
 def _site_geometry(boundary_in, roads_in) -> tuple[list, list]:
     """경계(반시계로 저장)와 도로를 정규화한다. 시계 방향 입력은 경계를 뒤집으므로 도로의 변 번호도 저장한 경계 기준으로 옮긴다."""
     b = [[float(x), float(y)] for x, y in boundary_in]
@@ -1501,6 +1595,10 @@ class SiteCreate(A):
     north_angle: Num = Field(0.0, ge=-360.0, le=360.0, description="정북이 도면 위쪽에서 시계방향으로 몇 도 돌아 있는가(0 이면 +y 가 정북)")
     roads: SiteRoads = Field(default_factory=list)
     elevation: Num | None = Field(None, description="대지 표고 mm(선택). IfcSite RefElevation 으로 실린다")
+    terrain: SiteTerrain | None = None
+    zones: SiteZones | None = None
+    parking: SiteParking | None = None
+    signs: SiteSigns | None = None
 
 
 @command("site.create", kind="mutation", risk="write", group="model.site", summary="대지 생성(경계 다각형 + 방위 + 접한 도로)",
@@ -1511,8 +1609,10 @@ def site_create(ctx, a: SiteCreate):
     _fresh_id(ctx, a, "site")
     boundary, roads = _site_geometry(a.boundary, a.roads)
     a.name = a.name or f"SITE-{a.id[-6:]}"
-    ctx.put_el(a.id, row("site", "IfcSite", "site.basic", {"name": a.name, "boundary": boundary, "north_angle": a.north_angle, "roads": roads,
-                                                          "elevation": a.elevation}))
+    params = {"name": a.name, "boundary": boundary, "north_angle": a.north_angle, "roads": roads, "elevation": a.elevation,
+              **_site_extras(a.terrain, a.zones, a.parking, a.signs)}
+    _site_check(params)
+    ctx.put_el(a.id, row("site", "IfcSite", "site.basic", params))
     return {"id": a.id}
 
 
@@ -1525,18 +1625,27 @@ class SiteSet(A):
     roads: SiteRoads | None = Field(None, description="주면 도로 목록을 통째로 바꾼다(빈 목록이면 도로 없음)")
     elevation: Num | None = None
     clear_elevation: bool = Field(False, description="참이면 대지 표고를 지운다")
+    terrain: SiteTerrain | None = Field(None, description="주면 지반 표고점을 통째로 바꾼다")
+    zones: SiteZones | None = Field(None, description="주면 조경·공개공지 영역을 통째로 바꾼다")
+    parking: SiteParking | None = Field(None, description="주면 주차 계획을 통째로 바꾼다")
+    signs: SiteSigns | None = Field(None, description="주면 간판·건물번호판을 통째로 바꾼다")
+    clear: list[Literal["terrain", "zones", "parking", "signs"]] = Field(default_factory=list, description="지울 선택 속성(지반 표고점·영역·주차 계획·간판)")
 
     @model_validator(mode="after")
     def _any(self):
-        if all(v is None for v in (self.name, self.boundary, self.north_angle, self.roads, self.elevation)) and not self.clear_elevation:
+        if (all(v is None for v in (self.name, self.boundary, self.north_angle, self.roads, self.elevation, self.terrain, self.zones, self.parking, self.signs))
+                and not self.clear_elevation and not self.clear):
             raise ValueError("바꿀 필드가 하나도 없다")
+        if any(getattr(self, k) is not None for k in self.clear):
+            raise ValueError("clear 로 지우는 속성을 함께 줄 수 없다")
         if self.clear_elevation and self.elevation is not None:
             raise ValueError("elevation 과 clear_elevation 을 함께 줄 수 없다")
         return self
 
 
-@command("site.set", kind="mutation", risk="write", group="model.site", summary="대지 속성 변경(이름·경계·방위·도로·표고)",
-         args=SiteSet, since="0.5", examples=[{"id": F.SI1, "north_angle": 30}])
+@command("site.set", kind="mutation", risk="write", group="model.site", summary="대지 속성 변경(이름·경계·방위·도로·표고·지반 표고점·조경/공개공지 영역·주차 계획·간판)",
+         args=SiteSet, since="0.5", examples=[{"id": F.SI1, "north_angle": 30},
+                                              {"id": F.SI1, "terrain": [[0, 0, 0], [6000, 4000, 300]], "signs": [{"name": "S1", "face": "S", "center": [3000, 0], "z": 2200, "w": 2400, "h": 600}]}])
 def site_set(ctx, a: SiteSet):
     r = ctx.authored(a.id, "site")
     p = dict(r["params"])
@@ -1548,6 +1657,10 @@ def site_set(ctx, a: SiteSet):
     if a.boundary is not None or a.roads is not None:
         keep = [SiteRoad(name=x["name"], edge=x["edge"], width=x["width"]) for x in p["roads"]]
         p["boundary"], p["roads"] = _site_geometry(a.boundary if a.boundary is not None else p["boundary"], a.roads if a.roads is not None else keep)
+    for k in a.clear:
+        p.pop(k, None)
+    p.update(_site_extras(a.terrain, a.zones, a.parking, a.signs))
+    _site_check(p)
     ctx.put_el(a.id, dict(r, params=p))
     return {"id": a.id}
 
@@ -1666,6 +1779,16 @@ def element_get(ctx, a: ElementGet):
     elif r["kind"] == "site":
         b = r["params"]["boundary"]
         out["derived"] = {"area_m2": abs(polygon_area2(b)) / 2.0 / 1e6, "roads": len(r["params"]["roads"])}
+        if "zones" in r["params"]:   # 선택 속성이 있을 때만 더해진다(없으면 응답은 그대로)
+            la, op = D.zone_totals(r["params"]["zones"])
+            out["derived"].update({"landscape_m2": la, "open_space_m2": op})
+        if "parking" in r["params"]:
+            total, acc = D.parking_counts(r["params"]["parking"])
+            out["derived"].update({"parking_bays": total, "parking_accessible": acc})
+        if "signs" in r["params"]:
+            out["derived"]["signs"] = len(r["params"]["signs"])
+        if "terrain" in r["params"]:
+            out["derived"]["terrain_points"] = len(r["params"]["terrain"])
     elif r["kind"] == "stair":
         zb, zt = ctx.g.q(Q.stair_zrange, a.id)
         p = r["params"]
@@ -1886,7 +2009,7 @@ def schedule_summary(ctx, a: ScheduleKind):
 VCoord = Annotated[float, Field(allow_inf_nan=False, ge=-1e7, le=1e7)]
 Point2 = Annotated[list[VCoord], Field(min_length=2, max_length=2, description="[x,y] mm (±1e7)")]
 Scale = Annotated[int, Field(strict=True, ge=1, le=1000, description="축척 분모 (100 = 1:100)")]
-_PLAN_ONLY, _SEC_ONLY, _ELEV_ONLY, _SITE_ONLY = ("level", "cut_height", "view_depth"), ("p1", "p2", "depth", "flip"), ("dir",), ()
+_PLAN_ONLY, _SEC_ONLY, _ELEV_ONLY, _SITE_ONLY = ("level", "cut_height", "view_depth"), ("p1", "p2", "depth", "flip", "with_site"), ("dir",), ()
 
 
 class ViewCreate(A):
@@ -1900,6 +2023,7 @@ class ViewCreate(A):
     p2: Point2 | None = Field(None, description="단면: 절단선 끝점 (필수)")
     depth: VCoord = Field(20000.0, gt=0, description="단면: 절단면 뒤로 보이는 거리 mm (0 초과 1e7 이하)")
     flip: bool = Field(False, description="단면: 거짓이면 절단선 진행 방향의 왼쪽을 본다, 참이면 오른쪽")
+    with_site: bool = Field(False, description="단면: 참이면 대지 단면(대지 경계 안쪽의 지반선·GL·대지 경계 표시를 건물 단면과 함께 그린다). 거짓이면 키 자체가 없다")
     dir: Literal["N", "E", "S", "W"] | None = Field(None, description="입면: 건물을 바라보는 면의 방위 (N = 북측 입면, 바깥에서 남쪽을 봄)")
     scale: Scale = 100
 
@@ -1941,6 +2065,7 @@ def _view_name_free(ctx, name, except_id=None):
          args=ViewCreate, since="0.1",
          examples=[{"id": F.V1, "name": "1F 평면", "type": "plan", "level": F.LV1, "cut_height": 1200},
                    {"name": "A-A 단면", "type": "section", "p1": [3000, -2000], "p2": [3000, 6000]},
+                   {"name": "대지 종단면", "type": "section", "p1": [3000, -4000], "p2": [3000, 8000], "with_site": True, "scale": 200},
                    {"name": "남측 입면", "type": "elevation", "dir": "S", "scale": 50}])
 def view_create(ctx, a: ViewCreate):
     _fresh_id(ctx, a, "view")
@@ -1950,6 +2075,8 @@ def view_create(ctx, a: ViewCreate):
         params = {"name": a.name, "type": "plan", "level": a.level, "cut_height": a.cut_height, "view_depth": a.view_depth, "scale": a.scale}
     elif a.type == "section":
         params = {"name": a.name, "type": "section", "p1": list(a.p1), "p2": list(a.p2), "depth": a.depth, "flip": a.flip, "scale": a.scale}
+        if a.with_site:
+            params["with_site"] = True
     elif a.type == "site":
         params = {"name": a.name, "type": "site", "scale": a.scale}
     else:
@@ -1968,6 +2095,7 @@ class ViewSet(A):
     p2: Point2 | None = None
     depth: VCoord | None = Field(None, gt=0)
     flip: bool | None = None
+    with_site: bool | None = Field(None, description="단면: 참이면 대지 단면으로, 거짓이면 일반 단면으로 되돌린다")
     dir: Literal["N", "E", "S", "W"] | None = None
     scale: Scale | None = None
 
@@ -1990,6 +2118,12 @@ def view_set(ctx, a: ViewSet):
             continue
         if k not in ("name", "scale") and k not in allowed:
             raise DobimError("CONSTRAINT", f"{p['type']} 뷰에는 쓰지 않는 필드다: {k}", path=f"/{k}")
+        if k == "with_site":   # 거짓이면 키를 지운다(일반 단면의 저장 형식 그대로)
+            if v:
+                p[k] = True
+            else:
+                p.pop(k, None)
+            continue
         p[k] = list(v) if k in ("p1", "p2") else v
     if a.name is not None:
         _view_name_free(ctx, a.name, a.id)

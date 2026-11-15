@@ -153,8 +153,8 @@ def _view_params(p):
         return _check_fields("view", p, {"name": _name, "type": lambda v: v == "plan", "level": id_ok, "cut_height": num_ok,
                                          "view_depth": lambda v: num_ok(v) and v >= 0, "scale": _SCALE})
     if t == "section":
-        return _check_fields("view", p, {"name": _name, "type": lambda v: v == "section", "p1": _pt_ok, "p2": _pt_ok,
-                                         "depth": _pos, "flip": lambda v: type(v) is bool, "scale": _SCALE})
+        return _check_opt("view", p, {"name": _name, "type": lambda v: v == "section", "p1": _pt_ok, "p2": _pt_ok,
+                                      "depth": _pos, "flip": lambda v: type(v) is bool, "scale": _SCALE}, {"with_site": lambda v: v is True})
     if t == "elevation":
         return _check_fields("view", p, {"name": _name, "type": lambda v: v == "elevation", "dir": lambda v: v in ("N", "E", "S", "W"),
                                          "scale": _SCALE})
@@ -513,15 +513,86 @@ def _sheet_params(p):
 
 
 SITE_ROADS_MAX = 8
+SITE_TERRAIN_MAX = 64     # 지반 표고점 수 상한
+SITE_ZONES_MAX = 32       # 조경·공개공지 영역 수 상한
+SITE_SIGNS_MAX = 32       # 간판·건물번호판 수 상한
+PARK_BAY_GROUPS_MAX = 16  # 주차면 배열 수 상한
+PARK_COUNT_MAX = 64       # 배열 하나의 주차면 수 상한
+PARK_PATHS_MAX = 8        # 차로·진출입 동선 수 상한
+PARK_PATH_PTS_MAX = 16    # 동선 한 줄의 꺾임점 수 상한
+ZONE_USES = ("landscape", "open_space")
+SIGN_KINDS = ("sign", "address")
+
+
+SITE_OPTIONAL = ("terrain", "zones", "parking", "signs")   # 대지의 선택 파라미터(없으면 키 자체가 없다)
+
+
+def norm_site_extra(v):
+    """대지 선택 파라미터의 숫자를 float 로 맞춘다(저작 행과 같은 모양: 개수 count 만 정수). 명령과 IFC 가져오기가 같은 모양을 만든다."""
+    if isinstance(v, bool) or isinstance(v, str) or v is None:
+        return v
+    if isinstance(v, (int, float)):
+        return float(v)
+    if isinstance(v, list):
+        return [norm_site_extra(x) for x in v]
+    if isinstance(v, dict):
+        return {k: (x if k == "count" else norm_site_extra(x)) for k, x in v.items()}
+    return v
+
+
+def _terrain_ok(v) -> bool:
+    """지반 표고점 [[x, y, z], ...] (z 는 모델 기준 높이 mm: 1층 바닥 0, 아래는 음수)."""
+    return isinstance(v, list) and 1 <= len(v) <= SITE_TERRAIN_MAX and all(isinstance(q, list) and len(q) == 3 and all(num_ok(x) for x in q) for q in v)
+
+
+def _zone_ok(z) -> bool:
+    return isinstance(z, dict) and set(z) == {"use", "name", "boundary"} and z["use"] in ZONE_USES and text_ok(z["name"], 0, NAME_MAX) and _poly_pts_ok(z["boundary"])
+
+
+def _path_ok(v) -> bool:
+    return isinstance(v, list) and 2 <= len(v) <= PARK_PATH_PTS_MAX and all(_pt_ok(q) for q in v)
+
+
+def _bay_ok(b) -> bool:
+    return (isinstance(b, dict) and set(b) - {"accessible"} == {"origin", "angle", "count", "w", "d"} and _pt_ok(b["origin"]) and num_ok(b["angle"])
+            and -360.0 <= b["angle"] <= 360.0 and type(b["count"]) is int and 1 <= b["count"] <= PARK_COUNT_MAX and _pos(b["w"]) and _pos(b["d"])
+            and type(b.get("accessible", False)) is bool)
+
+
+def _aisle_ok(a) -> bool:
+    return isinstance(a, dict) and set(a) == {"path", "width"} and _path_ok(a["path"]) and _pos(a["width"])
+
+
+def _route_ok(r) -> bool:
+    return isinstance(r, dict) and set(r) == {"path"} and _path_ok(r["path"])
+
+
+def _parking_ok(v) -> bool:
+    """주차 계획 = {"bays": [주차면 배열], "aisles": [차로], "routes": [진출입 동선]} (키는 있는 것만, 하나 이상)."""
+    if not isinstance(v, dict) or not v or set(v) - {"bays", "aisles", "routes"}:
+        return False
+    for key, ok, cap in (("bays", _bay_ok, PARK_BAY_GROUPS_MAX), ("aisles", _aisle_ok, PARK_PATHS_MAX), ("routes", _route_ok, PARK_PATHS_MAX)):
+        if key in v and not (isinstance(v[key], list) and 1 <= len(v[key]) <= cap and all(ok(x) for x in v[key])):
+            return False
+    return True
+
+
+def _sign_ok(sg) -> bool:
+    """간판·건물번호판: 입면에서 보는 면(face: 바깥 법선의 방위), 중심 [x, y], 아래 모서리 높이 z, 크기 w x h, 문구."""
+    return (isinstance(sg, dict) and set(sg) == {"name", "kind", "face", "center", "z", "w", "h", "text"} and text_ok(sg["name"], 1, NAME_MAX) and sg["kind"] in SIGN_KINDS
+            and sg["face"] in ("N", "E", "S", "W") and _pt_ok(sg["center"]) and num_ok(sg["z"]) and _pos(sg["w"]) and _pos(sg["h"]) and text_ok(sg["text"], 0, 64))
 
 
 def _site_params(p):
-    """대지(site): 경계 다각형(반시계), 정북 각, 접한 도로(경계 변 번호·폭), 대지 표고(선택)."""
+    """대지(site): 경계 다각형(반시계), 정북 각, 접한 도로(경계 변 번호·폭), 대지 표고(선택).
+    선택(14절): terrain 지반 표고점, zones 조경·공개공지 영역, parking 주차 계획, signs 간판·건물번호판. 없으면 키 자체가 없다."""
     def boundary(v):
         return isinstance(v, list) and SLAB_PTS_MIN <= len(v) <= SLAB_PTS_MAX and all(_pt_ok(x) for x in v) and polygon_area2(v) > 0
 
-    err = _check_fields("site", p, {"name": _name, "boundary": boundary, "north_angle": lambda v: num_ok(v) and -360.0 <= v <= 360.0,
-                                    "roads": lambda v: isinstance(v, list) and len(v) <= SITE_ROADS_MAX, "elevation": lambda v: v is None or num_ok(v)})
+    err = _check_opt("site", p, {"name": _name, "boundary": boundary, "north_angle": lambda v: num_ok(v) and -360.0 <= v <= 360.0,
+                                 "roads": lambda v: isinstance(v, list) and len(v) <= SITE_ROADS_MAX, "elevation": lambda v: v is None or num_ok(v)},
+                     {"terrain": _terrain_ok, "zones": lambda v: isinstance(v, list) and 1 <= len(v) <= SITE_ZONES_MAX and all(_zone_ok(z) for z in v),
+                      "parking": _parking_ok, "signs": lambda v: isinstance(v, list) and 1 <= len(v) <= SITE_SIGNS_MAX and all(_sign_ok(z) for z in v)})
     if err:
         return err
     n = len(p["boundary"])
@@ -531,6 +602,12 @@ def _site_params(p):
                 or not 0 <= r["edge"] < n or not _pos(r["width"]) or r["edge"] in edges):
             return "site.roads 항목이 올바르지 않다(이름·변 번호·폭, 변마다 도로 하나)"
         edges.add(r["edge"])
+    for i, z in enumerate(p.get("zones", ())):   # 영역은 대지 안(경계 위 포함)이어야 한다
+        if any(point_in_polygon(q, p["boundary"]) < 0 for q in z["boundary"]):
+            return f"site.zones: {i + 1}번 영역이 대지 경계 밖으로 나간다"
+    for i, b in enumerate(p.get("parking", {}).get("bays", ())):
+        if point_in_polygon(b["origin"], p["boundary"]) < 0:
+            return f"site.parking.bays: {i + 1}번 배열의 시작점이 대지 경계 밖이다"
     return None
 
 
