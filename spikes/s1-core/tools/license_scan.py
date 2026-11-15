@@ -14,7 +14,7 @@ from pathlib import Path
 
 from packaging.requirements import Requirement
 
-RUNTIME = ["ifcopenshell", "pydantic", "mcp"]
+RUNTIME = ["ifcopenshell", "pydantic", "mcp", "fonttools"]
 DEV = ["pytest", "import-linter"]
 FORBIDDEN = re.compile(r"(?<!L)GPL|AGPL|GNU (Affero )?General Public", re.I)
 

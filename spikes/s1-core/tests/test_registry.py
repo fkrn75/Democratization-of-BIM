@@ -37,7 +37,7 @@ def test_검색과_설명(tmp_path):
     r = dispatch.run(env, "commands.search", {"query": "wall"})
     assert {i["name"] for i in r["result"]["items"]} >= {"wall.create", "wall.move", "wall.set"}
     r = dispatch.run(env, "commands.search", {"risk": "destructive"})
-    assert [i["name"] for i in r["result"]["items"]] == ["ifc.export", "ifc.restore", "view.export"]   # view.export: 덮어쓸 수 있는 파생 파일(S3 검수 4)
+    assert [i["name"] for i in r["result"]["items"]] == ["ifc.export", "ifc.restore", "sheet.export", "view.export"]   # view.export·sheet.export: 덮어쓸 수 있는 파생 파일(S3 검수 4)
     r = dispatch.run(env, "commands.describe", {"name": "wall.move"})
     assert r["result"]["input_schema"]["properties"]["dx"] and r["result"]["examples"]
     r = dispatch.run(env, "commands.describe", {"name": "wall.mov"})
