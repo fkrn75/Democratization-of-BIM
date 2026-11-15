@@ -14,6 +14,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
@@ -108,6 +109,28 @@ def norm(env: dict) -> dict:
     return env
 
 
+# 빈 stdout 재시도 기록: 재시도가 일어나면 원인 진단(종료코드·stderr·소요시간)을 남겨 결과 JSON 에 싣는다.
+CLI_RETRIES: list[dict] = []
+
+
+def run_cli(cmd, env, cwd, timeout, label) -> subprocess.CompletedProcess:
+    """CLI 하위 프로세스를 실행한다. stdout 이 완전히 비면(봉투를 내기 전에 프로세스가 죽은 경우) 1회만 재시도하되,
+    첫 시도의 종료코드·stderr·소요시간을 CLI_RETRIES 에 기록하고 stderr 로도 알린다(진짜 버그를 숨기지 않기 위해).
+    봉투가 있거나 JSON 이 깨진 경우는 재시도하지 않는다."""
+    t0 = time.monotonic()
+    p = subprocess.run(cmd, capture_output=True, env=env, stdin=subprocess.DEVNULL, cwd=cwd, timeout=timeout)
+    if p.stdout.strip():
+        return p
+    rec = {"label": label, "returncode": p.returncode, "seconds": round(time.monotonic() - t0, 2),
+           "stderr_tail": p.stderr.decode("utf-8", "replace")[-600:]}
+    p = subprocess.run(cmd, capture_output=True, env=env, stdin=subprocess.DEVNULL, cwd=cwd, timeout=timeout)
+    rec["retry_returncode"] = p.returncode
+    rec["retry_stdout_empty"] = not p.stdout.strip()
+    CLI_RETRIES.append(rec)
+    print(f"[parity] CLI 빈 출력 재시도: {json.dumps(rec, ensure_ascii=False)}", file=sys.stderr)
+    return p
+
+
 class CliSide:
     def __init__(self, ws: Path):
         self.ws = ws
@@ -124,12 +147,12 @@ class CliSide:
             cmd.append("--dry-run")
         if confirm:
             cmd += ["--confirm", confirm]
-        p = subprocess.run(cmd, capture_output=True, env=self.env, stdin=subprocess.DEVNULL, cwd=self.ws, timeout=120)
+        p = run_cli(cmd, self.env, self.ws, 120, name)
         out = p.stdout.decode("utf-8")
         try:
             env = json.loads(out)
         except ValueError:
-            raise SystemExit(f"CLI stdout 이 JSON 이 아니다 ({name}): {out[:200]!r} / stderr {p.stderr.decode('utf-8', 'replace')[:300]}")
+            raise SystemExit(f"CLI stdout 이 JSON 이 아니다 ({name}): {out[:200]!r} / 종료코드 {p.returncode} / stderr {p.stderr.decode('utf-8', 'replace')[-600:]}")
         if len(out.strip().splitlines()) != 1:
             raise SystemExit(f"CLI stdout 이 한 줄 JSON 이 아니다 ({name})")
         return env, p.returncode
@@ -320,8 +343,8 @@ async def run_parity(work: Path | None = None) -> dict:
         for w in (wa, wb):
             shutil.copy(base, w / "bigbatch.dobim")
         (wa / "_big.jsonl").write_text(chr(10).join(json.dumps(c) for c in big), encoding="utf-8")
-        pr = subprocess.run([sys.executable, "-m", "dobim_core", "--workspace", str(wa), "--actor", "cli", "script", str(wa / "_big.jsonl"),
-                             "-p", "bigbatch.dobim", "--atomic"], capture_output=True, env=cli.env, stdin=subprocess.DEVNULL, cwd=wa, timeout=300)
+        pr = run_cli([sys.executable, "-m", "dobim_core", "--workspace", str(wa), "--actor", "cli", "script", str(wa / "_big.jsonl"),
+                      "-p", "bigbatch.dobim", "--atomic"], cli.env, wa, 300, "big-batch")
         e1 = json.loads(pr.stdout.decode("utf-8"))
         e2, _ = await mcp.call_batch(big, "bigbatch.dobim")
         h1, _ = cli.call("model.hash", {}, project="bigbatch.dobim")
@@ -357,7 +380,7 @@ async def run_parity(work: Path | None = None) -> dict:
            "error_case_runs": sum(1 for r in results if r["label"].startswith("err-")),
            "mcp_tools": tool_names, "describe_parity_all_commands": not any("describe" in m for m in mismatches),
            "search_parity": search_same, "risk_gating_enforced": bool(risk_ok),
-           "mismatches": mismatches, "parity_C_percent": 0.0, "results": results, "fixture_hashes": base_hashes}
+           "mismatches": mismatches, "cli_empty_output_retries": CLI_RETRIES, "parity_C_percent": 0.0, "results": results, "fixture_hashes": base_hashes}
     good = sum(1 for r in results if r["same_envelope"] and r["exit_code_matches_envelope"] and r["state_hash_equal"])
     out["parity_C_percent"] = round(100 * good / len(results), 1)
     out["pass"] = control_detected and (not mismatches) and out["coverage_percent"] == 100.0 and bool(risk_ok) and len(tool_names) == 8
