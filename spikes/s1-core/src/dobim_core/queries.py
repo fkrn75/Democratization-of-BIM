@@ -172,6 +172,11 @@ def stair_zrange(g, s):
     return (base, base + p["height"])
 
 
+# ---------------------------------------------------------------- 난간
+def railing_level(g, s):
+    return rel_out(g, "on_level", s)[0]
+
+
 # ---------------------------------------------------------------- 공간
 def space_level(g, s):
     return rel_out(g, "on_level", s)[0]
@@ -306,9 +311,9 @@ def schedule_sorted(g, kind):
 
 def model_stats(g):
     out = {k: g.q(count, k) for k in ("level", "wall", "door")}
-    for k in ("slab", "stair", "space", "site"):
+    for k in ("slab", "stair", "space", "railing", "site"):
         n = g.q(count, k)
-        if n:   # 슬래브·계단·공간·대지가 없는 프로젝트의 응답·해시는 그대로다
+        if n:   # 슬래브·계단·공간·난간·대지가 없는 프로젝트의 응답·해시는 그대로다
             out[k] = n
     return out
 
@@ -331,8 +336,8 @@ def intent_of(g, e):
     elif row["kind"] == "wall":
         out["level"] = g.q(wall_level, e)
         out["joins"] = list(g.q(wall_joins, e))
-    elif row["kind"] in ("slab", "stair", "space"):
-        out["level"] = g.q({"slab": slab_level, "stair": stair_level, "space": space_level}[row["kind"]], e)
+    elif row["kind"] in ("slab", "stair", "space", "railing"):
+        out["level"] = g.q({"slab": slab_level, "stair": stair_level, "space": space_level, "railing": railing_level}[row["kind"]], e)
     elif row["kind"] == "door":
         out["host"] = g.q(door_host, e)
     return out
@@ -374,6 +379,8 @@ def ifc_spec(g, e):
                 "thickness": p["thickness"], "top_offset": p["top_offset"], "intent": intent}
         if "layers" in p:
             spec["layers"] = tuple((x["material"], x["thickness"]) for x in p["layers"])
+        if "openings" in p:   # 구멍이 없으면 명세는 이전과 같다
+            spec["openings"] = tuple(tuple(tuple(q) for q in o) for o in p["openings"])
         return spec
     if kind == "site":
         # 배치는 건물 아래 뼈대 대지 좌표계(원점·무회전)다. 방위·도로는 IFC 가 아니라 의도(DoBIM_Intent)로 왕복한다
@@ -381,10 +388,17 @@ def ifc_spec(g, e):
     if kind == "space":
         return {"kind": kind, "name": p["name"], "category": p["category"], "level": g.q(space_level, e),
                 "boundary": tuple(tuple(q) for q in p["boundary"]), "height": p["height"], "intent": intent}
+    if kind == "railing":
+        # 배치는 레벨 좌표계(원점·무회전)이고 높이는 레벨 + base_offset 이므로 레벨 높이는 읽지 않는다
+        return {"kind": kind, "name": p["name"], "level": g.q(railing_level, e), "path": tuple(tuple(q) for q in p["path"]), "height": p["height"],
+                "base_offset": p["base_offset"], "rise": p["rise"], "intent": intent}
     if kind == "stair":
         # 배치는 레벨 좌표계(원점·무회전)이고 아래 끝은 레벨 + base_offset 이므로 레벨 높이는 읽지 않는다
-        return {"kind": kind, "name": p["name"], "level": g.q(stair_level, e), "run": tuple(p["run"]), "width": p["width"],
+        spec = {"kind": kind, "name": p["name"], "level": g.q(stair_level, e), "run": tuple(p["run"]), "width": p["width"],
                 "height": p["height"], "risers": p["risers"], "base_offset": p["base_offset"], "intent": intent}
+        if "turn" in p:   # 직선 계단이면 명세는 이전과 같다
+            spec["turn"] = tuple(sorted(p["turn"].items()))
+        return spec
     w = g.q(door_host, e)
     t = el(g, w)["params"]["thickness"]
     return {"kind": kind, "name": p["name"], "host": w, "level": g.q(wall_level, w), "offset": p["offset"],

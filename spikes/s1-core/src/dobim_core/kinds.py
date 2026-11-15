@@ -13,7 +13,7 @@
 from __future__ import annotations
 
 import zlib
-from math import isfinite
+from math import isfinite, sqrt
 from typing import Callable, NamedTuple
 
 ID_LEN = 22
@@ -242,23 +242,177 @@ def polygon_problem(pts) -> str | None:
     return None
 
 
+SLAB_OPENINGS_MAX = 32   # 슬래브 구멍 수 상한
+
+
+def _poly_pts_ok(v) -> bool:
+    return isinstance(v, list) and SLAB_PTS_MIN <= len(v) <= SLAB_PTS_MAX and all(_pt_ok(x) for x in v) and polygon_area2(v) > 0   # 반시계로 저장한다
+
+
+def point_in_polygon(pt, poly) -> int:
+    """점이 다각형 안(1)·경계 위(0)·밖(-1). 끝점 접촉은 경계로 본다."""
+    x, y = pt
+    n = len(poly)
+    inside = False
+    for i in range(n):
+        a, b = poly[i], poly[(i + 1) % n]
+        cr = (b[0] - a[0]) * (y - a[1]) - (b[1] - a[1]) * (x - a[0])
+        if cr == 0 and min(a[0], b[0]) <= x <= max(a[0], b[0]) and min(a[1], b[1]) <= y <= max(a[1], b[1]):
+            return 0
+        if (a[1] > y) != (b[1] > y) and x < a[0] + (y - a[1]) / (b[1] - a[1]) * (b[0] - a[0]):
+            inside = not inside
+    return 1 if inside else -1
+
+
+def openings_problem(boundary, openings) -> str | None:
+    """슬래브 구멍이 쓸 수 있는가(안 되면 이유 문장): 각 구멍은 올바른 다각형이고 슬래브 경계 안쪽에 있으며(경계와 만나지 않는다) 서로 겹치지 않는다."""
+    if len(openings) > SLAB_OPENINGS_MAX:
+        return f"구멍은 {SLAB_OPENINGS_MAX}개 이하여야 한다(현재 {len(openings)}개)"
+    for i, o in enumerate(openings):
+        why = polygon_problem(o)
+        if why:
+            return f"{i + 1}번 구멍이 올바르지 않다: {why}"
+        if any(point_in_polygon(q, boundary) != 1 for q in o):
+            return f"{i + 1}번 구멍이 슬래브 경계 안쪽에 있지 않다"
+        n, m = len(o), len(boundary)
+        if any(_seg_cross(o[a], o[(a + 1) % n], boundary[b], boundary[(b + 1) % m]) for a in range(n) for b in range(m)):
+            return f"{i + 1}번 구멍이 슬래브 경계와 만난다"
+    for i in range(len(openings)):
+        for j in range(i + 1, len(openings)):
+            a, b = openings[i], openings[j]
+            na, nb = len(a), len(b)
+            if (any(point_in_polygon(q, b) >= 0 for q in a) or any(point_in_polygon(q, a) >= 0 for q in b)
+                    or any(_seg_cross(a[x], a[(x + 1) % na], b[y], b[(y + 1) % nb]) for x in range(na) for y in range(nb))):
+                return f"{i + 1}번과 {j + 1}번 구멍이 겹친다"
+    return None
+
+
 def _slab_params(p):
-    def boundary(v):
-        return isinstance(v, list) and SLAB_PTS_MIN <= len(v) <= SLAB_PTS_MAX and all(_pt_ok(x) for x in v) and polygon_area2(v) > 0   # 반시계로 저장한다
-    err = _check_opt("slab", p, {"name": _name, "boundary": boundary, "thickness": _pos, "top_offset": num_ok}, {"layers": layers_ok})
+    err = _check_opt("slab", p, {"name": _name, "boundary": _poly_pts_ok, "thickness": _pos, "top_offset": num_ok},
+                     {"layers": layers_ok, "openings": lambda v: isinstance(v, list) and 1 <= len(v) <= SLAB_OPENINGS_MAX and all(_poly_pts_ok(o) for o in v)})
     if err is None and "layers" in p and abs(layers_total(p["layers"]) - p["thickness"]) > LAYER_SUM_TOL:
         return "slab.layers 두께의 합이 슬래브 두께와 다르다"
+    if err is None and "openings" in p and (why := openings_problem(p["boundary"], p["openings"])):
+        return f"slab.openings: {why}"
     return err
 
 
 STAIR_RISERS_MIN, STAIR_RISERS_MAX = 2, 100
+STAIR_LANDING_T = 150.0   # 층참 두께 mm(꺾인 계단의 층참 판. 층참 위 단 묶음의 밑면 여유도 같다)
+STAIR_TURN_TYPES = ("L", "U")
+STAIR_SIDES = ("left", "right")
+STAIR_GAP_DEFAULT = 100.0   # U형 계단 두 단 묶음 사이 간격 mm
+
+
+def _turn_ok(v) -> bool:
+    """꺾임(층참) 입력: {"type": "L"|"U", "side": "left"|"right", "risers_a": 층참 아래 단 묶음의 챌판 수, "landing": 층참 깊이 mm 또는 null(= 폭), "gap": U형 간격 mm(L 은 0)}."""
+    return (isinstance(v, dict) and set(v) == {"type", "side", "risers_a", "landing", "gap"} and v["type"] in STAIR_TURN_TYPES and v["side"] in STAIR_SIDES
+            and type(v["risers_a"]) is int and 2 <= v["risers_a"] <= STAIR_RISERS_MAX and (v["landing"] is None or _pos(v["landing"]))
+            and num_ok(v["gap"]) and v["gap"] >= 0 and (v["type"] == "U" or v["gap"] == 0))
+
+
+def stair_turn_problem(p) -> str | None:
+    """꺾인 계단의 교차 검사(챌판 분배·층참 깊이). 안 되면 이유 문장."""
+    t = p.get("turn")
+    if t is None:
+        return None
+    if not 2 <= t["risers_a"] <= p["risers"] - 2:
+        return "turn.risers_a 는 2 이상이고 전체 챌판 수 - 2 이하여야 한다(위 단 묶음도 챌판 둘 이상)"
+    if t["landing"] is not None and t["landing"] < p["width"]:
+        return "turn.landing(층참 깊이)이 계단 폭보다 작다"
+    return None
 
 
 def _stair_params(p):
     def run(v):   # 걸음선 길이 1mm 이상
         return (isinstance(v, list) and len(v) == 4 and all(num_ok(x) for x in v) and (v[2] - v[0]) ** 2 + (v[3] - v[1]) ** 2 >= 1.0)
-    return _check_fields("stair", p, {"name": _name, "run": run, "width": _pos, "height": _pos,
-                                      "risers": lambda v: type(v) is int and STAIR_RISERS_MIN <= v <= STAIR_RISERS_MAX, "base_offset": num_ok})
+    err = _check_opt("stair", p, {"name": _name, "run": run, "width": _pos, "height": _pos,
+                                  "risers": lambda v: type(v) is int and STAIR_RISERS_MIN <= v <= STAIR_RISERS_MAX, "base_offset": num_ok},
+                     {"turn": _turn_ok})
+    return err or stair_turn_problem(p)
+
+
+def stair_layout(p) -> dict:
+    """계단의 형상 배치(순수 함수: 그리기·IFC 투영이 같은 값을 쓴다). 반환:
+      {"flights": [{"run": (x1,y1,x2,y2), "n": 챌판 수, "z0": 단 묶음 아래 끝(계단 아래 끝 기준 상대 높이), "skirt": 아래로 더 채우는 두께, "length": 걸음선 길이, "td": 디딤판 깊이}, ...],
+       "landing": None | {"poly": ((x,y),...), "z": 윗면 상대 높이, "t": 두께}, "rise": 챌판 높이}
+    직선 계단은 단 묶음 하나, 층참 없음. 꺾인 계단(turn)은 걸음선(run)이 층참 아래 단 묶음의 걸음선이고 층참은 그 끝에서 이어진다.
+    걸음선 왼쪽이 + 이다. L 은 층참에서 90도, U 는 180도 꺾어 올라간다(side 가 꺾는 쪽)."""
+    x1, y1, x2, y2 = p["run"]
+    n, w = p["risers"], p["width"]
+    rise = p["height"] / n
+    dx, dy = x2 - x1, y2 - y1
+    length = sqrt(dx * dx + dy * dy)
+    t = p.get("turn")
+    if t is None:
+        td = length / (n - 1)
+        return {"flights": [{"run": (x1, y1, x2, y2), "n": n, "z0": 0.0, "skirt": 0.0, "length": length, "td": td}], "landing": None, "rise": rise}
+    k = t["risers_a"]
+    td = length / (k - 1)
+    ux, uy = dx / length, dy / length
+    lx, ly = -uy, ux   # 왼쪽 법선
+
+    def pt(tt, mm):
+        return (x1 + ux * tt - uy * mm, y1 + uy * tt + ux * mm)
+    d = t["landing"] if t["landing"] is not None else w
+    sg = 1.0 if t["side"] == "left" else -1.0
+    lb = (n - k - 1) * td
+    h = w / 2.0
+    if t["type"] == "L":
+        m_lo, m_hi = -h, h
+        b0 = pt(length + d / 2.0, sg * h)
+        b1 = (b0[0] + sg * lx * lb, b0[1] + sg * ly * lb)
+    else:
+        off = w + t["gap"]
+        m_lo, m_hi = (-h, h + off) if sg > 0 else (-h - off, h)
+        b0 = pt(length, sg * off)   # 위 단 묶음의 첫 챌판은 층참 가까운 쪽 가장자리(A 가 끝나는 선)에 놓이고 -진행 방향으로 되돌아 오른다
+        b1 = (b0[0] - ux * lb, b0[1] - uy * lb)
+    poly = (pt(length, m_lo), pt(length + d, m_lo), pt(length + d, m_hi), pt(length, m_hi))
+    ztop = k * rise
+    fa = {"run": (x1, y1, x2, y2), "n": k, "z0": 0.0, "skirt": 0.0, "length": length, "td": td}
+    fb = {"run": (b0[0], b0[1], b1[0], b1[1]), "n": n - k, "z0": ztop, "skirt": STAIR_LANDING_T, "length": lb, "td": td}
+    return {"flights": [fa, fb], "landing": {"poly": poly, "z": ztop, "t": STAIR_LANDING_T}, "rise": rise}
+
+
+RAILING_PTS_MAX = 256
+RAILING_HEIGHT_DEFAULT = 1100.0   # 난간 높이 mm(바닥 마감에서 손잡이 윗면까지)
+RAILING_POST_SPACING = 1200.0     # 난간 기둥 간격 상한 mm(꼭짓점마다 하나, 그 사이는 이 간격 이하로 등분)
+RAILING_HANDRAIL_R = 25.0         # 손잡이 반지름 mm
+RAILING_POST_R = 15.0             # 난간 기둥 반지름 mm
+
+
+def _railing_params(p):
+    def path(v):   # 꼭짓점 2~256개, 이웃한 꼭짓점이 1mm 이상 떨어져 있다(열린 선)
+        return (isinstance(v, list) and 2 <= len(v) <= RAILING_PTS_MAX and all(_pt_ok(x) for x in v)
+                and all((v[i + 1][0] - v[i][0]) ** 2 + (v[i + 1][1] - v[i][1]) ** 2 >= 1.0 for i in range(len(v) - 1)))
+    return _check_fields("railing", p, {"name": _name, "path": path, "height": _pos, "base_offset": num_ok, "rise": num_ok})
+
+
+def railing_geom(p) -> dict:
+    """난간의 형상(순수 함수: 그리기·IFC 투영이 같은 값을 쓴다). 좌표는 레벨 기준 상대 z. 걷는 면은 base_offset 에서 시작해 선 길이에 비례해 rise 만큼 오른다.
+      {"surface": [(x,y,z), ...] 바닥 마감선, "top": [(x,y,z), ...] 손잡이 윗선(= surface + height), "posts": [((x,y,z0),(x,y,z1)), ...]}"""
+    path, h = p["path"], p["height"]
+    seg = [sqrt((path[i + 1][0] - path[i][0]) ** 2 + (path[i + 1][1] - path[i][1]) ** 2) for i in range(len(path) - 1)]
+    total = sum(seg)
+    cum = [0.0]
+    for ln in seg:
+        cum.append(cum[-1] + ln)
+
+    def z_at(c):
+        return p["base_offset"] + p["rise"] * (c / total)
+    surface = [(float(q[0]), float(q[1]), z_at(cum[i])) for i, q in enumerate(path)]
+    top = [(x, y, z + h) for x, y, z in surface]
+    posts = []
+    for i, (x, y, z) in enumerate(surface):
+        posts.append(((x, y, z), (x, y, z + h)))
+        if i < len(seg):
+            n = max(1, -(-seg[i] // RAILING_POST_SPACING))   # 올림: 구간을 n 등분(간격이 상한 이하)
+            nx, ny, nz = surface[i + 1]
+            for k in range(1, int(n)):
+                f = k / n
+                px, py, pz = x + (nx - x) * f, y + (ny - y) * f, z + (nz - z) * f
+                posts.append(((px, py, pz), (px, py, pz + h)))
+    return {"surface": surface, "top": top, "posts": posts}
 
 
 CORRIDOR_WORDS = ("복도", "corridor", "hallway")
@@ -346,6 +500,7 @@ ELEMENT_KINDS: dict[str, ElementKind] = {k.name: k for k in (
     ElementKind("slab", True, "IfcSlab", True, 1, _slab_params, geometric=True),
     ElementKind("stair", True, "IfcStair", True, 1, _stair_params, geometric=True),
     ElementKind("space", True, "IfcSpace", True, 1, _space_params, geometric=True),
+    ElementKind("railing", True, "IfcRailing", True, 1, _railing_params, geometric=True),
     ElementKind("site", True, "IfcSite", True, 0, _site_params),
     ElementKind("ftype", True, None, True, 3, _ftype_params),
     ElementKind("finst", True, None, True, 4, _finst_params, geometric=True, refs=(("type", "id", "of_type"),)),
@@ -366,8 +521,8 @@ FIXED_IFC_CLASS = {k: v.ifc_class for k, v in ELEMENT_KINDS.items() if v.ifc_cla
 KIND_NAMES = tuple(ELEMENT_KINDS)
 # 의도 복원(S2 가져오기)이 IFC 클래스로 종류를 정하는 것: IFC 클래스 -> 종류. 패밀리 타입·인스턴스(ftype/finst)는 클래스가 레시피마다 달라 의도가 스스로 밝힌
 # 종류를 따른다(family.restore, ADR-0014). 뷰·주석은 IFC 신원이 없어 IFC 에서 복원할 수 없다(알려진 한계)
-IMPORTABLE_BY_CLASS = {"IfcBuildingStorey": "level", "IfcWall": "wall", "IfcDoor": "door", "IfcSlab": "slab", "IfcStair": "stair", "IfcSpace": "space", "IfcSite": "site"}
-FAMILY_OF_KIND = {"level": "level.basic", "wall": "wall.basic", "door": "door.single", "slab": "slab.basic", "stair": "stair.straight", "space": "space.basic", "site": "site.basic"}
+IMPORTABLE_BY_CLASS = {"IfcBuildingStorey": "level", "IfcWall": "wall", "IfcDoor": "door", "IfcSlab": "slab", "IfcStair": "stair", "IfcSpace": "space", "IfcRailing": "railing", "IfcSite": "site"}
+FAMILY_OF_KIND = {"level": "level.basic", "wall": "wall.basic", "door": "door.single", "slab": "slab.basic", "stair": "stair.straight", "space": "space.basic", "railing": "railing.basic", "site": "site.basic"}
 
 
 def _remap_ref(form: str, v, m: dict):
@@ -460,7 +615,7 @@ def _fs(*a):
 
 REL_KINDS: dict[str, RelKind] = {r.name: r for r in (
     # 레벨은 분리돼 있어도 그 위의 저작 벽이 레벨을 따른다(S2): 레벨 쪽은 막지 않고, 놓이는 요소만 저작이어야 한다
-    RelKind("on_level", _fs("wall", "slab", "stair", "space", "finst", "foreign"), _fs("level"), guard=("src",), violation="LEVEL_DELETED", message="벽이 놓인 레벨이 지워졌다"),
+    RelKind("on_level", _fs("wall", "slab", "stair", "space", "railing", "finst", "foreign"), _fs("level"), guard=("src",), violation="LEVEL_DELETED", message="벽이 놓인 레벨이 지워졌다"),
     RelKind("joins", _fs("wall"), _fs("wall"), guard=("src", "dst"), violation="JOIN_TARGET_DELETED", message="조인 대상 벽이 지워졌다"),
     RelKind("hosts", _fs("wall"), _fs("door", "finst"), guard=("src", "dst"), violation="HOST_DELETED",
             message="호스트 벽이 지워졌는데 문이 그 벽에 놓여 있다"),

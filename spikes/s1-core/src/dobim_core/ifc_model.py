@@ -34,7 +34,7 @@ import ifcopenshell.util.unit as uunit
 import ifcopenshell.validate
 
 from dobim_core.errors import DobimError
-from dobim_core.kinds import FIXED_IFC_CLASS
+from dobim_core.kinds import FIXED_IFC_CLASS, SLAB_OPENINGS_MAX, stair_layout
 from dobim_core.family import ifcproj as fp
 from dobim_core.viewdefs import DEFS_PSET
 
@@ -194,7 +194,10 @@ def detect_skeleton(f):
 #   "8" 대지 종류 신설(IfcSite 이 의도 복원 대상: 뼈대 대지 아래 하위 IfcSite 로 투영하고 뼈대 판정은 그것을 세지 않는다)
 #   "9" 벽·슬래브 층 구성(layers), 문 문짝 두께(leaf), 공간 천장 높이(ceiling_height) 선택 파라미터 신설. 층 구성은 IfcMaterialLayerSetUsage 로 투영한다
 #       (재료 지정은 클로저 밖이라 클로저 해시는 그대로이고, 의도 해석 모양만 넓어졌다). 입력이 없는 프로젝트는 요소 행·IFC 가 이전과 같다
-CLOSURE_FORMAT = "9"
+#   "10" 꺾인 계단(층참)과 슬래브 구멍. 꺾인 계단은 IfcStair 아래 IfcStairFlight 둘과 층참 IfcSlab(LANDING)으로 집합하고, 슬래브 구멍은 IfcOpeningElement +
+#       IfcRelVoidsElement 로 투영한다(둘 다 투영이 소유하는 부속: part_guid 로 GlobalId 가 결정적이다). 클로저에 부속의 형상이 들어간다.
+#       직선 계단·구멍 없는 슬래브는 요소 행·IFC·클로저가 이전과 같다
+CLOSURE_FORMAT = "10"
 
 
 def make_norm():
@@ -299,10 +302,17 @@ class Closure:
         for r in inv:
             if r.is_a("IfcRelVoidsElement") and r.RelatingBuildingElement == e:
                 op = r.RelatedOpeningElement
-                voids.append({"filler": sorted(self.ref(x.RelatedBuildingElement) for x in self.f.get_inverse(op)
-                                               if x.is_a("IfcRelFillsElement"))})
+                v = {"filler": sorted(self.ref(x.RelatedBuildingElement) for x in self.f.get_inverse(op)
+                                      if x.is_a("IfcRelFillsElement"))}
+                if e.is_a("IfcSlab"):   # 슬래브 구멍은 채우는 요소가 없어 구멍의 형상(경계·위치)을 슬래브가 소유한다
+                    v["shape"] = self.shape(op)
+                voids.append(v)
         if voids:
             out["voids"] = sorted(voids, key=lambda x: json.dumps(x, sort_keys=True))
+        if e.is_a("IfcStair"):   # 꺾인 계단의 부속(단 묶음·층참)은 계단이 소유한다
+            kids = [self.shape(k) for r in inv if r.is_a("IfcRelAggregates") and r.RelatingObject == e for k in r.RelatedObjects]
+            if kids:
+                out["parts"] = sorted(kids, key=lambda x: json.dumps(x, sort_keys=True))
         fills = [r for r in inv if r.is_a("IfcRelFillsElement") and r.RelatedBuildingElement == e]
         if fills:
             ops = []
@@ -334,9 +344,16 @@ def closure_diff(a: dict, b: dict) -> list[str]:
             out.append("개구부 관계")
         elif k == "voids":
             out.append("벽에 뚫린 개구부")
+        elif k == "parts":
+            out.append("계단 부속(단 묶음·층참)")
         else:
             out.append({"t": "클래스", "contained": "공간 소속", "aggregated": "집합 소속", "typed_by": "타입 지정"}.get(k, k))
     return out
+
+
+def part_guid(eid: str, label: str) -> str:
+    """투영이 소유하는 부속(꺾인 계단의 단 묶음·층참, 슬래브 구멍)의 GlobalId: 요소 id 와 이름표만의 결정적 함수다(opening_guid 와 같은 이유)."""
+    return ifcopenshell.guid.compress(uuid.uuid5(_NS, f"part:{eid}:{label}").hex)
 
 
 def opening_guid(door_id: str) -> str:
@@ -473,6 +490,7 @@ class IfcModel:
         self.base_mode = base is not None
         self.ents: dict[str, Any] = {}
         self.openings: dict[str, Any] = {}      # 문 id -> 개구부 엔티티 (투영 소유)
+        self.parts: dict[str, dict[str, Any]] = {}   # 요소 id -> {이름표: 부속 엔티티} (꺾인 계단의 단 묶음·층참, 슬래브 구멍. 투영 소유)
         self.container_of: dict[str, str] = {}  # 요소 id -> 현재 담긴 층 id (투영 상태)
         self._mats: dict[str, Any] = {}         # 재료 이름 -> 엔티티
         # 패밀리 투영 상태(S4): 요소 종류, 타입별 IfcRelDefinesByType, 인스턴스의 타입, 평면 문맥(필요할 때만 만든다)
@@ -581,7 +599,8 @@ class IfcModel:
         """가져온 뒤 지워진 저작 요소의 엔티티를 작업 사본에서 없앤다(요소·뼈대·저작 문의 개구부가 아닌 제품).
         import_types = 시작 상태 기록(seq 0)에 요소(ftype)로 들어 있던 패밀리 타입의 id: 지금 요소가 아니면 지워진 것이다.
         요소로 들어오지 않은 타입(외래 타입)은 제품이 아니므로 건드리지 않는다."""
-        keep = set(self.ents) | self.infra | {o.GlobalId for o in self.openings.values()}
+        keep = (set(self.ents) | self.infra | {o.GlobalId for o in self.openings.values()}
+                | {p.GlobalId for ps in self.parts.values() for p in ps.values()})
         gone = [g for g in self._by_gid if g not in keep]
         mats, lsets = [], []
         for g in sorted(gone, key=lambda g: (not self._by_gid[g].is_a("IfcOpeningElement"), g)):
@@ -659,17 +678,19 @@ class IfcModel:
         return f.createIfcExtrudedAreaSolid(prof, pos, f.createIfcDirection([0.0, 0.0, 1.0]), float(depth))
 
     def _set_body(self, product, solid):
-        """기존 표현이 있으면 항목만 교체한다. 표현·배치 엔티티는 유지해 다른 요소의 참조가 끊기지 않는다."""
+        """기존 표현이 있으면 항목만 교체한다. 표현·배치 엔티티는 유지해 다른 요소의 참조가 끊기지 않는다. solid 는 목록일 수 있다(스타일은 첫 항목에 입힌다)."""
         f = self.f
+        items = list(solid) if isinstance(solid, (list, tuple)) else [solid]
+        solid = items[0]
         shape = product.Representation
         if shape is None:
-            rep = f.createIfcShapeRepresentation(self.body, "Body", "SweptSolid", [solid])
+            rep = f.createIfcShapeRepresentation(self.body, "Body", "SweptSolid", items)
             product.Representation = f.createIfcProductDefinitionShape(None, None, [rep])
             self._restore_style(product, solid)
             return
         rep = shape.Representations[0]
         old = list(rep.Items)
-        rep.Items = [solid]
+        rep.Items = items
         # 외부 도구가 몸체에 붙인 스타일(색)·레이어 지정은 새 솔리드로 옮긴다: 외형은 의도가 정한 형상이 아니라 요소가 가진 속성이다.
         # 형상이 실제로 바뀌어 다시 투영해도 스타일은 유지한다(항목이 여럿이면 첫 스타일만, 나머지는 버린다)
         moved = False
@@ -738,6 +759,8 @@ class IfcModel:
                         if r.is_a("IfcRelFillsElement") and r.RelatedBuildingElement == e:
                             self.openings[eid] = r.RelatingOpeningElement
                             self._opening_gid[eid] = r.RelatingOpeningElement.GlobalId
+                if kind in ("slab", "stair"):
+                    self._adopt_parts(eid, kind, e)
                 self._adopt_family_state(eid, kind, e)
                 return
             if kind == "foreign":
@@ -759,6 +782,8 @@ class IfcModel:
         f = self.f
         e = self.ents[eid]
         self._unproject_door(eid)
+        if eid in self.parts:   # 부속(단 묶음·층참·슬래브 구멍)이 먼저 간다
+            self._sync_parts(eid, {})
         lost = []
         for rel in list(getattr(e, "HasOpenings", None) or ()):
             op = rel.RelatedOpeningElement.id()   # 엔티티 래퍼는 접근할 때마다 새로 만들어지므로 번호로 비교한다
@@ -854,7 +879,7 @@ class IfcModel:
     def foreign_voids(self, eid: str) -> list[str]:
         """벽을 뚫는 개구부 중 코어가 만들지 않은 것(외래)의 GlobalId. 벽을 지우면 이것들도 함께 지워진다."""
         e = self.ents[eid]
-        own = {o.GlobalId for o in self.openings.values()}
+        own = {o.GlobalId for o in self.openings.values()} | {p.GlobalId for ps in self.parts.values() for p in ps.values()}
         return sorted(r.RelatedOpeningElement.GlobalId for r in self.f.get_inverse(e)
                       if r.is_a("IfcRelVoidsElement") and r.RelatingBuildingElement == e and r.RelatedOpeningElement.GlobalId not in own)
 
@@ -1007,7 +1032,7 @@ class IfcModel:
     # ------------------------------------------------------------ 투영 (늦게)
     def project(self, eid: str, spec: dict) -> None:
         kind = spec["kind"]
-        {"level": self._project_level, "wall": self._project_wall, "door": self._project_door, "slab": self._project_slab, "stair": self._project_stair, "space": self._project_space,
+        {"level": self._project_level, "wall": self._project_wall, "door": self._project_door, "slab": self._project_slab, "stair": self._project_stair, "space": self._project_space, "railing": self._project_railing,
          "site": self._project_site, "ftype": lambda i, sp: fp.project_type(self, i, sp), "finst": lambda i, sp: fp.project_inst(self, i, sp)}[kind](eid, spec)
         # 의도를 IFC 에도 복제한다. 정본은 의도 저장소이고 이 속성셋은 매번 덮어쓴다.
         e = self.ents[eid]
@@ -1076,34 +1101,141 @@ class IfcModel:
             self._assign_layers(e, tuple(reversed(layers)), "AXIS3", "POSITIVE", spec["top_offset"] - spec["thickness"], pairs_label(layers))
         else:
             self._clear_layers(e)
+        # 구멍(계단실·샤프트): 슬래브를 뚫는 IfcOpeningElement. 솔리드는 슬래브 두께보다 위아래로 10mm 더 길게 한다(경계면과 겹치지 않게)
+        z0 = spec["top_offset"] - spec["thickness"] - 10.0
+        depth = spec["thickness"] + 20.0
+        wanted = {f"opening:{i}": {"cls": "IfcOpeningElement", "name": f"{spec['name']}-opening{i + 1}", "rel": "void",
+                                   "solid": (lambda o=o: self._solid(o, depth, z0=z0))} for i, o in enumerate(spec.get("openings", ()))}
+        if wanted or eid in self.parts:
+            self._sync_parts(eid, wanted)
 
-    def _project_stair(self, eid, spec):
-        """직선 계단: 톱니 옆모습(걸음선 길이 x 높이 평면)을 폭 방향으로 압출한 솔리드 하나. 압출 방향은 걸음선의 오른쪽 법선이다(그러면 옆모습의 y 가 위쪽이 된다)."""
+    # ------------------------------------------------------------ 투영 소유 부속 (꺾인 계단의 단 묶음·층참, 슬래브 구멍)
+    @staticmethod
+    def _part_labels(kind: str) -> list[str]:
+        return [f"opening:{i}" for i in range(SLAB_OPENINGS_MAX)] if kind == "slab" else ["flight:0", "flight:1", "landing"]
+
+    def _adopt_parts(self, eid: str, kind: str, e) -> None:
+        """가져온 파일에서 요소에 이미 달린 부속(GlobalId 가 part_guid 와 같고 요소와 관계가 이어진 것)을 이어받는다."""
+        have = self.parts.setdefault(eid, {})
+        for label in self._part_labels(kind):
+            p = self._by_gid.get(part_guid(eid, label))
+            if p is None:
+                continue
+            linked = (any(r.RelatingBuildingElement == e for r in (getattr(p, "VoidsElements", None) or ())) if kind == "slab"
+                      else any(r.RelatingObject == e for r in (getattr(p, "Decomposes", None) or ())))
+            if linked:
+                have[label] = p
+        if not have:
+            self.parts.pop(eid, None)
+
+    def _drop_part(self, eid: str, label: str) -> None:
+        part = self.parts[eid].pop(label)
+        if part.is_a("IfcOpeningElement"):
+            api_feature.remove_feature(self.f, feature=part)
+        else:
+            self._remove_product(part)
+
+    def _sync_parts(self, eid: str, wanted: dict) -> None:
+        """요소의 부속을 wanted({이름표: {"cls","name","rel"("void"|"aggregate"),"attrs","solid"}})에 맞춘다. 이름표 순서로 만들어 결정적이다.
+        없는 것은 만들고(GlobalId = part_guid), 있는 것은 제자리에서 고치고, 더는 없는 것은 지운다."""
         f = self.f
-        e = self.ents[eid]
-        e.Name = spec["name"]
-        e.PredefinedType = "STRAIGHT_RUN_STAIR"
-        self._contain(eid, spec["level"])
-        self._place(e, self.ents[spec["level"]].ObjectPlacement, (0.0, 0.0, 0.0), (1.0, 0.0, 0.0))
-        x1, y1, x2, y2 = spec["run"]
-        n = spec["risers"]
+        host = self.ents[eid]
+        have = self.parts.setdefault(eid, {})
+        for label in sorted(set(have) - set(wanted)):
+            self._drop_part(eid, label)
+        for label in sorted(wanted):
+            w = wanted[label]
+            part = have.get(label)
+            if part is not None and not part.is_a(w["cls"]):
+                self._drop_part(eid, label)
+                part = None
+            if part is None:
+                part = api_root.create_entity(f, ifc_class=w["cls"])
+                part.GlobalId = part_guid(eid, label)
+                have[label] = part
+                if w["rel"] == "void":
+                    api_feature.add_feature(f, feature=part, element=host)
+                else:
+                    api_aggregate.assign_object(f, products=[part], relating_object=host)
+            part.Name = w["name"]
+            for k, v in w.get("attrs", {}).items():
+                setattr(part, k, v)
+            self._place(part, host.ObjectPlacement, (0.0, 0.0, 0.0), (1.0, 0.0, 0.0))
+            self._set_body(part, w["solid"]())
+        if not have:
+            self.parts.pop(eid, None)
+
+    def _stair_solid(self, run, width, n, rise, zbase, zbot):
+        """단 묶음 하나의 톱니 옆모습을 폭 방향으로 압출한 솔리드. 챌판 n 개가 zbase 에서 올라가고 밑은 zbot 까지 채운다."""
+        f = self.f
+        x1, y1, x2, y2 = run
         length = ((x2 - x1) ** 2 + (y2 - y1) ** 2) ** 0.5
         ux, uy = (x2 - x1) / length, (y2 - y1) / length
-        w = spec["width"]
-        z0, rise, td = spec["base_offset"], spec["height"] / n, length / (n - 1)
-        pts = [(0.0, z0)]
+        td = length / (n - 1)
+        pts = [(0.0, zbot)]
         for k in range(n):
-            pts.append((k * td, z0 + (k + 1) * rise))
+            pts.append((k * td, zbase + (k + 1) * rise))
             if k < n - 1:
-                pts.append(((k + 1) * td, z0 + (k + 1) * rise))
-        pts.append((length, z0))
+                pts.append(((k + 1) * td, zbase + (k + 1) * rise))
+        pts.append((length, zbot))
         pl = f.createIfcPolyline([f.createIfcCartesianPoint([float(a), float(b)]) for a, b in pts + [pts[0]]])
         prof = f.createIfcArbitraryClosedProfileDef("AREA", None, pl)
         # 솔리드 좌표계: 원점 = 걸음선 시작점에서 왼쪽으로 폭의 절반, 축(압출) = 오른쪽 법선, 기준 방향 = 걸음선 방향
-        ox, oy = x1 - uy * w / 2.0, y1 + ux * w / 2.0
+        ox, oy = x1 - uy * width / 2.0, y1 + ux * width / 2.0
         pos = f.createIfcAxis2Placement3D(f.createIfcCartesianPoint([float(ox), float(oy), 0.0]),
                                           f.createIfcDirection([float(uy), float(-ux), 0.0]), f.createIfcDirection([float(ux), float(uy), 0.0]))
-        self._set_body(e, f.createIfcExtrudedAreaSolid(prof, pos, f.createIfcDirection([0.0, 0.0, 1.0]), float(w)))
+        return f.createIfcExtrudedAreaSolid(prof, pos, f.createIfcDirection([0.0, 0.0, 1.0]), float(width))
+
+    def _project_stair(self, eid, spec):
+        """직선 계단: 톱니 옆모습(걸음선 길이 x 높이 평면)을 폭 방향으로 압출한 솔리드 하나. 압출 방향은 걸음선의 오른쪽 법선이다(그러면 옆모습의 y 가 위쪽이 된다).
+        꺾인 계단(turn)은 계단 자신에 형상이 없고 단 묶음마다 IfcStairFlight, 층참은 IfcSlab(LANDING)으로 계단에 집합한다."""
+        f = self.f
+        e = self.ents[eid]
+        e.Name = spec["name"]
+        turn = dict(spec["turn"]) if "turn" in spec else None
+        e.PredefinedType = "STRAIGHT_RUN_STAIR" if turn is None else ("QUARTER_TURN_STAIR" if turn["type"] == "L" else "HALF_TURN_STAIR")
+        self._contain(eid, spec["level"])
+        self._place(e, self.ents[spec["level"]].ObjectPlacement, (0.0, 0.0, 0.0), (1.0, 0.0, 0.0))
+        n, z0 = spec["risers"], spec["base_offset"]
+        if turn is None:
+            if eid in self.parts:
+                self._sync_parts(eid, {})
+            rise = spec["height"] / n
+            self._set_body(e, self._stair_solid(spec["run"], spec["width"], n, rise, z0, z0))
+            return
+        lay = stair_layout({"run": spec["run"], "width": spec["width"], "height": spec["height"], "risers": n, "turn": turn})
+        rise = lay["rise"]
+        if e.Representation is not None:   # 직선이던 계단이 꺾였다: 계단 자신의 몸체를 없앤다
+            shape = e.Representation
+            e.Representation = None
+            ue.remove_deep2(f, shape)
+        wanted = {}
+        for i, fl in enumerate(lay["flights"]):
+            wanted[f"flight:{i}"] = {
+                "cls": "IfcStairFlight", "name": f"{spec['name']}-flight{i + 1}", "rel": "aggregate",
+                "attrs": {"NumberOfRisers": fl["n"], "NumberOfTreads": fl["n"] - 1, "RiserHeight": float(rise), "TreadLength": float(fl["td"]), "PredefinedType": "STRAIGHT"},
+                "solid": (lambda fl=fl: self._stair_solid(fl["run"], spec["width"], fl["n"], rise, z0 + fl["z0"], z0 + fl["z0"] - fl["skirt"]))}
+        ld = lay["landing"]
+        wanted["landing"] = {"cls": "IfcSlab", "name": f"{spec['name']}-landing", "rel": "aggregate", "attrs": {"PredefinedType": "LANDING"},
+                             "solid": (lambda: self._solid(ld["poly"], ld["t"], z0=z0 + ld["z"] - ld["t"]))}
+        self._sync_parts(eid, wanted)
+
+    def _project_railing(self, eid, spec):
+        """난간: 손잡이(IfcSweptDiskSolid, 손잡이 윗선을 따라 3D 폴리라인)와 난간 기둥(수직 IfcSweptDiskSolid)을 한 몸체에 담는다. 배치는 레벨 좌표계 원점이다."""
+        from dobim_core.kinds import RAILING_HANDRAIL_R, RAILING_POST_R, railing_geom
+        f = self.f
+        e = self.ents[eid]
+        e.Name = spec["name"]
+        e.PredefinedType = "GUARDRAIL"
+        self._contain(eid, spec["level"])
+        self._place(e, self.ents[spec["level"]].ObjectPlacement, (0.0, 0.0, 0.0), (1.0, 0.0, 0.0))
+        g = railing_geom({"path": spec["path"], "height": spec["height"], "base_offset": spec["base_offset"], "rise": spec["rise"]})
+
+        def disk(pts, r):
+            pl = f.createIfcPolyline([f.createIfcCartesianPoint([float(a), float(b), float(c)]) for a, b, c in pts])
+            return f.createIfcSweptDiskSolid(pl, float(r), None, None, None)
+        items = [disk(g["top"], RAILING_HANDRAIL_R)] + [disk([a, b], RAILING_POST_R) for a, b in g["posts"]]
+        self._set_body(e, items)
 
     def _project_space(self, eid, spec):
         """공간: 경계 프로필을 레벨 좌표계 원점에서 높이만큼 압출한다. 층 소속은 포함(IfcRelContainedInSpatialStructure)이 아니라 집합(IfcRelAggregates)이다.

@@ -104,7 +104,7 @@ def _layers(v, total: float):
 def _parse_intent(kind: str, text: str) -> dict:
     """DoBIM_Intent 텍스트를 현재 코어 스키마로 해석한다. 못 하면 ValueError. 숫자는 float 로 맞춘다(저작 행과 같은 모양)."""
     d = json.loads(text)
-    extra = {"level": (), "wall": ("level", "joins"), "door": ("host",), "slab": ("level",), "stair": ("level",), "space": ("level",), "site": ()}[kind]
+    extra = {"level": (), "wall": ("level", "joins"), "door": ("host",), "slab": ("level",), "stair": ("level",), "space": ("level",), "railing": ("level",), "site": ()}[kind]
     if not isinstance(d, dict) or set(d) != {"kind", "params", "family_id", *extra} or d["kind"] != kind or d["family_id"] != FAMILY[kind]:
         raise ValueError("의도 모양이 현재 스키마와 다르다")
     p = d["params"]
@@ -125,7 +125,7 @@ def _parse_intent(kind: str, text: str) -> dict:
         if "layers" in p:
             out["layers"] = _layers(p["layers"], out["thickness"])
     elif kind == "slab":
-        if set(p) - {"layers"} != {"name", "boundary", "thickness", "top_offset"} or not isinstance(p["boundary"], list) or not 3 <= len(p["boundary"]) <= 256:
+        if set(p) - {"layers", "openings"} != {"name", "boundary", "thickness", "top_offset"} or not isinstance(p["boundary"], list) or not 3 <= len(p["boundary"]) <= 256:
             raise ValueError("슬래브 params 가 다르다")
         pts = []
         for q in p["boundary"]:
@@ -138,6 +138,21 @@ def _parse_intent(kind: str, text: str) -> dict:
         out = {"name": _name(p["name"]), "boundary": pts, "thickness": _num(p["thickness"], pos=True), "top_offset": _num(p["top_offset"])}
         if "layers" in p:
             out["layers"] = _layers(p["layers"], out["thickness"])
+        if "openings" in p:
+            ops = p["openings"]
+            if not isinstance(ops, list) or not 1 <= len(ops) <= K.SLAB_OPENINGS_MAX:
+                raise ValueError("슬래브 구멍 목록이 올바르지 않다")
+            conv = []
+            for o in ops:
+                if not isinstance(o, list) or not 3 <= len(o) <= 256 or any(not isinstance(q, list) or len(q) != 2 for q in o):
+                    raise ValueError("슬래브 구멍 꼭짓점이 올바르지 않다")
+                conv.append([[_num(q[0]), _num(q[1])] for q in o])
+            if any(K.polygon_area2(o) <= 0 for o in conv):
+                raise ValueError("슬래브 구멍은 반시계로 저장한다")
+            why = K.openings_problem(pts, conv)
+            if why:
+                raise ValueError(f"슬래브 구멍이 올바르지 않다({why})")
+            out["openings"] = conv
     elif kind == "space":
         if (set(p) - {"ceiling_height"} != {"name", "category", "boundary", "height"} or not isinstance(p["boundary"], list) or not 3 <= len(p["boundary"]) <= 256
                 or not isinstance(p["category"], str) or len(p["category"]) > 255):
@@ -180,8 +195,17 @@ def _parse_intent(kind: str, text: str) -> dict:
                "elevation": None if p["elevation"] is None else _num(p["elevation"])}
         if len({r["edge"] for r in roads}) != len(roads):
             raise ValueError("한 변에 도로가 둘 이상이다")
+    elif kind == "railing":
+        if (set(p) != {"name", "path", "height", "base_offset", "rise"} or not isinstance(p["path"], list) or not 2 <= len(p["path"]) <= K.RAILING_PTS_MAX
+                or any(not isinstance(q, list) or len(q) != 2 for q in p["path"])):
+            raise ValueError("난간 params 가 다르다")
+        out = {"name": _name(p["name"]), "path": [[_num(q[0]), _num(q[1])] for q in p["path"]], "height": _num(p["height"], pos=True),
+               "base_offset": _num(p["base_offset"]), "rise": _num(p["rise"])}
+        why = K.row_params_error("railing", out)
+        if why:
+            raise ValueError(f"난간이 올바르지 않다({why})")
     elif kind == "stair":
-        if (set(p) != {"name", "run", "width", "height", "risers", "base_offset"} or not isinstance(p["run"], list) or len(p["run"]) != 4
+        if (set(p) - {"turn"} != {"name", "run", "width", "height", "risers", "base_offset"} or not isinstance(p["run"], list) or len(p["run"]) != 4
                 or type(p["risers"]) is not int or not K.STAIR_RISERS_MIN <= p["risers"] <= K.STAIR_RISERS_MAX):
             raise ValueError("계단 params 가 다르다")
         run = [_num(v) for v in p["run"]]
@@ -189,6 +213,15 @@ def _parse_intent(kind: str, text: str) -> dict:
             raise ValueError("계단 걸음선이 1mm 미만이다")
         out = {"name": _name(p["name"]), "run": run, "width": _num(p["width"], pos=True), "height": _num(p["height"], pos=True),
                "risers": p["risers"], "base_offset": _num(p["base_offset"])}
+        if "turn" in p:
+            t = p["turn"]
+            if not isinstance(t, dict) or set(t) != {"type", "side", "risers_a", "landing", "gap"}:
+                raise ValueError("계단 turn 이 올바르지 않다")
+            out["turn"] = {"type": t["type"], "side": t["side"], "risers_a": t["risers_a"],
+                           "landing": None if t["landing"] is None else _num(t["landing"], pos=True), "gap": _num(t["gap"], nonneg=True)}
+            why = K.row_params_error("stair", out)
+            if why:
+                raise ValueError(f"계단 turn 이 올바르지 않다({why})")
     else:
         if set(p) - {"leaf"} != {"name", "width", "height", "sill", "offset"}:
             raise ValueError("문 params 가 다르다")
@@ -202,7 +235,7 @@ def _parse_intent(kind: str, text: str) -> dict:
         if not isinstance(lv, str) or not _ID.match(lv) or not isinstance(joins, list) or not all(isinstance(j, str) and _ID.match(j) for j in joins):
             raise ValueError("레벨·조인 참조가 올바르지 않다")
         res["level"], res["joins"] = lv, sorted(set(joins))
-    elif kind in ("slab", "stair", "space"):
+    elif kind in ("slab", "stair", "space", "railing"):
         if not isinstance(d["level"], str) or not _ID.match(d["level"]):
             raise ValueError("레벨 참조가 올바르지 않다")
         res["level"] = d["level"]
@@ -473,7 +506,7 @@ def plan_import(data: bytes) -> ImportPlan:
                     bad = "조인 상대가 없거나 대칭이 아니다"
                 elif any(cand[j]["level"] != it["level"] for j in it["joins"]):
                     bad = "다른 레벨의 벽과 조인돼 있다"
-            elif it["kind"] in ("slab", "stair", "space"):
+            elif it["kind"] in ("slab", "stair", "space", "railing"):
                 if cand.get(it["level"], {}).get("kind") != "level":
                     bad = "레벨 참조가 없다"
             elif it["kind"] == "door":
@@ -496,12 +529,12 @@ def plan_import(data: bytes) -> ImportPlan:
         if it["kind"] in ("ftype", "finst"):
             rows[g] = {"kind": it["kind"], "ifc_class": cls_of[g], "origin": "authored", "family_id": it["family_id"], "params": it["params"]}
         else:
-            cls = {"level": "IfcBuildingStorey", "wall": "IfcWall", "door": "IfcDoor", "slab": "IfcSlab", "stair": "IfcStair", "space": "IfcSpace", "site": "IfcSite"}[it["kind"]]
+            cls = {"level": "IfcBuildingStorey", "wall": "IfcWall", "door": "IfcDoor", "slab": "IfcSlab", "stair": "IfcStair", "space": "IfcSpace", "railing": "IfcRailing", "site": "IfcSite"}[it["kind"]]
             rows[g] = {"kind": it["kind"], "ifc_class": cls, "origin": "authored", "family_id": FAMILY[it["kind"]], "params": it["params"]}
         if it["kind"] == "wall":
             rels.add(("on_level", g, it["level"]))
             rels.update(("joins", min(g, j), max(g, j)) for j in it["joins"])
-        elif it["kind"] in ("slab", "stair", "space"):
+        elif it["kind"] in ("slab", "stair", "space", "railing"):
             rels.add(("on_level", g, it["level"]))
         elif it["kind"] == "door":
             rels.add(("hosts", it["host"], g))
@@ -583,6 +616,8 @@ def plan_import(data: bytes) -> ImportPlan:
             for rel in f.get_inverse(f.by_guid(g)):
                 if rel.is_a("IfcRelFillsElement") and rel.RelatedBuildingElement == f.by_guid(g):
                     owned.add(rel.RelatingOpeningElement.GlobalId)
+        elif r["origin"] == "authored" and r["kind"] in ("slab", "stair"):   # 저작 슬래브의 구멍·꺾인 계단의 단 묶음·층참도 그 요소의 클로저에 속한다
+            owned.update(p.GlobalId for p in scratch.parts.get(g, {}).values())
     for p in prods:
         g = p.GlobalId
         if g in rows:
