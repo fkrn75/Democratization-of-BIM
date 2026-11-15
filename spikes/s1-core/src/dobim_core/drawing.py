@@ -2354,6 +2354,10 @@ def merge_lines(segs):
             for cls in merged:
                 if cls != "cut":
                     merged[cls] = _subtract(merged[cls], merged["cut"])
+        if "cutn" in merged:   # 비내력벽 절단선(선 굵기 위계를 켠 뷰에만 있다)이 덮는 곳은 아래 등급에서 지운다. 내력벽 절단선(cut)이 먼저 덮는다
+            for cls in merged:
+                if cls not in ("cut", "cutn"):
+                    merged[cls] = _subtract(merged[cls], merged["cutn"])
         for cls in sorted(merged):
             for a, b in merged[cls]:
                 if b - a > SEG_MIN:
@@ -2391,6 +2395,40 @@ def view_lines(g, v):
             segs.extend(g.q(plan_fire_lines, v, w))
         elif cfg[0] == "elev":
             segs.extend(g.q(elev_finish, v, w)[0])
+    for e in g.q(scope_fams, v):
+        segs.extend(g.q(fam_lines, v, e))
+    for sl in g.q(scope_slabs, v):
+        segs.extend(g.q(slab_lines, v, sl))
+    for st in g.q(scope_stairs, v):
+        segs.extend(g.q(stair_lines, v, st))
+    return merge_lines(segs)
+
+
+def _falsy(v) -> bool:
+    return v is False or (isinstance(v, str) and v.strip().lower() in ("false", "no", "n", "0", "아니오", "비내력"))
+
+
+def is_nonbearing(g, w) -> bool:
+    """벽이 비내력벽인가: Pset_WallCommon.LoadBearing 이 명시적으로 거짓일 때만(값이 없으면 구분하지 않는다: 내력벽처럼 그린다)."""
+    return _falsy(_prop(g, w, "Pset_WallCommon", "LoadBearing"))
+
+
+def view_lines_hier(g, v):
+    """선 굵기 위계(sheet.export profile.line_hierarchy)용 뷰 선분: view_lines 와 같되 비내력벽(LoadBearing 이 거짓)의 절단선은 "cutn" 등급이다(LN-04).
+    비내력벽이 없으면 view_lines 와 같은 값이다. 평면·단면의 벽 절단선만 나눈다(입면에는 절단선이 없다)."""
+    cfg = g.q(view_cfg, v)
+    walls = g.q(scope_walls, v)
+    if cfg is None or cfg[0] in ("site", "elev") or not any(g.q(is_nonbearing, w) for w in walls):
+        return g.q(view_lines, v)
+    fn = plan_wall_lines if cfg[0] == "plan" else vwall_lines
+    segs = []
+    for w in walls:
+        ws = g.q(fn, v, w)
+        if g.q(is_nonbearing, w):
+            ws = tuple(("cutn",) + ln[1:] if ln[0] == "cut" else ln for ln in ws)
+        segs.extend(ws)
+        if cfg[0] == "plan":
+            segs.extend(g.q(plan_fire_lines, v, w))
     for e in g.q(scope_fams, v):
         segs.extend(g.q(fam_lines, v, e))
     for sl in g.q(scope_slabs, v):
@@ -2478,7 +2516,7 @@ def views_depending_on(g, input_keys, vids, include_not_fresh=True):
 
 # 뷰 하나에 딸린 질의 노드의 함수들 (첫 인자가 뷰 id). 뷰를 지우면 이 노드들을 그래프에서 치운다.
 VIEW_SCOPED = frozenset({view_cfg, scope_walls, view_omitted, plan_pieces, plan_bbox, plan_nbrs, plan_wall_lines, plan_detail_lines, view_detail_lines, vpieces, vbbox, vnbrs,
-                         vwall_detail, slab_detail_lines, space_ceiling_lines, vwin_detail,
+                         vwall_detail, slab_detail_lines, space_ceiling_lines, vwin_detail, view_lines_hier,
                          vcut_rects, vedges, vwall_lines, view_lines, view_fills,
                          scope_fams, plan_fam_parts, _fam_vpieces, vfam_bbox, vfam_cut_rects, vfam_edges, vfam_nbr_pieces, fam_lines,
                          vfam_hosted_edges, scope_slabs, plan_slab_parts, _slab_vpieces, slab_vbbox, slab_cut_rects, slab_vedges, slab_nbr_walls, slab_lines,

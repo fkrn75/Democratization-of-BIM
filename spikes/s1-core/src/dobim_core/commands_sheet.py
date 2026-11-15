@@ -147,7 +147,9 @@ def build_profile(applied: dict | None = None) -> dict:
                           {"rank": 3, "use": "마감선·입면선(보이는 선), 숨은 선, 치수 보조선", "width_mm": st["proj"][0], "extension_mm": SH.HIER_DIM_W[1]},
                           {"rank": 4, "use": "가는선(레벨 기준선)·해칭", "width_mm": DX.DATUM_W, "hatch_mm": st["hatch"][0]}],
                 "text": "문자는 선 굵기가 아니라 용도별 높이(text_font.heights_mm)로 위계를 둔다",
-                "limit": "비내력벽을 구분하는 속성이 없어 모든 벽의 절단선을 같은 굵기로 그린다"}
+                "cut_nonbearing": {"width_mm": SH.NONBEARING_CUT_W, "use": "Pset_WallCommon.LoadBearing 이 명시적으로 거짓인 벽(비내력벽)의 절단선. 내력벽·값이 없는 벽은 절단선 굵기 그대로",
+                                   "class": "cutn"},
+                "limit": "LoadBearing 값이 없는 벽은 구분하지 않고 내력벽처럼 절단선으로 그린다. 입면에는 절단선이 없다"}
         if applied.get("hidden_lines"):
             out["line_types"]["hidden"] = (f"숨은 선: 앞의 벽·기둥·슬래브·계단에 가려진 모서리·개구부 윤곽(파선 {SH.HIDDEN_DASH[0]:g}/{SH.HIDDEN_DASH[1]:g}mm, "
                                            "보이는 선과 같은 굵기, 단면·입면만)")

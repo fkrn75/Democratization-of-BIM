@@ -29,6 +29,7 @@ INK = "#000000"
 GRAY = "#555555"
 FONT = DX.FONT
 HIDDEN_DASH = (2.4, 1.2)   # 숨은 선 파선의 (마디, 간격) 용지 mm
+NONBEARING_CUT_W = 0.35   # 선 굵기 위계(옵션)에서 비내력벽(LoadBearing 거짓) 절단선 굵기: 내력벽 절단선(0.50)보다 가늘고 창호·기호선(0.25)보다 굵다
 HIER_DIM_W = (0.25, 0.18)  # 선 굵기 위계(옵션)에서 치수선·보조선 굵기: 치수선은 창호·기호선과 같은 층, 보조선은 보이는 선 층
 
 
@@ -118,6 +119,12 @@ def view_prims(sh: Sheet, data, tx, ty, datums, dx0, dx1, style=None, prof=None)
         wd, col = st[cls]
         for _, x0, y0, x1, y1 in (ln for ln in data["lines"] if ln[0] == cls):
             sh.line(tx(x0), ty(y0), tx(x1), ty(y1), wd, col)
+    cutn = [ln for ln in data["lines"] if ln[0] == "cutn"]
+    if cutn:                                                  # 비내력벽 절단선(선 굵기 위계 옵션): 절단선보다 한 단계 가늘다
+        sh.begin("cut-nonbearing", **{"data-count": len(cutn)})
+        for _, x0, y0, x1, y1 in cutn:
+            sh.line(tx(x0), ty(y0), tx(x1), ty(y1), NONBEARING_CUT_W, st["cut"][1])
+        sh.end()
     hid = [ln for ln in data["lines"] if ln[0] == "hid"]
     if hid:                                                   # 숨은 선(옵션): 보이는 선(proj)과 같은 굵기의 파선
         sh.begin("hidden-lines", **{"data-count": len(hid)})

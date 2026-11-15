@@ -1518,13 +1518,14 @@ def _warn_omitted(ctx, omitted: dict) -> None:
                  "(외래는 형상 정보가 없고, 분리된 벽의 의도 값은 낡았다)")
 
 
-def _render_view(ctx, vid, detail=False, hidden=False):
-    """뷰의 선분·채움·기준선(레벨)·제목을 내보내기용 데이터로 묶는다. detail 이면 큰 축척(1:50 이하) 상세 선을 더한다(SC-09)."""
+def _render_view(ctx, vid, detail=False, hidden=False, hier=False):
+    """뷰의 선분·채움·기준선(레벨)·제목을 내보내기용 데이터로 묶는다. detail 이면 큰 축척(1:50 이하) 상세 선을 더한다(SC-09).
+    hier 이면 비내력벽(LoadBearing 거짓)의 절단선을 "cutn" 등급으로 나눈다(LN-04, 선 굵기 위계)."""
     r = ctx.row(vid, "view")
     p = r["params"]
     levels = sorted(((ctx.st.el[l]["params"]["name"], ctx.st.el[l]["params"]["elevation"]) for l in ctx.st.by_kind.get("level", ())),
                     key=lambda t: (t[1], t[0]))
-    lines = ctx.g.q(D.view_lines, vid)
+    lines = ctx.g.q(D.view_lines_hier if hier else D.view_lines, vid)
     if detail:
         lines = lines + ctx.g.q(D.view_detail_lines, vid)
     if hidden:
@@ -1681,7 +1682,8 @@ def sheet_export(ctx, a: SheetExport):
     if len(set(a.views)) != len(a.views):
         raise DobimError("CONSTRAINT", "같은 뷰를 두 번 올릴 수 없다", path="/views")
     hidden = bool(a.profile is not None and a.profile.hidden_lines)
-    datas = [dict(_render_view(ctx, v, a.detail, hidden), id=v) for v in a.views]
+    hier = bool(a.profile is not None and a.profile.line_hierarchy)
+    datas = [dict(_render_view(ctx, v, a.detail, hidden, hier), id=v) for v in a.views]
     spec = {"paper": a.paper, "project": a.project_name or "(프로젝트명 없음)", "title": a.sheet_name or datas[0]["name"],
             "number": a.sheet_number, "date": a.date or datetime.date.today().isoformat(), "north_deg": a.north_angle}
     from dobim_core import sheet_extras as SE
