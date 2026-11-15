@@ -87,6 +87,20 @@ def _name(v):
     return v
 
 
+def _layers(v, total: float):
+    """층 구성(선택 파라미터) 해석: [{"material", "thickness"}, ...] 를 저작 행과 같은 모양으로. 두께 합이 요소 두께와 같아야 한다."""
+    if not isinstance(v, list) or not 1 <= len(v) <= K.LAYERS_MAX:
+        raise ValueError("층 구성이 올바르지 않다")
+    out = []
+    for x in v:
+        if not isinstance(x, dict) or set(x) != {"material", "thickness"}:
+            raise ValueError("층 구성 항목이 올바르지 않다")
+        out.append({"material": _name(x["material"]), "thickness": _num(x["thickness"], pos=True)})
+    if abs(K.layers_total(out) - total) > K.LAYER_SUM_TOL:
+        raise ValueError("층 두께의 합이 요소 두께와 다르다")
+    return out
+
+
 def _parse_intent(kind: str, text: str) -> dict:
     """DoBIM_Intent 텍스트를 현재 코어 스키마로 해석한다. 못 하면 ValueError. 숫자는 float 로 맞춘다(저작 행과 같은 모양)."""
     d = json.loads(text)
@@ -102,14 +116,16 @@ def _parse_intent(kind: str, text: str) -> dict:
             raise ValueError("레벨 params 키가 다르다")
         out = {"name": _name(p["name"]), "elevation": _num(p["elevation"])}
     elif kind == "wall":
-        if set(p) != {"name", "axis", "thickness", "height"} or not isinstance(p["axis"], list) or len(p["axis"]) != 4:
+        if set(p) - {"layers"} != {"name", "axis", "thickness", "height"} or not isinstance(p["axis"], list) or len(p["axis"]) != 4:
             raise ValueError("벽 params 가 다르다")
         axis = [_num(x) for x in p["axis"]]
         if (axis[2] - axis[0]) ** 2 + (axis[3] - axis[1]) ** 2 < 1.0:
             raise ValueError("벽 길이가 1mm 미만이다")
         out = {"name": _name(p["name"]), "axis": axis, "thickness": _num(p["thickness"], pos=True), "height": _num(p["height"], pos=True)}
+        if "layers" in p:
+            out["layers"] = _layers(p["layers"], out["thickness"])
     elif kind == "slab":
-        if set(p) != {"name", "boundary", "thickness", "top_offset"} or not isinstance(p["boundary"], list) or not 3 <= len(p["boundary"]) <= 256:
+        if set(p) - {"layers"} != {"name", "boundary", "thickness", "top_offset"} or not isinstance(p["boundary"], list) or not 3 <= len(p["boundary"]) <= 256:
             raise ValueError("슬래브 params 가 다르다")
         pts = []
         for q in p["boundary"]:
@@ -120,8 +136,10 @@ def _parse_intent(kind: str, text: str) -> dict:
         if why or K.polygon_area2(pts) <= 0:   # 의도는 반시계로 저장한다(slab.create 가 정규화)
             raise ValueError(f"슬래브 경계가 올바르지 않다({why or '시계 방향'})")
         out = {"name": _name(p["name"]), "boundary": pts, "thickness": _num(p["thickness"], pos=True), "top_offset": _num(p["top_offset"])}
+        if "layers" in p:
+            out["layers"] = _layers(p["layers"], out["thickness"])
     elif kind == "space":
-        if (set(p) != {"name", "category", "boundary", "height"} or not isinstance(p["boundary"], list) or not 3 <= len(p["boundary"]) <= 256
+        if (set(p) - {"ceiling_height"} != {"name", "category", "boundary", "height"} or not isinstance(p["boundary"], list) or not 3 <= len(p["boundary"]) <= 256
                 or not isinstance(p["category"], str) or len(p["category"]) > 255):
             raise ValueError("공간 params 가 다르다")
         pts = []
@@ -133,6 +151,10 @@ def _parse_intent(kind: str, text: str) -> dict:
         if why or K.polygon_area2(pts) <= 0:
             raise ValueError(f"공간 경계가 올바르지 않다({why or '시계 방향'})")
         out = {"name": _name(p["name"]), "category": p["category"], "boundary": pts, "height": _num(p["height"], pos=True)}
+        if "ceiling_height" in p:
+            out["ceiling_height"] = _num(p["ceiling_height"], pos=True)
+            if out["ceiling_height"] > out["height"]:
+                raise ValueError("천장 높이가 공간 높이보다 크다")
     elif kind == "site":
         if (set(p) != {"name", "boundary", "north_angle", "roads", "elevation"} or not isinstance(p["boundary"], list) or not 3 <= len(p["boundary"]) <= 256
                 or not isinstance(p["roads"], list) or len(p["roads"]) > K.SITE_ROADS_MAX):
@@ -168,10 +190,12 @@ def _parse_intent(kind: str, text: str) -> dict:
         out = {"name": _name(p["name"]), "run": run, "width": _num(p["width"], pos=True), "height": _num(p["height"], pos=True),
                "risers": p["risers"], "base_offset": _num(p["base_offset"])}
     else:
-        if set(p) != {"name", "width", "height", "sill", "offset"}:
+        if set(p) - {"leaf"} != {"name", "width", "height", "sill", "offset"}:
             raise ValueError("문 params 가 다르다")
         out = {"name": _name(p["name"]), "width": _num(p["width"], pos=True), "height": _num(p["height"], pos=True),
                "sill": _num(p["sill"], nonneg=True), "offset": _num(p["offset"])}
+        if "leaf" in p:
+            out["leaf"] = _num(p["leaf"], pos=True)
     res = {"kind": kind, "params": out}
     if kind == "wall":
         lv, joins = d["level"], d["joins"]

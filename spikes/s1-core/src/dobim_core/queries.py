@@ -18,7 +18,7 @@ PARALLEL_EPS = 1e-9
 
 
 # 요소 종류의 정본은 kinds.py 다. NON_IFC_KINDS(신원·속성셋·재료가 없는 뷰·주석), NB, bucket_of 는 거기서 가져온다
-from dobim_core.kinds import NB, NON_IFC_KINDS, bucket_of  # noqa: E402,F401
+from dobim_core.kinds import NB, NON_IFC_KINDS, bucket_of, layers_label  # noqa: E402,F401
 
 
 def el(g, eid):
@@ -46,6 +46,10 @@ def psets(g, eid):
 
 
 def material(g, eid):
+    """재료 이름표. 층 구성이 있는 벽·슬래브는 층 구성이 재료를 정한다(가장 두꺼운 층의 재료): 층 구성은 요소 파라미터(의도)라 이 값도 그 입력 하나에서 나온다."""
+    row = g.input(("el", eid))
+    if row is not None and row["kind"] in ("wall", "slab") and "layers" in row["params"]:
+        return layers_label(row["params"]["layers"])
     return g.input(("mat", eid))
 
 
@@ -359,12 +363,18 @@ def ifc_spec(g, e):
         return {**FS.finst_spec(el(g, tid)["params"], p, tid, h, g.q(finst_level, e), host, tolerant=True), "intent": intent}
     if kind == "wall":
         x, y, c, s, _ = g.q(wall_frame, e)
-        return {"kind": kind, "name": p["name"], "level": g.q(wall_level, e), "origin": (x, y), "xdir": (c, s),
+        spec = {"kind": kind, "name": p["name"], "level": g.q(wall_level, e), "origin": (x, y), "xdir": (c, s),
                 "footprint": g.q(wall_footprint, e), "height": p["height"], "intent": intent}
+        if "layers" in p:   # 층 구성이 없으면 명세는 이전과 같다
+            spec["layers"] = tuple((x["material"], x["thickness"]) for x in p["layers"])
+        return spec
     if kind == "slab":
         # 배치는 레벨 좌표계(원점·무회전)이고 윗면은 레벨 + top_offset 이므로 레벨 높이는 읽지 않는다(레벨을 옮기면 배치가 따라간다)
-        return {"kind": kind, "name": p["name"], "level": g.q(slab_level, e), "boundary": tuple(tuple(q) for q in p["boundary"]),
+        spec = {"kind": kind, "name": p["name"], "level": g.q(slab_level, e), "boundary": tuple(tuple(q) for q in p["boundary"]),
                 "thickness": p["thickness"], "top_offset": p["top_offset"], "intent": intent}
+        if "layers" in p:
+            spec["layers"] = tuple((x["material"], x["thickness"]) for x in p["layers"])
+        return spec
     if kind == "site":
         # 배치는 건물 아래 뼈대 대지 좌표계(원점·무회전)다. 방위·도로는 IFC 가 아니라 의도(DoBIM_Intent)로 왕복한다
         return {"kind": kind, "name": p["name"], "boundary": tuple(tuple(q) for q in p["boundary"]), "elevation": p["elevation"], "intent": intent}

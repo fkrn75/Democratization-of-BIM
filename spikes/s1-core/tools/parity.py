@@ -41,7 +41,7 @@ PRE = {"history.redo": [("history.undo", {})], "ifc.restore": [_EXP, _EXP], "ifc
        "view.set": [_V1], "view.delete": [_V1], "view.list": [_V1], "view.linework": [_V1], "view.export": [_V1], "view.affected": [_V1],
        "annot.dim.create": [_V1], "annot.tag.create": [_V1], "annot.rebind": [_V1, _A1], "annot.delete": [_V1, _A1],
        "annot.list": [_V1, _A1], "annot.check": [_V1, _A1],
-       "family.set": [_FAMILY_PRE], "annot.dim.heights": [_V2], "slab.set": [_S1], "slab.move": [_S1], "slab.delete": [_S1],
+       "family.set": [_FAMILY_PRE], "annot.dim.heights": [_V2], "slab.set": [_S1], "slab.move": [_S1], "slab.delete": [_S1], "slab.layers": [_S1],
        "stair.set": [_ST1], "stair.move": [_ST1], "stair.delete": [_ST1],
        "space.set": [_SP1], "space.move": [_SP1], "space.delete": [_SP1],
        "site.set": [_SI1], "site.delete": [_SI1],

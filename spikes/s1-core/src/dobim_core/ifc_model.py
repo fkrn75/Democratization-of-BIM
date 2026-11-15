@@ -118,6 +118,24 @@ def material_label(m) -> str | None:
     return inner.is_a()
 
 
+def pairs_label(layers) -> str:
+    """층 구성 ((재료, 두께), ...) 의 대표 재료: 가장 두꺼운 층(같으면 앞쪽). kinds.layers_label 과 같은 규칙이다."""
+    best = layers[0]
+    for x in layers[1:]:
+        if x[1] > best[1]:
+            best = x
+    return best[0]
+
+
+LAYER_MARK = "DoBIM"   # 코어가 투영한 층 구성(IfcMaterialLayerSet)의 Description. 외래 파일의 층 구성과 구분한다
+
+
+def our_usage(m) -> bool:
+    """코어가 투영한 층 구성 지정(IfcMaterialLayerSetUsage)인가. 이 지정은 투영이 소유한다(재료 이름 하나로 읽거나 부속 스냅숏으로 다루지 않는다)."""
+    return (m is not None and m.is_a("IfcMaterialLayerSetUsage") and m.ForLayerSet is not None
+            and getattr(m.ForLayerSet, "Description", None) == LAYER_MARK)
+
+
 def is_site_element(e) -> bool:
     """대지 요소(site 종류)의 IFC 엔티티인가: IfcSite 이고 다른 IfcSite 에 집합돼 있고 의도(DoBIM_Intent)를 갖는다."""
     if not e.is_a("IfcSite"):
@@ -174,7 +192,9 @@ def detect_skeleton(f):
 #   "7" L 조인 모서리를 코어 형상으로 닫는다(벽 윤곽 wall_footprint 가 queries.wall_extent 를 쓴다: id 작은 벽이 상대 벽 반 두께 연장).
 #       이전 형식으로 내보낸 IFC 의 L 조인 벽은 형상이 달라 가져오면 분리(동결)로 판정된다(안전한 쪽)
 #   "8" 대지 종류 신설(IfcSite 이 의도 복원 대상: 뼈대 대지 아래 하위 IfcSite 로 투영하고 뼈대 판정은 그것을 세지 않는다)
-CLOSURE_FORMAT = "8"
+#   "9" 벽·슬래브 층 구성(layers), 문 문짝 두께(leaf), 공간 천장 높이(ceiling_height) 선택 파라미터 신설. 층 구성은 IfcMaterialLayerSetUsage 로 투영한다
+#       (재료 지정은 클로저 밖이라 클로저 해시는 그대로이고, 의도 해석 모양만 넓어졌다). 입력이 없는 프로젝트는 요소 행·IFC 가 이전과 같다
+CLOSURE_FORMAT = "9"
 
 
 def make_norm():
@@ -339,7 +359,7 @@ def _is_core_rel(r) -> bool:
         d = r.RelatingPropertyDefinition
         return isinstance(d, ifcopenshell.entity_instance) and d.is_a("IfcPropertySet")
     if r.is_a("IfcRelAssociatesMaterial"):
-        return r.RelatingMaterial.is_a("IfcMaterial")
+        return r.RelatingMaterial.is_a("IfcMaterial") or our_usage(r.RelatingMaterial)
     return False
 
 
@@ -563,7 +583,7 @@ class IfcModel:
         요소로 들어오지 않은 타입(외래 타입)은 제품이 아니므로 건드리지 않는다."""
         keep = set(self.ents) | self.infra | {o.GlobalId for o in self.openings.values()}
         gone = [g for g in self._by_gid if g not in keep]
-        mats = []
+        mats, lsets = [], []
         for g in sorted(gone, key=lambda g: (not self._by_gid[g].is_a("IfcOpeningElement"), g)):
             try:
                 e = self.f.by_guid(g)
@@ -573,7 +593,9 @@ class IfcModel:
                 api_feature.remove_feature(self.f, feature=e)
             else:
                 m = ue.get_material(e, should_inherit=False)
-                if m is not None:
+                if our_usage(m):
+                    lsets.append(m.ForLayerSet)
+                elif m is not None:
                     mats.append(m)
                 self._remove_product(e)
         for m in mats:   # 지운 요소만 쓰던 재료는 세션 안에서 지울 때와 같이 없앤다(다시 열어도 같은 해시)
@@ -581,6 +603,11 @@ class IfcModel:
                 self._gc_material(m)
             except RuntimeError:
                 pass   # 이미 지워졌다
+        for ls in lsets:
+            try:
+                self._drop_layer_set(ls)
+            except RuntimeError:
+                pass
         for g in gone:   # 지운 엔티티를 가리키는 낡은 참조가 남으면 지우기를 되돌릴 때 이미 지워진 엔티티를 이어받는다
             self._by_gid.pop(g, None)
         for g in sorted(import_types - set(self.ents)):   # 제품(인스턴스)을 먼저 지운 뒤라 타입에 매달린 지정 관계는 비어 있다
@@ -745,7 +772,11 @@ class IfcModel:
             fp.unproject_inst(self, eid)
         elif kind == "ftype":
             fp.unproject_type(self, eid)
+        cur_mat = ue.get_material(e, should_inherit=False)
+        lset = cur_mat.ForLayerSet if our_usage(cur_mat) else None
         self._remove_product(e)   # 실패하면 ents 가 그대로라 상태가 설명 가능하다(순서: 지운 뒤에 목록에서 뺀다)
+        if lset is not None:   # 요소와 함께 사라진 코어 층 구성(고아)을 치운다: 재료 목록이 상태의 함수여야 한다
+            self._drop_layer_set(lset)
         self.ents.pop(eid)
         self.kinds.pop(eid, None)
         self.container_of.pop(eid, None)
@@ -838,7 +869,7 @@ class IfcModel:
     def has_complex_material(self, eid: str) -> bool:
         """재료가 단일 IfcMaterial 이 아니다(층 구성·프로파일 등). 이름 하나로 되살릴 수 없어 부속 스냅숏이 맡는다."""
         m = ue.get_material(self.ents[eid], should_inherit=False)
-        return m is not None and not m.is_a("IfcMaterial")
+        return m is not None and not m.is_a("IfcMaterial") and not our_usage(m)
 
     # ------------------------------------------------------------ 속성셋·재료 (정본)
     def get_psets(self, eid: str) -> dict:
@@ -850,7 +881,8 @@ class IfcModel:
         return out
 
     def get_material(self, eid: str) -> str | None:
-        return material_label(ue.get_material(self.ents[eid], should_inherit=False))
+        m = ue.get_material(self.ents[eid], should_inherit=False)
+        return None if our_usage(m) else material_label(m)   # 코어가 투영한 층 구성은 의도(층 구성)가 정본이다: 재료 이름 입력으로는 읽지 않는다
 
     def set_prop(self, eid: str, pset: str, prop: str, value) -> None:
         """속성 하나를 쓴다. 실패하면 원래 값으로 복원하고 예외를 다시 던진다(삭제 뒤 실패해도 속성이 사라지지 않는다).
@@ -899,23 +931,78 @@ class IfcModel:
         e = self.ents[eid]
         cur = ue.get_material(e, should_inherit=False)
         if name is None:
-            if cur is not None:
+            if cur is not None and not our_usage(cur):   # 코어가 투영한 층 구성은 재료 이름을 뗀다고 떼지 않는다(투영이 정한다)
                 api_material.unassign_material(f, products=[e])
                 self._gc_material(cur)
             return
+        mat = self._named_material(name)
+        ls = cur.ForLayerSet if our_usage(cur) else None
+        api_material.assign_material(f, products=[e], material=mat)
+        if ls is not None:
+            self._drop_layer_set(ls)
+        elif cur is not None and cur != mat:
+            self._gc_material(cur)
+
+    def _named_material(self, name: str):
         mat = self._mats.get(name)
         if mat is None:
-            mat = api_material.add_material(f, name=name)
+            mat = api_material.add_material(self.f, name=name)
             self._mats[name] = mat
-        api_material.assign_material(f, products=[e], material=mat)
-        if cur is not None and cur != mat:
-            self._gc_material(cur)
+        return mat
 
     def _gc_material(self, mat) -> None:
         """사용처가 없는 재료는 지운다. 재료 목록이 상태의 함수가 되어야 취소 후 해시가 복원된다."""
         if mat.is_a("IfcMaterial") and not self.f.get_inverse(mat):
             self._mats.pop(mat.Name, None)
             api_material.remove_material(self.f, material=mat)
+        elif our_usage(mat) and not self.f.get_inverse(mat):   # 지정이 끊긴 코어 층 구성: 층·층 집합·쓰던 재료까지 치운다
+            self._drop_layer_set(mat.ForLayerSet)
+
+    def _drop_layer_set(self, ls) -> None:
+        """코어 층 구성(IfcMaterialLayerSet)을 지운다. 다른 지정이 아직 쓰면 둔다. 층이 쓰던 재료는 사용처가 없으면 함께 지운다."""
+        if any(r.is_a("IfcMaterialLayerSetUsage") for r in self.f.get_inverse(ls)):
+            return
+        mats = [ly.Material for ly in ls.MaterialLayers if ly.Material is not None]
+        api_material.remove_material_set(self.f, material=ls)
+        for m in mats:
+            try:
+                self._gc_material(m)
+            except RuntimeError:
+                pass   # 이미 지웠다(같은 재료를 쓴 층이 여럿)
+
+    def _assign_layers(self, e, layers, axis: str, sense: str, offset: float, label: str) -> None:
+        """요소(벽·슬래브)에 층 구성 지정(IfcMaterialLayerSetUsage)을 맞춘다. layers = ((재료, 두께), ...) 를 IFC 순서(기준선에서 멀어지는 방향)로 준다.
+        이미 같은 구성이 지정돼 있으면 건드리지 않는다(멱등: 가져온 파일을 다시 투영해도 같다). 다른 재료 지정(외래 재료 포함)은 대체한다:
+        층 구성이 있는 요소의 재료는 층 구성이다. label = 층 집합 이름(가장 두꺼운 층의 재료 = kinds.layers_label)."""
+        f = self.f
+        cur = ue.get_material(e, should_inherit=False)
+        want = [(n, float(t)) for n, t in layers]
+        if our_usage(cur):
+            have = [(ly.Material.Name, float(ly.LayerThickness)) for ly in cur.ForLayerSet.MaterialLayers]
+            if (have == want and cur.ForLayerSet.LayerSetName == label and cur.LayerSetDirection == axis and cur.DirectionSense == sense
+                    and abs(float(cur.OffsetFromReferenceLine or 0.0) - offset) < 1e-6):
+                return
+        old_ls = cur.ForLayerSet if our_usage(cur) else None
+        ls = api_material.add_material_set(f, name=label, set_type="IfcMaterialLayerSet")
+        ls.Description = LAYER_MARK
+        for n, t in want:
+            ly = api_material.add_layer(f, layer_set=ls, material=self._named_material(n))
+            api_material.edit_layer(f, layer=ly, attributes={"LayerThickness": t})
+        api_material.assign_material(f, products=[e], type="IfcMaterialLayerSetUsage", material=ls)
+        usage = ue.get_material(e, should_inherit=False)
+        api_material.edit_layer_usage(f, usage=usage, attributes={"LayerSetDirection": axis, "DirectionSense": sense, "OffsetFromReferenceLine": float(offset)})
+        if old_ls is not None:
+            self._drop_layer_set(old_ls)
+        elif cur is not None:
+            self._gc_material(cur)
+
+    def _clear_layers(self, e) -> None:
+        """투영한 층 구성이 있으면 뗀다(요소가 층 구성을 잃었다). 단일 재료 지정(재료 이름)은 그대로 둔다."""
+        cur = ue.get_material(e, should_inherit=False)
+        if our_usage(cur):
+            ls = cur.ForLayerSet
+            api_material.unassign_material(self.f, products=[e])
+            self._drop_layer_set(ls)
 
     # ------------------------------------------------------------ 투영 (늦게)
     def project(self, eid: str, spec: dict) -> None:
@@ -970,6 +1057,11 @@ class IfcModel:
         self._contain(eid, spec["level"])
         self._place(e, self.ents[spec["level"]].ObjectPlacement, (x, y, 0.0), (c, sn, 0.0))
         self._set_body(e, self._solid(spec["footprint"], spec["height"]))
+        layers = spec.get("layers")   # 벽 층 구성: 지역 +v 방향 순서(첫 층 = -v 면), 기준선(축선)에서 -두께/2 만큼 떨어져 시작한다
+        if layers:
+            self._assign_layers(e, layers, "AXIS2", "POSITIVE", -sum(t for _, t in layers) / 2.0, pairs_label(layers))
+        else:
+            self._clear_layers(e)
 
     def _project_slab(self, eid, spec):
         """슬래브: 레벨 좌표계 원점에 경계 프로필을 압출한다. 윗면 = 레벨 + top_offset 이므로 솔리드는 (top_offset - 두께)에서 두께만큼 +Z 로 올린다."""
@@ -979,6 +1071,11 @@ class IfcModel:
         self._contain(eid, spec["level"])
         self._place(e, self.ents[spec["level"]].ObjectPlacement, (0.0, 0.0, 0.0), (1.0, 0.0, 0.0))
         self._set_body(e, self._solid(spec["boundary"], spec["thickness"], z0=spec["top_offset"] - spec["thickness"]))
+        layers = spec.get("layers")   # 슬래브 층 구성은 윗면에서 아래로 준다. IFC 는 기준(레벨 원점)에서 +Z 방향 순서라 뒤집고, 첫 층은 솔리드 밑면에서 시작한다
+        if layers:
+            self._assign_layers(e, tuple(reversed(layers)), "AXIS3", "POSITIVE", spec["top_offset"] - spec["thickness"], pairs_label(layers))
+        else:
+            self._clear_layers(e)
 
     def _project_stair(self, eid, spec):
         """직선 계단: 톱니 옆모습(걸음선 길이 x 높이 평면)을 폭 방향으로 압출한 솔리드 하나. 압출 방향은 걸음선의 오른쪽 법선이다(그러면 옆모습의 y 가 위쪽이 된다)."""

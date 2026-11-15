@@ -80,6 +80,52 @@ def _pos(v) -> bool:
     return num_ok(v) and v > 0
 
 
+# ---------------------------------------------------------------- 선택 파라미터 (없으면 키 자체가 없다: 입력이 없는 프로젝트의 저장 형식·해시는 그대로)
+LAYERS_MAX = 8                 # 층 구성의 층 수 상한
+LAYER_SUM_TOL = 0.01           # 층 두께 합과 요소 두께가 이만큼(mm) 안에서 같아야 한다
+
+
+def _check_opt(kind: str, p, spec: dict[str, Callable], opt: dict[str, Callable]) -> str | None:
+    """필수 파라미터는 _check_fields 처럼 정확히 맞아야 하고, 선택 파라미터(opt)는 있으면 값이 올바라야 한다(없어도 된다)."""
+    if not isinstance(p, dict):
+        return f"{kind} 의 파라미터가 객체가 아니다"
+    base = {k: v for k, v in p.items() if k not in opt}
+    if (err := _check_fields(kind, base, spec)) is not None:
+        return err
+    for k, ok in opt.items():
+        if k in p and not ok(p[k]):
+            return f"{kind}.{k} 값이 올바르지 않다"
+    return None
+
+
+def layers_ok(v) -> bool:
+    """층 구성 = [{"material": 재료 이름, "thickness": 두께 mm}, ...] 1~LAYERS_MAX 개."""
+    return (isinstance(v, list) and 1 <= len(v) <= LAYERS_MAX
+            and all(isinstance(x, dict) and set(x) == {"material", "thickness"} and text_ok(x["material"], 1, NAME_MAX) and _pos(x["thickness"]) for x in v))
+
+
+def layers_total(layers) -> float:
+    return sum(x["thickness"] for x in layers)
+
+
+def layers_label(layers) -> str:
+    """층 구성을 대표하는 재료 이름: 가장 두꺼운 층(같으면 앞쪽)의 재료. 재료 일람표·외부 마감 판정이 읽는 이름표다."""
+    best = layers[0]
+    for x in layers[1:]:
+        if x["thickness"] > best["thickness"]:
+            best = x
+    return best["material"]
+
+
+def layer_bounds(layers) -> list:
+    """층 경계의 누적 위치(첫 층의 바깥 면 = 0, 마지막 = 총 두께). 길이 = 층 수 + 1."""
+    out, acc = [0.0], 0.0
+    for x in layers:
+        acc += x["thickness"]
+        out.append(acc)
+    return out
+
+
 def _level_params(p):
     return _check_fields("level", p, {"name": _name, "elevation": num_ok})
 
@@ -88,11 +134,14 @@ def _wall_params(p):
     def axis(v):   # 벽 길이 1mm 이상(wall.create 의 규칙)
         return (isinstance(v, list) and len(v) == 4 and all(num_ok(x) for x in v)
                 and (v[2] - v[0]) ** 2 + (v[3] - v[1]) ** 2 >= 1.0)
-    return _check_fields("wall", p, {"name": _name, "axis": axis, "thickness": _pos, "height": _pos})
+    err = _check_opt("wall", p, {"name": _name, "axis": axis, "thickness": _pos, "height": _pos}, {"layers": layers_ok})
+    if err is None and "layers" in p and abs(layers_total(p["layers"]) - p["thickness"]) > LAYER_SUM_TOL:
+        return "wall.layers 두께의 합이 벽 두께와 다르다"
+    return err
 
 
 def _door_params(p):
-    return _check_fields("door", p, {"name": _name, "width": _pos, "height": _pos, "sill": lambda v: num_ok(v) and v >= 0, "offset": num_ok})
+    return _check_opt("door", p, {"name": _name, "width": _pos, "height": _pos, "sill": lambda v: num_ok(v) and v >= 0, "offset": num_ok}, {"leaf": _pos})
 
 
 _SCALE = lambda v: num_ok(v) and v > 0   # noqa: E731
@@ -196,7 +245,10 @@ def polygon_problem(pts) -> str | None:
 def _slab_params(p):
     def boundary(v):
         return isinstance(v, list) and SLAB_PTS_MIN <= len(v) <= SLAB_PTS_MAX and all(_pt_ok(x) for x in v) and polygon_area2(v) > 0   # 반시계로 저장한다
-    return _check_fields("slab", p, {"name": _name, "boundary": boundary, "thickness": _pos, "top_offset": num_ok})
+    err = _check_opt("slab", p, {"name": _name, "boundary": boundary, "thickness": _pos, "top_offset": num_ok}, {"layers": layers_ok})
+    if err is None and "layers" in p and abs(layers_total(p["layers"]) - p["thickness"]) > LAYER_SUM_TOL:
+        return "slab.layers 두께의 합이 슬래브 두께와 다르다"
+    return err
 
 
 STAIR_RISERS_MIN, STAIR_RISERS_MAX = 2, 100
@@ -222,7 +274,10 @@ def is_corridor(name, category) -> bool:
 def _space_params(p):
     def boundary(v):
         return isinstance(v, list) and SLAB_PTS_MIN <= len(v) <= SLAB_PTS_MAX and all(_pt_ok(x) for x in v) and polygon_area2(v) > 0   # 반시계로 저장한다
-    return _check_fields("space", p, {"name": _name, "category": lambda v: text_ok(v, 0, 255), "boundary": boundary, "height": _pos})
+    err = _check_opt("space", p, {"name": _name, "category": lambda v: text_ok(v, 0, 255), "boundary": boundary, "height": _pos}, {"ceiling_height": _pos})
+    if err is None and "ceiling_height" in p and p["ceiling_height"] > p["height"]:
+        return "space.ceiling_height 가 공간 높이보다 크다"
+    return err
 
 
 SHEET_KEYS = ("name", "views", "paper", "project_name", "sheet_name", "sheet_number", "date", "north_angle", "client", "office", "signers", "revisions",

@@ -14,6 +14,7 @@
            sill / head             문턱·문 상단 높이                       z
     level  elevation               레벨 높이                              z
     slab   top / bottom            슬래브 윗면·밑면 높이(레벨 + top_offset, 두께는 아래로)  z
+    space  ceiling                 공간의 천장(반자) 마감 높이(레벨 + ceiling_height). 천장 높이 입력이 없으면 target_deleted 고아  z
 
 요소 id 만으로 부족한 경우의 규칙:
     - 벽 분할(wall.split): 분할은 벽의 "끝"을 새 벽에 넘긴다. 분할 이력은 관계 succ(원래 벽 -> 끝 쪽을 가진 벽)로 남고,
@@ -51,6 +52,7 @@ ROLE_TYPES = {
     "door": {"center": "pt", "jamb.start": "pt", "jamb.end": "pt", "sill": "z", "head": "z"},
     "level": {"elevation": "z"},
     "slab": {"top": "z", "bottom": "z"},
+    "space": {"ceiling": "z"},
 }
 END_ROLES = frozenset({"axis.end", "trim.end"})           # 분할 이력(succ)을 따라가는 역할
 OWN_ROLE = {"own.end": "axis.end", "own.trim.end": "trim.end"}   # 이력을 따라가지 않는 짝
@@ -121,6 +123,11 @@ def ref_resolve(g, ref):
     if kind == "slab":
         zb, zt = g.q(Q.slab_zrange, eid)
         return ("z", zt if role == "top" else zb)
+    if kind == "space":
+        ch = row["params"].get("ceiling_height")
+        if ch is None:
+            return ("orphan", "target_deleted")   # 천장 높이 입력이 지워졌다: 정상적 고아(대상이 사라진 것과 같다)
+        return ("z", g.q(Q.level_info, g.q(Q.space_level, eid))[1] + ch)
     return ("z", g.q(Q.level_info, eid)[1])
 
 

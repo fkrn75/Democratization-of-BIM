@@ -297,6 +297,8 @@ class WallSet(A):
 def wall_set(ctx, a: WallSet):
     r = ctx.authored(a.id, "wall")
     p = dict(r["params"])
+    if a.thickness is not None and "layers" in p and abs(a.thickness - p["thickness"]) > 1e-9:
+        raise DobimError("CONSTRAINT", "층 구성이 있는 벽의 두께는 wall.layers 로 층을 바꿔 정한다", path="/thickness", hint="wall.layers 로 층 구성을 바꾸세요(층 두께 합 = 벽 두께)")
     for k in ("name", "thickness", "height"):
         if getattr(a, k) is not None:
             p[k] = getattr(a, k)
@@ -316,6 +318,40 @@ def wall_set(ctx, a: WallSet):
     check_hosted_fit(ctx, a.id, r["params"], p)
     ctx.put_el(a.id, dict(r, params=p))
     return {"id": a.id}
+
+
+class LayerIn(A):
+    material: Name = Field(description="층 재료 이름(예: 석고보드, 콘크리트)")
+    thickness: Pos = Field(description="층 두께 mm")
+
+
+Layers = Annotated[list[LayerIn], Field(min_length=1, max_length=8, description="층 구성(재료·두께 목록). 합이 요소 두께와 같아야 한다")]
+
+
+class WallLayers(A):
+    id: Id
+    layers: Layers | None = Field(description="벽 층 구성: 벽 지역 +v 쪽 순서(축선의 왼쪽 면이 마지막 층)로 첫 층부터 준다. 층 두께의 합이 벽 두께가 된다. null 이면 층 구성을 뗀다(재료는 비게 된다)")
+
+
+@command("wall.layers", kind="mutation", risk="write", group="model.wall", summary="벽 마감 층 구성(재료·두께 목록) 지정. IFC 는 IfcMaterialLayerSetUsage 로 나간다",
+         args=WallLayers, since="0.3",
+         examples=[{"id": F.W1, "layers": [{"material": "석고보드", "thickness": 20}, {"material": "콘크리트", "thickness": 160}, {"material": "치장벽돌", "thickness": 20}]}])
+def wall_layers(ctx, a: WallLayers):
+    r = ctx.authored(a.id, "wall", what="층 구성 지정")
+    p = dict(r["params"])
+    if a.layers is None:
+        p.pop("layers", None)
+    else:
+        ls = [{"material": x.material, "thickness": x.thickness} for x in a.layers]
+        ctx.set_material(a.id, None)   # 단일 재료가 있으면 먼저 뗀다(층 구성이 재료를 대신한다). 이미 층 구성이면 할 일이 없다
+        p["layers"] = ls
+        p["thickness"] = sum(x["thickness"] for x in ls)
+        from dobim_core.commands_family import check_hosted_fit
+        check_hosted_fit(ctx, a.id, r["params"], p)
+    if p == r["params"]:
+        return {"id": a.id, "changed": False}
+    ctx.put_el(a.id, dict(r, params=p))
+    return {"id": a.id, "changed": True, "thickness": p["thickness"]}
 
 
 class JoinArgs(A):
@@ -458,7 +494,10 @@ def wall_split(ctx, a: WallSplit):
                          hint="조인 지점에서 1000mm 넘게 떨어진 곳에서 나누세요")
     name = (p["name"][:62] + "-b")
     ctx.put_el(a.id, dict(r, params=dict(p, axis=ax_w)))
-    ctx.put_el(nid, row("wall", "IfcWall", "wall.basic", {"name": name, "axis": ax_n, "thickness": p["thickness"], "height": p["height"]}))
+    np_ = {"name": name, "axis": ax_n, "thickness": p["thickness"], "height": p["height"]}
+    if "layers" in p:   # 층 구성이 있으면 끝 쪽 새 벽도 같은 층 구성(복사)
+        np_["layers"] = [dict(x) for x in p["layers"]]
+    ctx.put_el(nid, row("wall", "IfcWall", "wall.basic", np_))
     ctx.rel("on_level", nid, ctx.rels_out("on_level", a.id)[0], True)
     for d in doors_n:
         dr = ctx.st.el[d]
@@ -488,6 +527,7 @@ class DoorPlace(A):
     height: Pos = 2100.0
     sill: Num = Field(0.0, ge=0)
     name: Name | None = None
+    leaf: Pos | None = Field(None, description="문짝 두께 mm(1:50 평면 상세가 쓴다). 주지 않으면 규약값(40)")
 
 
 def _fits(ctx, host, offset, width):
@@ -504,8 +544,10 @@ def door_place(ctx, a: DoorPlace):
     ctx.authored(a.host, "wall", what="문 호스팅")
     _fits(ctx, a.host, a.offset, a.width)
     a.name = a.name or f"D-{a.id[-6:]}"
-    ctx.put_el(a.id, row("door", "IfcDoor", "door.single", {
-        "name": a.name, "width": a.width, "height": a.height, "sill": a.sill, "offset": a.offset}))
+    dp = {"name": a.name, "width": a.width, "height": a.height, "sill": a.sill, "offset": a.offset}
+    if a.leaf is not None:   # 입력이 없으면 파라미터에 키가 없다(저장 형식·해시 그대로)
+        dp["leaf"] = a.leaf
+    ctx.put_el(a.id, row("door", "IfcDoor", "door.single", dp))
     ctx.rel("hosts", a.host, a.id, True)
     return {"id": a.id}
 
@@ -518,11 +560,15 @@ class DoorSet(A):
     height: Pos | None = None
     sill: Num | None = Field(None, ge=0)
     offset: Num | None = None
+    leaf: Pos | None = Field(None, description="문짝 두께 mm")
+    clear_leaf: bool = Field(False, description="참이면 문짝 두께 입력을 지운다(규약값으로 돌아간다)")
 
     @model_validator(mode="after")
     def _any(self):
-        if all(v is None for v in (self.name, self.width, self.height, self.sill, self.offset)):
+        if all(v is None for v in (self.name, self.width, self.height, self.sill, self.offset, self.leaf)) and not self.clear_leaf:
             raise ValueError("바꿀 필드가 하나도 없다")
+        if self.leaf is not None and self.clear_leaf:
+            raise ValueError("leaf 와 clear_leaf 를 함께 줄 수 없다")
         return self
 
 
@@ -531,9 +577,11 @@ class DoorSet(A):
 def door_set(ctx, a: DoorSet):
     r = ctx.authored(a.id, "door")
     p = dict(r["params"])
-    for k in ("name", "width", "height", "sill", "offset"):
+    for k in ("name", "width", "height", "sill", "offset", "leaf"):
         if getattr(a, k) is not None:
             p[k] = getattr(a, k)
+    if a.clear_leaf:
+        p.pop("leaf", None)
     host = ctx.rels_in("hosts", a.id)[0]
     _fits(ctx, host, p["offset"], p["width"])
     ctx.put_el(a.id, dict(r, params=p))
@@ -656,6 +704,8 @@ class SlabSet(A):
 def slab_set(ctx, a: SlabSet):
     r = ctx.authored(a.id, "slab")
     p = dict(r["params"])
+    if a.thickness is not None and "layers" in p and abs(a.thickness - p["thickness"]) > 1e-9:
+        raise DobimError("CONSTRAINT", "층 구성이 있는 슬래브의 두께는 slab.layers 로 층을 바꿔 정한다", path="/thickness", hint="slab.layers 로 층 구성을 바꾸세요(층 두께 합 = 슬래브 두께)")
     for k in ("name", "thickness", "top_offset"):
         if getattr(a, k) is not None:
             p[k] = getattr(a, k)
@@ -663,6 +713,30 @@ def slab_set(ctx, a: SlabSet):
         p["boundary"] = _slab_boundary(a.boundary)
     ctx.put_el(a.id, dict(r, params=p))
     return {"id": a.id}
+
+
+class SlabLayers(A):
+    id: Id
+    layers: Layers | None = Field(description="슬래브 층 구성: 윗면에서 아래로 첫 층부터 준다(바닥 마감, 모르타르, 콘크리트 ...). 층 두께의 합이 슬래브 두께가 된다. null 이면 층 구성을 뗀다")
+
+
+@command("slab.layers", kind="mutation", risk="write", group="model.slab", summary="슬래브 두께 층 구성(재료·두께 목록) 지정. IFC 는 IfcMaterialLayerSetUsage 로 나간다",
+         args=SlabLayers, since="0.3",
+         examples=[{"id": F.S1, "layers": [{"material": "마감 모르타르", "thickness": 50}, {"material": "철근콘크리트", "thickness": 150}]}])
+def slab_layers(ctx, a: SlabLayers):
+    r = ctx.authored(a.id, "slab", what="층 구성 지정")
+    p = dict(r["params"])
+    if a.layers is None:
+        p.pop("layers", None)
+    else:
+        ls = [{"material": x.material, "thickness": x.thickness} for x in a.layers]
+        ctx.set_material(a.id, None)
+        p["layers"] = ls
+        p["thickness"] = sum(x["thickness"] for x in ls)
+    if p == r["params"]:
+        return {"id": a.id, "changed": False}
+    ctx.put_el(a.id, dict(r, params=p))
+    return {"id": a.id, "changed": True, "thickness": p["thickness"]}
 
 
 class SlabMove(A):
@@ -782,6 +856,7 @@ class SpaceCreate(A):
     name: Name | None = None
     category: Text = Field("", description="분류(예: 복도, 사무실). 비어 있어도 된다. 복도 판정에 쓴다")
     height: Pos = 2700.0
+    ceiling_height: Pos | None = Field(None, description="천장(반자) 마감 높이 mm(레벨 위). 공간 높이 이하. 주면 1:50 단면 상세가 천장선을 긋는다")
 
 
 @command("space.create", kind="mutation", risk="write", group="model.space", summary="공간(방) 생성(레벨 + 경계 다각형 + 실명·분류)",
@@ -792,7 +867,12 @@ def space_create(ctx, a: SpaceCreate):
     ctx.authored(a.level, "level", what="레벨에 공간을 추가하는 것")
     boundary = _slab_boundary(a.boundary)
     a.name = a.name or f"SP-{a.id[-6:]}"
-    ctx.put_el(a.id, row("space", "IfcSpace", "space.basic", {"name": a.name, "category": a.category, "boundary": boundary, "height": a.height}))
+    sp = {"name": a.name, "category": a.category, "boundary": boundary, "height": a.height}
+    if a.ceiling_height is not None:
+        if a.ceiling_height > a.height:
+            raise DobimError("CONSTRAINT", "천장 높이가 공간 높이보다 크다", path="/ceiling_height")
+        sp["ceiling_height"] = a.ceiling_height
+    ctx.put_el(a.id, row("space", "IfcSpace", "space.basic", sp))
     ctx.rel("on_level", a.id, a.level, True)
     return {"id": a.id}
 
@@ -804,11 +884,15 @@ class SpaceSet(A):
     category: Text | None = None
     boundary: SlabBoundary | None = None
     height: Pos | None = None
+    ceiling_height: Pos | None = Field(None, description="천장(반자) 마감 높이 mm")
+    clear_ceiling: bool = Field(False, description="참이면 천장 높이 입력을 지운다")
 
     @model_validator(mode="after")
     def _any(self):
-        if all(v is None for v in (self.name, self.category, self.boundary, self.height)):
+        if all(v is None for v in (self.name, self.category, self.boundary, self.height, self.ceiling_height)) and not self.clear_ceiling:
             raise ValueError("바꿀 필드가 하나도 없다")
+        if self.ceiling_height is not None and self.clear_ceiling:
+            raise ValueError("ceiling_height 와 clear_ceiling 을 함께 줄 수 없다")
         return self
 
 
@@ -817,9 +901,13 @@ class SpaceSet(A):
 def space_set(ctx, a: SpaceSet):
     r = ctx.authored(a.id, "space")
     p = dict(r["params"])
-    for k in ("name", "category", "height"):
+    for k in ("name", "category", "height", "ceiling_height"):
         if getattr(a, k) is not None:
             p[k] = getattr(a, k)
+    if a.clear_ceiling:
+        p.pop("ceiling_height", None)
+    if "ceiling_height" in p and p["ceiling_height"] > p["height"]:
+        raise DobimError("CONSTRAINT", "천장 높이가 공간 높이보다 크다", path="/ceiling_height")
     if a.boundary is not None:
         p["boundary"] = _slab_boundary(a.boundary)
     ctx.put_el(a.id, dict(r, params=p))
@@ -1430,13 +1518,14 @@ def _warn_omitted(ctx, omitted: dict) -> None:
                  "(외래는 형상 정보가 없고, 분리된 벽의 의도 값은 낡았다)")
 
 
-def _render_view(ctx, vid, detail=False, hidden=False):
-    """뷰의 선분·채움·기준선(레벨)·제목을 내보내기용 데이터로 묶는다. detail 이면 큰 축척(1:50 이하) 상세 선을 더한다(SC-09)."""
+def _render_view(ctx, vid, detail=False, hidden=False, hier=False):
+    """뷰의 선분·채움·기준선(레벨)·제목을 내보내기용 데이터로 묶는다. detail 이면 큰 축척(1:50 이하) 상세 선을 더한다(SC-09).
+    hier 이면 비내력벽(LoadBearing 거짓)의 절단선을 "cutn" 등급으로 나눈다(LN-04, 선 굵기 위계)."""
     r = ctx.row(vid, "view")
     p = r["params"]
     levels = sorted(((ctx.st.el[l]["params"]["name"], ctx.st.el[l]["params"]["elevation"]) for l in ctx.st.by_kind.get("level", ())),
                     key=lambda t: (t[1], t[0]))
-    lines = ctx.g.q(D.view_lines, vid)
+    lines = ctx.g.q(D.view_lines_hier if hier else D.view_lines, vid)
     if detail:
         lines = lines + ctx.g.q(D.view_detail_lines, vid)
     if hidden:
@@ -1593,7 +1682,8 @@ def sheet_export(ctx, a: SheetExport):
     if len(set(a.views)) != len(a.views):
         raise DobimError("CONSTRAINT", "같은 뷰를 두 번 올릴 수 없다", path="/views")
     hidden = bool(a.profile is not None and a.profile.hidden_lines)
-    datas = [dict(_render_view(ctx, v, a.detail, hidden), id=v) for v in a.views]
+    hier = bool(a.profile is not None and a.profile.line_hierarchy)
+    datas = [dict(_render_view(ctx, v, a.detail, hidden, hier), id=v) for v in a.views]
     spec = {"paper": a.paper, "project": a.project_name or "(프로젝트명 없음)", "title": a.sheet_name or datas[0]["name"],
             "number": a.sheet_number, "date": a.date or datetime.date.today().isoformat(), "north_deg": a.north_angle}
     from dobim_core import sheet_extras as SE
@@ -1656,8 +1746,8 @@ def view_affected(ctx, a: ViewAffected):
 # ================================================================ 주석: 치수·태그 (S5)
 # 주석은 의도 요소(kind dim, tag)이고 IFC 로 투영하지 않는다(IFC 해시 불변). 값은 저장하지 않고 항상 파생이다(그래프 질의).
 # 대상이 사라지면 조용히 지우지 않고 고아로 표시한다(annot.check). 뷰를 지우면 그 뷰의 주석도 같이 지운다(응답에 나열, undo 로 복귀).
-RefStr = Annotated[str, Field(pattern=r"^(wall|door|level|slab):[0-9A-Za-z_$]{22}#[a-z]{3,9}(\.[a-z]{3,9}){0,2}$", max_length=48,
-                              description="안정 참조 '종류:id#역할'. wall: axis.start axis.end(분할 뒤에도 원래 끝) own.end(이 벽 자신의 끝) trim.start trim.end own.trim.end axis face.left face.right base top / door: center jamb.start jamb.end sill head / level: elevation / slab: top bottom")]
+RefStr = Annotated[str, Field(pattern=r"^(wall|door|level|slab|space):[0-9A-Za-z_$]{22}#[a-z]{3,9}(\.[a-z]{3,9}){0,2}$", max_length=48,
+                              description="안정 참조 '종류:id#역할'. wall: axis.start axis.end(분할 뒤에도 원래 끝) own.end(이 벽 자신의 끝) trim.start trim.end own.trim.end axis face.left face.right base top / door: center jamb.start jamb.end sill head / level: elevation / slab: top bottom / space: ceiling(천장 마감 높이, 공간에 ceiling_height 가 있을 때)")]
 Off = Annotated[float, Field(allow_inf_nan=False, ge=-1e5, le=1e5)]
 _ANNOT_KINDS = ("dim", "tag")
 
@@ -1776,7 +1866,7 @@ class DimHeights(A):
     view: Id = Field(description="단면·입면 뷰")
     kinds: Annotated[list[Literal["floor", "clear", "overall"]], Field(
         min_length=1, max_length=3,
-        description="floor=각 층의 높이(층고: 이웃한 레벨 사이), clear=반자높이(안목: 레벨에서 그 위 가장 가까운 슬래브 밑면, 천장 요소가 없어 슬래브 밑면으로 근사), "
+        description="floor=각 층의 높이(층고: 이웃한 레벨 사이), clear=반자높이(레벨에서 그 레벨 공간의 가장 낮은 천장 마감 높이(space.ceiling_height)까지. 천장 높이 입력이 없으면 그 위 가장 가까운 슬래브 밑면으로 근사), "
                     "overall=건축물 최고 높이(가장 낮은 레벨에서 벽·슬래브의 가장 높은 윗면)")] = ["floor", "clear", "overall"]
     at: Point2 | None = Field(None, description="치수선을 그릴 평면 위치 [x,y]. 생략하면 뷰 그림의 왼쪽 바깥에 자동으로 둔다")
 
@@ -1802,8 +1892,13 @@ def annot_dim_heights(ctx, a: DimHeights):
                 plan.append(("floor", f"{HEIGHT_PREFIX}층고-{st.el[l0]['params']['name']}", f"level:{l0}#elevation", f"level:{l1}#elevation"))
     if "clear" in a.kinds:
         for e0, l0 in levels:
+            # 천장 높이 입력(space.ceiling_height)이 있는 공간이 그 레벨에 있으면 가장 낮은 천장 마감까지를 반자높이로 한다(없으면 슬래브 밑면 근사 그대로)
+            ceil = sorted((st.el[i]["params"]["ceiling_height"], i) for i in ctx.rels_in("on_level", l0)
+                          if st.el[i]["kind"] == "space" and st.el[i]["origin"] == "authored" and "ceiling_height" in st.el[i]["params"])
             above = sorted((zr[0], i) for i, zr in slabs if zr[0] > e0 + 1.0)   # 레벨 위의 슬래브 중 밑면이 가장 낮은 것(자기 바닥 슬래브는 밑면이 레벨 아래라 빠진다)
-            if above:
+            if ceil:
+                plan.append(("clear", f"{HEIGHT_PREFIX}반자-{st.el[l0]['params']['name']}", f"level:{l0}#elevation", f"space:{ceil[0][1]}#ceiling"))
+            elif above:
                 plan.append(("clear", f"{HEIGHT_PREFIX}반자-{st.el[l0]['params']['name']}", f"level:{l0}#elevation", f"slab:{above[0][1]}#bottom"))
     if "overall" in a.kinds:
         tops = [(z, "wall", i) for i, z in walls] + [(zr[1], "slab", i) for i, zr in slabs]
