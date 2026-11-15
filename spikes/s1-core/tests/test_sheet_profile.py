@@ -86,3 +86,10 @@ def test_drawing_profile_유효_기준(pv):
     assert r["applied_profile"]["dim_decimals"] == 0
     r1 = pv.run("drawing.profile", {})["result"]
     assert r1 == r0                                                   # 주지 않으면 이전과 같은 값
+
+
+def test_기호_안_문자_높이가_프로파일에_값으로_있고_배율을_따른다(pv):
+    r0 = pv.run("drawing.profile", {})["result"]["text_font"]["symbol_text_heights_mm"]
+    assert r0 == {"grid": 2.3, "section_mark": 1.9, "detail_callout": 2.0, "tag": 1.9}
+    r = pv.run("drawing.profile", {"profile": {"symbol_scale": 2.0}})["result"]["text_font"]["symbol_text_heights_mm"]
+    assert r == {"grid": 4.6, "section_mark": 3.8, "detail_callout": 4.0, "tag": 3.8}

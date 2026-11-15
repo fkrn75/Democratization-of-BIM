@@ -168,15 +168,15 @@ def elev_dims(g, view_id):
     if cfg is None or cfg[0] != "elev":
         return None
     rx, ry = cfg[5], cfg[6]
-    xs: list[tuple[float, float]] = []                   # (위치, 그 위치를 낸 벽의 길이): 긴 벽(외벽)이 대표가 되게 무게로 쓴다
+    xs: list[tuple[float, float]] = []                   # (위치, 무게): 중심선 > 긴 벽의 끝점 > 짧은 벽의 끝점 순으로 묶음의 대표가 된다
     for w in D.all_walls(g):
         x1, y1, x2, y2 = Q.el(g, w)["params"]["axis"]
         ln = sqrt((x2 - x1) ** 2 + (y2 - y1) ** 2)
         if abs(((x2 - x1) * rx + (y2 - y1) * ry) / ln) < 0.1:
-            xs.append(((x1 + x2) / 2.0 * rx + (y1 + y2) / 2.0 * ry, ln))
+            xs.append(((x1 + x2) / 2.0 * rx + (y1 + y2) / 2.0 * ry, ln + 1.0e9))   # 옆면이 보이는 벽의 중심선이 먼저(진짜 중심선), 그다음 긴 벽의 끝점
         else:
             xs += [(x1 * rx + y1 * ry, ln), (x2 * rx + y2 * ry, ln)]
-    pos: list[float] = []                                # 가까운(ELEV_MERGE 이내) 위치는 한 묶음으로 보고, 가장 긴 벽이 낸 위치를 대표로 한다(벽 두께 때문에 생기는 160·50mm 간격을 없앤다)
+    pos: list[float] = []                                # 가까운(ELEV_MERGE 이내) 위치는 한 묶음으로 보고, 무게가 가장 큰 위치를 대표로 한다(벽 두께 때문에 생기는 160·50mm 간격을 없앤다)
     cluster: list[tuple[float, float]] = []
     for x, ln in sorted(xs):
         if cluster and x - cluster[-1][0] > ELEV_MERGE:
