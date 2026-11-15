@@ -495,6 +495,106 @@ def after11(sess, ids, views, log, out, work, spec):
     log["after11"] = probe
 
 
+def after12(sess, ids, views, log, out, work, spec):
+    """열두 번째 작업: 대지의 선택 속성(지반 표고점·조경/공개공지 영역·주차 계획·간판)을 입력으로 더하고 배치도(P-05·P-06)·입면(E-03)·대지 단면 종·횡(P-03)을 낸다.
+    산출은 sheets12/ 에 둔다. 모든 기존 산출을 뽑은 뒤에 더하므로 기존 파일은 바이트가 그대로다. 독립 검산: 내보낸 IFC 의 DoBIM_Intent 를 읽어(엔진 코드와 독립)
+    영역 면적을 신발끈 공식으로 다시 재고, 대지 단면 지반선의 높이를 거리 제곱 역가중 평균으로 다시 계산해 엔진 값과 맞춘다. 같은 모델에서 새 입력을 지우면 뷰가 이전과 같다."""
+    import ifcopenshell
+
+    from dobim_core import dispatch
+    sd = out / "sheets12"
+    sd.mkdir(exist_ok=True)
+    probe: dict = {"exports": []}
+    sid = ids["SITE"]
+    terrain = [[-6000.0, -8000.0, -800.0], [18000.0, -8000.0, -800.0], [18000.0, 13000.0, 600.0], [-6000.0, 13000.0, 600.0], [6000.0, 4000.0, -100.0]]
+    zones = [{"use": "landscape", "name": "전정", "boundary": [[-5000.0, 6000.0], [-1000.0, 6000.0], [-1000.0, 12000.0], [-5000.0, 12000.0]]},
+             {"use": "open_space", "name": "", "boundary": [[12500.0, 6500.0], [17500.0, 6500.0], [17500.0, 12500.0], [12500.0, 12500.0]]}]
+    parking = {"bays": [{"origin": [0.0, -7800.0], "angle": 0.0, "count": 4, "w": 2500.0, "d": 5000.0},
+                        {"origin": [10000.0, -7800.0], "angle": 0.0, "count": 1, "w": 3500.0, "d": 5000.0, "accessible": True}],
+               "aisles": [{"path": [[-5000.0, -1800.0], [17000.0, -1800.0]], "width": 2000.0}],
+               "routes": [{"path": [[17000.0, -8000.0], [17000.0, -1800.0], [0.0, -1800.0]]}]}
+    signs = [{"name": "S1", "kind": "sign", "face": "S", "center": [3000.0, -160.0], "z": 2500.0, "w": 2400.0, "h": 700.0, "text": "RA-01 상가"},
+             {"name": "N1", "kind": "address", "face": "N", "center": [6000.0, 8160.0], "z": 1500.0, "w": 400.0, "h": 250.0, "text": "12-3"}]
+    vsite = ok(sess.run("view.list", {"type": "site"}))["items"][0]["id"]
+    # 새 입력 전의 뷰 데이터(입력을 지운 뒤 되돌아오는지 보는 기준)
+    sess.eng.sync()
+    sess.eng._touch_pending()
+    plain = {k: (len(sess.eng.g.q(D.view_lines, v)), len(sess.eng.g.q(D.view_labels, v))) for k, v in (("site", vsite), ("elev-S", views["elev-S"]), ("elev-N", views["elev-N"]))}
+    h_before = ok(sess.run("model.hash", {}))
+    ok(sess.run("site.set", {"id": sid, "terrain": terrain, "zones": zones, "parking": parking, "signs": signs}))
+    vid = lambda k: "4" + "0" * 19 + k   # noqa: E731
+    v_long = ok(sess.run("view.create", {"id": vid("d1"), "name": "대지 종단면", "type": "section", "p1": [3000.0, -9000.0], "p2": [3000.0, 14000.0], "scale": 200, "with_site": True}))["id"]
+    v_trans = ok(sess.run("view.create", {"id": vid("d2"), "name": "대지 횡단면", "type": "section", "p1": [-7000.0, 3000.0], "p2": [19000.0, 3000.0], "scale": 200, "with_site": True}))["id"]
+    pairs = (("site-plan", vsite), ("site-section-long", v_long), ("site-section-trans", v_trans), ("elev-S", views["elev-S"]), ("elev-N", views["elev-N"]))
+    for nm, v in pairs:
+        for ext in ("svg", "pdf"):
+            r = export(sess, "view.export", {"id": v}, work / f"s12_{nm}.{ext}")
+            (sd / f"{nm}.{ext}").write_bytes((work / f"s12_{nm}.{ext}").read_bytes())
+            probe["exports"].append({"dir": "sheets12", "view": nm, "ext": ext, "bytes": r["bytes"], "segments": r["segments"], "labels": r["labels"]})
+    for nm, ks, title in (("A-012", [vsite], "배치도(조경·공개공지·주차 동선)"), ("A-013", [v_long, v_trans], "대지 종·횡단면도")):
+        a = {**spec, "views": ks, "paper": "A1", "sheet_name": title, "sheet_number": nm, "north_angle": 15.0, "dims": []}
+        for ext in ("svg", "pdf"):
+            r = export(sess, "sheet.export", a, work / f"{nm}.{ext}")
+            (sd / f"{nm}.{ext}").write_bytes((work / f"{nm}.{ext}").read_bytes())
+            probe["exports"].append({"dir": "sheets12", "sheet": nm, "ext": ext, "bytes": r["bytes"], "font_embedded": r["font_embedded"], "non_ascii_dropped": r["non_ascii_dropped"]})
+    sess.eng.sync()
+    sess.eng._touch_pending()
+    g = sess.eng.g
+    probe["views"] = {"site": vsite, "long": v_long, "trans": v_trans, "elev_s": views["elev-S"], "elev_n": views["elev-N"]}
+    probe["plain_before"] = plain
+    probe["derived"] = ok(sess.run("element.get", {"id": sid}))["derived"]
+    probe["inputs"] = {"zones": [{"use": z["use"], "name": z["name"], "area_m2": abs(sum(z["boundary"][i][0] * z["boundary"][(i + 1) % 4][1] - z["boundary"][(i + 1) % 4][0] * z["boundary"][i][1]
+                                                                                       for i in range(4))) / 2e6} for z in zones],
+                       "bays": [{"count": b["count"], "accessible": bool(b.get("accessible"))} for b in parking["bays"]], "signs": [{k: sg[k] for k in ("name", "kind", "face", "w", "h", "z")} for sg in signs],
+                       "terrain_points": len(terrain)}
+    # ---- 독립 검산 1: 내보낸 IFC 의 DoBIM_Intent 를 열어 영역 면적·주차 대수·간판 수를 다시 센다
+    ifc_out(sess, "after12.ifc")
+    f = ifcopenshell.open(str(work / "after12.ifc"))
+    import ifcopenshell.util.element as ue
+    it = json.loads(ue.get_pset(f.by_guid(sid), "DoBIM_Intent")["Intent"])
+    ip = it["params"]
+    shoelace = lambda b: abs(sum(b[i][0] * b[(i + 1) % len(b)][1] - b[(i + 1) % len(b)][0] * b[i][1] for i in range(len(b)))) / 2e6   # noqa: E731
+    probe["ifc_check"] = {"zones_m2": [round(shoelace(z["boundary"]), 4) for z in ip["zones"]], "bays": sum(b["count"] for b in ip["parking"]["bays"]),
+                          "accessible": sum(b["count"] for b in ip["parking"]["bays"] if b.get("accessible")), "signs": len(ip["signs"]), "terrain": len(ip["terrain"])}
+
+    # ---- 독립 검산 2: 대지 단면 지반선의 높이를 다시 계산한다(절단선이 +y 방향이라 가로 s = y + 9000)
+    def idw(x, y):
+        num = den = 0.0
+        for px, py, pz in terrain:
+            d2 = (px - x) ** 2 + (py - y) ** 2
+            if d2 < 1e-6:
+                return pz
+            num += pz / d2
+            den += 1.0 / d2
+        return num / den
+
+    segs = g.q(D.site_section_lines, v_long)
+    errs = [abs(z - idw(3000.0, s_ - 9000.0)) for c, s0, z0, s1, z1 in segs if c == "cut" for s_, z in ((s0, z0), (s1, z1))]
+    probe["section_check"] = {"ground_points": len(errs), "max_abs_err_mm": max(errs) if errs else None, "gl": g.q(D.site_section_labels, v_long)[0][2]}
+    # ---- IFC 왕복: 선택 속성과 대지 단면 뷰가 되살고 해시 3종이 같다
+    h0 = ok(sess.run("model.hash", {}))
+    imp = ok(dispatch.run(sess.env, "ifc.import", {"source": "after12.ifc", "path": "after12-imp.dobim"}))
+    h1 = ok(dispatch.run(sess.env, "model.hash", {}, project="after12-imp.dobim"))
+    sg = ok(dispatch.run(sess.env, "element.get", {"id": sid}, project="after12-imp.dobim"))
+    vg = ok(dispatch.run(sess.env, "element.get", {"id": v_long}, project="after12-imp.dobim"))
+    probe["roundtrip"] = {"warnings": imp["warnings"], "hash_equal": [h0[k] == h1[k] for k in ("state", "derived", "ifc")], "site_params_equal": sg["params"] == ok(sess.run("element.get", {"id": sid}))["params"],
+                          "section_with_site": vg["params"].get("with_site")}
+    # ---- 새 입력을 지우면 뷰가 입력 전과 같고 해시 3종이 되돌아온다(복원 시험: 같은 입력을 다시 넣어 이후 산출은 그대로 둔다)
+    saved = ok(sess.run("element.get", {"id": sid}))["params"]
+    ok(sess.run("site.set", {"id": sid, "clear": ["terrain", "zones", "parking", "signs"]}))
+    ok(sess.run("view.delete", {"id": v_long}))
+    ok(sess.run("view.delete", {"id": v_trans}))
+    sess.eng.sync()
+    sess.eng._touch_pending()
+    after_clear = {k: (len(sess.eng.g.q(D.view_lines, v)), len(sess.eng.g.q(D.view_labels, v))) for k, v in (("site", vsite), ("elev-S", views["elev-S"]), ("elev-N", views["elev-N"]))}
+    h2 = ok(sess.run("model.hash", {}))
+    probe["clear_check"] = {"views_equal_plain": after_clear == plain, "hash_equal_before": [h2[k] == h_before[k] for k in ("state", "derived", "ifc")]}
+    ok(sess.run("site.set", {"id": sid, "terrain": saved["terrain"], "zones": saved["zones"], "parking": saved["parking"], "signs": saved["signs"]}))
+    ok(sess.run("view.create", {"id": v_long, "name": "대지 종단면", "type": "section", "p1": [3000.0, -9000.0], "p2": [3000.0, 14000.0], "scale": 200, "with_site": True}))
+    ok(sess.run("view.create", {"id": v_trans, "name": "대지 횡단면", "type": "section", "p1": [-7000.0, 3000.0], "p2": [19000.0, 3000.0], "scale": 200, "with_site": True}))
+    log["after12"] = probe
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--out", required=True)
@@ -702,6 +802,8 @@ def main():
         after9(sess, ids, views, log, out, work, spec)
     if o.sheets and not o.no_sheet2 and not o.no_after11:
         after11(sess, ids, views, log, out, work, spec)
+    if o.sheets and not o.no_sheet2 and not o.no_after8 and not o.no_site and not o.no_after12:
+        after12(sess, ids, views, log, out, work, spec)
     (out / "run.json").write_text(json.dumps({"views": views, "ids": ids, **log}, ensure_ascii=False, indent=1), encoding="utf-8")
     print(json.dumps(log, ensure_ascii=False)[:1500])
 
