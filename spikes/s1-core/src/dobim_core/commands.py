@@ -1389,7 +1389,41 @@ def view_export(ctx, a: ViewExport):
             "font_embedded": font_name, "non_ascii_dropped": dropped, "digest": D.view_summary(data["lines"])["digest"], "rev": ctx.eng.rev, "snapshot": snap}
 
 
-class SheetExport(A):
+class SheetSigner(A):
+    role: Name = Field(description="서명 역할(예: 설계자, 관계전문기술자)")
+    name: Text = Field("", description="성명(비우면 빈칸)")
+
+
+class SheetRevision(A):
+    rev: Name = Field(description="개정 차수(예: 1, A)")
+    date: str = Field(pattern=r"^\d{4}-\d{2}-\d{2}$", description="개정일 YYYY-MM-DD")
+    desc: Text = Field(description="개정 내용")
+    view: Id | None = Field(None, description="구름 표시로 둘러쌀 뷰(시트에 올린 뷰). 생략하면 개정란에만 적는다")
+
+
+class SheetGrid(A):
+    label: Name = Field(max_length=4, description="통심선 번호·기호(예: X1, Y1)")
+    axis: Literal["x", "y"] = Field(description="x: 세로선(x=pos), y: 가로선(y=pos)")
+    pos: Num = Field(description="통심선 위치(모델 mm)")
+
+
+class SheetCallout(A):
+    view: Id = Field(description="상세 표시를 둘 뷰(시트에 올린 뷰)")
+    rect: list[Num] = Field(min_length=4, max_length=4, description="상세 부위 [x0, y0, x1, y1](모델 mm)")
+    label: Name = Field(max_length=4, description="상세 부호")
+
+
+class SheetFrame(A):
+    """sheet.export·sheet.index 가 함께 쓰는 표제란·개정·선 굵기 입력. 모두 선택이며, 주지 않으면 시트는 이전과 같다."""
+    client: Text = Field("", description="표제란 건축주(주면 건축주·설계사무소 영역이 생긴다)")
+    office: Text = Field("", description="표제란 설계사무소")
+    signers: list[SheetSigner] = Field(default_factory=list, max_length=6, description="서명·날인 영역(역할·성명 줄). 서명·인은 빈칸으로 둔다")
+    revisions: list[SheetRevision] = Field(default_factory=list, max_length=20, description="개정 이력(개정란에 적고, view 가 있으면 구름 표시)")
+    line_profile: dict[Literal["cut", "proj", "symbol", "hatch"], Annotated[float, Field(ge=0.05, le=2.0, allow_inf_nan=False)]] | None = Field(
+        None, description="별도 작성기준 선 굵기 프로파일(mm): 선 종류별로 바꾼다. 생략하면 기본 체계")
+
+
+class SheetExport(SheetFrame):
     views: list[Id] = Field(min_length=1, max_length=12, description="시트에 놓을 뷰 id 목록(앞에서부터 왼쪽 위 -> 오른쪽 -> 아래 순). 뷰는 자기 축척 그대로 놓인다")
     path: str = Field(max_length=260, description="작업 폴더 안의 .svg 또는 .pdf 경로. PDF 는 한글 글꼴(시스템의 Noto Sans KR·나눔고딕, OFL)을 부분집합으로 내장한다")
     paper: Literal["A1", "A3"] = Field("A3", description="용지(가로 방향)")
@@ -1399,6 +1433,12 @@ class SheetExport(A):
     date: str | None = Field(None, pattern=r"^\d{4}-\d{2}-\d{2}$", description="작성일 YYYY-MM-DD(생략하면 오늘 날짜)")
     north_angle: Num = Field(0.0, ge=-360.0, le=360.0, description="정북이 도면 위쪽에서 시계방향으로 몇 도 돌아 있는가(0 이면 도면 위가 정북)")
     overwrite: bool = Field(False, description="거짓이면 이미 있는 파일을 덮어쓰지 않는다. 참이면 덮어쓰며 덮어쓰기 전에 자동 스냅숏을 남긴다(확인 토큰 필요)")
+    grids: list[SheetGrid] = Field(default_factory=list, max_length=40, description="통심선(1점쇄선)과 그리드 기호를 평면 뷰에 그린다")
+    callouts: list[SheetCallout] = Field(default_factory=list, max_length=12, description="부위 상세 표시(1점쇄선 사각형 + 부호)")
+    marks: bool = Field(False, description="참이면 모델의 단면 뷰(절단선 기호)와 입면 뷰(방향 기호)를 평면 뷰에 기호로 그린다")
+    tags: list[Literal["room", "opening", "wall"]] = Field(default_factory=list, max_length=3, description="평면 뷰에 부호 태그를 자동으로 단다: room 실번호, opening 문·창 부호, wall 벽체 부호")
+    key_plan: Id | None = Field(None, description="키 플랜으로 쓸 평면 뷰(표제란 오른쪽 위에 줄여 그리고 해당 영역을 해칭한다)")
+    key_zone: list[Num] | None = Field(None, min_length=4, max_length=4, description="키 플랜에서 해칭할 영역 [x0, y0, x1, y1](모델 mm). 생략하면 전체")
 
 
 def _sheet_preview(ctx, a: SheetExport):
@@ -1425,6 +1465,9 @@ def sheet_export(ctx, a: SheetExport):
     datas = [dict(_render_view(ctx, v), id=v) for v in a.views]
     spec = {"paper": a.paper, "project": a.project_name or "(프로젝트명 없음)", "title": a.sheet_name or datas[0]["name"],
             "number": a.sheet_number, "date": a.date or datetime.date.today().isoformat(), "north_deg": a.north_angle}
+    from dobim_core import sheet_extras as SE
+    spec.update(SE.frame_spec(a))
+    spec.update(SE.view_extras(ctx, a, datas))
     try:
         sh = SH.build_sheet(spec, datas)
     except SH.SheetError as ex:
@@ -1447,6 +1490,7 @@ def sheet_export(ctx, a: SheetExport):
         _drop_snapshot(p, snap, ctx.eng.workspace)
         raise
     return {"path": p.name, "bytes": len(blob), "format": ext[1:], "paper": a.paper, "views": sh.placed, "sheet_number": a.sheet_number,
+            "number_check": SE.number_check(a.sheet_number, p.stem),
             "font_embedded": font_name, "non_ascii_dropped": dropped, "rev": ctx.eng.rev, "snapshot": snap}
 
 
@@ -2422,3 +2466,4 @@ def ifc_restore(ctx, a: IfcRestore):
 
 # S4 패밀리 커맨드: 이 모듈의 정의가 모두 끝난 뒤에 등록한다
 from dobim_core import commands_family  # noqa: E402,F401
+from dobim_core import commands_sheet  # noqa: E402,F401

@@ -15,6 +15,7 @@ from math import atan2, cos, degrees, radians, sin
 import zlib
 
 from dobim_core import drawing_export as DX
+from dobim_core import sheet_tables as ST
 from dobim_core.pdf_font import PdfFont
 
 PAPERS = {"A1": (841.0, 594.0), "A3": (420.0, 297.0)}     # 가로 방향 mm
@@ -23,6 +24,7 @@ PAD = 8.0               # 윤곽선 -> 도면 영역
 GAP = 12.0              # 뷰 사이 간격
 CAP_H = 12.0            # 뷰 아래 도면명 줄 높이
 TB_W = 85.0             # 표제란 너비(오른쪽 띠)
+KP_H = 36.0             # 키 플랜 칸 높이(키 플랜을 줄 때만)
 INK = "#000000"
 GRAY = "#555555"
 FONT = DX.FONT
@@ -84,15 +86,16 @@ def wrap(s: str, size: float, maxw: float, max_lines: int) -> list[str]:
 
 
 # ---------------------------------------------------------------- 뷰 -> 그림 요소
-def view_prims(sh: Sheet, data, tx, ty, datums, dx0, dx1):
+def view_prims(sh: Sheet, data, tx, ty, datums, dx0, dx1, style=None):
     """뷰 한 장의 선·채움·기준선·주석을 시트 좌표로 옮겨 그린다(drawing_export.render_svg 와 같은 그림, 같은 굵기 체계)."""
     for poly in data["fills"]:
         sh.poly([(tx(x), ty(y)) for x, y in poly], fill="#cfcfcf")
     for name, z in datums:
         sh.line(tx(dx0), ty(z), tx(dx1), ty(z), DX.DATUM_W, "#555555", (3.0, 1.5))
         sh.text(tx(dx0) + 1.0, ty(z) - 0.8, 2.6, DX.datum_label(name, z), color="#555555")
+    st = style or DX.STYLE
     for cls in DX.LINE_ORDER:
-        wd, col = DX.STYLE[cls]
+        wd, col = st[cls]
         for _, x0, y0, x1, y1 in (ln for ln in data["lines"] if ln[0] == cls):
             sh.line(tx(x0), ty(y0), tx(x1), ty(y1), wd, col)
     for x, y, text, size, anchor in data.get("labels", ()):
@@ -167,8 +170,9 @@ def title_block(sh: Sheet, spec: dict, scales: list[int]):
     x0 = sh.w - OUTER - TB_W
     y0, y1, x1 = OUTER, sh.h - OUTER, sh.w - OUTER
     sh.line(x0, y0, x0, y1, 0.5)                              # 표제란 왼쪽 경계
+    has_views = bool(scales)
     uniform = len(set(scales)) == 1
-    primary = scales[0]
+    primary = scales[0] if has_views else None
     y = y0
 
     def cell(h, label, value, size, max_lines=2, bold=False):
@@ -179,18 +183,49 @@ def title_block(sh: Sheet, spec: dict, scales: list[int]):
         for i, s in enumerate(lines):
             sh.text(x0 + 3.0, y + 3.6 + 2.0 + size * 1.05 * (i + 1), size, s, bold=bold)
         y += h
-    cell(26.0, "프로젝트명", spec["project"], 4.5, 3)
+    kp = spec.get("key_plan")
+    if kp:                                                    # 키 플랜: 표제란 맨 위(오른쪽 위)
+        sh.line(x0, y + KP_H, x1, y + KP_H, 0.25)
+        sh.text(x0 + 2.0, y + 3.6, 2.5, "키 플랜", color=GRAY)
+        ST.key_plan(sh, x0 + 2.0, y + 4.5, TB_W - 4.0, KP_H - 6.0, kp["data"], kp.get("zone"))
+        y += KP_H
+    ext = bool(spec.get("client") or spec.get("office"))
+    cell(26.0 if not ext else 20.0, "프로젝트명", spec["project"], 4.5, 3 if not ext else 2)
+    if ext:
+        sh.begin("client-office")
+        cell(11.0, "건축주", spec.get("client") or "-", 4.0, 1)
+        cell(11.0, "설계사무소", spec.get("office") or "-", 4.0, 1)
+        sh.end()
     cell(30.0, "도면명", spec["title"], 5.0, 3, True)
     cell(18.0, "도면번호", spec["number"], 7.0, 1, True)
-    cell(14.0, "축척", f"1:{primary}" if uniform else "도면참조", 5.0, 1)
+    cell(14.0, "축척", (f"1:{primary}" if uniform else "도면참조") if has_views else "해당없음", 5.0, 1)
     cell(14.0, "작성일", spec["date"], 5.0, 1)
-    # 아래에서부터: 방위표(42), 축척 표시(26)
-    north_h, bar_h = 42.0, 26.0
+    revs = spec.get("revisions") or []
+    if revs:
+        cell(10.0, "개정차수", revs[-1]["rev"], 4.0, 1)
+    signers = spec.get("signers") or []
+    if signers:
+        sh.begin("signature-block", **{"data-count": len(signers)})
+        rh = 7.5
+        sh.text(x0 + 2.0, y + 3.6, 2.5, "서명·날인", color=GRAY)
+        yy = y + 5.0
+        for sg in signers:
+            sh.line(x0, yy, x1, yy, 0.18)
+            sh.text(x0 + 2.0, yy + 4.8, 2.6, ST.clip_text(sg["role"], 2.6, 20.0))
+            sh.text(x0 + 24.0, yy + 4.8, 3.0, ST.clip_text(sg["name"] or "", 3.0, 18.0))
+            sh.text(x0 + 44.0, yy + 5.0, 2.2, "(서명)", color=GRAY)
+            sh.text(x0 + 66.0, yy + 5.0, 2.2, "(인)", color=GRAY)
+            yy += rh
+        sh.line(x0, yy, x1, yy, 0.25)
+        sh.end()
+        y = yy
+    # 아래에서부터: 방위표(42), 축척 표시(26). 뷰가 없는 시트(색인)는 두 칸을 두지 않는다
+    north_h, bar_h = (42.0, 26.0) if has_views else (0.0, 0.0)
     ybar, ynorth = y1 - north_h - bar_h, y1 - north_h
-    # 개정란: 남는 높이에 빈 표(개정·일자·내용)를 둔다
+    # 개정란: 남는 높이에 표(개정·일자·내용)를 둔다. 개정 입력이 있으면 그 내용을 적는다(많으면 최근 것부터 칸 수만큼)
     free = ybar - y
     if free >= 18.0:
-        sh.begin("revision-table")
+        sh.begin("revision-table", **({"data-count": len(revs)} if revs else {}))
         sh.text(x0 + 2.0, y + 3.6, 2.5, "개정", color=GRAY)
         ty0 = y + 5.0
         n = int((ybar - ty0 - 1.0) // 6.0)
@@ -202,20 +237,26 @@ def title_block(sh: Sheet, spec: dict, scales: list[int]):
         sh.line(c2, ty0, c2, ty0 + 6.0 * n, 0.18)
         for s, xx in (("차수", x0 + 2.0), ("일자", c1 + 2.0), ("내용", c2 + 2.0)):
             sh.text(xx, ty0 + 4.2, 2.5, s, color=GRAY)
+        for i, rv in enumerate(revs[-(n - 1):] if n > 1 else []):
+            yy = ty0 + 6.0 * (i + 1)
+            sh.text(x0 + 2.0, yy + 4.2, 2.6, ST.clip_text(rv["rev"], 2.6, 9.0))
+            sh.text(c1 + 2.0, yy + 4.2, 2.2, rv["date"])
+            sh.text(c2 + 2.0, yy + 4.2, 2.4, ST.clip_text(rv["desc"], 2.4, x1 - c2 - 3.0))
         sh.end()
-    sh.line(x0, ybar, x1, ybar, 0.25)
-    sh.text(x0 + 2.0, ybar + 3.6, 2.5, "축척 표시" + ("" if uniform else f" (S=1:{primary} 기준)"), color=GRAY)
-    m, mm = _nice_bar(primary)
-    bx, by = x0 + (TB_W - mm) / 2.0, ybar + 13.0
-    sh.begin("scale-bar", **{"data-scale": primary, "data-length-m": f"{m:g}"})
-    sh.rect(bx, by, mm / 2.0, 3.0, 0.25, INK, INK)
-    sh.rect(bx + mm / 2.0, by, mm / 2.0, 3.0, 0.25, INK, "#ffffff")
-    for frac, lab in ((0.0, "0"), (0.5, _fmt_m(m / 2.0)), (1.0, _fmt_m(m) + " m")):
-        sh.text(bx + mm * frac, by + 8.0, 2.8, lab, "middle")
-    sh.end()
-    sh.line(x0, ynorth, x1, ynorth, 0.25)
-    sh.text(x0 + 2.0, ynorth + 3.6, 2.5, "방위", color=GRAY)
-    north_symbol(sh, x0 + TB_W / 2.0, ynorth + 23.0, 10.0, spec["north_deg"])
+    if has_views:
+        sh.line(x0, ybar, x1, ybar, 0.25)
+        sh.text(x0 + 2.0, ybar + 3.6, 2.5, "축척 표시" + ("" if uniform else f" (S=1:{primary} 기준)"), color=GRAY)
+        m, mm = _nice_bar(primary)
+        bx, by = x0 + (TB_W - mm) / 2.0, ybar + 13.0
+        sh.begin("scale-bar", **{"data-scale": primary, "data-length-m": f"{m:g}"})
+        sh.rect(bx, by, mm / 2.0, 3.0, 0.25, INK, INK)
+        sh.rect(bx + mm / 2.0, by, mm / 2.0, 3.0, 0.25, INK, "#ffffff")
+        for frac, lab in ((0.0, "0"), (0.5, _fmt_m(m / 2.0)), (1.0, _fmt_m(m) + " m")):
+            sh.text(bx + mm * frac, by + 8.0, 2.8, lab, "middle")
+        sh.end()
+        sh.line(x0, ynorth, x1, ynorth, 0.25)
+        sh.text(x0 + 2.0, ynorth + 3.6, 2.5, "방위", color=GRAY)
+        north_symbol(sh, x0 + TB_W / 2.0, ynorth + 23.0, 10.0, spec["north_deg"])
 
 
 # ---------------------------------------------------------------- 배치
@@ -250,15 +291,96 @@ def build_sheet(spec: dict, views: list[dict]) -> Sheet:
         ox, oy = px + dx, py + dy
         f = DX.MARGIN
         sh.begin(f"view-{v.get('id') or len(sh.placed)}", **{"data-view": v.get("id") or "", "data-scale": v["scale"]})
-        view_prims(sh, v, lambda X, _tx=tx, _ox=ox: _ox + _tx(X) - f, lambda Y, _ty=ty, _oy=oy: _oy + _ty(Y) - f, datums, ex0, ex1)
+        TX, TY = (lambda X, _tx=tx, _ox=ox: _ox + _tx(X) - f), (lambda Y, _ty=ty, _oy=oy: _oy + _ty(Y) - f)
+        view_prims(sh, v, TX, TY, datums, ex0, ex1, _style(spec))
+        _view_extras(sh, spec, v, TX, TY)
         cap = f"{v['name']}"
         sh.text(ox, oy + ch + 7.0, 4.0, cap, bold=True)
         sh.text(ox + est_w(cap, 4.0) + 4.0, oy + ch + 7.0, 3.5, f"S=1:{v['scale']}")
         sh.end()
         sh.placed.append({"view": v.get("id"), "name": v["name"], "scale": v["scale"], "x": round(ox, 2), "y": round(oy, 2),
                           "w": round(cw, 2), "h": round(ch, 2)})
+    for rv in spec.get("revisions") or []:                    # 개정 구름: 개정한 뷰를 구름으로 둘러싸고 차수 삼각형을 붙인다
+        pl = next((q for q in sh.placed if q["view"] == rv.get("view")), None) if rv.get("view") else None
+        if pl:
+            sh.begin("revision-cloud", **{"data-rev": rv["rev"], "data-view": pl["view"]})
+            ST.cloud(sh, pl["x"] - 2.5, pl["y"] - 2.5, pl["x"] + pl["w"] + 2.5, pl["y"] + pl["h"] + 2.5)
+            ST.triangle_tag(sh, pl["x"] + pl["w"] + 2.5, pl["y"] - 6.5, rv["rev"])
+            sh.end()
     sh.begin("title-block")
     title_block(sh, spec, [v["scale"] for v in views])
+    sh.end()
+    return sh
+
+
+def _style(spec: dict):
+    """선 굵기 프로파일(별도 작성기준): 선 종류별 굵기만 바꾼다. 없으면 기본 체계(None)."""
+    lp = spec.get("line_profile")
+    if not lp:
+        return None
+    return {k: (lp.get(k, wc[0]), wc[1]) for k, wc in DX.STYLE.items()}
+
+
+def _view_extras(sh: Sheet, spec: dict, v: dict, TX, TY):
+    """뷰 위에 얹는 보조 기호(통심선·단면 기호·부위 상세·부호 태그). spec 에 해당 입력이 없으면 아무것도 그리지 않는다."""
+    vid = v.get("id")
+    if v["type"] == "plan":
+        ST.grid_lines(sh, v, TX, TY, spec.get("grids"))
+        ST.section_marks(sh, v, TX, TY, spec.get("sections"), spec.get("elevs"))
+        tg = (spec.get("tags") or {}).get(vid) or {}
+        ST.tag_items(sh, "room-numbers", tg.get("room"), TX, TY)
+        ST.tag_items(sh, "opening-tags", tg.get("opening"), TX, TY)
+        ST.tag_items(sh, "wall-tags", tg.get("wall"), TX, TY)
+    ST.callouts(sh, vid, TX, TY, spec.get("callouts") or [])
+
+
+# ---------------------------------------------------------------- 색인 시트(뷰 없음): 도면목록표·범례·주기·일람표
+INDEX_COLS = {
+    "drawing_list": ("도면목록표", [("도면번호", 26.0), ("도면명", 74.0), ("공종", 16.0), ("축척", 18.0), ("비고", 24.0)]),
+    "levels": ("레벨 노트(FL·GL)", [("레벨", 24.0), ("FL(mm)", 24.0), ("GL 대비(mm)", 32.0), ("비고", 38.0)]),
+    "openings": ("창호 일람표", [("부호", 14.0), ("구분", 16.0), ("폭", 16.0), ("높이", 16.0), ("하단높이", 18.0), ("내화", 16.0), ("수량", 14.0), ("설치 층", 28.0)]),
+    "walls": ("벽체 일람표", [("부호", 14.0), ("구분", 16.0), ("두께", 16.0), ("재료", 28.0), ("내화", 16.0), ("수량", 14.0), ("설치 층", 28.0)]),
+    "materials": ("재료표(외벽·내벽 마감)", [("부위", 18.0), ("재료(품명)", 36.0), ("규격(두께 mm)", 28.0), ("내화 성능", 22.0), ("적용 벽 수", 20.0), ("적용 층", 26.0)]),
+}
+INDEX_GID = {"drawing_list": "drawing-list", "levels": "level-note", "openings": "opening-schedule", "walls": "wall-schedule", "materials": "material-schedule"}
+
+
+def build_index_sheet(spec: dict, tables: dict) -> Sheet:
+    """뷰 없이 표만 놓는 색인 시트. tables: drawing_list/levels/openings/walls/materials 행 목록, notes 줄 목록, legend(참이면 범례)."""
+    sh = Sheet(spec["paper"])
+    sh.begin("sheet-border")
+    sh.rect(OUTER, OUTER, sh.w - 2 * OUTER, sh.h - 2 * OUTER, 0.7)
+    sh.end()
+    ax0, ay0 = OUTER + PAD, OUTER + PAD
+    ax1, ay1 = sh.w - OUTER - TB_W - PAD, sh.h - OUTER - PAD
+    x, y, colw = ax0, ay0, 0.0
+    blocks = []
+    if tables.get("legend"):
+        blocks.append(("legend", 118.0, ST.LEGEND_H))
+    for key in ("drawing_list", "levels", "openings", "walls", "materials"):
+        rows = tables.get(key)
+        if rows is not None:
+            cols = INDEX_COLS[key][1]
+            blocks.append((key, sum(c[1] for c in cols), 6.0 + 5.6 * (len(rows) + 1) + 6.0))
+    if tables.get("notes"):
+        blocks.append(("notes", 118.0, 6.0 + 5.2 * len(tables["notes"]) + 4.0))
+    for key, bw, bh in blocks:
+        if bw > ax1 - ax0 or bh > ay1 - ay0:
+            raise SheetError(f"표 '{key}'가 {sh.paper} 용지에 들어가지 않는다. 더 큰 용지(A1)를 쓰거나 행 수를 줄이세요")
+        if y > ay0 and y + bh > ay1:
+            x, y, colw = x + colw + GAP, ay0, 0.0
+        if x + bw > ax1 + 1e-6:
+            raise SheetError(f"표가 {sh.paper} 용지 한 장에 다 들어가지 않는다. 더 큰 용지(A1)를 쓰거나 표 수를 줄이세요")
+        if key == "legend":
+            ST.legend_block(sh, x, y, _style(spec) or DX.STYLE)
+        elif key == "notes":
+            ST.notes_block(sh, x, y, tables["notes"], bw - 2.0)
+        else:
+            ST.draw_table(sh, x, y, INDEX_COLS[key][0], INDEX_COLS[key][1], tables[key], INDEX_GID[key])
+        y += bh
+        colw = max(colw, bw)
+    sh.begin("title-block")
+    title_block(sh, spec, [])
     sh.end()
     return sh
 

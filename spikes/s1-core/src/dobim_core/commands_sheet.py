@@ -1,0 +1,162 @@
+# SPDX-License-Identifier: MPL-2.0
+"""도면 색인 시트(sheet.index)와 도면 작성기준 프로파일(drawing.profile).
+
+sheet.index  : 뷰 없이 도면목록표·범례·주기·레벨 노트·창호 일람표·벽체 일람표·재료표를 한 장에 놓는 시트를 SVG·PDF 로 내보낸다.
+drawing.profile : 이 엔진이 실제로 쓰는 도면 작성 기준(용지·배치·방위·레벨·표제란·축척·선 굵기·선 겹침·해치·문자·치수·기호)을 값으로 돌려준다.
+                  BIM 수행계획서에 그대로 옮겨 적을 수 있는 기준표다(엔진 상수에서 읽으므로 코드와 어긋나지 않는다).
+이 모듈은 ifcopenshell 을 import 하지 않는다.
+"""
+from __future__ import annotations
+
+from typing import Literal
+
+from pydantic import Field
+
+from dobim_core import commands as C
+from dobim_core import drawing as D
+from dobim_core import drawing_export as DX
+from dobim_core.commands import A, Id, Name, Num, Text, command
+from dobim_core.errors import DobimError
+
+TABLES = ("drawing_list", "legend", "notes", "levels", "openings", "walls", "materials")
+
+
+class IndexDrawing(A):
+    number: Name = Field(description="도면번호(예: A-101)")
+    title: Text = Field(description="도면명")
+    scale: Name = Field("", description="축척 표기(예: 1:100, 도면참조). 비우면 '-'")
+    note: Text = Field("", description="비고")
+
+
+class SheetIndex(C.SheetFrame):
+    path: str = Field(max_length=260, description="작업 폴더 안의 .svg 또는 .pdf 경로")
+    paper: Literal["A1", "A3"] = Field("A1", description="용지(가로 방향). 표가 많으면 A1")
+    project_name: Text = Field("", description="표제란 프로젝트명")
+    sheet_name: Text = Field("", description="표제란 도면명(비우면 '도면목록·범례·일람표')")
+    sheet_number: Text = Field("A-000", description="표제란 도면번호")
+    date: str | None = Field(None, pattern=r"^\d{4}-\d{2}-\d{2}$", description="작성일 YYYY-MM-DD(생략하면 오늘 날짜)")
+    drawings: list[IndexDrawing] = Field(default_factory=list, max_length=60, description="도면목록표의 행. 도면번호 첫 글자(A 건축 등)가 공종이 된다. 비우면 도면목록표를 만들지 않는다")
+    tables: list[Literal["drawing_list", "legend", "notes", "levels", "openings", "walls", "materials"]] = Field(
+        default_factory=lambda: list(TABLES), max_length=7, description="넣을 표(기본: 모두). 모델에서 뽑는 표: levels 레벨 노트, openings 창호 일람표, walls 벽체 일람표, materials 재료표")
+    gl_level: Text = Field("", description="GL(지반) 기준으로 삼을 레벨 이름(비우면 가장 낮은 레벨)")
+    notes: list[Text] = Field(default_factory=list, max_length=12, description="주기에 더할 줄")
+    overwrite: bool = Field(False, description="거짓이면 이미 있는 파일을 덮어쓰지 않는다. 참이면 덮어쓰며 덮어쓰기 전에 자동 스냅숏을 남긴다(확인 토큰 필요)")
+
+
+def _index_preview(ctx, a: SheetIndex):
+    p, ext = C._view_export_target(ctx, a)
+    C._snap_dir(p, ctx.eng.workspace)
+    return {"will_write": p.name, "format": ext[1:], "paper": a.paper, "tables": list(a.tables), "overwrites": p.exists(), "snapshot_before_overwrite": p.exists()}
+
+
+@command("sheet.index", kind="session", risk="destructive", group="view",
+         summary="색인 시트(도면목록·범례·일람표) 내보내기",
+         args=SheetIndex, since="0.3", preview=_index_preview,
+         examples=[{"path": "index-example.svg", "paper": "A1", "project_name": "예시 프로젝트", "sheet_number": "A-000", "overwrite": True,
+                    "drawings": [{"number": "A-101", "title": "1층 평면도", "scale": "1:100"}], "tables": ["drawing_list", "legend", "notes"]}])
+def sheet_index(ctx, a: SheetIndex):
+    """뷰 없는 색인 시트: 도면목록표·범례·주기와 모델에서 뽑은 레벨 노트·창호 일람표·벽체 일람표·재료표."""
+    import datetime
+
+    from dobim_core import pdf_font as PF
+    from dobim_core import sheet as SH
+    from dobim_core import sheet_extras as SE
+    from dobim_core import sheet_model as SM
+    p, ext = C._view_export_target(ctx, a)
+    want = set(a.tables)
+    g = ctx.g
+    spec = {"paper": a.paper, "project": a.project_name or "(프로젝트명 없음)", "title": a.sheet_name or "도면목록·범례·일람표",
+            "number": a.sheet_number, "date": a.date or datetime.date.today().isoformat(), "north_deg": 0.0}
+    spec.update(SE.frame_spec(a))
+    tables: dict = {}
+    if "drawing_list" in want and a.drawings:
+        tables["drawing_list"] = [[d.number, d.title, SE.DISCIPLINES.get(d.number.split("-")[0], "-"), d.scale or "-", d.note] for d in a.drawings]
+    if "levels" in want:
+        tables["levels"] = SM.level_rows(g, a.gl_level or None)
+    if "openings" in want:
+        tables["openings"] = SM.opening_rows(g)
+    if "walls" in want:
+        tables["walls"] = SM.wall_rows(g)
+    if "materials" in want:
+        tables["materials"] = SM.material_rows(g)
+    if "legend" in want:
+        tables["legend"] = True
+    if "notes" in want:
+        tables["notes"] = ["치수는 mm 단위이며 단위 표기는 생략한다.",
+                           "축척은 도면마다 적고, 축척이 다른 도면이 한 장에 있으면 표제란에는 '도면참조'로 적는다.",
+                           "레벨은 FL(마감 바닥) 기준이며 GL(지반)과의 관계는 레벨 노트를 따른다.",
+                           "투상법은 제3각법(정투상)을 따른다.",
+                           "문(D)·창(W)·벽체(WT) 부호는 각 일람표를 따른다."] + list(a.notes)
+    try:
+        sh = SH.build_index_sheet(spec, tables)
+    except SH.SheetError as ex:
+        raise DobimError("CONSTRAINT", str(ex), path="/tables")
+    dropped, font_name = False, None
+    if ext == ".svg":
+        blob = SH.render_sheet_svg(sh, spec)
+    else:
+        font = PF.load_pdf_font()
+        blob, dropped = SH.render_sheet_pdf(sh, spec, font)
+        font_name = font.name if font else None
+        if font is None:
+            ctx.warn("한글 글꼴(Noto Sans KR·나눔고딕)을 찾지 못해 PDF 의 한글이 '?' 로 나왔다. 글꼴을 설치하거나 환경 변수 DOBIM_PDF_FONT 에 .ttf 경로를 주세요")
+        elif font.missing:
+            ctx.warn(f"글꼴에 없는 글자 {len(font.missing)}개는 빈칸으로 나왔다: {''.join(font.missing[:20])}")
+    snap = C._snapshot_existing(p, ctx.eng.workspace)
+    try:
+        C._replace(p, lambda tmp: tmp.write_bytes(blob))
+    except BaseException:
+        C._drop_snapshot(p, snap, ctx.eng.workspace)
+        raise
+    return {"path": p.name, "bytes": len(blob), "format": ext[1:], "paper": a.paper, "sheet_number": a.sheet_number,
+            "number_check": SE.number_check(a.sheet_number, p.stem), "tables": sorted(tables), "rows": {k: len(v) for k, v in tables.items() if isinstance(v, list)},
+            "font_embedded": font_name, "non_ascii_dropped": dropped, "rev": ctx.eng.rev, "snapshot": snap}
+
+
+# ---------------------------------------------------------------- 도면 작성기준 프로파일
+class DrawingProfile(A):
+    pass
+
+
+def build_profile() -> dict:
+    """엔진 상수에서 읽은 도면 작성 기준. 키는 BIM 시행지침의 도면 기준 항목(도면 크기, 배치·방향, 방위·레벨, 표제란, 축척, 선 굵기, 선·해칭, 문자·폰트, 치수·지시선, 기호)을 따른다."""
+    from dobim_core import sheet as SH
+    uses = {"cut": "절단선: 평면·단면에서 잘린 벽·기둥·슬래브·계단의 윤곽", "proj": "보이는 선: 투영·입면 윤곽, 보이는 모서리",
+            "symbol": "기호선: 창·문·계단·방화벽 기호, 방화 표기", "hatch": "해치: 입면 외벽 마감 재료 표시(45도 가는선)"}
+    weights = {k: {"width_mm": v[0], "color": v[1], "use": uses[k]} for k, v in DX.STYLE.items()}
+    return {
+        "version": 1,
+        "paper_size": {"sizes_mm": {k: list(v) for k, v in SH.PAPERS.items()}, "orientation": "가로", "border_offset_mm": SH.OUTER, "drawing_area_padding_mm": SH.PAD,
+                       "title_block_width_mm": SH.TB_W},
+        "layout_orientation": {"plan_up": "평면은 도면 위쪽이 정북(방위표 각도로 보정)", "section_elevation_down": "단면·입면은 중력 방향을 아래로",
+                               "view_flow": "왼쪽 위에서 오른쪽, 아래 줄 순으로 놓는다", "view_gap_mm": SH.GAP, "caption": "뷰 아래에 도면명과 S=1:N"},
+        "north_level": {"north": "방위표(원 + 화살표 + N), 표제란 아래", "level_datum": "단면·입면의 레벨 기준선(파선)과 '이름 +표고' 문자",
+                        "level_unit": "표고·레벨 차이는 mm", "fl_gl": "FL(마감 바닥) 기준, GL 관계는 색인 시트 레벨 노트"},
+        "title_block": {"fields": ["프로젝트명", "건축주", "설계사무소", "도면명", "도면번호", "축척", "작성일", "개정차수", "서명·날인", "개정란(차수·일자·내용)", "키 플랜", "축척 막대", "방위표"],
+                        "drawing_number": "공종 문자-3자리 일련번호(예: A-101), 파일명과 일치"},
+        "scale": {"series": [1, 2, 5, 10, 20, 50, 100, 200, 300], "default": 100, "display": "뷰마다 S=1:N, 표제란 1:N 또는 도면참조", "scale_bar": "표제란에 축척 막대",
+                  "model_scale": "모델은 1:1, 도면에서 축척 지정"},
+        "line_weights": weights,
+        "line_types": {"solid": "보이는 선·절단선", "dashed": "방화벽 중심선·레벨 기준선", "dash_dot": "통심선·단면 절단선·부위 상세 표시", "dimension": f"치수선 0.13mm, 색 {DX.ANNOT_COLOR}"},
+        "line_overlap": {"priority": dict(D.PRIORITY), "rule": "같은 직선 위에서 겹치거나 이어진 선분은 하나로 병합하고, 절단선이 덮는 부분은 아래 등급의 선을 지운다. "
+                                                           "그리는 순서는 해치·보이는 선·기호선·절단선(굵은 선이 위)", "draw_order": list(DX.LINE_ORDER),
+                         "corner_fill": "L 조인 모서리는 표시용 채움으로 닫는다" if D.CORNER_FILL else "없음"},
+        "hatch": {"types": [{"id": "ext-finish-45", "angle_deg": 45, "step_mm": D.HATCH_STEP, "line_mm": DX.STYLE["hatch"][0], "use": "입면 외벽 마감 재료(재료 이름 문자 병기)"},
+                            {"id": "section-fill", "fill": "#cfcfcf", "use": "절단면 채움(벽·기둥·슬래브·계단)"}]},
+        "text_font": {"font": SH.FONT, "pdf": "OFL 고딕 부분집합 내장", "heights_mm": {"room_name": D.LABEL_NAME_H, "room_area": D.LABEL_SUB_H, "fire_mark": D.LABEL_FIRE_H,
+                                                                                     "dimension": 2.5, "datum": 2.6, "view_caption": 4.0, "sheet_title": 5.0}, "direction": "가로쓰기"},
+        "dimension_leader": {"style": "연관 치수(선·보조선·45도 눈금·치수 문자)", "unit": "mm, 단위 생략", "ordering": "건물에서 먼 쪽으로 열을 달리해 배치", "leader": "태그 지시선(점 + 선)"},
+        "symbols": [{"id": "door", "plan": "열린 문짝 선 + 1/4 호(문에만)", "label": "D<n>"}, {"id": "window", "plan": "개구부 마구리·벽 면 선·유리 중심선(호 없음)", "label": "W<n>"},
+                    {"id": "column", "plan": "절단 채움 + 대각선"}, {"id": "stair", "plan": "단 선·걸음선 화살표·절단선"}, {"id": "fire_wall", "plan": "중심선 파선 + 'FW 등급'"},
+                    {"id": "fire_door", "plan": "'FD 등급' 문자"}, {"id": "space", "plan": "실명 + 면적(㎡) + 실번호(좌상단부터 시계방향)"},
+                    {"id": "wall_mark", "plan": "원 안에 WT<n>"}, {"id": "grid", "plan": "통심선(1점쇄선) + 원 안 번호"}, {"id": "section_mark", "plan": "절단선 양 끝 원 + 보는 방향 화살표"},
+                    {"id": "elevation_mark", "plan": "원 + 삼각형(보는 방향)"}, {"id": "detail_callout", "plan": "1점쇄선 사각형 + 부호 원"}, {"id": "revision_cloud", "plan": "구름 선 + 차수 삼각형"}],
+    }
+
+
+@command("drawing.profile", kind="query", risk="read", group="view",
+         summary="도면 작성기준 프로파일 조회",
+         args=DrawingProfile, idempotent=True, examples=[{}])
+def drawing_profile(ctx, a: DrawingProfile):
+    """이 엔진의 도면 작성 기준 값(용지·배치·방위·레벨·표제란·축척·선 굵기·선 겹침·해치·문자·치수·기호)."""
+    return build_profile()

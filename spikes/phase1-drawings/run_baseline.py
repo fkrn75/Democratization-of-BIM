@@ -9,6 +9,10 @@ G1 때와 같은 방식으로 도면을 다시 뽑는다(s3lib.build 의 RA-01 �
   --no-slabs    : 입력에서 슬래브 3개를 뺀다(이전 단계 산출과 같은 입력으로 되돌려 바이트 비교할 때)
   --no-heights  : 높이 치수 자동 배치(heights/)를 건너뛴다
   --no-stairs / --no-spaces / --no-fire / --no-finish : 계단·공간·방화 등급·외벽 마감 입력을 뺀다(네 번째 작업 이전 입력)
+  --no-sheet2   : 다섯 번째 작업(색인 시트·통심선·기호·태그·키 플랜·개정·서명·선 굵기 프로파일·작성기준 프로파일)을 건너뛴다
+
+다섯 번째 작업 산출(--sheets): sheets/A-000(색인: 도면목록·범례·주기·레벨 노트·창호/벽체 일람표·재료표), sheets/A-002(통심선·단면·입면 기호·부위 상세·부호 태그·키 플랜·
+  건축주·서명·개정 구름), sheets/A-003(별도 작성기준 선 굵기 프로파일 적용), profile.json(drawing.profile).
 
 높이 치수(두 번째 작업): 단면·입면 6뷰(단면 2·입면 4)에 annot.dim.heights 로 층고·반자높이(슬래브 밑면 기준 안목)·최고 높이를 자동 배치하고
   heights/ 에 낸다. 같은 뷰에 손으로 만든 높이 치수(annot/ 용 level 사이 치수)는 지우고 자동 치수로 바꾼 뒤 시트를 뽑는다.
@@ -52,12 +56,52 @@ def export(sess, name, args, out_path: Path):
     return ok(sess.run(name, a, confirm=tok))
 
 
+def sheet2(sess, ids, views, log, out, work, sheets_dir, exp_views, sheet, spec):
+    """다섯 번째 작업 산출. 색인 시트, 확장 시트(통심선·기호·태그·키 플랜·개정·서명), 선 굵기 프로파일 시트, 작성기준 프로파일."""
+    def sheet_n(nm, a):
+        """파일 이름이 도면번호와 같게 내보낸다(T-04 파일명 일치)."""
+        for ext in ("svg", "pdf"):
+            r_ = export(sess, "sheet.export", {**spec, **a}, work / f"{nm}.{ext}")
+            (sheets_dir / f"{nm}.{ext}").write_bytes((work / f"{nm}.{ext}").read_bytes())
+            log["exports"].append({"dir": "sheets", "sheet": nm, "ext": ext, "bytes": r_["bytes"], "font_embedded": r_["font_embedded"],
+                                   "non_ascii_dropped": r_["non_ascii_dropped"], "views": len(r_["views"]), "number_check": r_["number_check"], "number": r_["sheet_number"]})
+
+    lx, ly = s3lib.LX, s3lib.LY
+    grids = [{"label": f"X{i}", "axis": "x", "pos": x} for i, x in enumerate((0.0, 4000.0, 8000.0, lx), 1)] + \
+            [{"label": f"Y{i}", "axis": "y", "pos": y} for i, y in enumerate((0.0, 4000.0, ly), 1)]
+    log["grids"] = grids
+    signers = [{"role": "설계자", "name": "홍길동"}, {"role": "관계전문기술자", "name": ""}]
+    revs = [{"rev": "1", "date": "2026-11-10", "desc": "창 위치 조정"}, {"rev": "2", "date": "2026-11-15", "desc": "2층 평면 개정", "view": views["plan-2F"]}]
+    full = {"views": [views["plan-1F"], views["plan-2F"], views["section-BB"], views["elev-S"]], "paper": "A1", "sheet_name": "평면도·단면도·입면도(통심선·기호)",
+            "sheet_number": "A-002", "client": "예시 건축주", "office": "도비엠 설계", "signers": signers, "revisions": revs, "grids": grids, "marks": True,
+            "tags": ["room", "opening", "wall"], "key_plan": views["plan-1F"],
+            "callouts": [{"view": views["plan-1F"], "rect": [4000.0, 4000.0, lx, ly], "label": "1"}]}
+    sheet_n("A-002", full)
+    # 별도 작성기준 선 굵기 프로파일: 같은 평면을 더 가는 선으로(절단선 0.35·보이는 선 0.13)
+    sheet_n("A-003", {"views": [views["plan-1F"]], "paper": "A3", "sheet_name": "1층 평면도(선 굵기 프로파일)", "sheet_number": "A-003", "line_profile": {"cut": 0.35, "proj": 0.13}})
+    # 색인 시트: 도면목록표는 위에서 낸 시트 번호를 그대로 적는다
+    listing = [{"number": "A-000", "title": "도면목록·범례·일람표", "scale": "-"}, {"number": "A-001", "title": "평면도·단면도·입면도", "scale": "1:100"},
+               {"number": "A-002", "title": "평면도·단면도·입면도(통심선·기호)", "scale": "1:100"}, {"number": "A-003", "title": "1층 평면도(선 굵기 프로파일)", "scale": "1:100"},
+               {"number": "A-101", "title": "1·2층 평면도", "scale": "1:100"}, {"number": "A-201", "title": "혼합 축척 예", "scale": "도면참조"}]
+    log["drawing_list"] = listing
+    idx = {"paper": "A1", "sheet_name": "도면목록·범례·일람표", "sheet_number": "A-000", "client": "예시 건축주", "office": "도비엠 설계", "signers": signers,
+           "revisions": [revs[0]], "drawings": listing, "project_name": spec["project_name"], "date": spec["date"]}
+    for ext in ("svg", "pdf"):
+        r_ = export(sess, "sheet.index", idx, work / f"A-000.{ext}")
+        (sheets_dir / f"A-000.{ext}").write_bytes((work / f"A-000.{ext}").read_bytes())
+        log["exports"].append({"dir": "sheets", "sheet": "A-000", "ext": ext, "bytes": r_["bytes"], "font_embedded": r_["font_embedded"],
+                               "non_ascii_dropped": r_["non_ascii_dropped"], "rows": r_["rows"], "number_check": r_["number_check"], "number": r_["sheet_number"]})
+    prof = ok(sess.run("drawing.profile", {}))
+    (out / "profile.json").write_text(json.dumps(prof, ensure_ascii=False, indent=1), encoding="utf-8")
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--out", required=True)
     ap.add_argument("--sheets", action="store_true")
     ap.add_argument("--no-slabs", action="store_true")
     ap.add_argument("--no-heights", action="store_true")
+    ap.add_argument("--no-sheet2", action="store_true")
     for f in ("stairs", "spaces", "fire", "finish"):
         ap.add_argument(f"--no-{f}", action="store_true")
     o = ap.parse_args()
@@ -206,16 +250,16 @@ def main():
 
     def sheet(nm, a, extra=None):
         for ext in ("svg", "pdf"):
-            r = export(sess, "sheet.export", {**spec, **a}, work / f"sheet_{nm}.{ext}")
-            (sheets_dir / f"{nm}.{ext}").write_bytes((work / f"sheet_{nm}.{ext}").read_bytes())
+            r = export(sess, "sheet.export", {**spec, **a}, work / f"{nm}.{ext}")
+            (sheets_dir / f"{nm}.{ext}").write_bytes((work / f"{nm}.{ext}").read_bytes())
             log["exports"].append({"dir": "sheets", "sheet": nm, "ext": ext, "bytes": r["bytes"], "font_embedded": r["font_embedded"],
-                                   "non_ascii_dropped": r["non_ascii_dropped"], "views": len(r["views"])})
+                                   "non_ascii_dropped": r["non_ascii_dropped"], "views": len(r["views"]), "number_check": r.get("number_check"), "number": r["sheet_number"]})
 
     if o.sheets:
-        sheet("A3-plans", {"views": plans, "paper": "A3", "sheet_name": "1·2층 평면도", "sheet_number": "A-101"})
+        sheet("A-101", {"views": plans, "paper": "A3", "sheet_name": "1·2층 평면도", "sheet_number": "A-101"})
         # 혼합 축척 시트: 북측 입면만 1:50 으로 바꿔 한 장에 올린다(표제란 '도면참조', 뷰별 S=1:N). 높이 치수가 붙기 전에 뽑고 축척은 되돌린다
         ok(sess.run("view.set", {"id": views["elev-N"], "scale": 50}))
-        sheet("A3-mixed", {"views": [views["plan-1F"], views["elev-N"]], "paper": "A3", "sheet_name": "혼합 축척 예", "sheet_number": "A-201", "north_angle": 30.0})
+        sheet("A-201", {"views": [views["plan-1F"], views["elev-N"]], "paper": "A3", "sheet_name": "혼합 축척 예", "sheet_number": "A-201", "north_angle": 30.0})
         ok(sess.run("view.set", {"id": views["elev-N"], "scale": 100}))
 
     if not o.no_heights:
@@ -233,7 +277,9 @@ def main():
                           "expected": {"floor": by("floor"), "clear": by("clear"), "overall": (by("overall") or [None])[0]}}
 
     if o.sheets:
-        sheet("A1-all", {"views": plans + [views["section-BB"], views["xsec-AA"]] + elevs, "paper": "A1", "sheet_name": "평면도·단면도·입면도", "sheet_number": "A-001"})
+        sheet("A-001", {"views": plans + [views["section-BB"], views["xsec-AA"]] + elevs, "paper": "A1", "sheet_name": "평면도·단면도·입면도", "sheet_number": "A-001"})
+    if o.sheets and not o.no_sheet2:
+        sheet2(sess, ids, views, log, out, work, sheets_dir, exp_views, sheet, spec)
     (out / "run.json").write_text(json.dumps({"views": views, "ids": ids, **log}, ensure_ascii=False, indent=1), encoding="utf-8")
     print(json.dumps(log, ensure_ascii=False)[:1500])
 
