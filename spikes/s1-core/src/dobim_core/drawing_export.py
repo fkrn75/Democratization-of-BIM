@@ -132,6 +132,8 @@ def annot_svg(data, tx, ty) -> list[str]:
 
 def title_text(data) -> str:
     kind = {"plan": "평면도", "section": "단면도", "elevation": "입면도", "site": "배치도"}[data["type"]]
+    if kind in data["name"]:   # 뷰 이름이 종류명과 같거나 이미 포함하면 종류명을 한 번만 쓴다
+        return f"{data['name']}  S=1:{data['scale']}"
     return f"{data['name']}  {kind}  S=1:{data['scale']}"
 
 
