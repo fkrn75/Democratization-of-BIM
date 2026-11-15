@@ -37,6 +37,23 @@ def frame_spec(a) -> dict:
     return out
 
 
+def profile_spec(a) -> dict:
+    """별도 작성기준 프로파일(문자 높이·치수 형식·기호 크기). 값이 하나도 없으면 빈 딕셔너리(시트는 이전과 같다)."""
+    pf = getattr(a, "profile", None)
+    if pf is None:
+        return {}
+    out: dict = {}
+    if pf.text_height:
+        out["text_height"] = dict(pf.text_height)
+    if pf.dim_decimals is not None:
+        out["dim_decimals"] = pf.dim_decimals
+    if pf.dim_thousands is not None:
+        out["dim_thousands"] = pf.dim_thousands
+    if pf.symbol_scale is not None:
+        out["symbol_scale"] = pf.symbol_scale
+    return {"profile": out} if out else {}
+
+
 def view_extras(ctx, a, datas) -> dict:
     """뷰에 얹는 입력(통심선·단면 기호·부위 상세·태그·키 플랜)."""
     out: dict = {}
@@ -59,6 +76,14 @@ def view_extras(ctx, a, datas) -> dict:
             if d["type"] == "plan":
                 tg[d["id"]] = SM.plan_tags(ctx.g, d["id"], set(a.tags))
         out["tags"] = tg
+    if a.dims:
+        dm = {}
+        for d in datas:
+            if d["type"] == "plan":
+                dm[d["id"]] = SM.plan_dims(ctx.g, d["id"], set(a.dims))
+            elif d["type"] == "elevation" and "elevation" in a.dims:
+                dm[d["id"]] = {"elevation": SM.elev_dims(ctx.g, d["id"])}
+        out["dims"] = dm
     if a.key_plan:
         r = ctx.row(a.key_plan, "view")
         if r["params"]["type"] != "plan":

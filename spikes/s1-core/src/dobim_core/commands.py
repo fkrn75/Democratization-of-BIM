@@ -1328,13 +1328,15 @@ def _warn_omitted(ctx, omitted: dict) -> None:
                  "(외래는 형상 정보가 없고, 분리된 벽의 의도 값은 낡았다)")
 
 
-def _render_view(ctx, vid):
-    """뷰의 선분·채움·기준선(레벨)·제목을 내보내기용 데이터로 묶는다."""
+def _render_view(ctx, vid, detail=False):
+    """뷰의 선분·채움·기준선(레벨)·제목을 내보내기용 데이터로 묶는다. detail 이면 큰 축척(1:50 이하) 상세 선을 더한다(SC-09)."""
     r = ctx.row(vid, "view")
     p = r["params"]
     levels = sorted(((ctx.st.el[l]["params"]["name"], ctx.st.el[l]["params"]["elevation"]) for l in ctx.st.by_kind.get("level", ())),
                     key=lambda t: (t[1], t[0]))
     lines = ctx.g.q(D.view_lines, vid)
+    if detail:
+        lines = lines + ctx.g.q(D.view_detail_lines, vid)
     _warn_omitted(ctx, ctx.g.q(D.view_omitted, vid))
     return {"type": p["type"], "name": p["name"], "scale": p["scale"], "lines": lines, "fills": ctx.g.q(D.view_fills, vid),
             "datums": levels, "annots": ctx.g.q(AN.view_annots, vid), "labels": ctx.g.q(D.view_labels, vid)}
@@ -1426,6 +1428,19 @@ class SheetFrame(A):
         None, description="별도 작성기준 선 굵기 프로파일(mm): 선 종류별로 바꾼다. 생략하면 기본 체계")
 
 
+TextHeightKey = Literal["dimension", "caption", "datum", "tag", "room_name", "room_area", "fire_mark"]
+
+
+class SheetProfile(A):
+    """별도 작성기준 프로파일(B-09): 문자 높이·치수 형식·기호 크기. 모두 선택이며, 주지 않은 값은 기본 체계다. 시트 파일에만 적용한다(저장하는 시트 정의에는 넣지 않는다)."""
+    text_height: dict[TextHeightKey, Annotated[float, Field(ge=1.0, le=10.0, allow_inf_nan=False)]] | None = Field(
+        None, description="문자 높이(용지 mm). dimension 치수 문자(기본 2.5), caption 뷰 도면명(4.0, 축척 문자는 7/8), datum 레벨 문자(2.6), tag 부호 태그(2.5), "
+                          "room_name 실명(2.5), room_area 면적(2.0), fire_mark 방화 표기(2.0)")
+    dim_decimals: Annotated[int, Field(ge=0, le=3)] | None = Field(None, description="치수 문자의 소수 자릿수(생략하면 값 그대로: 정수면 정수)")
+    dim_thousands: bool | None = Field(None, description="참이면 네 자리 이상 숫자에 세 자리마다 쉼표(DM-10)")
+    symbol_scale: Annotated[float, Field(ge=0.5, le=2.0, allow_inf_nan=False)] | None = Field(None, description="기호 크기 배율(그리드·단면·상세 원, 부호 태그 원·글자). 생략하면 1")
+
+
 class SheetExport(SheetFrame):
     views: list[Id] = Field(min_length=1, max_length=12, description="시트에 놓을 뷰 id 목록(앞에서부터 왼쪽 위 -> 오른쪽 -> 아래 순). 뷰는 자기 축척 그대로 놓인다")
     path: str = Field(max_length=260, description="작업 폴더 안의 .svg 또는 .pdf 경로. PDF 는 한글 글꼴(시스템의 Noto Sans KR·나눔고딕, OFL)을 부분집합으로 내장한다")
@@ -1442,6 +1457,11 @@ class SheetExport(SheetFrame):
     tags: list[Literal["room", "opening", "wall"]] = Field(default_factory=list, max_length=3, description="평면 뷰에 부호 태그를 자동으로 단다: room 실번호, opening 문·창 부호, wall 벽체 부호")
     key_plan: Id | None = Field(None, description="키 플랜으로 쓸 평면 뷰(표제란 오른쪽 위에 줄여 그리고 해당 영역을 해칭한다)")
     key_zone: list[Num] | None = Field(None, min_length=4, max_length=4, description="키 플랜에서 해칭할 영역 [x0, y0, x1, y1](모델 mm). 생략하면 전체")
+    dims: list[Literal["elevation", "corridor", "stair"]] = Field(default_factory=list, max_length=3, description=(
+        "시트 치수 자동 배치(옵션): elevation 입면 뷰 아래에 벽 중심선 치수 사슬과 전체 폭(E-04), corridor 평면의 복도(분류·실명이 복도인 공간) 폭, "
+        "stair 평면의 계단 폭(L-09)"))
+    detail: bool = Field(False, description="참이면 큰 축척(1:50 이하) 뷰에 상세 표현을 더한다(재료가 있는 벽의 마감선·문짝 두께·문턱선). 1:100 이상의 작은 축척 뷰는 그대로")
+    profile: SheetProfile | None = Field(None, description="별도 작성기준 프로파일: 문자 높이·치수 형식(소수·천단위 쉼표)·기호 크기. 생략하면 기본 체계(시트는 이전과 바이트까지 같다)")
 
 
 def _sheet_preview(ctx, a: SheetExport):
@@ -1465,11 +1485,12 @@ def sheet_export(ctx, a: SheetExport):
     p, ext = _view_export_target(ctx, a)
     if len(set(a.views)) != len(a.views):
         raise DobimError("CONSTRAINT", "같은 뷰를 두 번 올릴 수 없다", path="/views")
-    datas = [dict(_render_view(ctx, v), id=v) for v in a.views]
+    datas = [dict(_render_view(ctx, v, a.detail), id=v) for v in a.views]
     spec = {"paper": a.paper, "project": a.project_name or "(프로젝트명 없음)", "title": a.sheet_name or datas[0]["name"],
             "number": a.sheet_number, "date": a.date or datetime.date.today().isoformat(), "north_deg": a.north_angle}
     from dobim_core import sheet_extras as SE
     spec.update(SE.frame_spec(a))
+    spec.update(SE.profile_spec(a))
     spec.update(SE.view_extras(ctx, a, datas))
     try:
         sh = SH.build_sheet(spec, datas)

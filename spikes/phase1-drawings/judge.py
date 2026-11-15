@@ -399,6 +399,53 @@ def judge_sheet2_items(out: Path, run: dict, base: dict):
     return res
 
 
+def _sizes(svg: str, text: str) -> set:
+    """SVG 에서 이 글자를 그린 <text> 의 글자 높이(font-size) 집합."""
+    return set(re.findall(rf'<text[^>]*font-size="([\d.]+)"[^>]*>{re.escape(text)}</text>', svg))
+
+
+def judge_after7_items(out: Path, run: dict, base: dict):
+    """일곱 번째 작업 항목을 sheets7/ 산출(A-004: 1:50 평면 + 프로파일 + 폭 치수, A-005: 입면 치수)과 같은 인자의 기본 시트(-default) 대비로 판정한다.
+    B-09(작성기준 프로파일: 문자 높이·치수 형식·기호 크기), LN-05(문자 높이), DM-10(천단위 쉼표), SC-09(축척별 상세), E-04(입면 치수), L-09(복도·계단 폭)."""
+    res: dict[str, tuple[str, str]] = {}
+    a7, sd = run.get("after7"), out / "sheets7"
+    names = ("A-004.svg", "A-004-default.svg", "A-005.svg", "A-005-default.svg")
+    if not a7 or not all((sd / n).exists() for n in names) or not (out / "profile-applied.json").exists():
+        return res
+    s4, s4d, s5, s5d = ((sd / n).read_text(encoding="utf-8") for n in names)
+    eff = json.loads((out / "profile-applied.json").read_text(encoding="utf-8"))
+    th = a7["profile"]["text_height"]
+    k = a7["profile"]["symbol_scale"]
+    # 문자 높이: 같은 글자를 기본 시트는 기본 높이로, 프로파일 시트는 지정한 높이로 그린다
+    txt = {"dimension": "12,000", "room_name": "거실", "caption": "1층 평면도 1:50"}
+    txt_default = {"dimension": "12000", "room_name": "거실", "caption": "1층 평면도 1:50"}
+    got = {c: (_sizes(s4, txt[c]), _sizes(s4d, txt_default[c])) for c in txt}
+    heights_ok = all(f"{th[c]:g}" in got[c][0] and f"{th[c]:g}" not in got[c][1] for c in txt)
+    area_ok = any(f"{th['room_area']:g}" in _sizes(s4, t) for t in re.findall(r"<text[^>]*>([^<]*㎡)</text>", s4))
+    r_new = {f"{3.3 * k:g}"}
+    circ = set(re.findall(r'<circle[^>]*r="([\d.]+)"', s4)) >= r_new and not (set(re.findall(r'<circle[^>]*r="([\d.]+)"', s4d)) & r_new)
+    fmt_ok = eff["dimension_leader"]["number_format"]["thousands_separator"] is True and eff["text_font"]["heights_mm"]["dimension"] == th["dimension"]
+    if heights_ok and area_ok and circ and fmt_ok and a7["empty_args_equal_default"]:
+        res["B-09"] = (OK, f"별도 작성기준(profile)을 sheet.export·drawing.profile 입력으로 받아 시트에 적용: 문자 높이(치수 {th['dimension']}·실명 {th['room_name']}·면적 {th['room_area']}·도면명 {th['caption']}mm), "
+                           f"치수 형식(천단위 쉼표), 기호 크기(배율 {k}: 그리드 원 반지름 3.3→{3.3 * k:g}). 선 굵기 프로파일(A-003)과 함께 선·문자·치수·기호 4가지를 외부 기준으로 받는다. 주지 않거나 비워 주면 기본 시트와 바이트까지 같다")
+        res["LN-05"] = (OK, "drawing.profile 이 문자 높이를 용도별로 값으로 정하고(실명·면적·치수·레벨·도면명·방화 표기, 기호 안 문자) 시트에 그 높이로 그린다: 지정 높이가 시트에 실제로 쓰임(A-004). 기본값은 기존 체계 그대로")
+    if "12,000" in s4 and "12,000" in s5 and "12000" in s4d and "12,000" not in s4d:
+        res["DM-10"] = (OK, "작성기준 프로파일 dim_thousands 를 켜면 네 자리 이상 치수 문자가 세 자리마다 쉼표(예: 12,000)로 그려진다(A-004·A-005). 기본은 쉼표 없음(기존 도면 바이트 불변)")
+    dl = a7["detail_lines"]
+    if dl["added"] >= 20 and s4.count("<line") >= s4d.count("<line") + dl["added"] - 2:
+        res["SC-09"] = (PART, f"1:50 평면에서 표현 수준을 높인다(A-004): 재료가 있는 벽의 마감선·문짝 두께·문턱선 {dl['added']}개 선을 더한다(1:100 은 그대로). "
+                              "천장선(천장 요소 없음)·창 프레임(창 상세 없음)·단면·입면 상세는 아직 없다. 마감 두께 20·문짝 두께 40mm 는 모델에 마감 층이 없어 규약값")
+    pe = a7["elev_dims"]
+    want = sum(len(pe[k_]["chain"]) + 1 for k_ in ("elev-S", "elev-E"))
+    if _gsum(s5, "elevation-dims") == want and "elevation-dims" not in s5d and all(pe[k_]["overall"][2] in ("12000", "8000") for k_ in ("elev-S", "elev-E")):
+        res["E-04"] = (OK, f"입면 2개(A-005)에 벽 중심선 위치 사슬과 전체 폭 치수 {want}개(남측 전체 {pe['elev-S']['overall'][2]}·동측 {pe['elev-E']['overall'][2]}mm). dims=['elevation'] 로 켠다")
+    pd = a7["plan_dims"]
+    if _gsum(s4, "corridor-dims") == len(pd["corridor"]) >= 1 and _gsum(s4, "stair-dims") == len(pd["stair"]) >= 1 and "corridor-dims" not in s4d:
+        c, st = pd["corridor"][0][4], pd["stair"][0][4]
+        res["L-09"] = (OK, f"평면(A-004)에 복도 폭 {c}mm(안목)와 계단 폭 {st}mm 치수. 복도·계단 위치는 평면에 그려진 공간·계단 그대로다. dims=['corridor','stair'] 로 켠다")
+    return res
+
+
 def judge_bim_items(out: Path, run: dict, base: dict):
     """여섯 번째 작업 항목(B-02 추출 형상, B-04 뷰 원본 저장)을 run.json 의 probe 로 판정한다."""
     return judge_corner(run) | judge_sheet_def(run)
@@ -485,7 +532,7 @@ def main():
     dg = digest_same(out, Path(o.g1) if o.g1 else None)
     changed = []
     for judged in (judge_sheet_items(out, run, items), judge_element_items(out, run, items), judge_slab_height_items(out, run, items),
-                   judge_stair_space_items(out, run, items), judge_sheet2_items(out, run, items), judge_bim_items(out, run, items)):
+                   judge_stair_space_items(out, run, items), judge_sheet2_items(out, run, items), judge_bim_items(out, run, items), judge_after7_items(out, run, items)):
         for i, (v, why) in judged.items():
             if items[i]["verdict"] != v:
                 changed.append((i, items[i]["verdict"], v))

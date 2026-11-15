@@ -116,15 +116,34 @@ def sheet_index(ctx, a: SheetIndex):
 
 # ---------------------------------------------------------------- 도면 작성기준 프로파일
 class DrawingProfile(A):
-    pass
+    profile: C.SheetProfile | None = Field(None, description="별도 작성기준(문자 높이·치수 형식·기호 크기). 주면 그 값을 얹은 유효 기준을 돌려준다(sheet.export 의 profile 과 같은 입력)")
 
 
-def build_profile() -> dict:
+def build_profile(applied: dict | None = None) -> dict:
     """엔진 상수에서 읽은 도면 작성 기준. 키는 BIM 시행지침의 도면 기준 항목(도면 크기, 배치·방향, 방위·레벨, 표제란, 축척, 선 굵기, 선·해칭, 문자·폰트, 치수·지시선, 기호)을 따른다."""
     from dobim_core import sheet as SH
     uses = {"cut": "절단선: 평면·단면에서 잘린 벽·기둥·슬래브·계단의 윤곽", "proj": "보이는 선: 투영·입면 윤곽, 보이는 모서리",
             "symbol": "기호선: 창·문·계단·방화벽 기호, 방화 표기", "hatch": "해치: 입면 외벽 마감 재료 표시(45도 가는선)"}
     weights = {k: {"width_mm": v[0], "color": v[1], "use": uses[k]} for k, v in DX.STYLE.items()}
+    out = _base_profile(SH, uses, weights)
+    if applied:
+        # 별도 작성기준을 얹은 유효 값: 문자 높이·치수 형식·기호 크기만 바뀐다(주지 않은 값은 기본 그대로)
+        th = applied.get("text_height") or {}
+        hm = out["text_font"]["heights_mm"]
+        for k, name in (("dimension", "dimension"), ("datum", "datum"), ("caption", "view_caption"), ("room_name", "room_name"), ("room_area", "room_area"),
+                        ("fire_mark", "fire_mark"), ("tag", "tag")):
+            if k in th:
+                hm[name] = th[k]
+        out["dimension_leader"]["number_format"] = {"decimals": applied.get("dim_decimals"), "thousands_separator": bool(applied.get("dim_thousands")),
+                                                    "unit": "mm, 단위 생략"}
+        if "symbol_scale" in applied:
+            out["symbols_scale"] = applied["symbol_scale"]
+            out["text_font"]["symbol_text_heights_mm"] = {k: round(v * applied["symbol_scale"], 3) for k, v in out["text_font"]["symbol_text_heights_mm"].items()}
+        out["applied_profile"] = applied
+    return out
+
+
+def _base_profile(SH, uses, weights) -> dict:
     return {
         "version": 1,
         "paper_size": {"sizes_mm": {k: list(v) for k, v in SH.PAPERS.items()}, "orientation": "가로", "border_offset_mm": SH.OUTER, "drawing_area_padding_mm": SH.PAD,
@@ -145,7 +164,8 @@ def build_profile() -> dict:
         "hatch": {"types": [{"id": "ext-finish-45", "angle_deg": 45, "step_mm": D.HATCH_STEP, "line_mm": DX.STYLE["hatch"][0], "use": "입면 외벽 마감 재료(재료 이름 문자 병기)"},
                             {"id": "section-fill", "fill": "#cfcfcf", "use": "절단면 채움(벽·기둥·슬래브·계단)"}]},
         "text_font": {"font": SH.FONT, "pdf": "OFL 고딕 부분집합 내장", "heights_mm": {"room_name": D.LABEL_NAME_H, "room_area": D.LABEL_SUB_H, "fire_mark": D.LABEL_FIRE_H,
-                                                                                     "dimension": 2.5, "datum": 2.6, "view_caption": 4.0, "sheet_title": 5.0}, "direction": "가로쓰기"},
+                                                                                     "dimension": 2.5, "datum": 2.6, "view_caption": 4.0, "sheet_title": 5.0},
+                      "symbol_text_heights_mm": {"grid": 2.3, "section_mark": 1.9, "detail_callout": 2.0, "tag": 1.9}, "direction": "가로쓰기"},
         "dimension_leader": {"style": "연관 치수(선·보조선·45도 눈금·치수 문자)", "unit": "mm, 단위 생략", "ordering": "건물에서 먼 쪽으로 열을 달리해 배치", "leader": "태그 지시선(점 + 선)"},
         "symbols": [{"id": "door", "plan": "열린 문짝 선 + 1/4 호(문에만)", "label": "D<n>"}, {"id": "window", "plan": "개구부 마구리·벽 면 선·유리 중심선(호 없음)", "label": "W<n>"},
                     {"id": "column", "plan": "절단 채움 + 대각선"}, {"id": "stair", "plan": "단 선·걸음선 화살표·절단선"}, {"id": "fire_wall", "plan": "중심선 파선 + 'FW 등급'"},
@@ -159,8 +179,9 @@ def build_profile() -> dict:
          summary="도면 작성기준 프로파일 조회",
          args=DrawingProfile, idempotent=True, examples=[{}])
 def drawing_profile(ctx, a: DrawingProfile):
-    """이 엔진의 도면 작성 기준 값(용지·배치·방위·레벨·표제란·축척·선 굵기·선 겹침·해치·문자·치수·기호)."""
-    return build_profile()
+    """이 엔진의 도면 작성 기준 값(용지·배치·방위·레벨·표제란·축척·선 굵기·선 겹침·해치·문자·치수·기호). profile 을 주면 별도 작성기준을 얹은 유효 값."""
+    from dobim_core import sheet_extras as SE
+    return build_profile(SE.profile_spec(a).get("profile"))
 
 
 # ================================================================ 시트 정의의 저장·왕복 (B-04)
@@ -180,7 +201,8 @@ def _sheet_def_check(self):
     return self
 
 
-_DEF_FIELDS = {n: (f.annotation, f) for n, f in C.SheetExport.model_fields.items() if n not in ("path", "overwrite")}
+NOT_STORED = ("path", "overwrite", "profile", "detail", "dims")   # 파일을 낼 때만 받는 입력(저장하는 시트 정의에는 넣지 않는다: 저장된 정의의 해시·형식은 그대로)
+_DEF_FIELDS = {n: (f.annotation, f) for n, f in C.SheetExport.model_fields.items() if n not in NOT_STORED}
 SheetDef = create_model(
     "SheetDef", __base__=A, __validators__={"_chk": model_validator(mode="after")(_sheet_def_check)},
     name=(Name, Field(description="시트 이름(시트끼리 겹치지 않는다)")), **_DEF_FIELDS)

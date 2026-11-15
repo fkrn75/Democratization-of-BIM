@@ -10,6 +10,7 @@ G1 때와 같은 방식으로 도면을 다시 뽑는다(s3lib.build 의 RA-01 �
   --no-heights  : 높이 치수 자동 배치(heights/)를 건너뛴다
   --no-stairs / --no-spaces / --no-fire / --no-finish : 계단·공간·방화 등급·외벽 마감 입력을 뺀다(네 번째 작업 이전 입력)
   --no-sheetdef : 여섯 번째 작업(시트 정의 저장·왕복 probe)을 건너뛴다
+  --no-after7   : 일곱 번째 작업(작성기준 프로파일·1:50 상세·시트 치수 A-004·A-005)을 건너뛴다
   --no-sheet2   : 다섯 번째 작업(색인 시트·통심선·기호·태그·키 플랜·개정·서명·선 굵기 프로파일·작성기준 프로파일)을 건너뛴다
 
 다섯 번째 작업 산출(--sheets): sheets/A-000(색인: 도면목록·범례·주기·레벨 노트·창호/벽체 일람표·재료표), sheets/A-002(통심선·단면·입면 기호·부위 상세·부호 태그·키 플랜·
@@ -175,6 +176,53 @@ def sheet2(sess, ids, views, log, out, work, sheets_dir, exp_views, sheet, spec)
     return saved
 
 
+def after7(sess, ids, views, log, out, work, spec):
+    """일곱 번째 작업: 작성기준 프로파일(문자 높이·치수 형식·기호 크기, B-09), 1:50 평면 상세(SC-09·B-17), 시트 치수(입면 E-04·복도/계단 폭 L-09).
+    산출은 sheets7/ 에 둔다(기존 sheets/ 의 도면목록·번호 검사와 따로). 같은 인자에서 새 입력만 뺀 기본 시트를 함께 내어 차이를 재고, run.json 의 after7 로 남긴다."""
+    sd = out / "sheets7"
+    sd.mkdir(exist_ok=True)
+    v50 = ok(sess.run("view.create", {"id": "4" + "0" * 19 + "a1", "name": "1층 평면도 1:50", "type": "plan", "level": ids["1F"], "scale": 50}))["id"]
+    w1, w2 = ids["ext-1F"][0], ids["ext-1F"][1]
+    for a, b, kw in ((f"wall:{w1}#trim.start", f"wall:{w1}#trim.end", {}), (f"wall:{w2}#trim.start", f"wall:{w2}#trim.end", {"offset": 900.0})):
+        ok(sess.run("annot.dim.create", {"view": v50, "a": a, "b": b, **kw}))
+    lx, ly = s3lib.LX, s3lib.LY
+    grids = [{"label": f"X{i}", "axis": "x", "pos": x} for i, x in enumerate((0.0, 4000.0, 8000.0, lx), 1)] + [{"label": f"Y{i}", "axis": "y", "pos": y} for i, y in enumerate((0.0, 4000.0, ly), 1)]
+    prof = {"text_height": {"dimension": 3.0, "room_name": 3.0, "room_area": 2.4, "caption": 5.0, "tag": 2.2}, "dim_thousands": True, "symbol_scale": 1.2}
+    base_a = {**spec, "paper": "A1", "tags": ["room", "opening"], "grids": grids}
+    new_a = {"detail": True, "profile": prof, "dims": ["corridor", "stair"]}
+    probe = {"profile": prof, "view": v50, "sheets": {}}
+
+    def one(nm, args, exts=("svg", "pdf")):
+        for ext in exts:
+            r = export(sess, "sheet.export", args, work / f"{nm}.{ext}")
+            (sd / f"{nm}.{ext}").write_bytes((work / f"{nm}.{ext}").read_bytes())
+            probe.setdefault("exports", []).append({"dir": "sheets7", "sheet": nm, "ext": ext, "bytes": r["bytes"], "font_embedded": r["font_embedded"], "non_ascii_dropped": r["non_ascii_dropped"],
+                                   "views": len(r["views"]), "number_check": r["number_check"], "number": r["sheet_number"]})
+
+    a4 = {**base_a, "views": [v50], "sheet_name": "1층 평면도 1:50(상세·작성기준·폭 치수)", "sheet_number": "A-004", **new_a}
+    one("A-004", a4)
+    one("A-004-default", {**base_a, "views": [v50], "sheet_name": "1층 평면도 1:50(기본 표현)", "sheet_number": "A-004"}, ("svg",))
+    # 새 입력을 주지 않은 같은 호출: 빈 값을 줘도 기본과 바이트가 같다(바이트 불변 고정)
+    one("A-004-empty", {**base_a, "views": [v50], "sheet_name": "1층 평면도 1:50(기본 표현)", "sheet_number": "A-004", "detail": False, "dims": [], "profile": {}}, ("svg",))
+    probe["empty_args_equal_default"] = (sd / "A-004-empty.svg").read_bytes() == (sd / "A-004-default.svg").read_bytes()
+    elev = [views["elev-S"], views["elev-E"]]
+    a5 = {**spec, "views": elev, "paper": "A1", "sheet_name": "입면도(벽 중심선 치수)", "sheet_number": "A-005", "dims": ["elevation"], "profile": {"dim_thousands": True, "text_height": {"dimension": 3.0}}}
+    one("A-005", a5)
+    one("A-005-default", {**spec, "views": elev, "paper": "A1", "sheet_name": "입면도(벽 중심선 치수)", "sheet_number": "A-005"}, ("svg",))
+    # 모델에서 뽑은 값(시트가 그리는 치수): 재현·판정용
+    from dobim_core import sheet_model as SM
+    sess.eng.sync()
+    sess.eng._touch_pending()
+    g = sess.eng.g
+    probe["plan_dims"] = {k: [list(x) for x in v] for k, v in SM.plan_dims(g, v50, {"corridor", "stair"}).items()}
+    probe["elev_dims"] = {k: {"chain": [list(x) for x in (d or {}).get("chain", [])], "overall": list((d or {}).get("overall") or [])} for k, d in
+                          ((k, SM.elev_dims(g, views[k])) for k in ("elev-N", "elev-E", "elev-S", "elev-W"))}
+    probe["detail_lines"] = {"before": len(sess.eng.g.q(D.view_lines, v50)), "added": len(sess.eng.g.q(D.view_detail_lines, v50))}
+    eff = ok(sess.run("drawing.profile", {"profile": prof}))
+    (out / "profile-applied.json").write_text(json.dumps(eff, ensure_ascii=False, indent=1), encoding="utf-8")
+    log["after7"] = probe
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--out", required=True)
@@ -183,6 +231,7 @@ def main():
     ap.add_argument("--no-heights", action="store_true")
     ap.add_argument("--no-sheet2", action="store_true")
     ap.add_argument("--no-sheetdef", action="store_true")
+    ap.add_argument("--no-after7", action="store_true")
     for f in ("stairs", "spaces", "fire", "finish"):
         ap.add_argument(f"--no-{f}", action="store_true")
     o = ap.parse_args()
@@ -368,6 +417,8 @@ def main():
         if not o.no_sheetdef:
             sheetdef(sess, saved, log, out, work, sheets_dir)
             cornerprobe(sess, log, work)
+    if o.sheets and not o.no_sheet2 and not o.no_after7:
+        after7(sess, ids, views, log, out, work, spec)
     (out / "run.json").write_text(json.dumps({"views": views, "ids": ids, **log}, ensure_ascii=False, indent=1), encoding="utf-8")
     print(json.dumps(log, ensure_ascii=False)[:1500])
 
