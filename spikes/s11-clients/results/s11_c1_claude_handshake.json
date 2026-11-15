@@ -1,0 +1,28 @@
+{
+  "origin": "Claude Code 2.1.325 1회 최소 호출(dobim_commands_search 1회), tap 기록 해석",
+  "cause": "Claude 는 2026-07-28 무상태 프로토콜로 initialize 대신 server/discover 로 시작한다. 기존 parse_tap 은 initialize 만 찾아 null 이었다",
+  "handshake_method": "server/discover",
+  "negotiated": "2026-07-28",
+  "client": {
+    "protocolVersion": "2026-07-28",
+    "clientInfo": {
+      "name": "claude-code",
+      "title": "Claude Code",
+      "version": "2.1.325",
+      "description": "Anthropic's agentic coding tool",
+      "websiteUrl": "https://claude.com/claude-code"
+    },
+    "capabilities": [
+      "elicitation",
+      "extensions",
+      "roots"
+    ]
+  },
+  "server_supported_versions": [
+    "2026-07-28"
+  ],
+  "handshake_ms": 2469.0,
+  "server_first_stdout_sec": 2.4807,
+  "tool_call_ms": 483.5,
+  "non_json_stdout_lines": 0
+}
