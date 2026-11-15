@@ -186,7 +186,7 @@ def _parse_intent(kind: str, text: str) -> dict:
             if out["ceiling_height"] > out["height"]:
                 raise ValueError("천장 높이가 공간 높이보다 크다")
     elif kind == "site":
-        if (set(p) != {"name", "boundary", "north_angle", "roads", "elevation"} or not isinstance(p["boundary"], list) or not 3 <= len(p["boundary"]) <= 256
+        if (set(p) - set(K.SITE_OPTIONAL) != {"name", "boundary", "north_angle", "roads", "elevation"} or not isinstance(p["boundary"], list) or not 3 <= len(p["boundary"]) <= 256
                 or not isinstance(p["roads"], list) or len(p["roads"]) > K.SITE_ROADS_MAX):
             raise ValueError("대지 params 가 다르다")
         pts = []
@@ -210,6 +210,12 @@ def _parse_intent(kind: str, text: str) -> dict:
                "elevation": None if p["elevation"] is None else _num(p["elevation"])}
         if len({r["edge"] for r in roads}) != len(roads):
             raise ValueError("한 변에 도로가 둘 이상이다")
+        for k in K.SITE_OPTIONAL:   # 지반 표고점·조경 영역·주차 계획·간판(14절): 있으면 코어 행 검사와 같은 검사로 읽는다
+            if k in p:
+                out[k] = K.norm_site_extra(p[k])
+        why = K.row_params_error("site", out)
+        if why:
+            raise ValueError(f"대지가 올바르지 않다({why})")
     elif kind == "railing":
         if (set(p) != {"name", "path", "height", "base_offset", "rise"} or not isinstance(p["path"], list) or not 2 <= len(p["path"]) <= K.RAILING_PTS_MAX
                 or any(not isinstance(q, list) or len(q) != 2 for q in p["path"])):

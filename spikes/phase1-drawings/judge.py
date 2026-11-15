@@ -557,6 +557,71 @@ def judge_after9_items(out: Path, run: dict, base: dict):
     return res
 
 
+def judge_after11_items(out: Path, run: dict, base: dict):
+    """열한 번째 작업(승강기·지붕): sheets11/ 의 평면 1F·2F SVG 에서 승강기 표시(EV 문자, 샤프트·카 윤곽)를 직접 확인해 L-05(법정)·VT-02 를 판정한다.
+    내보낸 IFC 의 IfcTransportElement(ELEVATOR)와 해시 3종 왕복 일치도 근거로 요구한다. 산출이 없으면 빈 결과."""
+    res: dict[str, tuple[str, str]] = {}
+    a = run.get("after11")
+    sd = out / "sheets11"
+    if not a or not (sd / "plan-1F.svg").exists():
+        return res
+    texts = {k: _texts((sd / f"{k}.svg").read_text(encoding="utf-8")) for k in ("plan-1F", "plan-2F")}
+    rt, ifc = a["roundtrip"], a["ifc_check"]
+    if (all("EV" in t for t in texts.values()) and a["plan-1F"]["ev_labels"] == 1 and a["plan-2F"]["ev_labels"] == 1 and all(rt["hash_equal"]) and not rt["warnings"]
+            and ifc["transport"] == [["IfcTransportElement", "ELEVATOR"]] and a["elevator"]["cut_slabs"]):
+        res["L-05"] = (OK, "승강기(EV-1, 샤프트 안쪽 1800x1800 + 카)가 1층·2층 평면에 샤프트·카 윤곽과 대각 X, 'EV' 문자로 표시된다(지나는 모든 층). "
+                           "2층 슬래브의 샤프트 구멍을 자동으로 내고 IFC 는 IfcTransportElement(ELEVATOR)로 나가 왕복한다(해시 3종 동일, 경고 0)")
+    return res
+
+
+def judge_after12_items(out: Path, run: dict, base: dict):
+    """열두 번째 작업(대지 선택 속성): sheets12/ 의 배치도·입면·대지 단면 산출을 직접 읽어 법정 P-03(대지 종·횡단면)·P-05(주차동선·옥외주차)·P-06(공개공지·조경)·E-03(간판·번호판)과
+    제도·관행 N-08(배치도 고저차)을 판정한다. 근거: 산출 SVG 의 문자·선 그룹, 내보낸 IFC 의 DoBIM_Intent 를 엔진 코드와 독립으로 다시 잰 값, 지반선 높이 독립 재계산, 왕복 해시.
+    산출이 없으면 빈 결과."""
+    res: dict[str, tuple[str, str]] = {}
+    a = run.get("after12")
+    sd = out / "sheets12"
+    if not a or not (sd / "site-plan.svg").exists():
+        return res
+    rd = lambda n: (sd / f"{n}.svg").read_text(encoding="utf-8")   # noqa: E731
+    sp, es, en, sl, st = (rd(n) for n in ("site-plan", "elev-S", "elev-N", "site-section-long", "site-section-trans"))
+    ts, tsp, tes, ten, tsl, tst = (_texts(x) for x in (rd("site-plan"), sp, es, en, sl, st))
+    inp, ifc, rt, cc = a["inputs"], a["ifc_check"], a["roundtrip"], a["clear_check"]
+    nlines = lambda svg, gid: len(re.findall(r"<line ", "".join(m.group(1) for m in re.finditer(rf'<g id="{gid}"[^>]*>(.*?)</g>', svg, re.S))))   # noqa: E731
+    exact = all(rt["hash_equal"]) and not rt["warnings"] and rt["site_params_equal"] and cc["views_equal_plain"] and all(cc["hash_equal_before"])
+    zones = inp["zones"]
+    zt = [f"{z['name'] or ('조경' if z['use'] == 'landscape' else '공개공지')} {z['area_m2']:.2f}㎡" for z in zones]
+    if (all(t in tsp for t in zt) and any(x.startswith("조경 면적 합계") for x in tsp) and any(x.startswith("공개공지 면적 합계") for x in tsp) and nlines(sp, "lines-hatch") >= 8
+            and [round(z["area_m2"], 4) for z in zones] == ifc["zones_m2"] and exact):
+        res["P-06"] = (OK, f"배치도에 조경 '{zones[0]['name']}'({zones[0]['area_m2']:.0f}㎡)·공개공지({zones[1]['area_m2']:.0f}㎡) 영역을 해치(조경 45도·공개공지 135도 {nlines(sp, 'lines-hatch')}선)와 면적 문자로 그리고 "
+                         "종류별 면적 합계·대지면적 대비 %를 단다. 내보낸 IFC 의 의도에서 신발끈 공식으로 다시 잰 면적과 같다(엔진 코드와 독립). 새 입력을 지우면 뷰·해시가 이전과 같고 왕복 해시 3종이 같다. "
+                         "한계: 영역끼리·건물과 겹침은 검사하지 않는다")
+    tot = sum(b["count"] for b in inp["bays"])
+    acc = sum(b["count"] for b in inp["bays"] if b["accessible"])
+    sym = nlines(sp, "lines-symbol")
+    if (f"주차 합계 {tot}대(장애인 전용 {acc}대)" in tsp and "주차 4대" in tsp and f"장애인 {acc}대" in tsp and ifc["bays"] == tot and ifc["accessible"] == acc and sym >= 6 and exact):
+        res["P-05"] = (OK, f"배치도에 주차면 배열(일반 4대·장애인 {acc}대)의 규격 사각형(2500x5000·3500x5000), 차로(폭 2000) 양쪽 선, 진출입 동선 화살표(진입 가로대·화살표 머리)를 그리고 "
+                           f"배열별 대수와 '주차 합계 {tot}대(장애인 전용 {acc}대)' 문자를 단다. 대수는 내보낸 IFC 의 의도에서 다시 센 값과 같다. 한계: 법정 설치 대수 산정·구획 규격·경사로는 다루지 않는다")
+    sg = inp["signs"]
+    s1 = next(x for x in sg if x["face"] == "S")
+    n1 = next(x for x in sg if x["face"] == "N")
+    if (f"간판 {s1['name']} {s1['w']:.0f}x{s1['h']:.0f}" in tes and "RA-01 상가" in tes and f"건물번호판 {n1['name']} {n1['w']:.0f}x{n1['h']:.0f}" in ten and "12-3" in ten
+            and not any("간판 S1" in x for x in ten) and ifc["signs"] == len(sg) and exact):
+        res["E-03"] = (OK, f"남측 입면에 간판 {s1['name']}(폭 {s1['w']:.0f} x 높이 {s1['h']:.0f}mm, 아래 모서리 +{s1['z']:.0f})을, 북측 입면에 건물번호판 {n1['name']}({n1['w']:.0f}x{n1['h']:.0f}mm, +{n1['z']:.0f})을 "
+                           "사각형과 크기·문구 문자로 표시한다. 다른 면 입면에는 나오지 않는다. 입력이 없으면 입면은 바이트 그대로이고 왕복 해시 3종이 같다. 한계: 평면·배치도에는 안 그리고 벽 두께·돌출·조명은 없다")
+    sc = a["section_check"]
+    both = [rd("site-section-long"), rd("site-section-trans")]
+    if (sc["max_abs_err_mm"] is not None and sc["max_abs_err_mm"] < 0.01 and sc["ground_points"] >= 20 and tsl.count("대지 경계") == 2 and tst.count("대지 경계") == 2 and sc["gl"].startswith("GL ")
+            and all(nlines(x, "lines-hatch") >= 10 and nlines(x, "lines-cut") >= 30 for x in both) and (sd / "A-013.svg").exists() and rt["section_with_site"] is True and exact):
+        res["P-03"] = (OK, f"대지 종단면(절단선 길이 23000)·횡단면(26000) 두 방향에 건물 단면과 함께 지반선(표고점 {inp['terrain_points']}개 보간, 점 {sc['ground_points']}개)·지반 아래 사선 눈금·GL 수평선('{sc['gl']}')·"
+                           "대지 경계 세로 표시와 '대지 경계' 문자(경계 두 곳)를 그린다. 지반선 높이는 거리 제곱 역가중으로 다시 계산한 값과 최대 오차 "
+                           f"{sc['max_abs_err_mm']:.4f}mm 로 같다(독립 계산). 시트 A-013 에 두 단면을 함께 올린다. 한계: 지반은 표고점 보간이라 등고선·TIN 이 아니고 지하층·토공은 없다")
+    n_spot = sum(1 for x in tsp if x.startswith("지반 "))
+    if n_spot == inp["terrain_points"] and a["derived"].get("terrain_points") == inp["terrain_points"] and exact:
+        res["N-08"] = (OK, f"배치도에 지반 표고점 {n_spot}개의 높이(모델 기준 mm)를 문자로 표시하고, 대지 단면에서 지반선으로 고저차를 보인다(최저 -800·최고 +600). 대지 표고 EL 한 값 표기(8절)에 더한 것")
+    return res
+
+
 def judge_bim_items(out: Path, run: dict, base: dict):
     """여섯 번째 작업 항목(B-02 추출 형상, B-04 뷰 원본 저장)을 run.json 의 probe 로 판정한다."""
     return judge_corner(run) | judge_sheet_def(run)
@@ -643,7 +708,8 @@ def main():
     dg = digest_same(out, Path(o.g1) if o.g1 else None)
     changed = []
     for judged in (judge_sheet_items(out, run, items), judge_element_items(out, run, items), judge_slab_height_items(out, run, items),
-                   judge_stair_space_items(out, run, items), judge_sheet2_items(out, run, items), judge_bim_items(out, run, items), judge_after7_items(out, run, items), judge_after8_items(out, run, items), judge_after9_items(out, run, items)):
+                   judge_stair_space_items(out, run, items), judge_sheet2_items(out, run, items), judge_bim_items(out, run, items), judge_after7_items(out, run, items), judge_after8_items(out, run, items), judge_after9_items(out, run, items),
+                   judge_after11_items(out, run, items), judge_after12_items(out, run, items)):
         for i, (v, why) in judged.items():
             if items[i]["verdict"] != v:
                 changed.append((i, items[i]["verdict"], v))
