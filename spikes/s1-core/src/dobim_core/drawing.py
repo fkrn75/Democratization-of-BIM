@@ -704,7 +704,7 @@ def vfam_hosted_edges(g, v, w):
 #   단면: 절단면과 경계의 교차 구간 x 두께 = 절단 사각형(cut 선 + 채움), 벽 절단과 합집합 윤곽(이음매 선 제거). 절단면 뒤의 모서리는 투영선
 #   입면: 두께 띠의 모서리(위·아랫면 둘레 + 수직 모서리). 앞에 선 벽·기둥·다른 슬래브가 가린다
 def slab_info(g, s):
-    """(밑면 z, 윗면 z, 경계 다각형(반시계 튜플)) 또는 None. 저작(authored) 슬래브만 그린다(분리된 슬래브의 의도는 낡은 값이다)."""
+    """(밑면 z, 윗면 z, 경계 다각형(반시계 튜플), 구멍 다각형들(반시계 튜플의 튜플, 없으면 빈 튜플)) 또는 None. 저작(authored) 슬래브만 그린다(분리된 슬래브의 의도는 낡은 값이다)."""
     row = Q.el(g, s)
     if row is None or row["kind"] != "slab" or row["origin"] != "authored":
         return None
@@ -712,7 +712,8 @@ def slab_info(g, s):
     poly = [tuple(p) for p in row["params"]["boundary"]]
     if _area2(poly) < 0:
         poly.reverse()
-    return (zb, zt, tuple(poly))
+    holes = tuple(tuple(tuple(q) for q in o) for o in row["params"].get("openings", ()))
+    return (zb, zt, tuple(poly), holes)
 
 
 def all_slabs(g):
@@ -779,16 +780,42 @@ def slab_tris(g, s):
     return tuple(tris)
 
 
+def _hole_x(poly):
+    """구멍 하나의 X 표시 선분들(꼭짓점 넷이면 두 대각선, 볼록이면 무게중심에서 꼭짓점들로, 오목이면 없음)."""
+    n = len(poly)
+    if n == 4:
+        return [(poly[0], poly[2]), (poly[1], poly[3])]
+    if all((poly[(i + 1) % n][0] - poly[i][0]) * (poly[(i + 2) % n][1] - poly[(i + 1) % n][1])
+           - (poly[(i + 1) % n][1] - poly[i][1]) * (poly[(i + 2) % n][0] - poly[(i + 1) % n][0]) >= 0 for i in range(n)):
+        cx, cy = sum(q[0] for q in poly) / n, sum(q[1] for q in poly) / n
+        return [((cx, cy), q) for q in poly]
+    return []
+
+
 def plan_slab_parts(g, v, s):
-    """평면의 슬래브: (선분들, 채움 다각형들). 절단 높이가 두께 범위에 들 때만 경계 윤곽을 절단선·절단 채움으로 그린다."""
+    """평면의 슬래브: (선분들, 채움 다각형들). 절단 높이가 두께 범위에 들 때만 경계 윤곽을 절단선·절단 채움으로 그린다(구멍 윤곽도 절단선이다. 채움은 구멍을 비우지 않는다).
+    슬래브가 절단 높이 아래(윗면 < 절단 높이)이고 구멍이 있으면 내려다 보이는 구멍을 윤곽(proj)과 X 표시(symbol)로 그린다."""
     cfg = g.q(view_cfg, v)
     info = g.q(slab_info, s)
-    if info is None or cfg is None or cfg[0] != "plan" or not (info[0] - EPS <= cfg[2] <= info[1] + EPS):
+    if info is None or cfg is None or cfg[0] != "plan":
         return ((), ())
-    poly = info[2]
-    n = len(poly)
-    segs = tuple(("cut", poly[i][0], poly[i][1], poly[(i + 1) % n][0], poly[(i + 1) % n][1]) for i in range(n))
-    return (segs, (poly,))
+    holes = info[3]
+    if info[0] - EPS <= cfg[2] <= info[1] + EPS:
+        poly = info[2]
+        n = len(poly)
+        segs = tuple(("cut", poly[i][0], poly[i][1], poly[(i + 1) % n][0], poly[(i + 1) % n][1]) for i in range(n))
+        for o in holes:
+            m = len(o)
+            segs += tuple(("cut", o[i][0], o[i][1], o[(i + 1) % m][0], o[(i + 1) % m][1]) for i in range(m))
+        return (segs, (poly,))
+    if holes and cfg[2] > info[1] + EPS:
+        segs = []
+        for o in holes:
+            m = len(o)
+            segs += [("proj", o[i][0], o[i][1], o[(i + 1) % m][0], o[(i + 1) % m][1]) for i in range(m)]
+            segs += [("symbol", a[0], a[1], b[0], b[1]) for a, b in _hole_x(o)]
+        return (tuple(segs), ())
+    return ((), ())
 
 
 def _slab_vpieces(g, v, s):
@@ -823,13 +850,14 @@ def slab_cut_rects(g, v, s):
     if info is None or cfg is None or cfg[0] == "plan" or not cfg[9]:
         return ()
     near = cfg[7]
-    pts = [_sw(cfg, p) for p in info[2]]
     xs = []
-    n = len(pts)
-    for i in range(n):
-        a, b = pts[i], pts[(i + 1) % n]
-        if (a[1] <= near) != (b[1] <= near):
-            xs.append(a[0] + (near - a[1]) / (b[1] - a[1]) * (b[0] - a[0]))
+    for ring in (info[2], *info[3]):   # 구멍 둘레도 같은 짝수-홀수 규칙으로 센다(구멍 안 구간은 빠진다)
+        pts = [_sw(cfg, p) for p in ring]
+        n = len(pts)
+        for i in range(n):
+            a, b = pts[i], pts[(i + 1) % n]
+            if (a[1] <= near) != (b[1] <= near):
+                xs.append(a[0] + (near - a[1]) / (b[1] - a[1]) * (b[0] - a[0]))
     xs.sort()
     rects = []
     for i in range(0, len(xs) - 1, 2):
@@ -845,7 +873,7 @@ def slab_vedges(g, v, s):
     info = g.q(slab_info, s)
     if info is None or cfg is None or cfg[0] == "plan":
         return ()
-    zb, zt, poly = info
+    zb, zt, poly = info[:3]
     pts = [_sw(cfg, p) for p in poly]
     n = len(pts)
     raw = []
@@ -955,16 +983,33 @@ def _st_pt(info, t, m):
     return (info[2] + info[4] * t - info[5] * m, info[3] + info[5] * t + info[4] * m)
 
 
-def plan_stair_parts(g, v, s):
-    """평면의 계단: (선분들, 채움들). 채움은 없다."""
-    cfg = g.q(view_cfg, v)
+def stair_geom(g, s):
+    """꺾인 계단 포함 계단의 형상: ((단 묶음 정보, ...), 층참 또는 None). 단 묶음 정보 = stair_info 와 같은 11개 + 밑으로 더 채우는 두께(skirt).
+    층참 = (다각형, 밑면 z, 윗면 z). 직선 계단은 단 묶음 하나(stair_info 와 값이 같다), 층참 없음."""
     info = g.q(stair_info, s)
-    if info is None or cfg is None or cfg[0] != "plan" or cfg[2] < info[0] - EPS:
-        return ((), ())
-    zb, zt, _, _, _, _, length, width, n, td, rise = info
+    if info is None:
+        return None
+    zb, zt, _, _, _, _, _, width, n, _, rise = info
+    p = Q.el(g, s)["params"]
+    lay = K.stair_layout(p)
+    flights = []
+    for fl in lay["flights"]:
+        x1, y1, x2, y2 = fl["run"]
+        ln = fl["length"]
+        z0 = zb + fl["z0"]
+        flights.append((z0, zt if fl["n"] == n else z0 + fl["n"] * rise, x1, y1, (x2 - x1) / ln, (y2 - y1) / ln, ln, width, fl["n"], fl["td"], rise, fl["skirt"]))
+    ld = lay["landing"]
+    return (tuple(flights), None if ld is None else (tuple(tuple(q) for q in ld["poly"]), zb + ld["z"] - ld["t"], zb + ld["z"]))
+
+
+def _plan_flight(info, cutz, head=True, arrow_from=None, arrow_to_end=False):
+    """단 묶음 하나의 평면 선분(스택: 윤곽·디딤판 선(proj), 걸음선 화살표(symbol), 절단선(cut)). 절단 높이가 아래 끝보다 낮으면 그리지 않는다."""
+    if cutz < info[0] - EPS:
+        return []
+    zb, zt, _, _, _, _, length, width, n, td, rise = info[:11]
     h = width / 2.0
-    broken = cfg[2] < zt - EPS
-    k_b = min(_floor((cfg[2] - zb) / rise), n - 1) if broken else n - 1
+    broken = cutz < zt - EPS
+    k_b = min(_floor((cutz - zb) / rise), n - 1) if broken else n - 1
     tmax = k_b * td if broken else length
     segs = []
 
@@ -980,35 +1025,72 @@ def plan_stair_parts(g, v, s):
         if k * td < tmax - EPS:
             seg("proj", _st_pt(info, k * td, h), _st_pt(info, k * td, -h))
     # 걸음선과 오르는 방향 화살촉
-    t_start = min(td * 0.5, tmax)
-    t_end = tmax - min(td * 0.3, tmax * 0.1) if broken else length - min(td * 0.5, length * 0.1)
+    t_start = min(td * 0.5, tmax) if arrow_from is None else arrow_from
+    t_end = tmax - min(td * 0.3, tmax * 0.1) if broken else (length if arrow_to_end else length - min(td * 0.5, length * 0.1))
     if t_end - t_start > EPS:
         seg("symbol", _st_pt(info, t_start, 0.0), _st_pt(info, t_end, 0.0))
-        hl = min(width * STAIR_ARROW, 400.0, t_end - t_start)
-        for sgn in (1.0, -1.0):
-            seg("symbol", _st_pt(info, t_end, 0.0), _st_pt(info, t_end - hl, sgn * hl * 0.4))
+        if head:
+            hl = min(width * STAIR_ARROW, 400.0, t_end - t_start)
+            for sgn in (1.0, -1.0):
+                seg("symbol", _st_pt(info, t_end, 0.0), _st_pt(info, t_end - hl, sgn * hl * 0.4))
     if broken:                                                                # 절단선: 계단을 가로지르는 대각선
         e = min(td * 0.5, 150.0)
         seg("cut", _st_pt(info, tmax - e, h), _st_pt(info, tmax + e, -h))
+    return segs
+
+
+def plan_stair_parts(g, v, s):
+    """평면의 계단: (선분들, 채움들). 채움은 없다. 꺾인 계단은 단 묶음마다 위 규칙을 따르고, 절단 높이가 층참 윗면 이상이면 층참 윤곽(proj)과 이어 꺾이는 걸음선 화살표를 더한다."""
+    cfg = g.q(view_cfg, v)
+    info = g.q(stair_info, s)
+    if info is None or cfg is None or cfg[0] != "plan" or cfg[2] < info[0] - EPS:
+        return ((), ())
+    flights, ld = g.q(stair_geom, s)
+    if ld is None:                                                            # 직선 계단: 기존 규약 그대로
+        return (tuple(_plan_flight(flights[0], cfg[2])), ())
+    fa, fb = flights
+    land_seen = cfg[2] >= ld[2] - EPS                                         # 절단 높이가 층참 윗면 이상이면 층참 위가 보인다
+    segs = _plan_flight(fa, cfg[2], head=not land_seen, arrow_to_end=land_seen)
+    if land_seen:
+        poly = ld[0]
+        n = len(poly)
+        segs += [("proj", poly[i][0], poly[i][1], poly[(i + 1) % n][0], poly[(i + 1) % n][1]) for i in range(n)]
+        # 꺾이는 걸음선: A 끝 -> 층참 안 꺾임 점들 -> B 시작(B 의 화살표가 이어받는다)
+        a_end = _st_pt(fa, fa[6], 0.0)
+        b_start = _st_pt(fb, 0.0, 0.0)
+        mid = ((a_end[0] + b_start[0]) / 2.0, (a_end[1] + b_start[1]) / 2.0)
+        cx, cy = sum(q[0] for q in poly) / 4.0, sum(q[1] for q in poly) / 4.0   # 층참 중심을 지나게 해 층참 안에서 꺾이는 것을 분명히 한다
+        pts = [a_end, (cx, cy), b_start] if abs(cx - mid[0]) + abs(cy - mid[1]) > EPS else [a_end, b_start]
+        segs += [("symbol", pts[i][0], pts[i][1], pts[i + 1][0], pts[i + 1][1]) for i in range(len(pts) - 1)]
+        segs += _plan_flight(fb, cfg[2], arrow_from=0.0)
     return (tuple(segs), ())
 
 
 def _stair_vpieces(g, v, s):
-    """단면·입면에서 계단의 속이 찬 볼록 조각 ((z0, z1, 다각형(s,w)), ...): 디딤판마다 하나."""
+    """단면·입면에서 계단의 속이 찬 볼록 조각 ((z0, z1, 다각형(s,w)), ...): 단 묶음의 디딤판마다 하나, 꺾인 계단은 층참 판 하나가 더해진다."""
     cfg = g.q(view_cfg, v)
     info = g.q(stair_info, s)
     if info is None or cfg is None or cfg[0] == "plan":
         return ()
-    zb, _, _, _, _, _, _, width, n, td, rise = info
-    h = width / 2.0
+    flights, ld = g.q(stair_geom, s)
     out = []
-    for k in range(n - 1):
-        quad = [_sw(cfg, _st_pt(info, t, m)) for t, m in ((k * td, -h), ((k + 1) * td, -h), ((k + 1) * td, h), (k * td, h))]
+    for fi in flights:
+        zb, _, _, _, _, _, _, width, n, td, rise, skirt = fi
+        h = width / 2.0
+        for k in range(n - 1):
+            quad = [_sw(cfg, _st_pt(fi, t, m)) for t, m in ((k * td, -h), ((k + 1) * td, -h), ((k + 1) * td, h), (k * td, h))]
+            if _area2(quad) < 0:
+                quad.reverse()
+            quad = _clip_w(quad, cfg[7], cfg[8])
+            if len(quad) >= 3 and _area2(quad) > 2 * EPS:
+                out.append((zb - skirt, zb + (k + 1) * rise, tuple(quad)))
+    if ld is not None:
+        quad = [_sw(cfg, q) for q in ld[0]]
         if _area2(quad) < 0:
             quad.reverse()
         quad = _clip_w(quad, cfg[7], cfg[8])
         if len(quad) >= 3 and _area2(quad) > 2 * EPS:
-            out.append((zb, zb + (k + 1) * rise, tuple(quad)))
+            out.append((ld[1], ld[2], tuple(quad)))
     return tuple(out)
 
 
@@ -1043,28 +1125,38 @@ def stair_cut_rects(g, v, s):
 
 
 def stair_vedges(g, v, s):
-    """계단의 모서리(뷰 좌표 3D 선분 (s,w,z)): 양 옆면의 톱니 윤곽과 디딤판 앞 모서리(폭 방향)."""
+    """계단의 모서리(뷰 좌표 3D 선분 (s,w,z)): 단 묶음 양 옆면의 톱니 윤곽과 디딤판 앞 모서리(폭 방향), 층참의 위·아랫면 둘레와 수직 모서리."""
     cfg = g.q(view_cfg, v)
     info = g.q(stair_info, s)
     if info is None or cfg is None or cfg[0] == "plan":
         return ()
-    zb, _, _, _, _, _, length, width, n, td, rise = info
-    h = width / 2.0
-    prof = [(0.0, zb)]
-    for k in range(n):
-        prof.append((k * td, zb + (k + 1) * rise))
-        if k < n - 1:
-            prof.append(((k + 1) * td, zb + (k + 1) * rise))
-    prof.append((length, zb))
+    flights, ld = g.q(stair_geom, s)
     raw = []
-    for m in (-h, h):
-        pts = [(_sw(cfg, _st_pt(info, t, m)), z) for t, z in prof]
+    for fi in flights:
+        zb, _, _, _, _, _, length, width, n, td, rise, skirt = fi
+        h = width / 2.0
+        zbot = zb - skirt
+        prof = [(0.0, zbot)]
+        for k in range(n):
+            prof.append((k * td, zb + (k + 1) * rise))
+            if k < n - 1:
+                prof.append(((k + 1) * td, zb + (k + 1) * rise))
+        prof.append((length, zbot))
+        for m in (-h, h):
+            pts = [(_sw(cfg, _st_pt(fi, t, m)), z) for t, z in prof]
+            for i in range(len(pts)):
+                (a, za), (b, zb2) = pts[i], pts[(i + 1) % len(pts)]
+                raw.append(((a[0], a[1], za), (b[0], b[1], zb2)))
+        for t, z in prof[1:-1]:                                               # 디딤판·챌판 모서리가 만나는 꼭짓점마다 폭 방향 선
+            a, b = _sw(cfg, _st_pt(fi, t, -h)), _sw(cfg, _st_pt(fi, t, h))
+            raw.append(((a[0], a[1], z), (b[0], b[1], z)))
+    if ld is not None:
+        pts = [_sw(cfg, q) for q in ld[0]]
         for i in range(len(pts)):
-            (a, za), (b, zb2) = pts[i], pts[(i + 1) % len(pts)]
-            raw.append(((a[0], a[1], za), (b[0], b[1], zb2)))
-    for t, z in prof[1:-1]:                                                   # 디딤판·챌판 모서리가 만나는 꼭짓점마다 폭 방향 선
-        a, b = _sw(cfg, _st_pt(info, t, -h)), _sw(cfg, _st_pt(info, t, h))
-        raw.append(((a[0], a[1], z), (b[0], b[1], z)))
+            a, b = pts[i], pts[(i + 1) % len(pts)]
+            raw.append(((a[0], a[1], ld[1]), (a[0], a[1], ld[2])))
+            for z in (ld[1], ld[2]):
+                raw.append(((a[0], a[1], z), (b[0], b[1], z)))
     out = []
     for e0, e1 in raw:
         if abs(e1[0] - e0[0]) < EPS and abs(e1[1] - e0[1]) < EPS and abs(e1[2] - e0[2]) < EPS:

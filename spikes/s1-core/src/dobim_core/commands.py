@@ -25,6 +25,7 @@ from dobim_core import limits, merge
 from dobim_core import queries as Q
 from dobim_core import registry
 from dobim_core.errors import DobimError
+from dobim_core import kinds as K
 from dobim_core.kinds import KIND_NAMES, READ_REL_NAMES, REL_KINDS, is_corridor, param_ref_targets, polygon_area2, polygon_problem
 from dobim_core.paths import resolve_in_workspace
 from dobim_core.registry import command
@@ -662,6 +663,29 @@ def _slab_boundary(pts) -> list:
     return b if polygon_area2(b) > 0 else b[::-1]
 
 
+SlabOpenings = Annotated[list[SlabBoundary], Field(min_length=1, max_length=32,
+                                                   description="구멍(계단실·샤프트) 다각형 목록 [[[x,y],...], ...] mm. 각 구멍은 슬래브 경계 안쪽에 있고 서로 겹치지 않는다(최대 32개). 시계 방향으로 주면 반시계로 저장한다")]
+
+
+def _slab_openings(pts_list) -> list:
+    out = []
+    for pts in pts_list:
+        b = [[float(x), float(y)] for x, y in pts]
+        why = polygon_problem(b)
+        if why:
+            raise DobimError("CONSTRAINT", f"슬래브 구멍이 올바르지 않다: {why}", path="/openings")
+        out.append(b if polygon_area2(b) > 0 else b[::-1])
+    return out
+
+
+def _slab_checked(p: dict) -> dict:
+    """슬래브 params 의 검사(구멍이 경계 안쪽·서로 겹치지 않음 포함). 안 되면 CONSTRAINT."""
+    why = K.row_params_error("slab", p)
+    if why:
+        raise DobimError("CONSTRAINT", f"슬래브가 올바르지 않다: {why}", path="/openings")
+    return p
+
+
 class SlabCreate(A):
     id: Id | None = None
     level: Id
@@ -669,6 +693,7 @@ class SlabCreate(A):
     thickness: Pos = 200.0
     top_offset: Num = Field(0.0, description="레벨 높이에서 윗면까지 mm (윗면 = 레벨 + top_offset, 두께는 아래로)")
     name: Name | None = None
+    openings: SlabOpenings | None = Field(None, description="구멍(계단실·샤프트) 다각형 목록. 평면에 X 표시로 그리고 면적에서 뺀다. IFC 는 IfcOpeningElement + IfcRelVoidsElement 로 나간다")
 
 
 @command("slab.create", kind="mutation", risk="write", group="model.slab", summary="슬래브 생성(레벨 + 경계 다각형 + 두께)",
@@ -679,7 +704,11 @@ def slab_create(ctx, a: SlabCreate):
     ctx.authored(a.level, "level", what="레벨에 슬래브를 추가하는 것")
     boundary = _slab_boundary(a.boundary)
     a.name = a.name or f"S-{a.id[-6:]}"
-    ctx.put_el(a.id, row("slab", "IfcSlab", "slab.basic", {"name": a.name, "boundary": boundary, "thickness": a.thickness, "top_offset": a.top_offset}))
+    sp = {"name": a.name, "boundary": boundary, "thickness": a.thickness, "top_offset": a.top_offset}
+    if a.openings is not None:
+        sp["openings"] = _slab_openings(a.openings)
+        _slab_checked(sp)
+    ctx.put_el(a.id, row("slab", "IfcSlab", "slab.basic", sp))
     ctx.rel("on_level", a.id, a.level, True)
     return {"id": a.id}
 
@@ -691,11 +720,15 @@ class SlabSet(A):
     boundary: SlabBoundary | None = None
     thickness: Pos | None = None
     top_offset: Num | None = None
+    openings: SlabOpenings | None = Field(None, description="구멍 목록을 이 값으로 바꾼다(전체 교체)")
+    clear_openings: bool = Field(False, description="참이면 구멍을 모두 지운다")
 
     @model_validator(mode="after")
     def _any(self):
-        if all(v is None for v in (self.name, self.boundary, self.thickness, self.top_offset)):
+        if all(v is None for v in (self.name, self.boundary, self.thickness, self.top_offset, self.openings)) and not self.clear_openings:
             raise ValueError("바꿀 필드가 하나도 없다")
+        if self.openings is not None and self.clear_openings:
+            raise ValueError("openings 와 clear_openings 를 함께 줄 수 없다")
         return self
 
 
@@ -711,6 +744,12 @@ def slab_set(ctx, a: SlabSet):
             p[k] = getattr(a, k)
     if a.boundary is not None:
         p["boundary"] = _slab_boundary(a.boundary)
+    if a.openings is not None:
+        p["openings"] = _slab_openings(a.openings)
+    if a.clear_openings:
+        p.pop("openings", None)
+    if "openings" in p:
+        _slab_checked(p)
     ctx.put_el(a.id, dict(r, params=p))
     return {"id": a.id}
 
@@ -750,7 +789,10 @@ class SlabMove(A):
 def slab_move(ctx, a: SlabMove):
     r = ctx.authored(a.id, "slab")
     b = [[x + a.dx, y + a.dy] for x, y in r["params"]["boundary"]]
-    ctx.put_el(a.id, dict(r, params=dict(r["params"], boundary=b)))
+    p = dict(r["params"], boundary=b)
+    if "openings" in p:   # 구멍도 함께 옮긴다
+        p["openings"] = [[[x + a.dx, y + a.dy] for x, y in o] for o in p["openings"]]
+    ctx.put_el(a.id, dict(r, params=p))
     return {"id": a.id, "boundary": b}
 
 
@@ -774,6 +816,28 @@ def _stair_run(run) -> list:
     return r
 
 
+class StairTurn(A):
+    """꺾인 계단(층참 있는 L형·U형) 입력. 걸음선(run)은 층참 아래 단 묶음의 걸음선이다."""
+    type: Literal["L", "U"] = Field(description="L = 층참에서 90도 꺾임, U = 층참에서 180도 되돌아 오름")
+    side: Literal["left", "right"] = Field("left", description="꺾는 쪽(걸음선 진행 방향 기준)")
+    risers_a: int = Field(ge=2, le=100, description="층참 아래 단 묶음의 챌판 수(2 이상, 전체 챌판 수 - 2 이하). 층참 윗면은 이 챌판 수만큼 올라온 높이다")
+    landing: Pos | None = Field(None, description="층참 깊이 mm(걸음선 방향). 비우면 계단 폭. 폭보다 작을 수 없다")
+    gap: Num | None = Field(None, ge=0, description="U형에서 두 단 묶음 사이 간격 mm(비우면 100). L형은 쓰지 않는다")
+
+
+def _stair_turn(t) -> dict:
+    return {"type": t.type, "side": t.side, "risers_a": t.risers_a, "landing": None if t.landing is None else float(t.landing),
+            "gap": (K.STAIR_GAP_DEFAULT if t.gap is None else float(t.gap)) if t.type == "U" else 0.0}
+
+
+def _stair_checked(p: dict) -> dict:
+    """계단 params 의 검사(챌판 분배·층참 깊이 포함). 안 되면 CONSTRAINT."""
+    why = K.row_params_error("stair", p)
+    if why:
+        raise DobimError("CONSTRAINT", f"계단이 올바르지 않다: {why}", path="/turn")
+    return p
+
+
 class StairCreate(A):
     id: Id | None = None
     level: Id
@@ -783,9 +847,10 @@ class StairCreate(A):
     risers: StairRisers = 18
     base_offset: Num = Field(0.0, description="레벨 높이에서 아래 끝까지 mm")
     name: Name | None = None
+    turn: StairTurn | None = Field(None, description="꺾인 계단(층참 있는 L형·U형). 주면 run 은 층참 아래 단 묶음의 걸음선이다. IFC 는 IfcStair 아래 IfcStairFlight 둘과 층참 IfcSlab 으로 나간다")
 
 
-@command("stair.create", kind="mutation", risk="write", group="model.stair", summary="직선 계단 생성(레벨 + 걸음선 + 폭 + 오름 + 챌판 수)",
+@command("stair.create", kind="mutation", risk="write", group="model.stair", summary="계단 생성(레벨 + 걸음선 + 폭 + 오름 + 챌판 수, 선택: 꺾인 계단 turn)",
          args=StairCreate, since="0.2",
          examples=[{"level": F.LV1, "run": [1000, 1000, 5000, 1000], "width": 1200, "height": 3000, "risers": 18}])
 def stair_create(ctx, a: StairCreate):
@@ -793,8 +858,11 @@ def stair_create(ctx, a: StairCreate):
     ctx.authored(a.level, "level", what="레벨에 계단을 추가하는 것")
     run = _stair_run(a.run)
     a.name = a.name or f"ST-{a.id[-6:]}"
-    ctx.put_el(a.id, row("stair", "IfcStair", "stair.straight", {"name": a.name, "run": run, "width": a.width, "height": a.height,
-                                                               "risers": a.risers, "base_offset": a.base_offset}))
+    p = {"name": a.name, "run": run, "width": a.width, "height": a.height, "risers": a.risers, "base_offset": a.base_offset}
+    if a.turn is not None:
+        p["turn"] = _stair_turn(a.turn)
+        _stair_checked(p)
+    ctx.put_el(a.id, row("stair", "IfcStair", "stair.straight", p))
     ctx.rel("on_level", a.id, a.level, True)
     return {"id": a.id}
 
@@ -808,15 +876,19 @@ class StairSet(A):
     height: Pos | None = None
     risers: StairRisers | None = None
     base_offset: Num | None = None
+    turn: StairTurn | None = Field(None, description="꺾임(층참)을 주거나 바꾼다")
+    clear_turn: bool = Field(False, description="참이면 꺾임을 지워 직선 계단으로 되돌린다")
 
     @model_validator(mode="after")
     def _any(self):
-        if all(v is None for v in (self.name, self.run, self.width, self.height, self.risers, self.base_offset)):
+        if all(v is None for v in (self.name, self.run, self.width, self.height, self.risers, self.base_offset, self.turn)) and not self.clear_turn:
             raise ValueError("바꿀 필드가 하나도 없다")
+        if self.turn is not None and self.clear_turn:
+            raise ValueError("turn 과 clear_turn 을 함께 줄 수 없다")
         return self
 
 
-@command("stair.set", kind="mutation", risk="write", group="model.stair", summary="계단 속성 변경(걸음선·폭·오름·챌판 수·오프셋·이름)",
+@command("stair.set", kind="mutation", risk="write", group="model.stair", summary="계단 속성 변경(걸음선·폭·오름·챌판 수·오프셋·이름·꺾임)",
          args=StairSet, since="0.2", examples=[{"id": F.ST1, "risers": 17}])
 def stair_set(ctx, a: StairSet):
     r = ctx.authored(a.id, "stair")
@@ -826,6 +898,12 @@ def stair_set(ctx, a: StairSet):
             p[k] = getattr(a, k)
     if a.run is not None:
         p["run"] = _stair_run(a.run)
+    if a.turn is not None:
+        p["turn"] = _stair_turn(a.turn)
+    if a.clear_turn:
+        p.pop("turn", None)
+    if "turn" in p:
+        _stair_checked(p)
     ctx.put_el(a.id, dict(r, params=p))
     return {"id": a.id}
 
@@ -1122,6 +1200,10 @@ def element_get(ctx, a: ElementGet):
     elif r["kind"] == "slab":
         zb, zt = ctx.g.q(Q.slab_zrange, a.id)
         out["derived"] = {"bottom": zb, "top": zt}
+        if "openings" in r["params"]:   # 구멍이 있으면 면적(㎡)은 구멍을 뺀 값이다(구멍 없는 슬래브의 응답은 그대로)
+            gross = abs(polygon_area2(r["params"]["boundary"])) / 2.0 / 1e6
+            holes = sum(abs(polygon_area2(o)) for o in r["params"]["openings"]) / 2.0 / 1e6
+            out["derived"].update({"area_m2": gross - holes, "opening_area_m2": holes, "openings": len(r["params"]["openings"])})
     elif r["kind"] == "space":
         b = r["params"]["boundary"]
         out["derived"] = {"area_m2": abs(polygon_area2(b)) / 2.0 / 1e6, "corridor": is_corridor(r["params"]["name"], r["params"]["category"])}

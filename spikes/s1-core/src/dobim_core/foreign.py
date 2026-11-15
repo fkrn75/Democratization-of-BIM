@@ -125,7 +125,7 @@ def _parse_intent(kind: str, text: str) -> dict:
         if "layers" in p:
             out["layers"] = _layers(p["layers"], out["thickness"])
     elif kind == "slab":
-        if set(p) - {"layers"} != {"name", "boundary", "thickness", "top_offset"} or not isinstance(p["boundary"], list) or not 3 <= len(p["boundary"]) <= 256:
+        if set(p) - {"layers", "openings"} != {"name", "boundary", "thickness", "top_offset"} or not isinstance(p["boundary"], list) or not 3 <= len(p["boundary"]) <= 256:
             raise ValueError("슬래브 params 가 다르다")
         pts = []
         for q in p["boundary"]:
@@ -138,6 +138,21 @@ def _parse_intent(kind: str, text: str) -> dict:
         out = {"name": _name(p["name"]), "boundary": pts, "thickness": _num(p["thickness"], pos=True), "top_offset": _num(p["top_offset"])}
         if "layers" in p:
             out["layers"] = _layers(p["layers"], out["thickness"])
+        if "openings" in p:
+            ops = p["openings"]
+            if not isinstance(ops, list) or not 1 <= len(ops) <= K.SLAB_OPENINGS_MAX:
+                raise ValueError("슬래브 구멍 목록이 올바르지 않다")
+            conv = []
+            for o in ops:
+                if not isinstance(o, list) or not 3 <= len(o) <= 256 or any(not isinstance(q, list) or len(q) != 2 for q in o):
+                    raise ValueError("슬래브 구멍 꼭짓점이 올바르지 않다")
+                conv.append([[_num(q[0]), _num(q[1])] for q in o])
+            if any(K.polygon_area2(o) <= 0 for o in conv):
+                raise ValueError("슬래브 구멍은 반시계로 저장한다")
+            why = K.openings_problem(pts, conv)
+            if why:
+                raise ValueError(f"슬래브 구멍이 올바르지 않다({why})")
+            out["openings"] = conv
     elif kind == "space":
         if (set(p) - {"ceiling_height"} != {"name", "category", "boundary", "height"} or not isinstance(p["boundary"], list) or not 3 <= len(p["boundary"]) <= 256
                 or not isinstance(p["category"], str) or len(p["category"]) > 255):
@@ -181,7 +196,7 @@ def _parse_intent(kind: str, text: str) -> dict:
         if len({r["edge"] for r in roads}) != len(roads):
             raise ValueError("한 변에 도로가 둘 이상이다")
     elif kind == "stair":
-        if (set(p) != {"name", "run", "width", "height", "risers", "base_offset"} or not isinstance(p["run"], list) or len(p["run"]) != 4
+        if (set(p) - {"turn"} != {"name", "run", "width", "height", "risers", "base_offset"} or not isinstance(p["run"], list) or len(p["run"]) != 4
                 or type(p["risers"]) is not int or not K.STAIR_RISERS_MIN <= p["risers"] <= K.STAIR_RISERS_MAX):
             raise ValueError("계단 params 가 다르다")
         run = [_num(v) for v in p["run"]]
@@ -189,6 +204,15 @@ def _parse_intent(kind: str, text: str) -> dict:
             raise ValueError("계단 걸음선이 1mm 미만이다")
         out = {"name": _name(p["name"]), "run": run, "width": _num(p["width"], pos=True), "height": _num(p["height"], pos=True),
                "risers": p["risers"], "base_offset": _num(p["base_offset"])}
+        if "turn" in p:
+            t = p["turn"]
+            if not isinstance(t, dict) or set(t) != {"type", "side", "risers_a", "landing", "gap"}:
+                raise ValueError("계단 turn 이 올바르지 않다")
+            out["turn"] = {"type": t["type"], "side": t["side"], "risers_a": t["risers_a"],
+                           "landing": None if t["landing"] is None else _num(t["landing"], pos=True), "gap": _num(t["gap"], nonneg=True)}
+            why = K.row_params_error("stair", out)
+            if why:
+                raise ValueError(f"계단 turn 이 올바르지 않다({why})")
     else:
         if set(p) - {"leaf"} != {"name", "width", "height", "sill", "offset"}:
             raise ValueError("문 params 가 다르다")
@@ -583,6 +607,8 @@ def plan_import(data: bytes) -> ImportPlan:
             for rel in f.get_inverse(f.by_guid(g)):
                 if rel.is_a("IfcRelFillsElement") and rel.RelatedBuildingElement == f.by_guid(g):
                     owned.add(rel.RelatingOpeningElement.GlobalId)
+        elif r["origin"] == "authored" and r["kind"] in ("slab", "stair"):   # 저작 슬래브의 구멍·꺾인 계단의 단 묶음·층참도 그 요소의 클로저에 속한다
+            owned.update(p.GlobalId for p in scratch.parts.get(g, {}).values())
     for p in prods:
         g = p.GlobalId
         if g in rows:
