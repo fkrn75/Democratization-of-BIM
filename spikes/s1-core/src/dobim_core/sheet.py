@@ -28,6 +28,8 @@ KP_H = 36.0             # 키 플랜 칸 높이(키 플랜을 줄 때만)
 INK = "#000000"
 GRAY = "#555555"
 FONT = DX.FONT
+HIDDEN_DASH = (2.4, 1.2)   # 숨은 선 파선의 (마디, 간격) 용지 mm
+HIER_DIM_W = (0.25, 0.18)  # 선 굵기 위계(옵션)에서 치수선·보조선 굵기: 치수선은 창호·기호선과 같은 층, 보조선은 보이는 선 층
 
 
 class SheetError(ValueError):
@@ -40,6 +42,7 @@ class Sheet:
         self.w, self.h = PAPERS[paper]
         self.prims: list[tuple] = []
         self.placed: list[dict] = []          # 배치 결과(뷰 id, 위치·크기 mm, 축척) - 시험·응답용
+        self.dim_w = (0.13, 0.13)             # 치수선·보조선 굵기(build_sheet 가 프로파일의 선 굵기 위계로 바꾼다)
 
     def line(self, x0, y0, x1, y1, w=0.25, color=INK, dash=None):
         self.prims.append(("line", x0, y0, x1, y1, w, color, dash))
@@ -115,6 +118,13 @@ def view_prims(sh: Sheet, data, tx, ty, datums, dx0, dx1, style=None, prof=None)
         wd, col = st[cls]
         for _, x0, y0, x1, y1 in (ln for ln in data["lines"] if ln[0] == cls):
             sh.line(tx(x0), ty(y0), tx(x1), ty(y1), wd, col)
+    hid = [ln for ln in data["lines"] if ln[0] == "hid"]
+    if hid:                                                   # 숨은 선(옵션): 보이는 선(proj)과 같은 굵기의 파선
+        sh.begin("hidden-lines", **{"data-count": len(hid)})
+        for _, x0, y0, x1, y1 in hid:
+            sh.line(tx(x0), ty(y0), tx(x1), ty(y1), st["proj"][0], st["proj"][1], HIDDEN_DASH)
+        sh.end()
+    w_dim, w_ext = sh.dim_w
     for x, y, text, size, anchor in data.get("labels", ()):
         if th:
             size = (th.get("fire_mark") if text.startswith(("FW ", "FD ")) else h_lab.get(size)) or size
@@ -124,8 +134,8 @@ def view_prims(sh: Sheet, data, tx, ty, datums, dx0, dx1, style=None, prof=None)
         if t == "dim":
             _, _, e0, e1, ln, text, tpos, u = it
             for e in (e0, e1):
-                sh.line(tx(e[0]), ty(e[1]), tx(e[2]), ty(e[3]), 0.13, DX.ANNOT_COLOR)
-            sh.line(tx(ln[0]), ty(ln[1]), tx(ln[2]), ty(ln[3]), 0.13, DX.ANNOT_COLOR)
+                sh.line(tx(e[0]), ty(e[1]), tx(e[2]), ty(e[3]), w_ext, DX.ANNOT_COLOR)
+            sh.line(tx(ln[0]), ty(ln[1]), tx(ln[2]), ty(ln[3]), w_dim, DX.ANNOT_COLOR)
             upx, upy = u[0], -u[1]
             for px, py in ((tx(ln[0]), ty(ln[1])), (tx(ln[2]), ty(ln[3]))):
                 kx, ky = (upx - upy) * 0.64, (upy + upx) * 0.64
@@ -219,6 +229,12 @@ def title_block(sh: Sheet, spec: dict, scales: list[int]):
     cell(18.0, "도면번호", spec["number"], 7.0, 1, True)
     cell(14.0, "축척", (f"1:{primary}" if uniform else "도면참조") if has_views else "해당없음", 5.0, 1)
     cell(14.0, "작성일", spec["date"], 5.0, 1)
+    if (spec.get("profile") or {}).get("projection") == "third":       # 투상법 칸(옵션): 제3각법 기호
+        sh.line(x0, y + 16.0, x1, y + 16.0, 0.25)
+        sh.text(x0 + 2.0, y + 3.6, 2.5, "투상법", color=GRAY)
+        sh.text(x0 + 3.0, y + 11.0, 4.5, "제3각법")
+        ST.projection_symbol(sh, x0 + 44.0, y + 2.4, 36.0, 12.0, "third")
+        y += 16.0
     revs = spec.get("revisions") or []
     if revs:
         cell(10.0, "개정차수", revs[-1]["rev"], 4.0, 1)
@@ -284,6 +300,7 @@ def build_sheet(spec: dict, views: list[dict]) -> Sheet:
     sh = Sheet(spec["paper"])
     prof = spec.get("profile")
     sh.sym_k = (prof or {}).get("symbol_scale", 1.0)       # 기호 크기 배율(작성기준 프로파일). 주지 않으면 1
+    sh.dim_w = HIER_DIM_W if (prof or {}).get("line_hierarchy") else (0.13, 0.13)   # 치수선·보조선 굵기(작성기준 프로파일의 선 굵기 위계)
     sh.begin("sheet-border")
     sh.rect(OUTER, OUTER, sh.w - 2 * OUTER, sh.h - 2 * OUTER, 0.7)      # 윤곽선
     sh.end()

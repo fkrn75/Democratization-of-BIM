@@ -109,6 +109,8 @@ def _view_params(p):
     if t == "elevation":
         return _check_fields("view", p, {"name": _name, "type": lambda v: v == "elevation", "dir": lambda v: v in ("N", "E", "S", "W"),
                                          "scale": _SCALE})
+    if t == "site":   # 배치도: 모델 전체를 위에서 본 뷰라 레벨·절단 높이가 없다
+        return _check_fields("view", p, {"name": _name, "type": lambda v: v == "site", "scale": _SCALE})
     return "view 의 종류가 올바르지 않다"
 
 
@@ -240,6 +242,28 @@ def _sheet_params(p):
         "line_profile": lambda v: v is None or (_json_ok(v) and isinstance(v, dict))})
 
 
+SITE_ROADS_MAX = 8
+
+
+def _site_params(p):
+    """대지(site): 경계 다각형(반시계), 정북 각, 접한 도로(경계 변 번호·폭), 대지 표고(선택)."""
+    def boundary(v):
+        return isinstance(v, list) and SLAB_PTS_MIN <= len(v) <= SLAB_PTS_MAX and all(_pt_ok(x) for x in v) and polygon_area2(v) > 0
+
+    err = _check_fields("site", p, {"name": _name, "boundary": boundary, "north_angle": lambda v: num_ok(v) and -360.0 <= v <= 360.0,
+                                    "roads": lambda v: isinstance(v, list) and len(v) <= SITE_ROADS_MAX, "elevation": lambda v: v is None or num_ok(v)})
+    if err:
+        return err
+    n = len(p["boundary"])
+    edges = set()
+    for r in p["roads"]:
+        if (not isinstance(r, dict) or set(r) != {"name", "edge", "width"} or not text_ok(r["name"], 0, NAME_MAX) or type(r["edge"]) is not int
+                or not 0 <= r["edge"] < n or not _pos(r["width"]) or r["edge"] in edges):
+            return "site.roads 항목이 올바르지 않다(이름·변 번호·폭, 변마다 도로 하나)"
+        edges.add(r["edge"])
+    return None
+
+
 def _foreign_params(p):
     return _check_fields("foreign", p, {"name": lambda v: text_ok(v, 0, 255)})
 
@@ -267,6 +291,7 @@ ELEMENT_KINDS: dict[str, ElementKind] = {k.name: k for k in (
     ElementKind("slab", True, "IfcSlab", True, 1, _slab_params, geometric=True),
     ElementKind("stair", True, "IfcStair", True, 1, _stair_params, geometric=True),
     ElementKind("space", True, "IfcSpace", True, 1, _space_params, geometric=True),
+    ElementKind("site", True, "IfcSite", True, 0, _site_params),
     ElementKind("ftype", True, None, True, 3, _ftype_params),
     ElementKind("finst", True, None, True, 4, _finst_params, geometric=True, refs=(("type", "id", "of_type"),)),
     ElementKind("foreign", True, None, False, 5, _foreign_params),
@@ -286,8 +311,8 @@ FIXED_IFC_CLASS = {k: v.ifc_class for k, v in ELEMENT_KINDS.items() if v.ifc_cla
 KIND_NAMES = tuple(ELEMENT_KINDS)
 # 의도 복원(S2 가져오기)이 IFC 클래스로 종류를 정하는 것: IFC 클래스 -> 종류. 패밀리 타입·인스턴스(ftype/finst)는 클래스가 레시피마다 달라 의도가 스스로 밝힌
 # 종류를 따른다(family.restore, ADR-0014). 뷰·주석은 IFC 신원이 없어 IFC 에서 복원할 수 없다(알려진 한계)
-IMPORTABLE_BY_CLASS = {"IfcBuildingStorey": "level", "IfcWall": "wall", "IfcDoor": "door", "IfcSlab": "slab", "IfcStair": "stair", "IfcSpace": "space"}
-FAMILY_OF_KIND = {"level": "level.basic", "wall": "wall.basic", "door": "door.single", "slab": "slab.basic", "stair": "stair.straight", "space": "space.basic"}
+IMPORTABLE_BY_CLASS = {"IfcBuildingStorey": "level", "IfcWall": "wall", "IfcDoor": "door", "IfcSlab": "slab", "IfcStair": "stair", "IfcSpace": "space", "IfcSite": "site"}
+FAMILY_OF_KIND = {"level": "level.basic", "wall": "wall.basic", "door": "door.single", "slab": "slab.basic", "stair": "stair.straight", "space": "space.basic", "site": "site.basic"}
 
 
 def _remap_ref(form: str, v, m: dict):

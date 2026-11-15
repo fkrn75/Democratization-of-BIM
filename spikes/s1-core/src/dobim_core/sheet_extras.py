@@ -51,6 +51,12 @@ def profile_spec(a) -> dict:
         out["dim_thousands"] = pf.dim_thousands
     if pf.symbol_scale is not None:
         out["symbol_scale"] = pf.symbol_scale
+    if pf.hidden_lines:
+        out["hidden_lines"] = True
+    if pf.line_hierarchy:
+        out["line_hierarchy"] = True
+    if pf.projection:
+        out["projection"] = pf.projection
     return {"profile": out} if out else {}
 
 

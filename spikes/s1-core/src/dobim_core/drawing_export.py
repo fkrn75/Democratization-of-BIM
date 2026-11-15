@@ -53,7 +53,7 @@ def _frame(data):
         x0 = y0 = 0.0
         x1 = y1 = 1000.0
     datums = []
-    if data["type"] != "plan":
+    if data["type"] not in ("plan", "site"):
         for name, z in data.get("datums", ()):
             if y0 - 1.0 <= z <= y1 + 1.0:
                 datums.append((name, z))
@@ -131,7 +131,7 @@ def annot_svg(data, tx, ty) -> list[str]:
 
 
 def title_text(data) -> str:
-    kind = {"plan": "평면도", "section": "단면도", "elevation": "입면도"}[data["type"]]
+    kind = {"plan": "평면도", "section": "단면도", "elevation": "입면도", "site": "배치도"}[data["type"]]
     return f"{data['name']}  {kind}  S=1:{data['scale']}"
 
 

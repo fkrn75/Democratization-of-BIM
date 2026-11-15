@@ -36,6 +36,7 @@ _S1 = ("slab.create", {"id": F.S1, "level": F.LV1, "boundary": [[0, 0], [6000, 0
 _ST1 = ("stair.create", {"id": F.ST1, "level": F.LV1, "run": [1000, 1000, 5000, 1000], "width": 1200, "height": 3000, "risers": 18})
 _SP1 = ("space.create", {"id": F.SP1, "level": F.LV1, "boundary": [[0, 0], [6000, 0], [6000, 4000], [0, 4000]], "name": "사무실", "category": "사무실"})
 _SH1 = ("sheet.define", {"id": F.SH1, "name": "A-101 1층 평면", "views": [F.V1], "paper": "A3", "project_name": "예시 프로젝트", "sheet_number": "A-101", "date": "2026-01-01"})
+_SI1 = ("site.create", {"id": F.SI1, "boundary": [[-6000, -6000], [18000, -6000], [18000, 14000], [-6000, 14000]], "name": "대지"})
 PRE = {"history.redo": [("history.undo", {})], "ifc.restore": [_EXP, _EXP], "ifc.snapshots": [_EXP, _EXP],
        "view.set": [_V1], "view.delete": [_V1], "view.list": [_V1], "view.linework": [_V1], "view.export": [_V1], "view.affected": [_V1],
        "annot.dim.create": [_V1], "annot.tag.create": [_V1], "annot.rebind": [_V1, _A1], "annot.delete": [_V1, _A1],
@@ -43,6 +44,7 @@ PRE = {"history.redo": [("history.undo", {})], "ifc.restore": [_EXP, _EXP], "ifc
        "family.set": [_FAMILY_PRE], "annot.dim.heights": [_V2], "slab.set": [_S1], "slab.move": [_S1], "slab.delete": [_S1],
        "stair.set": [_ST1], "stair.move": [_ST1], "stair.delete": [_ST1],
        "space.set": [_SP1], "space.move": [_SP1], "space.delete": [_SP1],
+       "site.set": [_SI1], "site.delete": [_SI1],
        "sheet.define": [_V1], "sheet.delete": [_V1, _SH1], "sheet.list": [_V1, _SH1], "sheet.render": [_V1, _SH1]}
 ERROR_CASES = [
     ("없는 커맨드", "no.such.command", {}, {}),

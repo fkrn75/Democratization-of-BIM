@@ -843,6 +843,103 @@ def space_delete(ctx, a: IdArg):
     return {"deleted": [a.id]}
 
 
+# ---------------------------------------------------------------- 대지 (설계: elements-design.md 9절)
+class SiteRoad(A):
+    name: Text = Field("", max_length=64, description="도로 이름(비워도 된다)")
+    edge: int = Field(ge=0, le=255, description="도로가 접한 경계 변 번호(입력한 경계에서 꼭짓점 i 와 i+1 사이가 변 i, 마지막 변은 마지막 꼭짓점과 처음 꼭짓점 사이)")
+    width: Pos = Field(description="도로 폭 mm")
+
+
+SiteRoads = Annotated[list[SiteRoad], Field(max_length=8, description="대지에 접한 도로(변마다 하나)")]
+
+
+def _site_geometry(boundary_in, roads_in) -> tuple[list, list]:
+    """경계(반시계로 저장)와 도로를 정규화한다. 시계 방향 입력은 경계를 뒤집으므로 도로의 변 번호도 저장한 경계 기준으로 옮긴다."""
+    b = [[float(x), float(y)] for x, y in boundary_in]
+    why = polygon_problem(b)
+    if why:
+        raise DobimError("CONSTRAINT", f"대지 경계가 올바르지 않다: {why}", path="/boundary")
+    n = len(b)
+    flip = polygon_area2(b) <= 0
+    roads, seen = [], set()
+    for r in roads_in:
+        if r.edge >= n:
+            raise DobimError("CONSTRAINT", f"도로 변 번호가 경계 변 수({n})를 넘는다: {r.edge}", path="/roads")
+        e = (n - 2 - r.edge) % n if flip else r.edge   # 뒤집은 경계에서 같은 변의 번호
+        if e in seen:
+            raise DobimError("CONSTRAINT", f"한 변에 도로를 둘 이상 줄 수 없다: 변 {r.edge}", path="/roads")
+        seen.add(e)
+        roads.append({"name": r.name, "edge": e, "width": r.width})
+    roads.sort(key=lambda r: r["edge"])
+    return (b[::-1] if flip else b), roads
+
+
+class SiteCreate(A):
+    id: Id | None = None
+    boundary: SlabBoundary = Field(description="대지 경계 다각형 [[x,y],...] mm(3~256개, 자기 교차 금지). 시계 방향으로 주면 반시계로 뒤집어 저장한다")
+    name: Name | None = None
+    north_angle: Num = Field(0.0, ge=-360.0, le=360.0, description="정북이 도면 위쪽에서 시계방향으로 몇 도 돌아 있는가(0 이면 +y 가 정북)")
+    roads: SiteRoads = Field(default_factory=list)
+    elevation: Num | None = Field(None, description="대지 표고 mm(선택). IfcSite RefElevation 으로 실린다")
+
+
+@command("site.create", kind="mutation", risk="write", group="model.site", summary="대지 생성(경계 다각형 + 방위 + 접한 도로)",
+         args=SiteCreate, since="0.5",
+         examples=[{"boundary": [[-6000, -6000], [18000, -6000], [18000, 14000], [-6000, 14000]], "name": "대지", "north_angle": 0,
+                    "roads": [{"name": "남측 도로", "edge": 0, "width": 8000}]}])
+def site_create(ctx, a: SiteCreate):
+    _fresh_id(ctx, a, "site")
+    boundary, roads = _site_geometry(a.boundary, a.roads)
+    a.name = a.name or f"SITE-{a.id[-6:]}"
+    ctx.put_el(a.id, row("site", "IfcSite", "site.basic", {"name": a.name, "boundary": boundary, "north_angle": a.north_angle, "roads": roads,
+                                                          "elevation": a.elevation}))
+    return {"id": a.id}
+
+
+class SiteSet(A):
+    forbid_null = True
+    id: Id
+    name: Name | None = None
+    boundary: SlabBoundary | None = None
+    north_angle: Num | None = Field(None, ge=-360.0, le=360.0)
+    roads: SiteRoads | None = Field(None, description="주면 도로 목록을 통째로 바꾼다(빈 목록이면 도로 없음)")
+    elevation: Num | None = None
+    clear_elevation: bool = Field(False, description="참이면 대지 표고를 지운다")
+
+    @model_validator(mode="after")
+    def _any(self):
+        if all(v is None for v in (self.name, self.boundary, self.north_angle, self.roads, self.elevation)) and not self.clear_elevation:
+            raise ValueError("바꿀 필드가 하나도 없다")
+        if self.clear_elevation and self.elevation is not None:
+            raise ValueError("elevation 과 clear_elevation 을 함께 줄 수 없다")
+        return self
+
+
+@command("site.set", kind="mutation", risk="write", group="model.site", summary="대지 속성 변경(이름·경계·방위·도로·표고)",
+         args=SiteSet, since="0.5", examples=[{"id": F.SI1, "north_angle": 30}])
+def site_set(ctx, a: SiteSet):
+    r = ctx.authored(a.id, "site")
+    p = dict(r["params"])
+    for k in ("name", "north_angle", "elevation"):
+        if getattr(a, k) is not None:
+            p[k] = getattr(a, k)
+    if a.clear_elevation:
+        p["elevation"] = None
+    if a.boundary is not None or a.roads is not None:
+        keep = [SiteRoad(name=x["name"], edge=x["edge"], width=x["width"]) for x in p["roads"]]
+        p["boundary"], p["roads"] = _site_geometry(a.boundary if a.boundary is not None else p["boundary"], a.roads if a.roads is not None else keep)
+    ctx.put_el(a.id, dict(r, params=p))
+    return {"id": a.id}
+
+
+@command("site.delete", kind="mutation", risk="write", group="model.site", summary="대지 삭제",
+         args=IdArg, since="0.5", examples=[{"id": F.SI1}])
+def site_delete(ctx, a: IdArg):
+    ctx.authored(a.id, "site", what="삭제")
+    _delete_one(ctx, a.id)
+    return {"deleted": [a.id]}
+
+
 class PsetSet(A):
     id: Id
     pset: PsetName
@@ -940,6 +1037,9 @@ def element_get(ctx, a: ElementGet):
     elif r["kind"] == "space":
         b = r["params"]["boundary"]
         out["derived"] = {"area_m2": abs(polygon_area2(b)) / 2.0 / 1e6, "corridor": is_corridor(r["params"]["name"], r["params"]["category"])}
+    elif r["kind"] == "site":
+        b = r["params"]["boundary"]
+        out["derived"] = {"area_m2": abs(polygon_area2(b)) / 2.0 / 1e6, "roads": len(r["params"]["roads"])}
     elif r["kind"] == "stair":
         zb, zt = ctx.g.q(Q.stair_zrange, a.id)
         p = r["params"]
@@ -1148,13 +1248,13 @@ def schedule_summary(ctx, a: ScheduleKind):
 VCoord = Annotated[float, Field(allow_inf_nan=False, ge=-1e7, le=1e7)]
 Point2 = Annotated[list[VCoord], Field(min_length=2, max_length=2, description="[x,y] mm (±1e7)")]
 Scale = Annotated[int, Field(strict=True, ge=1, le=1000, description="축척 분모 (100 = 1:100)")]
-_PLAN_ONLY, _SEC_ONLY, _ELEV_ONLY = ("level", "cut_height", "view_depth"), ("p1", "p2", "depth", "flip"), ("dir",)
+_PLAN_ONLY, _SEC_ONLY, _ELEV_ONLY, _SITE_ONLY = ("level", "cut_height", "view_depth"), ("p1", "p2", "depth", "flip"), ("dir",), ()
 
 
 class ViewCreate(A):
     id: Id | None = None
     name: Name
-    type: Literal["plan", "section", "elevation"]
+    type: Literal["plan", "section", "elevation", "site"] = Field(description="뷰 종류. site 는 배치도(모델 전체를 위에서 본 대지·건물 외곽·도로·방위·이격 거리)")
     level: Id | None = Field(None, description="평면: 레벨 id (필수)")
     cut_height: VCoord = Field(1200.0, description="평면: 레벨 바닥에서 절단면까지 mm (±1e7)")
     view_depth: VCoord = Field(300.0, ge=0, description="평면: 절단면 아래로 투영선을 보일 깊이 mm (0..1e7)")
@@ -1168,7 +1268,7 @@ class ViewCreate(A):
     @model_validator(mode="after")
     def _by_type(self):
         given = self.model_fields_set
-        own = {"plan": _PLAN_ONLY, "section": _SEC_ONLY, "elevation": _ELEV_ONLY}[self.type]
+        own = {"plan": _PLAN_ONLY, "section": _SEC_ONLY, "elevation": _ELEV_ONLY, "site": _SITE_ONLY}[self.type]
         # 기본값과 같은 값은 쓰지 않은 것으로 본다: 로그에는 기본값까지 적혀 있어(log_args) 단면·입면 뷰의 로그를 다시 실행하면
         # cut_height 같은 기본값이 '쓰지 않는 필드'로 거절됐다(S5 의 전체 재생 검사가 찾은 S3 결함)
         stray = sorted(f for f in (given & {*_PLAN_ONLY, *_SEC_ONLY, *_ELEV_ONLY}) - set(own)
@@ -1212,6 +1312,8 @@ def view_create(ctx, a: ViewCreate):
         params = {"name": a.name, "type": "plan", "level": a.level, "cut_height": a.cut_height, "view_depth": a.view_depth, "scale": a.scale}
     elif a.type == "section":
         params = {"name": a.name, "type": "section", "p1": list(a.p1), "p2": list(a.p2), "depth": a.depth, "flip": a.flip, "scale": a.scale}
+    elif a.type == "site":
+        params = {"name": a.name, "type": "site", "scale": a.scale}
     else:
         params = {"name": a.name, "type": "elevation", "dir": a.dir, "scale": a.scale}
     ctx.put_el(a.id, row("view", "", "view.basic", params))
@@ -1243,7 +1345,7 @@ class ViewSet(A):
 def view_set(ctx, a: ViewSet):
     r = ctx.row(a.id, "view")
     p = dict(r["params"])
-    allowed = {"plan": _PLAN_ONLY, "section": _SEC_ONLY, "elevation": _ELEV_ONLY}[p["type"]]
+    allowed = {"plan": _PLAN_ONLY, "section": _SEC_ONLY, "elevation": _ELEV_ONLY, "site": _SITE_ONLY}[p["type"]]
     for k in ("name", "scale", "cut_height", "view_depth", *_SEC_ONLY, *_ELEV_ONLY):
         v = getattr(a, k)
         if v is None:
@@ -1272,7 +1374,7 @@ def view_delete(ctx, a: IdArg):
 
 
 class ViewList(A):
-    type: Literal["plan", "section", "elevation"] | None = None
+    type: Literal["plan", "section", "elevation", "site"] | None = None
     limit: int = Field(100, ge=1, le=1000, description="최대 개수. 응답 크기 상한에 걸리면 이보다 적게 돌려주고 page.truncated 로 알린다")
     cursor: str | None = Field(None, max_length=2048, description="이전 응답의 page.next_cursor")
 
@@ -1328,7 +1430,7 @@ def _warn_omitted(ctx, omitted: dict) -> None:
                  "(외래는 형상 정보가 없고, 분리된 벽의 의도 값은 낡았다)")
 
 
-def _render_view(ctx, vid, detail=False):
+def _render_view(ctx, vid, detail=False, hidden=False):
     """뷰의 선분·채움·기준선(레벨)·제목을 내보내기용 데이터로 묶는다. detail 이면 큰 축척(1:50 이하) 상세 선을 더한다(SC-09)."""
     r = ctx.row(vid, "view")
     p = r["params"]
@@ -1337,9 +1439,11 @@ def _render_view(ctx, vid, detail=False):
     lines = ctx.g.q(D.view_lines, vid)
     if detail:
         lines = lines + ctx.g.q(D.view_detail_lines, vid)
+    if hidden:
+        lines = lines + ctx.g.q(D.view_hidden_lines, vid)
     _warn_omitted(ctx, ctx.g.q(D.view_omitted, vid))
     return {"type": p["type"], "name": p["name"], "scale": p["scale"], "lines": lines, "fills": ctx.g.q(D.view_fills, vid),
-            "datums": levels, "annots": ctx.g.q(AN.view_annots, vid), "labels": ctx.g.q(D.view_labels, vid)}
+            "datums": levels, "annots": ctx.g.q(AN.view_annots, vid) + ctx.g.q(D.site_dims, vid), "labels": ctx.g.q(D.view_labels, vid)}
 
 
 def _view_export_target(ctx, a: ViewExport):
@@ -1439,6 +1543,9 @@ class SheetProfile(A):
     dim_decimals: Annotated[int, Field(ge=0, le=3)] | None = Field(None, description="치수 문자의 소수 자릿수(생략하면 값 그대로: 정수면 정수)")
     dim_thousands: bool | None = Field(None, description="참이면 네 자리 이상 숫자에 세 자리마다 쉼표(DM-10)")
     symbol_scale: Annotated[float, Field(ge=0.5, le=2.0, allow_inf_nan=False)] | None = Field(None, description="기호 크기 배율(그리드·단면·상세 원, 부호 태그 원·글자). 생략하면 1")
+    hidden_lines: bool | None = Field(None, description="참이면 단면·입면 뷰에 숨은 선(앞의 벽·기둥·슬래브·계단에 가려진 모서리와 개구부 윤곽)을 파선으로 더한다(LN-03). 평면·배치도는 없다")
+    line_hierarchy: bool | None = Field(None, description="참이면 선 굵기 위계를 적용한다(LN-04): 절단선 > 창호·기호선 = 치수선 > 보이는 선(입면·마감) > 가는선·해칭. 기본 체계는 치수선이 보이는 선보다 가늘다")
+    projection: Literal["third"] | None = Field(None, description="투상법. third 면 표제란에 '제3각법' 칸과 기호를 넣는다(T-11)")
 
 
 class SheetExport(SheetFrame):
@@ -1485,7 +1592,8 @@ def sheet_export(ctx, a: SheetExport):
     p, ext = _view_export_target(ctx, a)
     if len(set(a.views)) != len(a.views):
         raise DobimError("CONSTRAINT", "같은 뷰를 두 번 올릴 수 없다", path="/views")
-    datas = [dict(_render_view(ctx, v, a.detail), id=v) for v in a.views]
+    hidden = bool(a.profile is not None and a.profile.hidden_lines)
+    datas = [dict(_render_view(ctx, v, a.detail, hidden), id=v) for v in a.views]
     spec = {"paper": a.paper, "project": a.project_name or "(프로젝트명 없음)", "title": a.sheet_name or datas[0]["name"],
             "number": a.sheet_number, "date": a.date or datetime.date.today().isoformat(), "north_deg": a.north_angle}
     from dobim_core import sheet_extras as SE
