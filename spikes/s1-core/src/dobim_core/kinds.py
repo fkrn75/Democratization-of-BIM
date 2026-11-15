@@ -287,9 +287,29 @@ def openings_problem(boundary, openings) -> str | None:
     return None
 
 
+SLAB_DRAINS_MAX = 32      # 지붕 슬래브의 배수구(드레인) 수 상한
+ROOF_FALL_PCT_MAX = 100.0  # 배수 물매 상한(%)
+
+
+def fall_ok(v) -> bool:
+    """배수 물매 = {"dir": 물이 흐르는 방향 도(+x 가 0, 반시계), "pct": 물매 %(0 초과 100 이하)}."""
+    return isinstance(v, dict) and set(v) == {"dir", "pct"} and num_ok(v["dir"]) and num_ok(v["pct"]) and 0 < v["pct"] <= ROOF_FALL_PCT_MAX
+
+
+def _drains_ok(v) -> bool:
+    return isinstance(v, list) and 1 <= len(v) <= SLAB_DRAINS_MAX and all(_pt_ok(q) for q in v)
+
+
 def _slab_params(p):
     err = _check_opt("slab", p, {"name": _name, "boundary": _poly_pts_ok, "thickness": _pos, "top_offset": num_ok},
-                     {"layers": layers_ok, "openings": lambda v: isinstance(v, list) and 1 <= len(v) <= SLAB_OPENINGS_MAX and all(_poly_pts_ok(o) for o in v)})
+                     {"layers": layers_ok, "openings": lambda v: isinstance(v, list) and 1 <= len(v) <= SLAB_OPENINGS_MAX and all(_poly_pts_ok(o) for o in v),
+                      "use": lambda v: v == "roof", "fall": fall_ok, "drains": _drains_ok})
+    if err is None and ("fall" in p or "drains" in p) and p.get("use") != "roof":
+        return "slab.fall·slab.drains 는 지붕 슬래브(use=roof)에만 둘 수 있다"
+    if err is None and "drains" in p:
+        for i, q in enumerate(p["drains"]):   # 배수구는 슬래브 경계 안쪽이고 구멍 안이 아니어야 한다
+            if point_in_polygon(q, p["boundary"]) != 1 or any(point_in_polygon(q, o) >= 0 for o in p.get("openings", ())):
+                return f"slab.drains: {i + 1}번 배수구가 슬래브 위(경계 안쪽, 구멍 밖)에 있지 않다"
     if err is None and "layers" in p and abs(layers_total(p["layers"]) - p["thickness"]) > LAYER_SUM_TOL:
         return "slab.layers 두께의 합이 슬래브 두께와 다르다"
     if err is None and "openings" in p and (why := openings_problem(p["boundary"], p["openings"])):
@@ -415,6 +435,47 @@ def railing_geom(p) -> dict:
     return {"surface": surface, "top": top, "posts": posts}
 
 
+ELEVATOR_SHAFT_MIN = 800.0          # 샤프트 안쪽 변의 최소 길이 mm
+ELEVATOR_CAB_DEFAULT = (1100.0, 1400.0, 2200.0)   # 카 [폭(x), 깊이(y), 높이] 기본값 mm(소형 승객용)
+
+
+def _shaft_ok(v) -> bool:
+    """샤프트 안쪽 사각형 [x1,y1,x2,y2] (x1<x2, y1<y2, 각 변 ELEVATOR_SHAFT_MIN 이상)."""
+    return (isinstance(v, list) and len(v) == 4 and all(num_ok(x) for x in v)
+            and v[2] - v[0] >= ELEVATOR_SHAFT_MIN and v[3] - v[1] >= ELEVATOR_SHAFT_MIN)
+
+
+def _cab_ok(v) -> bool:
+    return isinstance(v, list) and len(v) == 3 and all(_pos(x) for x in v)
+
+
+def elevator_problem(p) -> str | None:
+    """카가 샤프트 안에 들어가는가(폭·깊이가 샤프트 안쪽 이하, 높이가 샤프트 높이 이하)."""
+    sx, sy = p["shaft"][2] - p["shaft"][0], p["shaft"][3] - p["shaft"][1]
+    if p["cab"][0] > sx + 1e-9 or p["cab"][1] > sy + 1e-9:
+        return f"카({p['cab'][0]:g}x{p['cab'][1]:g})가 샤프트 안쪽({sx:g}x{sy:g})보다 크다"
+    if p["cab"][2] > p["rise"] + 1e-9:
+        return f"카 높이({p['cab'][2]:g})가 샤프트 높이({p['rise']:g})보다 크다"
+    return None
+
+
+def _elevator_params(p):
+    err = _check_fields("elevator", p, {"name": _name, "shaft": _shaft_ok, "cab": _cab_ok, "base_offset": num_ok, "rise": _pos})
+    if err is None and (why := elevator_problem(p)):
+        return f"elevator: {why}"
+    return err
+
+
+def elevator_geom(p) -> dict:
+    """승강기의 형상(순수 함수: 그리기·IFC 투영·슬래브 구멍이 같은 값을 쓴다). z 는 레벨 기준 상대.
+      {"shaft": (x1,y1,x2,y2), "cab": (x1,y1,x2,y2 카 바닥 사각형, 샤프트 가운데), "z0": 샤프트·카 바닥, "z1": 샤프트 위, "cab_z1": 카 천장}"""
+    x1, y1, x2, y2 = p["shaft"]
+    w, d, h = p["cab"]
+    cx, cy = (x1 + x2) / 2.0, (y1 + y2) / 2.0
+    return {"shaft": (float(x1), float(y1), float(x2), float(y2)), "cab": (cx - w / 2.0, cy - d / 2.0, cx + w / 2.0, cy + d / 2.0),
+            "z0": float(p["base_offset"]), "z1": float(p["base_offset"] + p["rise"]), "cab_z1": float(p["base_offset"] + h)}
+
+
 CORRIDOR_WORDS = ("복도", "corridor", "hallway")
 
 
@@ -500,6 +561,7 @@ ELEMENT_KINDS: dict[str, ElementKind] = {k.name: k for k in (
     ElementKind("slab", True, "IfcSlab", True, 1, _slab_params, geometric=True),
     ElementKind("stair", True, "IfcStair", True, 1, _stair_params, geometric=True),
     ElementKind("space", True, "IfcSpace", True, 1, _space_params, geometric=True),
+    ElementKind("elevator", True, "IfcTransportElement", True, 1, _elevator_params, geometric=True),
     ElementKind("railing", True, "IfcRailing", True, 1, _railing_params, geometric=True),
     ElementKind("site", True, "IfcSite", True, 0, _site_params),
     ElementKind("ftype", True, None, True, 3, _ftype_params),
@@ -521,8 +583,8 @@ FIXED_IFC_CLASS = {k: v.ifc_class for k, v in ELEMENT_KINDS.items() if v.ifc_cla
 KIND_NAMES = tuple(ELEMENT_KINDS)
 # 의도 복원(S2 가져오기)이 IFC 클래스로 종류를 정하는 것: IFC 클래스 -> 종류. 패밀리 타입·인스턴스(ftype/finst)는 클래스가 레시피마다 달라 의도가 스스로 밝힌
 # 종류를 따른다(family.restore, ADR-0014). 뷰·주석은 IFC 신원이 없어 IFC 에서 복원할 수 없다(알려진 한계)
-IMPORTABLE_BY_CLASS = {"IfcBuildingStorey": "level", "IfcWall": "wall", "IfcDoor": "door", "IfcSlab": "slab", "IfcStair": "stair", "IfcSpace": "space", "IfcRailing": "railing", "IfcSite": "site"}
-FAMILY_OF_KIND = {"level": "level.basic", "wall": "wall.basic", "door": "door.single", "slab": "slab.basic", "stair": "stair.straight", "space": "space.basic", "railing": "railing.basic", "site": "site.basic"}
+IMPORTABLE_BY_CLASS = {"IfcBuildingStorey": "level", "IfcWall": "wall", "IfcDoor": "door", "IfcSlab": "slab", "IfcStair": "stair", "IfcSpace": "space", "IfcRailing": "railing", "IfcTransportElement": "elevator", "IfcSite": "site"}
+FAMILY_OF_KIND = {"level": "level.basic", "wall": "wall.basic", "door": "door.single", "slab": "slab.basic", "stair": "stair.straight", "space": "space.basic", "railing": "railing.basic", "elevator": "elevator.basic", "site": "site.basic"}
 
 
 def _remap_ref(form: str, v, m: dict):
@@ -615,7 +677,7 @@ def _fs(*a):
 
 REL_KINDS: dict[str, RelKind] = {r.name: r for r in (
     # 레벨은 분리돼 있어도 그 위의 저작 벽이 레벨을 따른다(S2): 레벨 쪽은 막지 않고, 놓이는 요소만 저작이어야 한다
-    RelKind("on_level", _fs("wall", "slab", "stair", "space", "railing", "finst", "foreign"), _fs("level"), guard=("src",), violation="LEVEL_DELETED", message="벽이 놓인 레벨이 지워졌다"),
+    RelKind("on_level", _fs("wall", "slab", "stair", "space", "railing", "elevator", "finst", "foreign"), _fs("level"), guard=("src",), violation="LEVEL_DELETED", message="벽이 놓인 레벨이 지워졌다"),
     RelKind("joins", _fs("wall"), _fs("wall"), guard=("src", "dst"), violation="JOIN_TARGET_DELETED", message="조인 대상 벽이 지워졌다"),
     RelKind("hosts", _fs("wall"), _fs("door", "finst"), guard=("src", "dst"), violation="HOST_DELETED",
             message="호스트 벽이 지워졌는데 문이 그 벽에 놓여 있다"),

@@ -197,7 +197,9 @@ def detect_skeleton(f):
 #   "10" 꺾인 계단(층참)과 슬래브 구멍. 꺾인 계단은 IfcStair 아래 IfcStairFlight 둘과 층참 IfcSlab(LANDING)으로 집합하고, 슬래브 구멍은 IfcOpeningElement +
 #       IfcRelVoidsElement 로 투영한다(둘 다 투영이 소유하는 부속: part_guid 로 GlobalId 가 결정적이다). 클로저에 부속의 형상이 들어간다.
 #       직선 계단·구멍 없는 슬래브는 요소 행·IFC·클로저가 이전과 같다
-CLOSURE_FORMAT = "10"
+#   "11" 승강기(IfcTransportElement ELEVATOR, 카 상자 한 몸체)와 지붕 슬래브(IfcSlab PredefinedType ROOF, 배수 물매·배수구는 의도에만 둔다).
+#       승강기 종류가 없고 슬래브가 지붕이 아닌 프로젝트는 요소 행·IFC·클로저가 이전과 같다
+CLOSURE_FORMAT = "11"
 
 
 def make_norm():
@@ -1032,7 +1034,7 @@ class IfcModel:
     # ------------------------------------------------------------ 투영 (늦게)
     def project(self, eid: str, spec: dict) -> None:
         kind = spec["kind"]
-        {"level": self._project_level, "wall": self._project_wall, "door": self._project_door, "slab": self._project_slab, "stair": self._project_stair, "space": self._project_space, "railing": self._project_railing,
+        {"level": self._project_level, "wall": self._project_wall, "door": self._project_door, "slab": self._project_slab, "stair": self._project_stair, "space": self._project_space, "railing": self._project_railing, "elevator": self._project_elevator,
          "site": self._project_site, "ftype": lambda i, sp: fp.project_type(self, i, sp), "finst": lambda i, sp: fp.project_inst(self, i, sp)}[kind](eid, spec)
         # 의도를 IFC 에도 복제한다. 정본은 의도 저장소이고 이 속성셋은 매번 덮어쓴다.
         e = self.ents[eid]
@@ -1092,7 +1094,7 @@ class IfcModel:
         """슬래브: 레벨 좌표계 원점에 경계 프로필을 압출한다. 윗면 = 레벨 + top_offset 이므로 솔리드는 (top_offset - 두께)에서 두께만큼 +Z 로 올린다."""
         e = self.ents[eid]
         e.Name = spec["name"]
-        e.PredefinedType = "FLOOR"
+        e.PredefinedType = "ROOF" if spec.get("use") == "roof" else "FLOOR"
         self._contain(eid, spec["level"])
         self._place(e, self.ents[spec["level"]].ObjectPlacement, (0.0, 0.0, 0.0), (1.0, 0.0, 0.0))
         self._set_body(e, self._solid(spec["boundary"], spec["thickness"], z0=spec["top_offset"] - spec["thickness"]))
@@ -1236,6 +1238,18 @@ class IfcModel:
             return f.createIfcSweptDiskSolid(pl, float(r), None, None, None)
         items = [disk(g["top"], RAILING_HANDRAIL_R)] + [disk([a, b], RAILING_POST_R) for a, b in g["posts"]]
         self._set_body(e, items)
+
+    def _project_elevator(self, eid, spec):
+        """승강기: 카(IfcTransportElement ELEVATOR)의 상자 몸체 하나. 카 바닥은 레벨 + base_offset, 배치는 레벨 좌표계 원점이다. 샤프트는 슬래브 구멍·벽이 표현한다."""
+        from dobim_core.kinds import elevator_geom
+        e = self.ents[eid]
+        e.Name = spec["name"]
+        e.PredefinedType = "ELEVATOR"
+        self._contain(eid, spec["level"])
+        self._place(e, self.ents[spec["level"]].ObjectPlacement, (0.0, 0.0, 0.0), (1.0, 0.0, 0.0))
+        g = elevator_geom({"shaft": spec["shaft"], "cab": spec["cab"], "base_offset": spec["base_offset"], "rise": spec["rise"]})
+        x1, y1, x2, y2 = g["cab"]
+        self._set_body(e, self._solid([(x1, y1), (x2, y1), (x2, y2), (x1, y2)], spec["cab"][2], z0=g["z0"]))
 
     def _project_space(self, eid, spec):
         """공간: 경계 프로필을 레벨 좌표계 원점에서 높이만큼 압출한다. 층 소속은 포함(IfcRelContainedInSpatialStructure)이 아니라 집합(IfcRelAggregates)이다.

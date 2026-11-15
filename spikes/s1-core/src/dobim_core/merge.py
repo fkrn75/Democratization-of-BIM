@@ -459,6 +459,9 @@ def violations(view: View) -> list[dict]:
     for rl_ in view.ids("railing"):
         if rl_ not in leveled:
             out.append(_v("LEVEL_MISSING", (rl_,), "난간에 레벨이 없다"))
+    for el_ in view.ids("elevator"):
+        if el_ not in leveled:
+            out.append(_v("LEVEL_MISSING", (el_,), "승강기에 레벨이 없다"))
     for f in view.ids("finst"):
         if f not in typed:
             out.append(_v("TYPE_MISSING", (f,), "패밀리 인스턴스에 타입이 없다"))
