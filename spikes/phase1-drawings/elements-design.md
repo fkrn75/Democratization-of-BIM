@@ -1,4 +1,4 @@
-# 도면 요소 설계 메모: 창·기둥·슬래브·계단·공간 (1단계, 2026-11-15)
+# 도면 요소 설계 메모: 창·기둥·슬래브·계단·공간·대지 (1단계, 2026-11-15)
 
 상태: **구현함(창·기둥·슬래브)**, 계단·공간·방화·외부 마감은 6~8절(구현 순서대로 반영). 기둥은 패밀리 인스턴스로(아래 3절), 슬래브는 새 종류 `slab` 으로(4절, 구현 결과는 4절 끝 "구현 결과") 구현했다. 근거 ADR: 0005(저작 원천), 0006(의존 그래프), 0008(패밀리), 0014(패밀리 의도 왕복).
 
@@ -176,3 +176,17 @@
 - 뷰 참조: 시트가 올린 뷰를 `view.delete` 가 조용히 지우거나 고치지 않는다: 시트가 쓰는 뷰는 지울 수 없다(CONSTRAINT, 시트를 고치거나 지운 뒤에 지운다). 병합으로 뷰가 사라진 시트는 `sheet.list` 의 `missing_views`·`sheet.render` 의 CONSTRAINT 로 드러난다. 참조 id 를 새로 매기는 병합(`remap_params`)은 목록(`views`)·중첩(개정 구름·부위 상세의 `view`)·`key_plan` 을 함께 옮긴다.
 - IFC 왕복(ADR-0015 확장): 정의는 `DoBIM_Defs` 속성 하나(이름 = 시트 id)로 실리고 값에 변조 탐지 해시(check)가 든다. 가져올 때 `viewdefs._sheet_values` 가 커맨드와 같은 모델(`commands_sheet.SheetDef`)로 값을 다시 검사하고 정규형(저장 형식과 같은 값)만 받는다. 올린 뷰가 하나라도 되살려지지 않았거나 키 플랜이 평면 뷰가 아니거나 같은 이름의 시트가 더 있으면 그 시트만 되살리지 않는다(경고, 정의는 파일에 그대로 남는다).
 - 해시: 시트가 없으면 `state`·`derived`·`ifc` 가 모두 이전과 같다(시트 흔적 없음). 시트가 있으면 `state`(요소 행)와 `ifc`(정의 속성)에만 반영되고 `derived`(그래프 파생값)에는 들어가지 않는다. 해시 형식(`ifc_model.CLOSURE_FORMAT`)을 6 으로 올린다: 제품 클로저는 같고, 가져온 프로젝트를 한 번 다시 판정할 뿐이다.
+
+## 10. 대지(site)와 배치도 뷰 (법정 P-01·P-02·P-04, BIM B-05)
+
+### 요소 스키마
+`site`(IFC 클래스 IfcSite, 투영 순서 0): `name`, `boundary`(반시계 다각형 3~256점, 자기 교차 금지), `north_angle`(도면 위에서 시계방향으로 정북까지, ±360), `roads`(최대 8: `{name, edge, width}`, `edge` = 저장한 경계의 변 번호, 변마다 하나), `elevation`(mm 또는 null). 레벨·관계가 없다(뼈대 대지 아래에 놓인다). 시계 방향 경계는 뒤집어 저장하며 도로 변 번호는 입력한 경계의 순서 기준으로 받아 저장 순서로 옮긴다.
+
+### 커맨드·IFC
+`site.create`·`site.set`(표고는 `clear_elevation` 으로 지운다)·`site.delete`(그룹 `model.site`, CLI·MCP 동시). IFC: 뼈대 `IfcSite "Site"` 아래 하위 `IfcSite`(`IfcRelAggregates`), 몸체는 `GeometricCurveSet` 폴리라인, `RefElevation`. 방위·도로는 `DoBIM_Intent` 로 왕복한다. 뼈대 판정(`skeleton_check`)은 하위 IfcSite + 의도를 가진 엔티티(`is_site_element`)를 사이트 수에 세지 않는다. 해시 형식 번호 8. 대지 요소는 도면(평면·단면·입면)이 그리지 않는다(`geometric=False`).
+
+### 배치도 뷰(`view.create type=site`)
+뷰 설정은 이름·종류·축척뿐이다(`drawing.view_cfg` 가 `("site", ...)` 를 돌려준다). 뷰 질의 노드 `site_lines`·`site_labels`·`site_dims`(뷰 범위, 뷰를 지우면 함께 치운다)와 모델 전체 질의 `building_polys`·`building_outline`·`site_setbacks`. 건물 외곽은 모든 레벨의 그리는 벽 윤곽과 저작 슬래브 경계의 합집합 바깥 선이다(각 변을 다른 다각형 변과의 교점에서 쪼개고, 조각 중점에서 바깥으로 0.5mm 나간 점이 다른 다각형 안이면 이음매라 뺀다). 이격은 대지 경계 변마다 수선의 발이 변 안에 드는 건물 꼭짓점 중 가장 가까운 것이다. 이격·도로 폭 치수는 연관 치수 주석과 같은 항목 모양(`("dim", id, 보조선, 보조선, 치수선, 글, 글 위치, 방향)`, id 는 `site:...`)이라 SVG·PDF·시트가 같은 코드로 그린다. 대지가 없으면 건물 외곽만 그린다. 평면 치수·태그는 배치도 뷰에 달 수 없다.
+
+### 선 위계(sheet.export profile)
+`hidden_lines`(`drawing.vwall_hidden`·`view_hidden_lines`: `vwall_lines` 와 같은 가림 판정 `visible_parts` 의 여집합에서 보이는 선과 겹치는 부분을 뺀다. 선 등급 `hid` 는 `drawing_export.STYLE`·`LINE_ORDER` 에 넣지 않고 시트가 파선으로만 그린다: 기본 선 종류 표·`drawing.profile` 의 선 굵기 표는 그대로), `line_hierarchy`(치수선·보조선 굵기 0.25/0.18), `projection`(표제란 투상법 칸). 모두 파일을 낼 때만 받는 입력이라 저장하는 시트 정의에는 넣지 않는다.

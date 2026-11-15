@@ -67,8 +67,8 @@ def test_배치도는_이격_치수와_도로_폭_문자를_모델_값으로_그
     assert dim_texts(d["dims"]) == sorted(["6000", "5900", "11900", "9900", "8000", "6000"])
     texts = [x[2] for x in d["labels"]]
     assert "대지" in texts and "대지면적 480.00㎡" in texts and "N" in texts and "S=1:500" in texts
-    assert "남측 도로 도로 폭 8000" in texts and "접도 길이 24000" in texts       # 남측 변(24000) 폭 8000
-    assert "동측 도로 도로 폭 6000" in texts and "접도 길이 20000" in texts
+    assert "남측 도로 폭 8000" in texts and "접도 길이 24000" in texts       # 남측 변(24000) 폭 8000
+    assert "동측 도로 폭 6000" in texts and "접도 길이 20000" in texts
     assert d["fills"] == ()
 
 
@@ -90,6 +90,32 @@ def test_건물_외곽은_합집합_바깥_선만이다(base):
         inside_w1 = -100.0 + 1e-6 < my < 100.0 - 1e-6 and 0 < mx < 6000
         inside_w2 = 5900.0 + 1e-6 < mx < 6100.0 - 1e-6 and 0 < my < 4000
         assert not (inside_w1 or inside_w2), (x0, y0, x1, y1)
+
+
+def test_닫힌_외벽_안쪽_면과_칸막이_윤곽은_외곽에서_빠진다(sess):
+    assert sess.run("level.create", {"id": F.LV1, "name": "1F", "elevation": 0})["ok"]
+    ring = [(0, 0, 6000, 0), (6000, 0, 6000, 4000), (6000, 4000, 0, 4000), (0, 4000, 0, 0)]
+    ids = []
+    for k, ax in enumerate(ring):
+        r = sess.run("wall.create", {"level": F.LV1, "axis": list(map(float, ax)), "thickness": 200, "height": 3000})
+        assert r["ok"], r
+        ids.append(r["result"]["id"])
+    for k in range(4):
+        assert sess.run("join.set", {"a": ids[k], "b": ids[(k + 1) % 4]})["ok"]
+    assert sess.run("wall.create", {"level": F.LV1, "axis": [3000.0, 0.0, 3000.0, 4000.0], "thickness": 100, "height": 3000})["ok"]   # 칸막이(양 끝이 외벽에 닿는다)
+    mk_site(sess, roads=[])
+    d = data_of(sess, site_view(sess))
+    bld = [ln for ln in d["lines"] if ln[0] == "cut" and -150 <= min(ln[1], ln[3]) and max(ln[1], ln[3]) <= 6150 and -150 <= min(ln[2], ln[4]) and max(ln[2], ln[4]) <= 4150]
+    assert bld
+    total = 0.0
+    for _, x0, y0, x1, y1 in bld:
+        horiz = abs(y0 - y1) < 1e-6
+        vert = abs(x0 - x1) < 1e-6
+        assert horiz or vert
+        # 바깥 사각형(-100..6100, -100..4100)의 변 위에만 있다(안쪽 면 +100·5900·3900 이나 칸막이 x=2950·3050 위의 선이 없다)
+        assert (horiz and (abs(y0 + 100) < 1e-6 or abs(y0 - 4100) < 1e-6)) or (vert and (abs(x0 + 100) < 1e-6 or abs(x0 - 6100) < 1e-6)), (x0, y0, x1, y1)
+        total += abs(x1 - x0) + abs(y1 - y0)
+    assert abs(total - 2 * (6200 + 4200)) < 1e-3
 
 
 def test_슬래브만_있어도_건물_외곽과_이격이_나온다(sess):

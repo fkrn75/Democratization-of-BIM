@@ -11,6 +11,8 @@ G1 판정(항목 ID·층·판정만 carried_g1.json 에 옮겼다)을 출발점�
  4) 계단·공간·방화·외부 마감이 바꾸는 항목(L-03 방화구획·방화문, L-04 복도·계단, E-02 외부마감재료. FR-01·FR-02·VT-01·MT-02 는 이 셋의 중복 행): run.json 의 stair_probe·
     space_probe·fire_probe·finish_probe(각 입력을 더하기 전후의 뷰 선분·문자)와 base/ 산출 SVG(문자 층 labels, 해치 선 lines-hatch)를 함께 검사해 판정한다.
     산출이 없으면 G1 판정 그대로다. 법정 #7 의 계단 단면 표현은 stair_probe 의 단면 뷰 채움 증가로 확인한다.
+ 5) 여덟 번째 작업(대지·배치도·숨은 선·선 굵기 위계·제3각법): run.json 의 after8 와 sheets8/(A-006 배치도, A-007 입면, A-000b 도면목록)을 직접 검사해 법정 P-01·P-02·P-04,
+    D-01·N-06·N-08·LN-03·LN-04·T-11·B-05 를 판정한다(judge_after8_items). 이격은 내보낸 IFC 에서 엔진과 독립으로 다시 잰 값과 맞춘다.
 집계 규칙은 G1 과 같다: 중복 행은 뺀다, 해당없음은 분모에서 뺀다, 법정 16 = 별표 2 고유 항목(높이 3개 행은 한 묶음 판정).
 
 사용: <python> judge.py --out <산출 폴더> [--g1 <G1 산출 폴더>] [--md <출력.md>]
@@ -446,6 +448,67 @@ def judge_after7_items(out: Path, run: dict, base: dict):
     return res
 
 
+def _texts(svg: str) -> list[str]:
+    return re.findall(r"<text[^>]*>([^<]*)</text>", svg)
+
+
+def judge_after8_items(out: Path, run: dict, base: dict):
+    """여덟 번째 작업 항목을 sheets8/ 산출(A-006 배치도, A-007 입면, A-000b 도면목록)과 같은 인자의 기본 시트(-default)·내보낸 IFC 독립 검산 대비로 판정한다.
+    배치도: 법정 P-01(축척·방위)·P-02(접한 도로 길이·너비)·P-04(이격거리), 제도·관행 D-01(배치도 도서)·N-06(표고 단위)·N-08(고저차), BIM B-05.
+    선 위계: LN-03(숨은 선)·LN-04(굵기 위계)·T-11(제3각법). 근거 없는 충족은 만들지 않는다: 산출이 없으면 빈 결과(이전 판정 그대로)."""
+    res: dict[str, tuple[str, str]] = {}
+    a8, sd = run.get("after8"), out / "sheets8"
+    if not a8 or not (sd / "A-007.svg").exists() or not (sd / "A-007-default.svg").exists():
+        return res
+    s7, s7d = (sd / "A-007.svg").read_text(encoding="utf-8"), (sd / "A-007-default.svg").read_text(encoding="utf-8")
+    eff = json.loads((out / "profile-applied8.json").read_text(encoding="utf-8")) if (out / "profile-applied8.json").exists() else {}
+    # ---- 숨은 선 LN-03: 단면·입면의 가려진 모서리가 파선 그룹으로 나오고, 기본 시트에는 없고, 꺼 둔 값은 기본과 바이트가 같다
+    n_hid = _gsum(s7, "hidden-lines")
+    want = a8["hidden"]["elev-S"] + a8["hidden"]["elev-N"]
+    body = "".join(m.group(1) for m in re.finditer(r'<g id="hidden-lines"[^>]*>(.*?)</g>', s7, re.S))
+    dashed = len(re.findall(r'<line [^>]*stroke-dasharray="2.4 1.2"', body))
+    if n_hid == want >= 1 and dashed == n_hid and "hidden-lines" not in s7d and a8["empty_args_equal_default"] and a8["hidden"]["plan-1F"] == 0:
+        res["LN-03"] = (OK, f"입면 2개(A-007)에 앞의 벽에 가려진 모서리·개구부 윤곽 {n_hid}개를 파선(2.4/1.2mm, 보이는 선과 같은 굵기)으로 그린다. 보이는 선과 겹치는 부분은 뺀다(실선 우선). "
+                            "profile.hidden_lines 로 켜며 기본·꺼 둔 값은 기본 시트와 바이트까지 같다. 한계: 단면·입면만(평면의 절단면 위 요소 파선은 없다)")
+    # ---- 굵기 위계 LN-04: 치수선·보조선이 위계 값으로 바뀐다(기본 0.13 < 보이는 선 0.18 -> 치수선 0.25 = 기호선, 보조선 0.18 = 보이는 선). 비내력벽은 구분 속성이 없다
+    wd = lambda svg: sorted({float(w) for c, w in re.findall(r'stroke="(#[0-9a-f]{6})" stroke-width="([\d.]+)"', svg) if c == "#1a4fa0"})   # noqa: E731
+    tiers = (eff.get("line_hierarchy") or {}).get("tiers", [])
+    tw = [t["width_mm"] for t in tiers]
+    if tiers and tw == sorted(tw, reverse=True) and len(set(tw)) == len(tw) and wd(s7) == [0.18, 0.25] and 0.13 in wd(s7d):
+        res["LN-04"] = (PART, f"선 굵기 위계를 값으로 정하고(drawing.profile line_hierarchy: 절단선 {tw[0]:g} > 창호·기호선·치수선 {tw[1]:g} > 보이는 선·보조선 {tw[2]:g} > 가는선·해칭 {tw[3]:g}mm) "
+                             f"시트가 그대로 그린다(A-007 치수선 {wd(s7d)} -> {wd(s7)}). 기본은 치수선이 보이는 선보다 가늘다. 비내력벽을 구분하는 속성이 없어 모든 벽의 절단선이 같은 굵기라 부분")
+    # ---- 배치도·대지
+    st = a8.get("site")
+    if st and all((sd / n).exists() for n in ("A-006.svg", "A-006-default.svg", "A-000b.svg")):
+        s6, s6d, s0 = ((sd / n).read_text(encoding="utf-8") for n in ("A-006.svg", "A-006-default.svg", "A-000b.svg"))
+        vt = _gtexts(s6, f"view-{st['view']}")
+        t0 = _texts(s0)
+        sc = f"S=1:{st['scale']}"
+        deg = _gattr(s6, "north-symbol", "data-north-deg")
+        if sc in vt and "N" in vt and deg is not None and float(deg) == st["north_angle"]:
+            res["P-01"] = (OK, f"배치도 시트(A-006)에 축척({sc}: 뷰 문자·도면명·표제란 축척 칸·축척 막대)과 방위(뷰 안 방위표 N, 정북 각 {st['north_angle']:g}도가 표제란 방위표 data-north-deg 와 같다)가 표시된다. N-01 은 같은 항목")
+        rd = st["roads"]
+        if rd and all(f"접도 길이 {int(r['length'])}" in vt and f"{r['name']} 폭 {int(r['width'])}" in vt for r in rd):
+            res["P-02"] = (OK, "접한 도로 " + ", ".join(f"{r['name']}(접도 길이 {int(r['length'])}·폭 {int(r['width'])}mm)" for r in rd) + "를 배치도에 띠로 그리고 이름·폭·접도 길이 문자와 폭 치수를 단다. 길이는 대지 경계 변 길이, 폭은 입력값")
+        mm = sorted(round(x["mm"]) for x in st["setbacks"])
+        ifc = sorted(round(x) for x in a8["ifc_check"]["setbacks_mm"] if x is not None)
+        if len(mm) == len(st["boundary"]) and mm == ifc and all(str(v) in vt for v in mm):
+            res["P-04"] = (OK, f"대지 경계 {len(mm)}개 변마다 건물까지 이격 치수({', '.join(str(v) for v in mm)}mm)를 배치도에 단다. 내보낸 IFC 의 대지 경계 폴리라인과 벽·슬래브 형상 정점에서 다시 잰 값과 같다(엔진 코드와 독립 검산). "
+                             "건축선은 입력 개념이 없어 대지 경계선 기준이다")
+        if "projection-symbol" not in s6d and 'data-method="third-angle"' in s6 and "제3각법" in _texts(s6):
+            res["T-11"] = (OK, "profile.projection='third' 를 주면 표제란에 투상법 칸(글 '제3각법' + 원뿔대 정면·측면 기호, data-method=third-angle)이 들어간다(A-006). 주지 않으면 칸이 없다(기본 시트와 바이트 동일)")
+        if "A-006" in t0 and "배치도" in t0:
+            res["D-01"] = (OK, "배치도 도서(A-006)를 내고 도면목록표(A-000b)에 배치도 행(번호 A-006·축척 1:200)을 적는다")
+        el = f"대지 표고 EL {st['elevation'] / 1000:+.3f}m"
+        if el in vt and "FL(mm)" in t0:
+            res["N-06"] = (OK, f"대지 표고는 m 단위(배치도 '{el}')로, 건물 레벨은 mm 단위(레벨 노트 FL(mm) 열)로 표기한다")
+            res["N-08"] = (PART, f"배치도에 대지 표고 한 값('{el}')만 있다. 대지의 고저차(경사·등고선·여러 점 표고)는 입력이 없어 표시하지 못한다")
+        rt = a8["roundtrip"]
+        if all(rt["hash_equal"]) and rt["origin"] == "authored" and rt["views"] == [st["view"]] and not rt["warnings"] and a8["ifc_check"]["parent"] == "Site":
+            res["B-05"] = (PART, "배치도(A-006)가 더해져 배치·평면·입면·단면 4종을 BIM 도면(모델 파생)으로 낸다. 대지는 IfcSite 로 왕복한다(해시 3종 동일, 경고 0). 수직동선 상세 도면(계단 상세 등)은 아직 없다")
+    return res
+
+
 def judge_bim_items(out: Path, run: dict, base: dict):
     """여섯 번째 작업 항목(B-02 추출 형상, B-04 뷰 원본 저장)을 run.json 의 probe 로 판정한다."""
     return judge_corner(run) | judge_sheet_def(run)
@@ -532,7 +595,7 @@ def main():
     dg = digest_same(out, Path(o.g1) if o.g1 else None)
     changed = []
     for judged in (judge_sheet_items(out, run, items), judge_element_items(out, run, items), judge_slab_height_items(out, run, items),
-                   judge_stair_space_items(out, run, items), judge_sheet2_items(out, run, items), judge_bim_items(out, run, items), judge_after7_items(out, run, items)):
+                   judge_stair_space_items(out, run, items), judge_sheet2_items(out, run, items), judge_bim_items(out, run, items), judge_after7_items(out, run, items), judge_after8_items(out, run, items)):
         for i, (v, why) in judged.items():
             if items[i]["verdict"] != v:
                 changed.append((i, items[i]["verdict"], v))

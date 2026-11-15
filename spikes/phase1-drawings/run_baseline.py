@@ -11,6 +11,8 @@ G1 때와 같은 방식으로 도면을 다시 뽑는다(s3lib.build 의 RA-01 �
   --no-stairs / --no-spaces / --no-fire / --no-finish : 계단·공간·방화 등급·외벽 마감 입력을 뺀다(네 번째 작업 이전 입력)
   --no-sheetdef : 여섯 번째 작업(시트 정의 저장·왕복 probe)을 건너뛴다
   --no-after7   : 일곱 번째 작업(작성기준 프로파일·1:50 상세·시트 치수 A-004·A-005)을 건너뛴다
+  --no-after8   : 여덟 번째 작업(대지·배치도 A-006, 숨은 선·선 굵기 위계·제3각법 A-007, 도면목록 A-000b)을 통째로 건너뛴다
+  --no-site     : 여덟 번째 작업 중 대지 입력과 배치도(A-006·도면목록의 배치도 행)만 뺀다(숨은 선·위계·제3각법은 그대로)
   --no-sheet2   : 다섯 번째 작업(색인 시트·통심선·기호·태그·키 플랜·개정·서명·선 굵기 프로파일·작성기준 프로파일)을 건너뛴다
 
 다섯 번째 작업 산출(--sheets): sheets/A-000(색인: 도면목록·범례·주기·레벨 노트·창호/벽체 일람표·재료표), sheets/A-002(통심선·단면·입면 기호·부위 상세·부호 태그·키 플랜·
@@ -223,6 +225,119 @@ def after7(sess, ids, views, log, out, work, spec):
     log["after7"] = probe
 
 
+def after8(sess, ids, views, log, out, work, spec, site=True):
+    """여덟 번째 작업: 대지·배치도(B-05, 법정 P-01·P-02·P-04), 숨은 선·선 굵기 위계·제3각법(LN-03·LN-04·T-11).
+    산출은 sheets8/ 와 site/ 에 둔다. 같은 인자에서 새 입력(profile 의 hidden_lines·line_hierarchy·projection)만 뺀 기본 시트를 함께 내어 차이를 재고,
+    run.json 의 after8 로 남긴다. 대지·배치도 뷰는 모든 기존 산출을 뽑은 뒤에 더하므로 기존 파일은 바이트가 그대로다."""
+    from math import sqrt
+
+    from dobim_core import dispatch
+    sd = out / "sheets8"
+    sd.mkdir(exist_ok=True)
+    probe: dict = {"sheets": {}, "exports": []}
+    lx, ly = s3lib.LX, s3lib.LY
+    new_prof = {"hidden_lines": True, "line_hierarchy": True, "projection": "third"}
+
+    def one(nm, args, exts=("svg", "pdf"), cmd="sheet.export"):
+        for ext in exts:
+            r = export(sess, cmd, args, work / f"{nm}.{ext}")
+            (sd / f"{nm}.{ext}").write_bytes((work / f"{nm}.{ext}").read_bytes())
+            probe["exports"].append({"dir": "sheets8", "sheet": nm, "ext": ext, "bytes": r["bytes"], "font_embedded": r["font_embedded"], "non_ascii_dropped": r["non_ascii_dropped"],
+                                     "number_check": r.get("number_check"), "number": r.get("sheet_number")})
+
+    north = 15.0
+    if site:
+        lot = [[-6000.0, -8000.0], [lx + 6000.0, -8000.0], [lx + 6000.0, ly + 5000.0], [-6000.0, ly + 5000.0]]
+        roads = [{"name": "남측 도로", "edge": 0, "width": 8000.0}, {"name": "동측 도로", "edge": 1, "width": 6000.0}]
+        sid = "a" + f"{1:021d}"
+        ids["SITE"] = sid
+        ok(sess.run("site.create", {"id": sid, "boundary": lot, "name": "RA-01 대지", "north_angle": north, "roads": roads, "elevation": 12500.0}))
+        vsite = ok(sess.run("view.create", {"id": "4" + "0" * 19 + "b1", "name": "배치도", "type": "site", "scale": 200}))["id"]
+        sess.eng.sync()
+        sess.eng._touch_pending()
+        g = sess.eng.g
+        sb = [{"edge": i, "mm": round(d, 3), "foot": [round(x, 3) for x in foot], "vertex": [round(x, 3) for x in vert]} for i, d, foot, vert in g.q(D.site_setbacks, sid)]
+        edges = []
+        for i in range(len(lot)):
+            a, b = lot[i], lot[(i + 1) % len(lot)]
+            edges.append(round(sqrt((b[0] - a[0]) ** 2 + (b[1] - a[1]) ** 2), 3))
+        probe["site"] = {"id": sid, "view": vsite, "boundary": lot, "north_angle": north, "elevation": 12500.0, "scale": 200,
+                         "roads": [{"name": r["name"], "edge": r["edge"], "width": r["width"], "length": edges[r["edge"]]} for r in roads],
+                         "setbacks": sb, "edge_lengths": edges, "area_m2": (lot[2][0] - lot[0][0]) * (lot[2][1] - lot[0][1]) / 1e6,
+                         "lines": len(g.q(D.view_lines, vsite)), "labels": [t[2] for t in g.q(D.view_labels, vsite)], "dims": [d[5] for d in g.q(D.site_dims, vsite)]}
+        sdir = out / "site"
+        sdir.mkdir(exist_ok=True)
+        for ext in ("svg", "pdf"):
+            r = export(sess, "view.export", {"id": vsite}, work / f"site_view.{ext}")
+            (sdir / f"배치도.{ext}").write_bytes((work / f"site_view.{ext}").read_bytes())
+            probe["exports"].append({"dir": "site", "view": "배치도", "ext": ext, "bytes": r["bytes"], "segments": r["segments"], "labels": r["labels"], "annotations": r["annotations"]})
+        # 배치도 시트: 1:200 배치도 한 장(A1). 투상법·선 굵기 위계는 새 입력(profile)이다
+        a6 = {**spec, "views": [vsite], "paper": "A1", "sheet_name": "배치도", "sheet_number": "A-006", "north_angle": north, "dims": []}
+        one("A-006", {**a6, "profile": {"projection": "third", "line_hierarchy": True}})
+        one("A-006-default", a6, ("svg",))
+        # 독립 검산: 내보낸 IFC 파일을 열어(엔진 코드와 독립) 대지 경계 폴리라인과 건물 형상 정점에서 변마다 이격을 다시 잰다
+        import ifcopenshell
+        import ifcopenshell.geom
+        ifc_out(sess, "site.ifc")
+        f = ifcopenshell.open(str(work / "site.ifc"))
+        st_ = f.by_guid(sid)
+        pts = [tuple(p.Coordinates) for p in st_.Representation.Representations[0].Items[0].Elements[0].Points][:-1]
+        gs = ifcopenshell.geom.settings()
+        gs.set("use-world-coords", True)
+        verts = set()
+        for cls in ("IfcWall", "IfcSlab"):
+            for e in f.by_type(cls):
+                v = ifcopenshell.geom.create_shape(gs, e).geometry.verts
+                verts |= {(round(v[i] * 1000.0, 2), round(v[i + 1] * 1000.0, 2)) for i in range(0, len(v), 3)}
+        ifc_sb = []
+        for i in range(len(pts)):
+            a, b = pts[i], pts[(i + 1) % len(pts)]
+            ln = sqrt((b[0] - a[0]) ** 2 + (b[1] - a[1]) ** 2)
+            ux, uy = (b[0] - a[0]) / ln, (b[1] - a[1]) / ln
+            best = None
+            for vx, vy in verts:
+                t = (vx - a[0]) * ux + (vy - a[1]) * uy
+                if 0.0 <= t <= ln:
+                    d = abs((vx - a[0]) * -uy + (vy - a[1]) * ux)
+                    best = d if best is None or d < best else best
+            ifc_sb.append(None if best is None else round(best, 2))
+        probe["ifc_check"] = {"site_name": st_.Name, "ref_elevation": st_.RefElevation, "boundary_points": [list(p) for p in pts], "setbacks_mm": ifc_sb,
+                              "parent": f.by_guid(sid).Decomposes[0].RelatingObject.Name}
+        # IFC 왕복: 가져와도 대지·배치도 뷰가 되살고 해시 3종이 같다
+        h0 = ok(sess.run("model.hash", {}))
+        imp = ok(dispatch.run(sess.env, "ifc.import", {"source": "site.ifc", "path": "site-imp.dobim"}))
+        h1 = ok(dispatch.run(sess.env, "model.hash", {}, project="site-imp.dobim"))
+        g1 = ok(dispatch.run(sess.env, "element.get", {"id": sid}, project="site-imp.dobim"))
+        v1 = ok(dispatch.run(sess.env, "view.list", {"type": "site"}, project="site-imp.dobim"))
+        probe["roundtrip"] = {"warnings": imp["warnings"], "skeleton": imp["skeleton"], "elements": imp["elements"], "hash_equal": [h0[k] == h1[k] for k in ("state", "derived", "ifc")],
+                              "origin": g1["origin"], "kind": g1["kind"], "views": [i["id"] for i in v1["items"]]}
+    # 입면 시트: 숨은 선·선 굵기 위계·제3각법(profile). 같은 인자의 기본 시트와 비교하고, 꺼 둔 값(false)을 줘도 기본과 바이트가 같다
+    elev = [views["elev-S"], views["elev-N"]]
+    a7 = {**spec, "views": elev, "paper": "A1", "sheet_name": "입면도(숨은 선·선 굵기 위계)", "sheet_number": "A-007", "dims": ["elevation"]}
+    one("A-007", {**a7, "profile": new_prof})
+    one("A-007-default", a7, ("svg",))
+    one("A-007-empty", {**a7, "profile": {"hidden_lines": False, "line_hierarchy": False}}, ("svg",))
+    probe["empty_args_equal_default"] = (sd / "A-007-empty.svg").read_bytes() == (sd / "A-007-default.svg").read_bytes()
+    sess.eng.sync()
+    sess.eng._touch_pending()
+    probe["hidden"] = {k: len(sess.eng.g.q(D.view_hidden_lines, views[k])) for k in ("elev-S", "elev-N", "elev-E", "elev-W", "plan-1F", "section-BB")}
+    # 도면목록(색인 시트): 배치도(A-006)와 입면 시트(A-007)를 적어 D-01 을 확인한다
+    listing = [{"number": "A-000", "title": "도면목록·범례·일람표", "scale": "-"}, {"number": "A-001", "title": "평면도·단면도·입면도", "scale": "1:100"}]
+    if site:
+        listing.append({"number": "A-006", "title": "배치도", "scale": "1:200"})
+    listing.append({"number": "A-007", "title": "입면도(숨은 선·선 굵기 위계)", "scale": "1:100"})
+    probe["drawing_list"] = listing
+    idx = {"paper": "A1", "sheet_name": "도면목록(배치도 포함)", "sheet_number": "A-000b", "drawings": listing, "tables": ["drawing_list", "levels"],
+           "project_name": spec["project_name"], "date": spec["date"]}
+    for ext in ("svg", "pdf"):
+        r = export(sess, "sheet.index", idx, work / f"A-000b.{ext}")
+        (sd / f"A-000b.{ext}").write_bytes((work / f"A-000b.{ext}").read_bytes())
+        probe["exports"].append({"dir": "sheets8", "sheet": "A-000b", "ext": ext, "bytes": r["bytes"], "font_embedded": r["font_embedded"], "non_ascii_dropped": r["non_ascii_dropped"]})
+    eff = ok(sess.run("drawing.profile", {"profile": new_prof}))
+    (out / "profile-applied8.json").write_text(json.dumps(eff, ensure_ascii=False, indent=1), encoding="utf-8")
+    log["after8"] = probe
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--out", required=True)
@@ -232,6 +347,8 @@ def main():
     ap.add_argument("--no-sheet2", action="store_true")
     ap.add_argument("--no-sheetdef", action="store_true")
     ap.add_argument("--no-after7", action="store_true")
+    ap.add_argument("--no-after8", action="store_true")
+    ap.add_argument("--no-site", action="store_true")
     for f in ("stairs", "spaces", "fire", "finish"):
         ap.add_argument(f"--no-{f}", action="store_true")
     o = ap.parse_args()
@@ -419,6 +536,8 @@ def main():
             cornerprobe(sess, log, work)
     if o.sheets and not o.no_sheet2 and not o.no_after7:
         after7(sess, ids, views, log, out, work, spec)
+    if o.sheets and not o.no_sheet2 and not o.no_after8:
+        after8(sess, ids, views, log, out, work, spec, site=not o.no_site)
     (out / "run.json").write_text(json.dumps({"views": views, "ids": ids, **log}, ensure_ascii=False, indent=1), encoding="utf-8")
     print(json.dumps(log, ensure_ascii=False)[:1500])
 

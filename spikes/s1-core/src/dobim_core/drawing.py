@@ -1764,11 +1764,38 @@ def _poly_bbox(poly):
     return (min(p[0] for p in poly), min(p[1] for p in poly), max(p[0] for p in poly), max(p[1] for p in poly))
 
 
+ESCAPE_DIRS = ((1.0, 0.0137), (-1.0, 0.0211), (0.0173, 1.0), (0.0239, -1.0), (1.0, 1.0123), (-1.0, 1.0171), (1.0, -1.0097), (-1.0, -1.0149))   # 살짝 비튼 8방향(꼭짓점을 스치지 않게)
+
+
+def _escapes(p, edges) -> bool:
+    """점 p 에서 어느 한 방향으로 건물 변에 한 번도 부딪히지 않고 무한히 나갈 수 있는가(건물 밖에서 보이는 자리인가). 닫힌 방 안쪽이면 모든 방향이 막힌다."""
+    for dx, dy in ESCAPE_DIRS:
+        blocked = False
+        for a, b in edges:
+            if (dx > 0 and max(a[0], b[0]) < p[0]) or (dx < 0 and min(a[0], b[0]) > p[0]) or (dy > 0 and max(a[1], b[1]) < p[1]) or (dy < 0 and min(a[1], b[1]) > p[1]):
+                continue
+            ex, ey = b[0] - a[0], b[1] - a[1]
+            den = dx * ey - dy * ex
+            if abs(den) < 1e-12:
+                continue
+            qx, qy = a[0] - p[0], a[1] - p[1]
+            t = (qx * ey - qy * ex) / den
+            u = (qx * dy - qy * dx) / den
+            if t > 1e-9 and 0.0 <= u <= 1.0:
+                blocked = True
+                break
+        if not blocked:
+            return True
+    return False
+
+
 def building_outline(g):
     """건물 다각형들의 합집합 바깥 선분: ((x0, y0, x1, y1), ...). 다른 다각형 안쪽에 들어가거나 이웃과 맞닿은 변은 뺀다.
-    각 변을 다른 다각형 변과의 교점에서 쪼개고, 조각 중점에서 바깥으로 조금 나간 점이 다른 다각형 안이면 안쪽 이음매다."""
+    각 변을 다른 다각형 변과의 교점에서 쪼개고, 조각 중점에서 바깥으로 조금 나간 점이 다른 다각형 안이면 안쪽 이음매다.
+    닫힌 방 안쪽을 향한 변(그 점에서 어느 방향으로도 건물 밖으로 나갈 수 없는 자리)은 외곽이 아니라서 뺀다: 외벽 안쪽 면·칸막이 윤곽이 배치도에 남지 않는다."""
     polys = g.q(building_polys)
     boxes = [_poly_bbox(p) for p in polys]
+    edges = [(P[k], P[(k + 1) % len(P)]) for P in polys for k in range(len(P))]
     out = []
     for i, P in enumerate(polys):
         others = [polys[j] for j in range(len(polys)) if j != i and _bb_hit(boxes[i], boxes[j])]
@@ -1792,6 +1819,8 @@ def building_outline(g):
                 tm = (t0 + t1) / 2.0
                 probe = (a[0] + tm * dx + nx * SITE_PAD, a[1] + tm * dy + ny * SITE_PAD)
                 if any(_in_poly(probe, Qp) for Qp in others):
+                    continue
+                if not _escapes(probe, edges):
                     continue
                 out.append((a[0] + t0 * dx, a[1] + t0 * dy, a[0] + t1 * dx, a[1] + t1 * dy))
     return tuple(out)
@@ -1964,7 +1993,7 @@ def site_labels(g, v):
             a, b, length, (nx, ny) = _edge_frame(poly, edge)
             m = (a[0] + (b[0] - a[0]) * 0.22, a[1] + (b[1] - a[1]) * 0.22)      # 변 한가운데는 폭 치수가 차지한다
             lx, ly = m[0] + nx * width * 0.5, m[1] + ny * width * 0.5
-            out.append((round(lx, 3), round(ly + 0.6 * scale, 3), (rn + " " if rn else "") + f"도로 폭 {_fmt_mm(width)}", SITE_SUB_H, "middle"))
+            out.append((round(lx, 3), round(ly + 0.6 * scale, 3), f"{rn or '도로'} 폭 {_fmt_mm(width)}", SITE_SUB_H, "middle"))
             out.append((round(lx, 3), round(ly - 2.4 * scale, 3), f"접도 길이 {_fmt_mm(length)}", SITE_SUB_H, "middle"))
     boxes, north = g.q(_site_extent)
     if boxes:
