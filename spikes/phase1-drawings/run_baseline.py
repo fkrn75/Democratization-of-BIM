@@ -17,6 +17,7 @@ G1 때와 같은 방식으로 도면을 다시 뽑는다(s3lib.build 의 RA-01 �
   --no-after11  : 열한 번째 작업(승강기·지붕 입력과 승강기 표시 평면)을 건너뛴다
   --no-after12  : 열두 번째 작업(대지 단면·조경·주차·간판 입력과 산출)을 건너뛴다
   --no-after13  : 열세 번째 작업(계단·승강기 상세 뷰, 승강기 평면 치수, 문·창을 지나는 단면, 방위 기본값)을 건너뛴다
+  --no-after14  : 열네 번째 작업(경사 지붕·파라펫·승강기 피트/기계실/승강장 문/슬래브 구멍 연동, A-018·A-019)을 건너뛴다
   --no-sheet2   : 다섯 번째 작업(색인 시트·통심선·기호·태그·키 플랜·개정·서명·선 굵기 프로파일·작성기준 프로파일)을 건너뛴다
 
 다섯 번째 작업 산출(--sheets): sheets/A-000(색인: 도면목록·범례·주기·레벨 노트·창호/벽체 일람표·재료표), sheets/A-002(통심선·단면·입면 기호·부위 상세·부호 태그·키 플랜·
@@ -515,7 +516,7 @@ def after12(sess, ids, views, log, out, work, spec):
                "aisles": [{"path": [[-5000.0, -1800.0], [17000.0, -1800.0]], "width": 2000.0}],
                "routes": [{"path": [[17000.0, -8000.0], [17000.0, -1800.0], [0.0, -1800.0]]}]}
     signs = [{"name": "S1", "kind": "sign", "face": "S", "center": [3000.0, -160.0], "z": 2500.0, "w": 2400.0, "h": 700.0, "text": "RA-01 상가"},
-             {"name": "N1", "kind": "address", "face": "N", "center": [6000.0, 8160.0], "z": 1500.0, "w": 400.0, "h": 250.0, "text": "12-3"}]
+             {"name": "N1", "kind": "address", "face": "N", "center": [3500.0, 8160.0], "z": 1500.0, "w": 400.0, "h": 250.0, "text": "12-3"}]   # 열네 번째 작업: 북측 창(x 7440~8600)의 모서리와 겹치던 번호판 문자를 창에서 뗐다(x 6000 -> 3500)
     vsite = ok(sess.run("view.list", {"type": "site"}))["items"][0]["id"]
     # 새 입력 전의 뷰 데이터(입력을 지운 뒤 되돌아오는지 보는 기준)
     sess.eng.sync()
@@ -720,6 +721,131 @@ def after13(sess, ids, views, log, out, work, spec):
     log["after13"] = probe
 
 
+def after14(sess, ids, views, log, out, work, spec):
+    """열네 번째 작업: 경사 지붕(박공 주차 캐노피·외쪽 현관 캐노피·모임 정자)과 평지붕 슬래브(S-ROOF)의 파라펫, 승강기 보강(피트·기계실·층별 승강장 문·슬래브 구멍 연동 이동)을
+    입력으로 더하고 지붕 평면·단면·입면(A-018)과 승강기 상세(A-019)를 낸다. 산출은 sheets14/ 에 둔다. 모든 기존 산출을 뽑은 뒤 맨 끝에 더한다(자동 id 가 밀리지 않게 id 는 모두 명시한다).
+    독립 검산(엔진 코드·그리기 코드를 쓰지 않는다): 내보낸 IFC 의 DoBIM_Intent 를 읽어 math.tan 으로 용마루 높이·처마 끝 높이를 다시 계산해 단면·입면 선의 높이와 맞추고,
+    파라펫 윗면 높이(슬래브 윗면 + 높이), 승강기를 옮긴 뒤의 슬래브 구멍(= 옮긴 샤프트 사각형)을 IFC 의도에서 다시 읽어 맞춘다."""
+    import math
+
+    import ifcopenshell
+    import ifcopenshell.util.element as ue
+
+    from dobim_core import dispatch
+    sd = out / "sheets14"
+    sd.mkdir(exist_ok=True)
+    probe: dict = {"exports": []}
+    vid = lambda k: "4" + "0" * 19 + k   # noqa: E731
+    rid = lambda n: "e" + f"{n:021d}"   # noqa: E731
+    two, eid = ids["2F"], ids["EV-1"]
+    roofs = {"RF-PARK": (1, {"level": two, "boundary": [[0.0, -7800.0], [10000.0, -7800.0], [10000.0, -2800.0], [0.0, -2800.0]], "form": "gable", "pitch": 8.0, "overhang": 300.0, "base_offset": -500.0, "thickness": 150.0, "name": "RF-PARK"}),
+             "RF-ENTRY": (2, {"level": two, "boundary": [[2400.0, -2000.0], [5600.0, -2000.0], [5600.0, -200.0], [2400.0, -200.0]], "form": "shed", "dir": 270.0, "pitch": 10.0, "overhang": 0.0, "base_offset": -500.0, "thickness": 150.0, "name": "RF-ENTRY"}),
+             "RF-GAZEBO": (3, {"level": two, "boundary": [[13500.0, 8000.0], [17000.0, 8000.0], [17000.0, 10500.0], [13500.0, 10500.0]], "form": "hip", "pitch": 30.0, "overhang": 400.0, "base_offset": -900.0, "thickness": 150.0, "name": "RF-GAZEBO"})}
+    for nm, (n, a) in roofs.items():
+        ids[nm] = rid(n)
+        ok(sess.run("roof.create", {"id": ids[nm], **a}))
+    # 평지붕 슬래브 둘레의 파라펫(높이 900·두께 200)
+    par = {"height": 900.0, "thickness": 200.0}
+    ok(sess.run("slab.set", {"id": ids["S-ROOF"], "parapet": par}))
+    # 승강기 보강: 샤프트가 지붕 윗면까지(rise 6600), 피트 1200, 기계실 2400(지붕 위), 승강장 문(S 면, 폭 900·높이 2100, 1F·2F). 지붕 슬래브에도 구멍을 내고(승강기가 소유) 옮긴다
+    ok(sess.run("elevator.set", {"id": eid, "rise": 6600.0, "pit": 1200.0, "machine_height": 2400.0, "doors": {"face": "S", "w": 900.0, "h": 2100.0, "levels": [ids["1F"], ids["2F"]]}}))
+    cut2 = ok(sess.run("elevator.cut_slabs", {"id": eid}))
+    owned0 = ok(sess.run("element.get", {"id": eid}))["params"]["hole_slabs"]
+    mv = ok(sess.run("elevator.move", {"id": eid, "dx": 300.0, "dy": -200.0}))
+    shaft = ok(sess.run("element.get", {"id": eid}))["params"]["shaft"]
+    probe["elevator"] = {"cut_again": cut2, "owned": owned0, "move": mv, "shaft": shaft}
+    mk = lambda k, a: ok(sess.run("view.create", {"id": vid(k), **a}))   # noqa: E731
+    v = {}
+    v["roof-plan"] = mk("i1", {"name": "지붕 평면도", "type": "plan", "level": two, "cut_height": 12000.0, "scale": 100})
+    v["section-EE"] = mk("i2", {"name": "E-E 단면(지붕·파라펫)", "type": "section", "p1": [3000.0, -9000.0], "p2": [3000.0, 9000.0], "scale": 100})
+    v["elev-S-roof"] = mk("i3", {"name": "남측 입면(지붕)", "type": "elevation", "dir": "S"})
+    v["elev-E-roof"] = mk("i4", {"name": "동측 입면(지붕)", "type": "elevation", "dir": "E"})
+    v["ev-plan-1F"] = mk("i5", {"name": "승강기 1F 평면(승강장 문)", "type": "plan", "level": ids["1F"], "scale": 50, "around": eid, "margin": 1500.0, "dims": True})
+    v["ev-plan-pit"] = mk("i6", {"name": "승강기 피트 평면", "type": "plan", "level": ids["1F"], "cut_height": -600.0, "scale": 50, "around": eid, "margin": 1500.0, "dims": True})
+    v["ev-plan-machine"] = mk("i7", {"name": "승강기 기계실 평면", "type": "plan", "level": two, "cut_height": 4000.0, "scale": 50, "around": eid, "margin": 1500.0, "dims": True})
+    v["ev-section-door"] = mk("i8", {"name": "승강기 단면(승강장 문·피트·기계실)", "type": "section", "p1": [-500.0, 6300.0], "p2": [3500.0, 6300.0], "flip": True, "scale": 50, "around": eid, "margin": 1500.0, "dims": True})
+    ids14 = {k: x["id"] for k, x in v.items()}
+    probe["views"] = ids14
+    for nm, vv in ids14.items():
+        for ext in ("svg", "pdf"):
+            r = export(sess, "view.export", {"id": vv}, work / f"s14_{nm}.{ext}")
+            (sd / f"{nm}.{ext}").write_bytes((work / f"s14_{nm}.{ext}").read_bytes())
+            probe["exports"].append({"dir": "sheets14", "view": nm, "ext": ext, "bytes": r["bytes"], "segments": r["segments"], "labels": r["labels"], "annotations": r["annotations"]})
+    for nm, ks, title, paper in (("A-018", [ids14["roof-plan"], ids14["section-EE"], ids14["elev-S-roof"], ids14["elev-E-roof"]], "지붕 평면도·단면도·입면도(경사 지붕·파라펫)", "A1"),
+                                 ("A-019", [ids14["ev-plan-1F"], ids14["ev-plan-pit"], ids14["ev-plan-machine"], ids14["ev-section-door"]], "승강기 상세도(승강장 문·피트·기계실)", "A1")):
+        a = {**spec, "views": ks, "paper": paper, "sheet_name": title, "sheet_number": nm, "dims": []}
+        for ext in ("svg", "pdf"):
+            r = export(sess, "sheet.export", a, work / f"{nm}.{ext}")
+            (sd / f"{nm}.{ext}").write_bytes((work / f"{nm}.{ext}").read_bytes())
+            probe["exports"].append({"dir": "sheets14", "sheet": nm, "ext": ext, "bytes": r["bytes"], "font_embedded": r["font_embedded"], "non_ascii_dropped": r["non_ascii_dropped"]})
+    sess.eng.sync()
+    sess.eng._touch_pending()
+    g = sess.eng.g
+    probe["dims"] = {k: [d[5] for d in g.q(D.view_dims, x)] for k, x in ids14.items() if k.startswith("ev-")}
+    probe["labels"] = {k: [t[2] for t in g.q(D.view_labels, x)] for k, x in ids14.items()}
+    probe["counts"] = {k: {"lines": len(g.q(D.view_lines, x)), "fills": len(g.q(D.view_fills, x))} for k, x in ids14.items()}
+    probe["z_sets"] = {k: sorted({round(z, 3) for ln in g.q(D.view_lines, ids14[k]) for z in (ln[2], ln[4])}) for k in ("section-EE", "elev-S-roof", "elev-E-roof")}
+    # ---- 독립 검산: 내보낸 IFC 의 의도에서 지붕·파라펫·승강기를 다시 읽는다(math.tan, 엔진 코드 없음)
+    ifc_out(sess, "after14.ifc")
+    f = ifcopenshell.open(str(work / "after14.ifc"))
+    intent = lambda gid: json.loads(ue.get_pset(f.by_guid(gid), "DoBIM_Intent")["Intent"])["params"]   # noqa: E731
+    lv2 = ok(sess.run("element.get", {"id": two}))["params"]["elevation"]
+    exp = {}
+    for nm in roofs:
+        ip = intent(ids[nm])
+        b = ip["boundary"]
+        sx, sy = abs(b[1][0] - b[0][0]) + abs(b[1][1] - b[0][1]), abs(b[2][0] - b[1][0]) + abs(b[2][1] - b[1][1])   # 축에 나란한 직사각형: 두 변 길이
+        t = math.tan(math.radians(ip["pitch"]))
+        short = min(sx, sy)
+        z_eave = lv2 + ip["base_offset"]
+        e = {"form": ip["form"], "pitch": ip["pitch"], "eave_z": z_eave, "eave_end_z": z_eave - t * ip["overhang"], "thickness": ip["thickness"]}
+        if ip["form"] in ("gable", "hip"):
+            e["ridge_z"] = z_eave + t * short / 2.0
+        else:
+            n = (math.cos(math.radians(ip["dir"])), math.sin(math.radians(ip["dir"])))
+            half = (sx / 2.0 * abs(n[0]) + sy / 2.0 * abs(n[1]))
+            e["high_z"] = z_eave + t * 2 * half   # 물이 흐르는 쪽 처마의 반대쪽 끝(가장 높은 모서리)의 높이
+        exp[nm] = e
+    probe["roof_expected"] = exp
+    probe["roof_ifc"] = {nm: {"class": f.by_guid(ids[nm]).is_a(), "predefined": f.by_guid(ids[nm]).PredefinedType,
+                              "faces": [(k.is_a(), k.PredefinedType) for rel in f.by_guid(ids[nm]).IsDecomposedBy for k in rel.RelatedObjects]} for nm in roofs}
+    sp = intent(ids["S-ROOF"])
+    ztop = lv2 + sp["top_offset"]
+    probe["parapet"] = {"intent": sp["parapet"], "top_z": ztop + sp["parapet"]["height"],
+                        "ifc": [(k.is_a(), k.PredefinedType) for rel in f.by_guid(ids["S-ROOF"]).IsDecomposedBy for k in rel.RelatedObjects]}
+    iev = intent(eid)
+    probe["ifc_elevator"] = {k: iev[k] for k in ("shaft", "pit", "machine", "doors", "stops", "rise", "hole_slabs", "hole_clearance")}
+    holes = {}
+    c_, sh = iev["hole_clearance"], iev["shaft"]
+    want = sorted([[sh[0] - c_, sh[1] - c_], [sh[2] + c_, sh[1] - c_], [sh[2] + c_, sh[3] + c_], [sh[0] - c_, sh[3] + c_]])
+    for sid in iev["hole_slabs"]:
+        ops = intent(sid).get("openings", [])
+        holes[sid] = {"count": len(ops), "match_shaft": any(sorted(o) == want for o in ops)}
+    probe["ifc_holes"] = holes
+    probe["ifc_check"] = {"roofs": len(f.by_type("IfcRoof")), "roof_slabs": len([e for e in f.by_type("IfcSlab") if e.PredefinedType == "ROOF"]), "parapet_walls": len([e for e in f.by_type("IfcWall") if e.PredefinedType == "PARAPET"])}
+    # ---- IFC 왕복: 지붕·파라펫·승강기 선택 입력이 되살고 해시 3종이 같다
+    h0 = ok(sess.run("model.hash", {}))
+    imp = ok(dispatch.run(sess.env, "ifc.import", {"source": "after14.ifc", "path": "after14-imp.dobim"}))
+    h1 = ok(dispatch.run(sess.env, "model.hash", {}, project="after14-imp.dobim"))
+    same = {}
+    for k in [*roofs.keys(), "S-ROOF", "EV-1"]:
+        a0 = ok(sess.run("element.get", {"id": ids[k]}))["params"]
+        a1 = ok(dispatch.run(sess.env, "element.get", {"id": ids[k]}, project="after14-imp.dobim"))["params"]
+        same[k] = a0 == a1
+    probe["roundtrip"] = {"warnings": imp["warnings"], "hash_equal": [h0[k] == h1[k] for k in ("state", "derived", "ifc")], "params_equal": same}
+    # ---- 선택 입력을 지우면 승강기 도면에서 문·피트·기계실 표기가 사라진다(복원 시험: 같은 입력을 다시 넣는다)
+    saved_ev = ok(sess.run("element.get", {"id": eid}))["params"]
+    on = {"ev_plan_1F_symbols": len([ln for ln in g.q(D.view_lines, ids14["ev-plan-1F"]) if ln[0] == "symbol"])}
+    ok(sess.run("elevator.set", {"id": eid, "clear_pit": True, "clear_machine": True, "clear_doors": True}))
+    sess.eng.sync()
+    sess.eng._touch_pending()
+    g = sess.eng.g
+    off = {"ev_plan_1F_symbols": len([ln for ln in g.q(D.view_lines, ids14["ev-plan-1F"]) if ln[0] == "symbol"])}
+    probe["option_off"] = {"on": on, "off": off}
+    ok(sess.run("elevator.set", {"id": eid, "pit": saved_ev["pit"], "machine_height": saved_ev["machine"]["height"], "doors": {**saved_ev["doors"], "levels": saved_ev["stops"]}}))
+    log["after14"] = probe
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--out", required=True)
@@ -734,6 +860,7 @@ def main():
     ap.add_argument("--no-after11", action="store_true")
     ap.add_argument("--no-after12", action="store_true")
     ap.add_argument("--no-after13", action="store_true")
+    ap.add_argument("--no-after14", action="store_true")
     ap.add_argument("--no-site", action="store_true")
     for f in ("stairs", "spaces", "fire", "finish"):
         ap.add_argument(f"--no-{f}", action="store_true")
@@ -932,6 +1059,8 @@ def main():
         after12(sess, ids, views, log, out, work, spec)
     if o.sheets and not o.no_sheet2 and not o.no_after8 and not o.no_site and not o.no_after11 and not o.no_after13:
         after13(sess, ids, views, log, out, work, spec)
+    if o.sheets and not o.no_sheet2 and not o.no_after8 and not o.no_site and not o.no_after11 and not o.no_after13 and not o.no_after14:
+        after14(sess, ids, views, log, out, work, spec)
     (out / "run.json").write_text(json.dumps({"views": views, "ids": ids, **log}, ensure_ascii=False, indent=1), encoding="utf-8")
     print(json.dumps(log, ensure_ascii=False)[:1500])
 

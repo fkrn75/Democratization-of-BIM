@@ -37,6 +37,7 @@ _ST1 = ("stair.create", {"id": F.ST1, "level": F.LV1, "run": [1000, 1000, 5000, 
 _W4 = ("wall.create", {"id": "1" + "0" * 20 + "4", "level": F.LV1, "axis": [0, 4000, 0, 0], "thickness": 200, "height": 3000})   # 기준 프로젝트의 열린 변을 닫아 방 하나를 만든다(space.from_walls 예시의 준비)
 _EL1 = ("elevator.create", {"id": F.EL1, "level": F.LV1, "shaft": [4000, 500, 5800, 2300], "rise": 6000})
 _S2 = ("slab.create", {"id": F.S1, "level": F.LV2, "boundary": [[0, 0], [6000, 0], [6000, 4000], [0, 4000]], "thickness": 200})   # 샤프트가 지나는 슬래브(elevator.cut_slabs 예시의 준비)
+_RF1 = ("roof.create", {"id": F.RF1, "level": F.LV2, "boundary": [[0, 0], [6000, 0], [6000, 4000], [0, 4000]], "form": "gable", "pitch": 30, "overhang": 600})   # 경사 지붕 예시의 준비
 _RL1 = ("railing.create", {"id": F.RL1, "level": F.LV1, "path": [[0, 0], [3000, 0]], "height": 1100})
 _SP1 = ("space.create", {"id": F.SP1, "level": F.LV1, "boundary": [[0, 0], [6000, 0], [6000, 4000], [0, 4000]], "name": "사무실", "category": "사무실"})
 _SH1 = ("sheet.define", {"id": F.SH1, "name": "A-101 1층 평면", "views": [F.V1], "paper": "A3", "project_name": "예시 프로젝트", "sheet_number": "A-101", "date": "2026-01-01"})
@@ -48,6 +49,7 @@ PRE = {"history.redo": [("history.undo", {})], "ifc.restore": [_EXP, _EXP], "ifc
        "family.set": [_FAMILY_PRE], "annot.dim.heights": [_V2], "slab.set": [_S1], "slab.move": [_S1], "slab.delete": [_S1], "slab.layers": [_S1],
        "stair.set": [_ST1], "stair.move": [_ST1], "stair.delete": [_ST1],
        "railing.set": [_RL1], "railing.move": [_RL1], "railing.delete": [_RL1], "railing.from_stair": [_ST1], "railing.from_slab": [_S1],
+       "roof.set": [_RF1], "roof.move": [_RF1], "roof.delete": [_RF1],
        "elevator.set": [_EL1], "elevator.move": [_EL1], "elevator.delete": [_EL1], "elevator.cut_slabs": [_EL1, _S2],
        "space.set": [_SP1], "space.move": [_SP1], "space.delete": [_SP1], "space.from_walls": [_W4],
        "site.set": [_SI1], "site.delete": [_SI1],
