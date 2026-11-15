@@ -21,6 +21,7 @@ import hashlib
 import json
 from math import sqrt
 
+from dobim_core import kinds as K
 from dobim_core import queries as Q
 from dobim_core.graph import CLEAN
 
@@ -1405,6 +1406,25 @@ def _cut_intervals(sol, cutz):
     return ()
 
 
+def _door_leaf_map(g, w):
+    """벽의 문 개구부 (u0, u1, z0, z1) -> 문 속성의 문짝 두께(leaf). 입력이 없는 문은 넣지 않는다(규약값을 쓴다)."""
+    start, end, _ = g.q(Q.wall_trim, w)
+    _, elev = g.q(Q.level_info, g.q(Q.wall_level, w))
+    zb, zt = elev, elev + Q.el(g, w)["params"]["height"]
+    out = {}
+    for d in g.q(Q.wall_hosted, w):
+        row = Q.el(g, d)
+        if row["kind"] != "door" or "leaf" not in row["params"]:
+            continue
+        box = g.q(hosted_opening, d, elev)
+        if box is None:
+            continue
+        u0, u1, z0, z1 = max(start, box[0]), min(end, box[1]), max(zb, box[2]), min(zt, box[3])
+        if u1 - u0 > EPS and z1 - z0 > EPS:
+            out[(u0, u1, z0, z1)] = row["params"]["leaf"]
+    return out
+
+
 def plan_detail_lines(g, v, w):
     """평면 벽 하나의 상세 선: 재료가 지정된 벽의 양면 마감선(가는 hatch 선, 이웃 벽 절단 조각 안쪽은 지운다)과, 문의 문짝 두께·문턱선.
     큰 축척(DETAIL_SCALE 이하)의 평면에서만 낸다."""
@@ -1417,12 +1437,19 @@ def plan_detail_lines(g, v, w):
         return ()
     out = []
     h = sol[4]
-    if Q.material(g, w) is not None and 2.0 * h >= DETAIL_MIN_T:
+    layers = Q.el(g, w)["params"].get("layers")
+    if layers:   # 층 구성 입력이 있으면 층 경계마다 선(첫 층의 바깥 면 = 지역 -v 면, 마지막 층 쪽 = +v 면)
+        offs = [-h + c for c in K.layer_bounds(layers)[1:-1]]
+    elif Q.material(g, w) is not None and 2.0 * h >= DETAIL_MIN_T:   # 입력이 없으면 규약: 재료가 있는 벽은 양면에서 FINISH_T 안쪽
+        offs = [-(h - FINISH_T), h - FINISH_T]
+    else:
+        offs = []
+    if offs:
         others = [q for o in g.q(plan_nbrs, v, w) for q in g.q(plan_pieces, v, o)[0]]
         ux, uy = sol[2], sol[3]
         for a, b in ivs:
-            for sgn in (-1.0, 1.0):
-                p0 = _world(sol, a, sgn * (h - FINISH_T))
+            for off in offs:
+                p0 = _world(sol, a, off)
                 cuts = []
                 for q in others:
                     iv = _inside_interval(p0, ux, uy, b - a, q)
@@ -1430,24 +1457,236 @@ def plan_detail_lines(g, v, w):
                         cuts.append(iv)
                 for q0, q1 in _keep(p0, ux, uy, b - a, cuts):
                     out.append(("hatch", q0[0], q0[1], q1[0], q1[1]))
+    leaf_of = g.q(_door_leaf_map, w)
     for op in g.q(wall_door_openings, w):
         if op[2] <= cfg[2] + EPS and cfg[2] <= op[3] + EPS:
             u0, u1 = op[0], op[1]
             width = u1 - u0
-            for pa, pb in (((u0 + LEAF_T, h), (u0 + LEAF_T, h + width)), ((u0, h + width), (u0 + LEAF_T, h + width))):   # 문짝 두께(경첩 쪽 문짝 옆선과 끝 마구리)
+            leaf = leaf_of.get(op, LEAF_T)   # 문 속성(leaf)이 있으면 그 값, 없으면 규약값
+            for pa, pb in (((u0 + leaf, h), (u0 + leaf, h + width)), ((u0, h + width), (u0 + leaf, h + width))):   # 문짝 두께(경첩 쪽 문짝 옆선과 끝 마구리)
                 out.append(("symbol", *_world(sol, *pa), *_world(sol, *pb)))
             out.append(("hatch", *_world(sol, u0, 0.0), *_world(sol, u1, 0.0)))    # 문턱선(개구부를 가로지르는 가는 선)
     return tuple(out)
 
 
-def view_detail_lines(g, v):
-    """뷰의 큰 축척 상세 선(병합한 선분 묶음). 평면 외에는 비어 있다."""
+# ---- 1:50 단면·입면 상세(SC-09, B-17): 벽 층 경계선·층별 절단 해치, 슬래브 두께 층, 천장선, 창대(입면)
+# 층 구성(layers) 입력이 있는 벽·슬래브, 천장 높이(ceiling_height)가 있는 공간, 창에만 더한다. 입력이 없으면 아무것도 더하지 않는다.
+LAYER_HATCH_MIN = 1.5     # 층 해치는 용지 위 두께가 이 값(mm) 이상인 층에만 긋는다(마감층처럼 얇은 층은 경계선만)
+LAYER_HATCH_STEP = 2.0    # 층 해치 간격(용지 mm)
+SILL_DROP, SILL_EXT = 40.0, 50.0   # 창대: 창 아래로 내려오는 두께(mm)와 양쪽으로 더 나가는 길이(mm). 규약값
+
+
+def _sec_chord(cfg, sol, a, b, vv):
+    """벽 지역의 선(u = a..b, v = vv)과 절단면(w = near)이 만나는 s. 만나지 않으면 None."""
+    s0, w0 = _sw(cfg, _world(sol, a, vv))
+    s1, w1 = _sw(cfg, _world(sol, b, vv))
+    if abs(w1 - w0) < 1e-9:
+        return None
+    t = (cfg[7] - w0) / (w1 - w0)
+    if t < -1e-9 or t > 1.0 + 1e-9:
+        return None
+    return s0 + t * (s1 - s0)
+
+
+def _hatch_pattern(material) -> int:
+    """층 재료마다 정해지는 해치 무늬 번호(0: 45도, 1: 135도, 2: 격자). 같은 재료는 늘 같은 무늬다(결정적)."""
+    return sum(ord(c) for c in material) % 3
+
+
+def _hatch_rect(s0, s1, z0, z1, pattern, step, others):
+    """절단 사각형 (s0..s1) x (z0..z1) 안의 해치 선분들 ("hatch" 등급). 선은 세계 격자(s -+ z = 간격의 정수배)에 맞춰 이웃 조각과 이어진다.
+    others = 이 사각형 안에서 지울 다른 절단 사각형들 (rs0, rs1, rz0, rz1)(안쪽에 든 부분을 뺀다)."""
+    out = []
+    fams = (((1, 1),) if pattern == 0 else ((-1, 1),) if pattern == 1 else ((1, 1), (-1, 1)))   # (기울기 부호, 간격 배율)
+    for sign, _ in fams:
+        stp = step * (2.0 if pattern == 2 else 1.0)
+        if sign > 0:   # z = s - c
+            k = _floor((s0 - z1) / stp) + 1
+            lim = s1 - z0
+        else:          # z = c - s
+            k = _floor((s0 + z0) / stp) + 1
+            lim = s1 + z1
+        while k * stp < lim:
+            c = k * stp
+            if sign > 0:
+                sa, sb = max(s0, c + z0), min(s1, c + z1)
+            else:
+                sa, sb = max(s0, c - z1), min(s1, c - z0)
+            k += 1
+            if sb - sa <= SEG_MIN:
+                continue
+            cuts = []
+            for rs0, rs1, rz0, rz1 in others:
+                lo, hi = (c + rz0, c + rz1) if sign > 0 else (c - rz1, c - rz0)
+                lo, hi = max(lo, rs0), min(hi, rs1)
+                if hi - lo > EPS:
+                    cuts.append((lo, hi))
+            for a, b in _subtract([(sa, sb)], sorted(cuts)):
+                if b - a > SEG_MIN:
+                    z_a, z_b = (a - c, b - c) if sign > 0 else (c - a, c - b)
+                    out.append(("hatch", a, z_a, b, z_b))
+    return out
+
+
+def _cut_boxes(rects):
+    """절단 사각형 다각형들 -> (s0, s1, z0, z1) 상자들."""
+    return [(min(p[0] for p in r), max(p[0] for p in r), min(p[1] for p in r), max(p[1] for p in r)) for r in rects]
+
+
+def vwall_detail(g, v, w):
+    """단면에서 층 구성(layers)이 있는 벽의 상세: 절단면의 층 경계선과 층별 절단 해치(가는 hatch 선). 큰 축척(DETAIL_SCALE 이하)의 단면만.
+    이웃 벽의 절단 사각형 안쪽은 지운다(경계선·해치가 이웃 벽 위로 나가지 않게)."""
     cfg = g.q(view_cfg, v)
-    if cfg is None or cfg[0] != "plan" or cfg[4] > DETAIL_SCALE:
+    if cfg is None or cfg[0] != "sec" or cfg[10] > DETAIL_SCALE:
+        return ()
+    layers = Q.el(g, w)["params"].get("layers")
+    if not layers:
+        return ()
+    sol = g.q(wall_solid, w)
+    h = sol[4]
+    bounds = K.layer_bounds(layers)
+    others = _cut_boxes([q for o in g.q(vnbrs, v, w) for q in g.q(vcut_rects, v, o)])
+    step = LAYER_HATCH_STEP * cfg[10]
+    out = []
+    for z0, z1, ivs in sol[10]:
+        for a, b in ivs:
+            ss = [_sec_chord(cfg, sol, a, b, -h + c) for c in bounds]
+            if any(x is None for x in ss):
+                continue   # 절단면이 조각 끝을 스쳐 층 경계가 다 만나지 않는 조각은 그리지 않는다
+            for x in ss[1:-1]:   # 층 경계선: 바깥 면 둘은 절단 윤곽이 이미 그린다
+                zc = [(max(rz0, z0), min(rz1, z1)) for rs0, rs1, rz0, rz1 in others if rs0 + EPS < x < rs1 - EPS and rz1 > z0 and rz0 < z1]
+                for q0, q1 in _subtract([[z0, z1]], sorted(zc)):
+                    if q1 - q0 > SEG_MIN:
+                        out.append(("hatch", x, q0, x, q1))
+            for i, ly in enumerate(layers):
+                lo, hi = sorted((ss[i], ss[i + 1]))
+                if hi - lo >= LAYER_HATCH_MIN * cfg[10]:
+                    out.extend(_hatch_rect(lo, hi, z0, z1, _hatch_pattern(ly["material"]), step, others))
+    return tuple(out)
+
+
+def slab_detail_lines(g, v, s):
+    """단면에서 층 구성(layers)이 있는 슬래브의 상세: 절단 사각형 안의 두께 층 경계선과 층별 절단 해치. 벽 절단 사각형 안쪽은 지운다(벽이 우선)."""
+    cfg = g.q(view_cfg, v)
+    if cfg is None or cfg[0] != "sec" or cfg[10] > DETAIL_SCALE:
+        return ()
+    info = g.q(slab_info, s)
+    layers = Q.el(g, s)["params"].get("layers") if info is not None else None
+    if not layers:
+        return ()
+    others = _cut_boxes([q for wl in g.q(slab_nbr_walls, v, s) for q in g.q(vcut_rects, v, wl)])
+    step = LAYER_HATCH_STEP * cfg[10]
+    bounds = K.layer_bounds(layers)
+    out = []
+    for r in g.q(slab_cut_rects, v, s):
+        s0, s1 = min(p[0] for p in r), max(p[0] for p in r)
+        zt = max(p[1] for p in r)
+        zs = [zt - c for c in bounds]   # 윗면에서 아래로
+        for z in zs[1:-1]:
+            cuts = [(max(rs0, s0), min(rs1, s1)) for rs0, rs1, rz0, rz1 in others if rz0 + EPS < z < rz1 - EPS]
+            for q0, q1 in _subtract([[s0, s1]], sorted(cuts)):
+                if q1 - q0 > SEG_MIN:
+                    out.append(("hatch", q0, z, q1, z))
+        for i, ly in enumerate(layers):
+            if zs[i] - zs[i + 1] >= LAYER_HATCH_MIN * cfg[10]:
+                out.extend(_hatch_rect(s0, s1, zs[i + 1], zs[i], _hatch_pattern(ly["material"]), step, others))
+    return tuple(out)
+
+
+def space_ceiling_lines(g, v, sp):
+    """단면에서 천장 높이(ceiling_height)가 있는 공간의 천장선: 절단면이 공간 경계를 지나는 구간마다 레벨 + 천장 높이에 가는 보이는 선. 큰 축척의 단면만."""
+    cfg = g.q(view_cfg, v)
+    if cfg is None or cfg[0] != "sec" or cfg[10] > DETAIL_SCALE:
+        return ()
+    info = g.q(space_info, sp)
+    ch = Q.el(g, sp)["params"].get("ceiling_height") if info is not None else None
+    if ch is None:
+        return ()
+    z = g.q(Q.level_info, g.q(Q.space_level, sp))[1] + ch
+    near = cfg[7]
+    pts = [_sw(cfg, p) for p in info[0]]
+    xs = []
+    n = len(pts)
+    for i in range(n):
+        a, b = pts[i], pts[(i + 1) % n]
+        if (a[1] <= near) != (b[1] <= near):
+            xs.append(a[0] + (near - a[1]) / (b[1] - a[1]) * (b[0] - a[0]))
+    xs.sort()
+    return tuple(("proj", xs[i], z, xs[i + 1], z) for i in range(0, len(xs) - 1, 2) if xs[i + 1] - xs[i] > SEG_MIN)
+
+
+def _view_occluders(g, v, w):
+    """벽 w 의 면 위 선을 가릴 수 있는 것들: 벽 조각(+이음매) + 기둥·슬래브·계단 조각(vwall_lines 와 같다)."""
+    occ = _wall_occluders(g, v, w)
+    for fe in g.q(scope_fams, v):
+        occ.extend(g.q(_fam_vpieces, v, fe))
+    for sl in g.q(scope_slabs, v):
+        occ.extend(g.q(_slab_vpieces, v, sl))
+    for st in g.q(scope_stairs, v):
+        occ.extend(g.q(_stair_vpieces, v, st))
+    return occ
+
+
+def vwin_detail(g, v, w):
+    """입면에서 벽에 호스팅된 창의 창대(창 아래 밖으로 나온 선 3개): 앞 면(관찰자 쪽 벽 면)에 그리고 앞의 것에 가려지는 부분은 뺀다. 큰 축척(DETAIL_SCALE 이하)의 입면만.
+    창 프레임(틀 폭·유리)은 패밀리 형상이라 기본 입면이 이미 그린다."""
+    cfg = g.q(view_cfg, v)
+    if cfg is None or cfg[0] != "elev" or cfg[10] > DETAIL_SCALE:
+        return ()
+    sol = g.q(wall_solid, w)
+    _, elev = g.q(Q.level_info, g.q(Q.wall_level, w))
+    h = sol[4]
+    wins = []
+    for d in g.q(Q.wall_hosted, w):
+        row = Q.el(g, d)
+        if row["kind"] == "finst" and str(row["family_id"]).startswith("window"):
+            box = g.q(hosted_opening, d, elev)
+            if box is not None:
+                wins.append(box)
+    if not wins:
+        return ()
+    vv = -h if _sw(cfg, _world(sol, 0.0, -h))[1] <= _sw(cfg, _world(sol, 0.0, h))[1] else h   # 관찰자에 가까운 벽 면
+
+    def pt(u, z):
+        s_, w_ = _sw(cfg, _world(sol, u, vv))
+        return (s_, w_, z)
+
+    occ = _view_occluders(g, v, w)
+    out = []
+    for u0, u1, z0, _z1 in sorted(wins):
+        zl = z0 - SILL_DROP
+        edges = [(pt(u0 - SILL_EXT, zl), pt(u1 + SILL_EXT, zl)), (pt(u0 - SILL_EXT, zl), pt(u0 - SILL_EXT, z0)), (pt(u1 + SILL_EXT, zl), pt(u1 + SILL_EXT, z0))]
+        for e0, e1 in edges:
+            for t0, t1 in visible_parts(e0, e1, occ):
+                out.append(("proj", e0[0] + t0 * (e1[0] - e0[0]), e0[2] + t0 * (e1[2] - e0[2]), e0[0] + t1 * (e1[0] - e0[0]), e0[2] + t1 * (e1[2] - e0[2])))
+    return tuple(out)
+
+
+def view_detail_lines(g, v):
+    """뷰의 큰 축척 상세 선(병합한 선분 묶음). 평면: 마감선·문짝 두께·문턱선. 단면: 벽·슬래브 층 경계선·층별 해치와 천장선. 입면: 창대. 배치도는 비어 있다."""
+    cfg = g.q(view_cfg, v)
+    if cfg is None or cfg[0] == "site":
         return ()
     segs = []
-    for w in g.q(scope_walls, v):
-        segs.extend(g.q(plan_detail_lines, v, w))
+    if cfg[0] == "plan":
+        if cfg[4] > DETAIL_SCALE:
+            return ()
+        for w in g.q(scope_walls, v):
+            segs.extend(g.q(plan_detail_lines, v, w))
+    elif cfg[0] == "sec":
+        if cfg[10] > DETAIL_SCALE:
+            return ()
+        for w in g.q(scope_walls, v):
+            segs.extend(g.q(vwall_detail, v, w))
+        for sl in g.q(scope_slabs, v):
+            segs.extend(g.q(slab_detail_lines, v, sl))
+        for sp in g.q(all_spaces):
+            segs.extend(g.q(space_ceiling_lines, v, sp))
+    else:
+        if cfg[10] > DETAIL_SCALE:
+            return ()
+        for w in g.q(scope_walls, v):
+            segs.extend(g.q(vwin_detail, v, w))
     return merge_lines(segs)
 
 
@@ -2239,6 +2478,7 @@ def views_depending_on(g, input_keys, vids, include_not_fresh=True):
 
 # 뷰 하나에 딸린 질의 노드의 함수들 (첫 인자가 뷰 id). 뷰를 지우면 이 노드들을 그래프에서 치운다.
 VIEW_SCOPED = frozenset({view_cfg, scope_walls, view_omitted, plan_pieces, plan_bbox, plan_nbrs, plan_wall_lines, plan_detail_lines, view_detail_lines, vpieces, vbbox, vnbrs,
+                         vwall_detail, slab_detail_lines, space_ceiling_lines, vwin_detail,
                          vcut_rects, vedges, vwall_lines, view_lines, view_fills,
                          scope_fams, plan_fam_parts, _fam_vpieces, vfam_bbox, vfam_cut_rects, vfam_edges, vfam_nbr_pieces, fam_lines,
                          vfam_hosted_edges, scope_slabs, plan_slab_parts, _slab_vpieces, slab_vbbox, slab_cut_rects, slab_vedges, slab_nbr_walls, slab_lines,

@@ -297,6 +297,8 @@ class WallSet(A):
 def wall_set(ctx, a: WallSet):
     r = ctx.authored(a.id, "wall")
     p = dict(r["params"])
+    if a.thickness is not None and "layers" in p and abs(a.thickness - p["thickness"]) > 1e-9:
+        raise DobimError("CONSTRAINT", "층 구성이 있는 벽의 두께는 wall.layers 로 층을 바꿔 정한다", path="/thickness", hint="wall.layers 로 층 구성을 바꾸세요(층 두께 합 = 벽 두께)")
     for k in ("name", "thickness", "height"):
         if getattr(a, k) is not None:
             p[k] = getattr(a, k)
@@ -316,6 +318,40 @@ def wall_set(ctx, a: WallSet):
     check_hosted_fit(ctx, a.id, r["params"], p)
     ctx.put_el(a.id, dict(r, params=p))
     return {"id": a.id}
+
+
+class LayerIn(A):
+    material: Name = Field(description="층 재료 이름(예: 석고보드, 콘크리트)")
+    thickness: Pos = Field(description="층 두께 mm")
+
+
+Layers = Annotated[list[LayerIn], Field(min_length=1, max_length=8, description="층 구성(재료·두께 목록). 합이 요소 두께와 같아야 한다")]
+
+
+class WallLayers(A):
+    id: Id
+    layers: Layers | None = Field(description="벽 층 구성: 벽 지역 +v 쪽 순서(축선의 왼쪽 면이 마지막 층)로 첫 층부터 준다. 층 두께의 합이 벽 두께가 된다. null 이면 층 구성을 뗀다(재료는 비게 된다)")
+
+
+@command("wall.layers", kind="mutation", risk="write", group="model.wall", summary="벽 마감 층 구성(재료·두께 목록) 지정. IFC 는 IfcMaterialLayerSetUsage 로 나간다",
+         args=WallLayers, since="0.3",
+         examples=[{"id": F.W1, "layers": [{"material": "석고보드", "thickness": 20}, {"material": "콘크리트", "thickness": 160}, {"material": "치장벽돌", "thickness": 20}]}])
+def wall_layers(ctx, a: WallLayers):
+    r = ctx.authored(a.id, "wall", what="층 구성 지정")
+    p = dict(r["params"])
+    if a.layers is None:
+        p.pop("layers", None)
+    else:
+        ls = [{"material": x.material, "thickness": x.thickness} for x in a.layers]
+        ctx.set_material(a.id, None)   # 단일 재료가 있으면 먼저 뗀다(층 구성이 재료를 대신한다). 이미 층 구성이면 할 일이 없다
+        p["layers"] = ls
+        p["thickness"] = sum(x["thickness"] for x in ls)
+        from dobim_core.commands_family import check_hosted_fit
+        check_hosted_fit(ctx, a.id, r["params"], p)
+    if p == r["params"]:
+        return {"id": a.id, "changed": False}
+    ctx.put_el(a.id, dict(r, params=p))
+    return {"id": a.id, "changed": True, "thickness": p["thickness"]}
 
 
 class JoinArgs(A):
@@ -458,7 +494,10 @@ def wall_split(ctx, a: WallSplit):
                          hint="조인 지점에서 1000mm 넘게 떨어진 곳에서 나누세요")
     name = (p["name"][:62] + "-b")
     ctx.put_el(a.id, dict(r, params=dict(p, axis=ax_w)))
-    ctx.put_el(nid, row("wall", "IfcWall", "wall.basic", {"name": name, "axis": ax_n, "thickness": p["thickness"], "height": p["height"]}))
+    np_ = {"name": name, "axis": ax_n, "thickness": p["thickness"], "height": p["height"]}
+    if "layers" in p:   # 층 구성이 있으면 끝 쪽 새 벽도 같은 층 구성(복사)
+        np_["layers"] = [dict(x) for x in p["layers"]]
+    ctx.put_el(nid, row("wall", "IfcWall", "wall.basic", np_))
     ctx.rel("on_level", nid, ctx.rels_out("on_level", a.id)[0], True)
     for d in doors_n:
         dr = ctx.st.el[d]
@@ -488,6 +527,7 @@ class DoorPlace(A):
     height: Pos = 2100.0
     sill: Num = Field(0.0, ge=0)
     name: Name | None = None
+    leaf: Pos | None = Field(None, description="문짝 두께 mm(1:50 평면 상세가 쓴다). 주지 않으면 규약값(40)")
 
 
 def _fits(ctx, host, offset, width):
@@ -504,8 +544,10 @@ def door_place(ctx, a: DoorPlace):
     ctx.authored(a.host, "wall", what="문 호스팅")
     _fits(ctx, a.host, a.offset, a.width)
     a.name = a.name or f"D-{a.id[-6:]}"
-    ctx.put_el(a.id, row("door", "IfcDoor", "door.single", {
-        "name": a.name, "width": a.width, "height": a.height, "sill": a.sill, "offset": a.offset}))
+    dp = {"name": a.name, "width": a.width, "height": a.height, "sill": a.sill, "offset": a.offset}
+    if a.leaf is not None:   # 입력이 없으면 파라미터에 키가 없다(저장 형식·해시 그대로)
+        dp["leaf"] = a.leaf
+    ctx.put_el(a.id, row("door", "IfcDoor", "door.single", dp))
     ctx.rel("hosts", a.host, a.id, True)
     return {"id": a.id}
 
@@ -518,11 +560,15 @@ class DoorSet(A):
     height: Pos | None = None
     sill: Num | None = Field(None, ge=0)
     offset: Num | None = None
+    leaf: Pos | None = Field(None, description="문짝 두께 mm")
+    clear_leaf: bool = Field(False, description="참이면 문짝 두께 입력을 지운다(규약값으로 돌아간다)")
 
     @model_validator(mode="after")
     def _any(self):
-        if all(v is None for v in (self.name, self.width, self.height, self.sill, self.offset)):
+        if all(v is None for v in (self.name, self.width, self.height, self.sill, self.offset, self.leaf)) and not self.clear_leaf:
             raise ValueError("바꿀 필드가 하나도 없다")
+        if self.leaf is not None and self.clear_leaf:
+            raise ValueError("leaf 와 clear_leaf 를 함께 줄 수 없다")
         return self
 
 
@@ -531,9 +577,11 @@ class DoorSet(A):
 def door_set(ctx, a: DoorSet):
     r = ctx.authored(a.id, "door")
     p = dict(r["params"])
-    for k in ("name", "width", "height", "sill", "offset"):
+    for k in ("name", "width", "height", "sill", "offset", "leaf"):
         if getattr(a, k) is not None:
             p[k] = getattr(a, k)
+    if a.clear_leaf:
+        p.pop("leaf", None)
     host = ctx.rels_in("hosts", a.id)[0]
     _fits(ctx, host, p["offset"], p["width"])
     ctx.put_el(a.id, dict(r, params=p))
@@ -656,6 +704,8 @@ class SlabSet(A):
 def slab_set(ctx, a: SlabSet):
     r = ctx.authored(a.id, "slab")
     p = dict(r["params"])
+    if a.thickness is not None and "layers" in p and abs(a.thickness - p["thickness"]) > 1e-9:
+        raise DobimError("CONSTRAINT", "층 구성이 있는 슬래브의 두께는 slab.layers 로 층을 바꿔 정한다", path="/thickness", hint="slab.layers 로 층 구성을 바꾸세요(층 두께 합 = 슬래브 두께)")
     for k in ("name", "thickness", "top_offset"):
         if getattr(a, k) is not None:
             p[k] = getattr(a, k)
@@ -663,6 +713,30 @@ def slab_set(ctx, a: SlabSet):
         p["boundary"] = _slab_boundary(a.boundary)
     ctx.put_el(a.id, dict(r, params=p))
     return {"id": a.id}
+
+
+class SlabLayers(A):
+    id: Id
+    layers: Layers | None = Field(description="슬래브 층 구성: 윗면에서 아래로 첫 층부터 준다(바닥 마감, 모르타르, 콘크리트 ...). 층 두께의 합이 슬래브 두께가 된다. null 이면 층 구성을 뗀다")
+
+
+@command("slab.layers", kind="mutation", risk="write", group="model.slab", summary="슬래브 두께 층 구성(재료·두께 목록) 지정. IFC 는 IfcMaterialLayerSetUsage 로 나간다",
+         args=SlabLayers, since="0.3",
+         examples=[{"id": F.S1, "layers": [{"material": "마감 모르타르", "thickness": 50}, {"material": "철근콘크리트", "thickness": 150}]}])
+def slab_layers(ctx, a: SlabLayers):
+    r = ctx.authored(a.id, "slab", what="층 구성 지정")
+    p = dict(r["params"])
+    if a.layers is None:
+        p.pop("layers", None)
+    else:
+        ls = [{"material": x.material, "thickness": x.thickness} for x in a.layers]
+        ctx.set_material(a.id, None)
+        p["layers"] = ls
+        p["thickness"] = sum(x["thickness"] for x in ls)
+    if p == r["params"]:
+        return {"id": a.id, "changed": False}
+    ctx.put_el(a.id, dict(r, params=p))
+    return {"id": a.id, "changed": True, "thickness": p["thickness"]}
 
 
 class SlabMove(A):
@@ -782,6 +856,7 @@ class SpaceCreate(A):
     name: Name | None = None
     category: Text = Field("", description="분류(예: 복도, 사무실). 비어 있어도 된다. 복도 판정에 쓴다")
     height: Pos = 2700.0
+    ceiling_height: Pos | None = Field(None, description="천장(반자) 마감 높이 mm(레벨 위). 공간 높이 이하. 주면 1:50 단면 상세가 천장선을 긋는다")
 
 
 @command("space.create", kind="mutation", risk="write", group="model.space", summary="공간(방) 생성(레벨 + 경계 다각형 + 실명·분류)",
@@ -792,7 +867,12 @@ def space_create(ctx, a: SpaceCreate):
     ctx.authored(a.level, "level", what="레벨에 공간을 추가하는 것")
     boundary = _slab_boundary(a.boundary)
     a.name = a.name or f"SP-{a.id[-6:]}"
-    ctx.put_el(a.id, row("space", "IfcSpace", "space.basic", {"name": a.name, "category": a.category, "boundary": boundary, "height": a.height}))
+    sp = {"name": a.name, "category": a.category, "boundary": boundary, "height": a.height}
+    if a.ceiling_height is not None:
+        if a.ceiling_height > a.height:
+            raise DobimError("CONSTRAINT", "천장 높이가 공간 높이보다 크다", path="/ceiling_height")
+        sp["ceiling_height"] = a.ceiling_height
+    ctx.put_el(a.id, row("space", "IfcSpace", "space.basic", sp))
     ctx.rel("on_level", a.id, a.level, True)
     return {"id": a.id}
 
@@ -804,11 +884,15 @@ class SpaceSet(A):
     category: Text | None = None
     boundary: SlabBoundary | None = None
     height: Pos | None = None
+    ceiling_height: Pos | None = Field(None, description="천장(반자) 마감 높이 mm")
+    clear_ceiling: bool = Field(False, description="참이면 천장 높이 입력을 지운다")
 
     @model_validator(mode="after")
     def _any(self):
-        if all(v is None for v in (self.name, self.category, self.boundary, self.height)):
+        if all(v is None for v in (self.name, self.category, self.boundary, self.height, self.ceiling_height)) and not self.clear_ceiling:
             raise ValueError("바꿀 필드가 하나도 없다")
+        if self.ceiling_height is not None and self.clear_ceiling:
+            raise ValueError("ceiling_height 와 clear_ceiling 을 함께 줄 수 없다")
         return self
 
 
@@ -817,9 +901,13 @@ class SpaceSet(A):
 def space_set(ctx, a: SpaceSet):
     r = ctx.authored(a.id, "space")
     p = dict(r["params"])
-    for k in ("name", "category", "height"):
+    for k in ("name", "category", "height", "ceiling_height"):
         if getattr(a, k) is not None:
             p[k] = getattr(a, k)
+    if a.clear_ceiling:
+        p.pop("ceiling_height", None)
+    if "ceiling_height" in p and p["ceiling_height"] > p["height"]:
+        raise DobimError("CONSTRAINT", "천장 높이가 공간 높이보다 크다", path="/ceiling_height")
     if a.boundary is not None:
         p["boundary"] = _slab_boundary(a.boundary)
     ctx.put_el(a.id, dict(r, params=p))

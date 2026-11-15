@@ -34,7 +34,7 @@ from dobim_core.errors import DobimError, internal_error
 from dobim_core.graph import Graph, RefGraph
 from dobim_core.ifc_model import CLOSURE_FORMAT, IfcModel
 from dobim_core import kinds as K
-from dobim_core.kinds import EFFECTS, ELEMENT_KINDS, PROJECTED_KINDS, REL_KINDS
+from dobim_core.kinds import EFFECTS, ELEMENT_KINDS, PROJECTED_KINDS, REL_KINDS, layers_label
 from dobim_core.registry import Command
 
 SCHEMA_VERSION = "1"
@@ -237,7 +237,15 @@ class Ctx:
         return self.eng.ifc.get_psets(eid) if self._in_ifc(eid) else {}
 
     def material(self, eid):
+        row = self.eng.st.el.get(eid)
+        if row is not None and row["kind"] in ("wall", "slab") and "layers" in row["params"]:
+            return layers_label(row["params"]["layers"])   # 층 구성이 재료를 정한다(투영 여부와 무관)
         return self.eng.ifc.get_material(eid) if self._in_ifc(eid) else None
+
+    def layered(self, eid) -> bool:
+        """층 구성(재료·두께 목록)을 가진 벽·슬래브인가. 이런 요소의 재료는 wall.layers·slab.layers 가 정한다."""
+        row = self.eng.st.el.get(eid)
+        return row is not None and row["kind"] in ("wall", "slab") and "layers" in row["params"]
 
     def det_id(self, label: str) -> str:
         """라벨에서 결정적으로 얻는 GlobalId(같은 프로젝트·같은 라벨이면 같은 값). 내용 주소 id 에 쓴다."""
@@ -308,6 +316,10 @@ class Ctx:
             if name is None:
                 return False
             raise DobimError("CONSTRAINT", f"재료를 가질 수 없는 요소다: {eid}", path="/id")
+        if self.layered(eid):   # 재료는 층 구성이 정한다: 같은 이름표를 다시 주는 것(분할로 복사)·떼는 것(삭제 정리)은 할 일이 없고, 다른 재료는 거절한다
+            if name is not None and name != self.material(eid):
+                raise DobimError("CONSTRAINT", f"층 구성이 있는 요소의 재료는 층 구성이 정한다: {eid}", path="/id", hint="wall.layers·slab.layers 로 층을 바꾸세요")
+            return False
         old = self.eng.ifc.get_material(eid)
         if old == name:
             return False
@@ -922,8 +934,15 @@ class Engine:
             "elements": [[i, self.st.el[i]] for i in ids],
             "relations": self.st.relations(),
             "psets": {i: p for i in ids if self.st.el[i]["kind"] not in Q.NON_IFC_KINDS and (p := self.ifc.get_psets(i))},
-            "materials": {i: m for i in ids if self.st.el[i]["kind"] not in Q.NON_IFC_KINDS and (m := self.ifc.get_material(i)) is not None},
+            "materials": {i: m for i in ids if self.st.el[i]["kind"] not in Q.NON_IFC_KINDS and (m := self._material_label(i)) is not None},
         }
+
+    def _material_label(self, eid: str):
+        """재료 이름표. 층 구성이 있는 벽·슬래브는 투영 여부와 무관하게 층 구성(의도)에서 나온다(투영이 늦어도 해시가 같다)."""
+        row = self.st.el[eid]
+        if row["kind"] in ("wall", "slab") and "layers" in row["params"]:
+            return layers_label(row["params"]["layers"])
+        return self.ifc.get_material(eid)
 
     def state_hash(self) -> str:
         return digest(self.state_dump())

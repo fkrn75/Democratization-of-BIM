@@ -190,3 +190,24 @@
 
 ### 선 위계(sheet.export profile)
 `hidden_lines`(`drawing.vwall_hidden`·`view_hidden_lines`: `vwall_lines` 와 같은 가림 판정 `visible_parts` 의 여집합에서 보이는 선과 겹치는 부분을 뺀다. 선 등급 `hid` 는 `drawing_export.STYLE`·`LINE_ORDER` 에 넣지 않고 시트가 파선으로만 그린다: 기본 선 종류 표·`drawing.profile` 의 선 굵기 표는 그대로), `line_hierarchy`(치수선·보조선 굵기 0.25/0.18), `projection`(표제란 투상법 칸). 모두 파일을 낼 때만 받는 입력이라 저장하는 시트 정의에는 넣지 않는다.
+
+## 11. 벽·슬래브 층 구성, 문짝 두께, 공간 천장 높이 (SC-09·B-17, 아홉 번째 작업)
+
+모두 **선택 파라미터**다. 입력이 없으면 요소 행에 키 자체가 없어 저장 형식·상태/파생/IFC 해시·산출 바이트가 이전과 같다(시험: 더했다 지우면 해시가 처음과 같다). 해시 형식 번호(ADR-0014)는 9 로 올렸다.
+
+| 요소 | 파라미터 | 커맨드 | 의미 |
+|---|---|---|---|
+| 벽 | `layers` = `[{material, thickness}, ...]`(1~8층) | `wall.layers`(id, layers 또는 null) | 벽 지역 +v 방향 순서(첫 층 = 축선 왼쪽 반대 면). 두께 합이 벽 두께(커맨드가 두께를 합으로 맞춘다). 층 구성이 있으면 `wall.set` 의 두께 변경·`material.set` 의 다른 재료는 거절한다 |
+| 슬래브 | `layers` | `slab.layers` | 윗면에서 아래로 순서. 두께 합이 슬래브 두께 |
+| 문 | `leaf`(문짝 두께 mm) | `door.place` 의 `leaf`, `door.set` 의 `leaf`·`clear_leaf` | 1:50 평면 상세의 문짝 두께 선. 없으면 규약값 40 |
+| 공간 | `ceiling_height`(레벨 위 천장 마감 높이 mm, 공간 높이 이하) | `space.create`·`space.set` 의 `ceiling_height`·`clear_ceiling` | 1:50 단면 천장선 |
+
+- 재료 이름표: 층 구성이 있는 벽·슬래브의 재료는 가장 두꺼운 층의 재료다(같으면 앞쪽). 일람표·외부 마감(입면 해치)이 읽는 이름표(`queries.material`)가 이 값을 돌려주므로 입력은 요소 파라미터 하나다(투영이 늦어도 해시가 같다).
+- IFC: 층 구성은 `IfcMaterialLayerSetUsage`(+ `IfcMaterialLayerSet` Description = `DoBIM`, 층마다 `IfcMaterialLayer`·`IfcMaterial`)로 투영한다. 벽은 `AXIS2`·`POSITIVE`·`OffsetFromReferenceLine` = -두께/2(첫 층이 -v 면). 슬래브는 `AXIS3`·`POSITIVE`, IFC 층 순서는 아래에서 위(입력의 역순), 오프셋 = 솔리드 밑면(`top_offset - 두께`). 층 구성을 떼면 층·층 집합·쓰던 재료까지 지운다(고아 없음). 투영이 소유하는 지정이라 `has_complex_material`·부속 스냅숏·재료 이름 읽기에서는 제외한다(Description 으로 외래 층 구성과 구분). 문짝 두께·천장 높이는 IFC 속성이 아니라 의도(`DoBIM_Intent`)로 왕복한다.
+- 가져오기: `foreign._parse_intent` 가 선택 파라미터를 같은 모양으로 해석한다(층 합 ≠ 두께, 천장 > 공간 높이는 외래로 둔다). 내보냈다 가져와도 해시 3종이 같다(시험).
+
+### 상세 도면(`sheet.export detail`, 1:50 이하)
+- 평면(`plan_detail_lines`): 층 구성이 있으면 층 경계마다 가는 선. 없고 재료만 있으면 규약(양면 20mm 안쪽). 문짝 두께는 문 `leaf`.
+- 단면(`vwall_detail`·`slab_detail_lines`·`space_ceiling_lines`): 층 구성이 있는 벽·슬래브의 절단 사각형 안에 층 경계선과 층별 절단 해치(재료 이름으로 정해지는 무늬 3종, 용지 위 1.5mm 이상인 층에만. 간격 2mm, 세계 격자 정렬). 이웃 벽 절단 사각형 안쪽은 지운다(슬래브는 벽이 우선). 천장 높이가 있는 공간은 절단면이 공간을 지나는 구간에 천장선(`proj`).
+- 입면(`vwin_detail`): 벽에 호스팅된 창의 창대(창 아래 40mm, 양옆 50mm 더 나온 선 3개, 앞의 벽·기둥·슬래브·계단에 가려진 부분은 뺀다). 창 프레임 폭·유리·멀리언은 창 패밀리(`frame_w`)의 형상이라 기본 입면이 이미 그린다.
+- 1:100 이상의 축척과 `detail` 을 켜지 않은 출력은 바이트가 그대로다.
