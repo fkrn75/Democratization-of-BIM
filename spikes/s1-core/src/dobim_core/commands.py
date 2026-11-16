@@ -603,6 +603,7 @@ def _cascade_view_annots(ctx, vid) -> list:
 
 
 def _delete_one(ctx, eid):
+    released = _release_railings(ctx, eid) if ctx.row(eid)["kind"] in ("stair", "slab") else []   # 이 원본이 낸 난간은 독립 난간으로 남는다
     ctx.attach(eid)   # 외래 부속(타입·수량 세트·분류·스타일 등)을 지우기 전에 효과로 남긴다: 실행 취소가 되살린다
     for pset, props in sorted(ctx.psets(eid).items()):   # IFC 안의 삽입 순서에 기대지 않는다(로그 결정성)
         for prop in sorted(props):
@@ -615,6 +616,7 @@ def _delete_one(ctx, eid):
         for src in ctx.rels_in(kind, eid):
             ctx.rel(kind, src, eid, False)
     ctx.put_el(eid, None)
+    return released
 
 
 @command("element.delete", kind="mutation", risk="write", group="model", summary="요소 삭제(벽이면 문 포함)",
@@ -643,8 +645,8 @@ def element_delete(ctx, a: IdArg):
             gone.append(d)
     elif r["kind"] == "view":
         gone += _cascade_view_annots(ctx, a.id)
-    _delete_one(ctx, a.id)
-    return {"deleted": gone}
+    released = _delete_one(ctx, a.id)
+    return {"deleted": gone, **({"railings_released": released} if released else {})}
 
 
 # ---------------------------------------------------------------- 슬래브 (설계: spikes/phase1-drawings/elements-design.md 4절)
@@ -812,8 +814,9 @@ def slab_set(ctx, a: SlabSet):
         p.pop("parapet", None)
     if "openings" in p or _slab_roof_params(p):
         _slab_checked(p)
+    rail = _follow_railings(ctx, a.id, r["params"], p)   # 이 슬래브가 낸 난간이 따라간다
     ctx.put_el(a.id, dict(r, params=p))
-    return {"id": a.id}
+    return {"id": a.id, **({"railings": rail} if rail else {})}
 
 
 class SlabLayers(A):
@@ -856,16 +859,17 @@ def slab_move(ctx, a: SlabMove):
         p["openings"] = [[[x + a.dx, y + a.dy] for x, y in o] for o in p["openings"]]
     if "drains" in p:   # 배수구도 함께 옮긴다
         p["drains"] = [[x + a.dx, y + a.dy] for x, y in p["drains"]]
+    rail = _follow_railings(ctx, a.id, r["params"], p)
     ctx.put_el(a.id, dict(r, params=p))
-    return {"id": a.id, "boundary": b}
+    return {"id": a.id, "boundary": b, **({"railings": rail} if rail else {})}
 
 
 @command("slab.delete", kind="mutation", risk="write", group="model.slab", summary="슬래브 삭제",
          args=IdArg, since="0.2", examples=[{"id": F.S1}])
 def slab_delete(ctx, a: IdArg):
     ctx.authored(a.id, "slab", what="삭제")
-    _delete_one(ctx, a.id)
-    return {"deleted": [a.id]}
+    released = _delete_one(ctx, a.id)
+    return {"deleted": [a.id], **({"railings_released": released} if released else {})}
 
 
 # ---------------------------------------------------------------- 계단 (설계: spikes/phase1-drawings/elements-design.md 6절)
@@ -968,8 +972,9 @@ def stair_set(ctx, a: StairSet):
         p.pop("turn", None)
     if "turn" in p:
         _stair_checked(p)
+    rail = _follow_railings(ctx, a.id, r["params"], p)   # 이 계단이 낸 난간이 따라간다
     ctx.put_el(a.id, dict(r, params=p))
-    return {"id": a.id}
+    return {"id": a.id, **({"railings": rail} if rail else {})}
 
 
 @command("stair.move", kind="mutation", risk="write", group="model.stair", summary="계단을 평행 이동한다",
@@ -978,19 +983,43 @@ def stair_move(ctx, a: SlabMove):
     r = ctx.authored(a.id, "stair")
     x1, y1, x2, y2 = r["params"]["run"]
     run = [x1 + a.dx, y1 + a.dy, x2 + a.dx, y2 + a.dy]
-    ctx.put_el(a.id, dict(r, params=dict(r["params"], run=run)))
-    return {"id": a.id, "run": run}
+    new = dict(r["params"], run=run)
+    rail = _follow_railings(ctx, a.id, r["params"], new)
+    ctx.put_el(a.id, dict(r, params=new))
+    return {"id": a.id, "run": run, **({"railings": rail} if rail else {})}
 
 
 @command("stair.delete", kind="mutation", risk="write", group="model.stair", summary="계단 삭제",
          args=IdArg, since="0.2", examples=[{"id": F.ST1}])
 def stair_delete(ctx, a: IdArg):
     ctx.authored(a.id, "stair", what="삭제")
-    _delete_one(ctx, a.id)
-    return {"deleted": [a.id]}
+    released = _delete_one(ctx, a.id)
+    return {"deleted": [a.id], **({"railings_released": released} if released else {})}
 
 
 # ---------------------------------------------------------------- 공간 (설계: elements-design.md 7절)
+SpaceHoles = Annotated[list[SlabBoundary], Field(min_length=1, max_length=32,
+                                                 description="섬 구멍(방 안의 따로 떨어진 닫힌 벽 고리·기둥) 다각형 목록 [[[x,y],...], ...] mm. 각 구멍은 공간 경계 안쪽에 있고 서로 겹치지 않는다(최대 32개). 면적에서 뺀다")]
+
+
+def _space_holes(pts_list) -> list:
+    out = []
+    for pts in pts_list:
+        b = [[float(x), float(y)] for x, y in pts]
+        why = polygon_problem(b)
+        if why:
+            raise DobimError("CONSTRAINT", f"공간 구멍이 올바르지 않다: {why}", path="/holes")
+        out.append(b if polygon_area2(b) > 0 else b[::-1])
+    return out
+
+
+def _space_checked(p: dict) -> dict:
+    why = K.row_params_error("space", p)
+    if why:
+        raise DobimError("CONSTRAINT", f"공간이 올바르지 않다: {why}", path="/holes")
+    return p
+
+
 class SpaceCreate(A):
     id: Id | None = None
     level: Id
@@ -999,6 +1028,7 @@ class SpaceCreate(A):
     category: Text = Field("", description="분류(예: 복도, 사무실). 비어 있어도 된다. 복도 판정에 쓴다")
     height: Pos = 2700.0
     ceiling_height: Pos | None = Field(None, description="천장(반자) 마감 높이 mm(레벨 위). 공간 높이 이하. 주면 1:50 단면 상세가 천장선을 긋는다")
+    holes: SpaceHoles | None = Field(None, description="섬 구멍(방 안의 기둥·닫힌 내부 벽 고리). 면적에서 빼고 IFC 몸체도 구멍 있는 프로필로 나간다")
 
 
 @command("space.create", kind="mutation", risk="write", group="model.space", summary="공간(방) 생성(레벨 + 경계 다각형 + 실명·분류)",
@@ -1014,6 +1044,9 @@ def space_create(ctx, a: SpaceCreate):
         if a.ceiling_height > a.height:
             raise DobimError("CONSTRAINT", "천장 높이가 공간 높이보다 크다", path="/ceiling_height")
         sp["ceiling_height"] = a.ceiling_height
+    if a.holes is not None:
+        sp["holes"] = _space_holes(a.holes)
+        _space_checked(sp)
     ctx.put_el(a.id, row("space", "IfcSpace", "space.basic", sp))
     ctx.rel("on_level", a.id, a.level, True)
     return {"id": a.id}
@@ -1028,13 +1061,17 @@ class SpaceSet(A):
     height: Pos | None = None
     ceiling_height: Pos | None = Field(None, description="천장(반자) 마감 높이 mm")
     clear_ceiling: bool = Field(False, description="참이면 천장 높이 입력을 지운다")
+    holes: SpaceHoles | None = Field(None, description="섬 구멍 목록을 이 값으로 바꾼다(전체 교체)")
+    clear_holes: bool = Field(False, description="참이면 섬 구멍을 모두 지운다")
 
     @model_validator(mode="after")
     def _any(self):
-        if all(v is None for v in (self.name, self.category, self.boundary, self.height, self.ceiling_height)) and not self.clear_ceiling:
+        if all(v is None for v in (self.name, self.category, self.boundary, self.height, self.ceiling_height, self.holes)) and not (self.clear_ceiling or self.clear_holes):
             raise ValueError("바꿀 필드가 하나도 없다")
         if self.ceiling_height is not None and self.clear_ceiling:
             raise ValueError("ceiling_height 와 clear_ceiling 을 함께 줄 수 없다")
+        if self.holes is not None and self.clear_holes:
+            raise ValueError("holes 와 clear_holes 를 함께 줄 수 없다")
         return self
 
 
@@ -1052,6 +1089,12 @@ def space_set(ctx, a: SpaceSet):
         raise DobimError("CONSTRAINT", "천장 높이가 공간 높이보다 크다", path="/ceiling_height")
     if a.boundary is not None:
         p["boundary"] = _slab_boundary(a.boundary)
+    if a.holes is not None:
+        p["holes"] = _space_holes(a.holes)
+    if a.clear_holes:
+        p.pop("holes", None)
+    if "holes" in p:
+        _space_checked(p)
     ctx.put_el(a.id, dict(r, params=p))
     return {"id": a.id}
 
@@ -1061,7 +1104,10 @@ def space_set(ctx, a: SpaceSet):
 def space_move(ctx, a: SlabMove):
     r = ctx.authored(a.id, "space")
     b = [[x + a.dx, y + a.dy] for x, y in r["params"]["boundary"]]
-    ctx.put_el(a.id, dict(r, params=dict(r["params"], boundary=b)))
+    p = dict(r["params"], boundary=b)
+    if "holes" in p:   # 섬 구멍도 함께 옮긴다
+        p["holes"] = [[[x + a.dx, y + a.dy] for x, y in o] for o in p["holes"]]
+    ctx.put_el(a.id, dict(r, params=p))
     return {"id": a.id, "boundary": b}
 
 
@@ -1077,8 +1123,13 @@ def space_delete(ctx, a: IdArg):
 RailingPath = Annotated[list[SlabPt], Field(min_length=2, max_length=256, description="난간선 꼭짓점 [[x,y],...] mm(열린 선, 2~256개, 이웃 꼭짓점은 1mm 이상 떨어져야 한다). 닫으려면 첫 점을 끝에 다시 준다")]
 
 
-def _railing_row(name, path, height, base_offset, rise) -> dict:
+RAIL_SRC = ("src", "src_tag", "src_inset")   # 난간의 출처 표식(원본 계단·슬래브 id, 난간 자리 표식, 계단 옆 들임). 없으면 키 자체가 없다
+
+
+def _railing_row(name, path, height, base_offset, rise, src=None) -> dict:
     p = {"name": name, "path": [[float(x), float(y)] for x, y in path], "height": float(height), "base_offset": float(base_offset), "rise": float(rise)}
+    if src:
+        p.update(src)
     why = K.row_params_error("railing", p)
     if why:
         raise DobimError("CONSTRAINT", f"난간이 올바르지 않다: {why}", path="/path")
@@ -1114,15 +1165,16 @@ class RailingSet(A):
     height: Pos | None = None
     base_offset: Num | None = None
     rise: Num | None = None
+    clear_source: bool = Field(False, description="참이면 난간의 출처(계단·슬래브) 연동을 끊는다: 이후 원본을 바꿔도 따라가지 않는다")
 
     @model_validator(mode="after")
     def _any(self):
-        if all(v is None for v in (self.name, self.path, self.height, self.base_offset, self.rise)):
+        if all(v is None for v in (self.name, self.path, self.height, self.base_offset, self.rise)) and not self.clear_source:
             raise ValueError("바꿀 필드가 하나도 없다")
         return self
 
 
-@command("railing.set", kind="mutation", risk="write", group="model.railing", summary="난간 속성 변경(난간선·높이·시작 높이·rise·이름)",
+@command("railing.set", kind="mutation", risk="write", group="model.railing", summary="난간 속성 변경(난간선·높이·시작 높이·rise·이름, 출처 연동 끊기)",
          args=RailingSet, since="0.3", examples=[{"id": F.RL1, "height": 1200}])
 def railing_set(ctx, a: RailingSet):
     r = ctx.authored(a.id, "railing")
@@ -1132,7 +1184,8 @@ def railing_set(ctx, a: RailingSet):
             p[k] = getattr(a, k)
     if a.path is not None:
         p["path"] = a.path
-    ctx.put_el(a.id, dict(r, params=_railing_row(p["name"], p["path"], p["height"], p["base_offset"], p["rise"])))
+    src = None if a.clear_source else {k: p[k] for k in RAIL_SRC if k in p}   # 출처 표식은 사용자가 끊기 전까지 그대로 둔다
+    ctx.put_el(a.id, dict(r, params=_railing_row(p["name"], p["path"], p["height"], p["base_offset"], p["rise"], src)))
     return {"id": a.id}
 
 
@@ -1153,45 +1206,38 @@ def railing_delete(ctx, a: IdArg):
     return {"deleted": [a.id]}
 
 
-def _new_railing(ctx, level, name_stem, path, height, base_offset, rise) -> str:
+def _new_railing(ctx, level, name_stem, path, height, base_offset, rise, src=None) -> str:
     rid = ctx.new_id("railing")
-    ctx.put_el(rid, row("railing", "IfcRailing", "railing.basic", _railing_row(f"{name_stem}-{rid[-6:]}", path, height, base_offset, rise)))
+    ctx.put_el(rid, row("railing", "IfcRailing", "railing.basic", _railing_row(f"{name_stem}-{rid[-6:]}", path, height, base_offset, rise, src)))
     ctx.rel("on_level", rid, level, True)
     return rid
 
 
-class RailingFromStair(A):
-    stair: Id
-    side: Literal["both", "left", "right"] = Field("both", description="어느 쪽에 둘지(단 묶음 걸음 방향의 왼쪽·오른쪽·양쪽)")
-    inset: Num = Field(50.0, ge=0, description="계단 옆면에서 안쪽으로 들이는 거리 mm")
-    height: Pos = K.RAILING_HEIGHT_DEFAULT
-    landing: bool = Field(True, description="꺾인 계단이면 층참의 트인 가장자리에도 난간을 둔다")
+# ---- 난간 연동(15단계): railing.from_stair·from_slab 이 만든 난간은 원본(계단·슬래브)을 따라간다
+# 출처는 난간 쪽에 적는다: src(원본 id)·src_tag(어느 난간 자리인지)·src_inset(계단 옆 들임). 난간 선은 원본 파라미터의 순수 함수(_stair_rail_specs·_slab_rail_spec)라
+# 원본이 바뀌면 `옛 원본에서 만든 난간선` 과 지금 난간선이 같은지로 사용자가 고쳤는지를 가린다(같으면 새 원본의 난간선으로 바꾸고, 다르면 건드리지 않고 lost).
+RAIL_TOL = 1e-3   # 난간선 비교 허용 mm
 
 
-@command("railing.from_stair", kind="mutation", risk="write", group="model.railing",
-         summary="계단의 단 묶음 옆(과 꺾인 계단 층참의 트인 가장자리)에 난간을 자동 생성. 같은 입력이면 같은 id·순서",
-         args=RailingFromStair, since="0.3", examples=[{"stair": F.ST1, "side": "both"}])
-def railing_from_stair(ctx, a: RailingFromStair):
-    r = ctx.authored(a.stair, "stair", what="난간을 붙이는 것")
-    level = ctx.rels_out("on_level", a.stair)[0]
-    p = r["params"]
+def _stair_rail_specs(p: dict, side: str, inset: float, landing: bool) -> list:
+    """계단 파라미터에서 난간 자리들: [{"tag", "path", "base_offset", "rise"}]. 단 묶음마다 왼쪽(`f{i}L`)·오른쪽(`f{i}R`), 층참은 `landing`. 순서는 생성 순서다."""
     lay = K.stair_layout(p)
     w, base = p["width"], p["base_offset"]
     rise = lay["rise"]
-    inset = min(a.inset, w / 2.0 - 1.0)
+    inset = min(inset, w / 2.0 - 1.0)
     out = []
     for i, fl in enumerate(lay["flights"]):
         x1, y1, x2, y2 = fl["run"]
         ln = fl["length"]
         ux, uy = (x2 - x1) / ln, (y2 - y1) / ln
         for sgn, name in ((1.0, "left"), (-1.0, "right")):
-            if a.side not in ("both", name):
+            if side not in ("both", name):
                 continue
             m = sgn * (w / 2.0 - inset)
             path = [[x1 - uy * m, y1 + ux * m], [x2 - uy * m, y2 + ux * m]]
-            out.append(_new_railing(ctx, level, "RL", path, a.height, base + fl["z0"] + rise, (fl["n"] - 1) * rise))
+            out.append({"tag": f"f{i}{'L' if sgn > 0 else 'R'}", "path": path, "base_offset": base + fl["z0"] + rise, "rise": (fl["n"] - 1) * rise})
     ld = lay["landing"]
-    if ld is not None and a.landing:
+    if ld is not None and landing:
         t = p["turn"]
         poly = ld["poly"]          # (층참 가까운 변 시작, 먼 변 시작, 먼 변 끝, 가까운 변 끝) 이 걸음선 왼쪽 + 기준 (t,m) 좌표의 네 꼭짓점
         p0, p1, p2, p3 = (list(q) for q in poly)   # (가까운 변 시작, 먼 변 시작, 먼 변 끝, 가까운 변 끝): 걸음선 방향 t 축과 왼쪽 m 축의 직사각형
@@ -1210,7 +1256,145 @@ def railing_from_stair(ctx, a: RailingFromStair):
             path = [i0, i1, i2]                                        # 오른쪽 옆변 + 먼 변(왼쪽 옆변은 위 단 묶음이 떠난다)
         else:
             path = [i3, i2, i1]                                        # 왼쪽 옆변 + 먼 변
-        out.append(_new_railing(ctx, level, "RL", path, a.height, base + ld["z"], 0.0))
+        out.append({"tag": "landing", "path": path, "base_offset": base + ld["z"], "rise": 0.0})
+    return out
+
+
+def _slab_ring(p: dict, opening):
+    """슬래브의 난간 둘레 고리: 바깥 경계(opening 이 None) 또는 구멍 하나. 구멍이 없으면 None."""
+    if opening is None:
+        return p["boundary"]
+    ops = p.get("openings", ())
+    return ops[opening] if opening < len(ops) else None
+
+
+def _slab_rail_runs(ring, edges) -> list:
+    """고리의 변 번호 목록(edges 가 None 이면 모든 변)에서 난간 한 줄들: [(tag 조각, 꼭짓점 목록)]. 이어진 변은 한 줄, 모든 변이면 닫힌 한 줄이다."""
+    n = len(ring)
+    chosen = sorted(set(range(n) if edges is None else edges))
+    if len(chosen) == n:
+        return [("all", [ring[i] for i in range(n)] + [ring[0]])]
+    start = next(i for i in range(n) if i not in chosen)   # 선택되지 않은 변 다음에서 시작해 한 바퀴 돈다
+    order = [(start + 1 + k) % n for k in range(n)]
+    cur: list[int] = []
+    runs = []
+    for e in order:
+        if e in chosen:
+            cur.append(e)
+        elif cur:
+            runs.append((f"{cur[0]}+{len(cur)}", [ring[cur[0]]] + [ring[(e2 + 1) % n] for e2 in cur]))
+            cur = []
+    if cur:
+        runs.append((f"{cur[0]}+{len(cur)}", [ring[cur[0]]] + [ring[(e2 + 1) % n] for e2 in cur]))
+    return runs
+
+
+def _slab_tag(opening, run_tag: str) -> str:
+    return f"{'outer' if opening is None else f'o{opening}'}:{run_tag}"
+
+
+def _slab_rail_spec(p: dict, tag: str):
+    """슬래브 파라미터에서 표식(`outer:3+2`·`o1:all`)이 가리키는 난간 자리 {"path", "base_offset", "rise"}. 그 자리가 이제 없으면 None."""
+    which, _, run = tag.partition(":")
+    if which == "outer":
+        opening = None
+    elif which.startswith("o") and which[1:].isdigit():
+        opening = int(which[1:])
+    else:
+        return None
+    ring = _slab_ring(p, opening)
+    if ring is None:
+        return None
+    n = len(ring)
+    if run == "all":
+        path = [list(ring[i]) for i in range(n)] + [list(ring[0])]
+    else:
+        a, _, c = run.partition("+")
+        if not (a.isdigit() and c.isdigit()) or int(a) >= n or not 1 <= int(c) < n:
+            return None
+        a, c = int(a), int(c)
+        path = [list(ring[a])] + [list(ring[(a + k + 1) % n]) for k in range(c)]
+    return {"path": path, "base_offset": p["top_offset"], "rise": 0.0}
+
+
+def _rail_expected(src_kind: str, params: dict, tag: str, inset):
+    """원본 파라미터와 난간 표식에서 난간 자리 {"path", "base_offset", "rise"}(없으면 None). 계단 표식은 `f{i}L|R`·`landing`, 슬래브 표식은 `outer|o{k}:{시작}+{개수}|all`."""
+    if src_kind == "slab":
+        return _slab_rail_spec(params, tag)
+    if src_kind != "stair":
+        return None
+    for s in _stair_rail_specs(params, "both", 50.0 if inset is None else inset, True):
+        if s["tag"] == tag:
+            return s
+    return None
+
+
+def _rail_same(a: dict, b: dict) -> bool:
+    return (len(a["path"]) == len(b["path"]) and all(abs(p[0] - q[0]) <= RAIL_TOL and abs(p[1] - q[1]) <= RAIL_TOL for p, q in zip(a["path"], b["path"]))
+            and abs(a["base_offset"] - b["base_offset"]) <= RAIL_TOL and abs(a["rise"] - b["rise"]) <= RAIL_TOL)
+
+
+def _follow_railings(ctx, src_id: str, old_p: dict, new_p: dict) -> dict:
+    """원본(계단·슬래브) src_id 의 params 가 old_p 에서 new_p 로 바뀔 때, 그것이 낸 난간(src 표식)을 새 난간선으로 바꾼다. 응답 {"moved": [id], "lost": [{"id","reason"}]}(소유한 난간이 없으면 빈 사전).
+    옛 원본에서 만든 난간선과 지금 난간선이 다르면(사용자가 고쳤다) 건드리지 않고 lost, 새 원본에 그 자리가 없어도 lost 다. 난간 높이·이름은 사용자 것이라 그대로 둔다."""
+    st = ctx.st
+    owned = [rid for rid in sorted(st.by_kind.get("railing", ())) if st.el[rid]["params"].get("src") == src_id]
+    if not owned:
+        return {}
+    kind = st.el[src_id]["kind"]
+    moved, lost = [], []
+    for rid in owned:
+        rr = st.el[rid]
+        rp = rr["params"]
+        old = _rail_expected(kind, old_p, rp["src_tag"], rp.get("src_inset"))
+        new = _rail_expected(kind, new_p, rp["src_tag"], rp.get("src_inset"))
+        if old is not None and new is not None and _rail_same(old, new):
+            continue   # 이 난간 자리는 바뀌지 않았다
+        cur = {"path": rp["path"], "base_offset": rp["base_offset"], "rise": rp["rise"]}
+        if rr["origin"] != "authored" or old is None or not _rail_same(old, cur):
+            lost.append({"id": rid, "reason": "사용자가 고쳤거나 옛 원본과 맞지 않아 따라가지 않았다"})
+            continue
+        if new is None:
+            lost.append({"id": rid, "reason": "새 원본에 이 난간 자리가 없다"})
+            continue
+        np_ = dict(rp, path=[[float(x), float(y)] for x, y in new["path"]], base_offset=float(new["base_offset"]), rise=float(new["rise"]))
+        if K.row_params_error("railing", np_):
+            lost.append({"id": rid, "reason": "새 난간선이 올바르지 않다"})
+            continue
+        ctx.put_el(rid, dict(rr, params=np_))
+        moved.append(rid)
+    return {"moved": moved, "lost": lost} if moved or lost else {}
+
+
+def _release_railings(ctx, src_id: str) -> list:
+    """원본(계단·슬래브)이 지워질 때 그것이 낸 난간의 출처 표식을 지워 독립 난간으로 남긴다(난간은 지우지 않는다). 풀어 준 난간 id 목록."""
+    st = ctx.st
+    out = []
+    for rid in sorted(st.by_kind.get("railing", ())):
+        rr = st.el[rid]
+        if rr["params"].get("src") == src_id:
+            ctx.put_el(rid, dict(rr, params={k: v for k, v in rr["params"].items() if k not in RAIL_SRC}))
+            out.append(rid)
+    return out
+
+
+class RailingFromStair(A):
+    stair: Id
+    side: Literal["both", "left", "right"] = Field("both", description="어느 쪽에 둘지(단 묶음 걸음 방향의 왼쪽·오른쪽·양쪽)")
+    inset: Num = Field(50.0, ge=0, description="계단 옆면에서 안쪽으로 들이는 거리 mm")
+    height: Pos = K.RAILING_HEIGHT_DEFAULT
+    landing: bool = Field(True, description="꺾인 계단이면 층참의 트인 가장자리에도 난간을 둔다")
+
+
+@command("railing.from_stair", kind="mutation", risk="write", group="model.railing",
+         summary="계단의 단 묶음 옆(과 꺾인 계단 층참의 트인 가장자리)에 난간을 자동 생성. 같은 입력이면 같은 id·순서",
+         args=RailingFromStair, since="0.3", examples=[{"stair": F.ST1, "side": "both"}])
+def railing_from_stair(ctx, a: RailingFromStair):
+    r = ctx.authored(a.stair, "stair", what="난간을 붙이는 것")
+    level = ctx.rels_out("on_level", a.stair)[0]
+    out = []
+    for s in _stair_rail_specs(r["params"], a.side, a.inset, a.landing):
+        out.append(_new_railing(ctx, level, "RL", s["path"], a.height, s["base_offset"], s["rise"], {"src": a.stair, "src_tag": s["tag"], "src_inset": float(a.inset)}))
     return {"created": out}
 
 
@@ -1240,23 +1424,9 @@ def railing_from_slab(ctx, a: RailingFromSlab):
         raise DobimError("CONSTRAINT", f"변 번호가 경계 변 수({n})를 넘는다", path="/edges")
     if not chosen:
         raise DobimError("CONSTRAINT", "변이 하나도 없다", path="/edges")
-    if len(chosen) == n:
-        pts_runs = [[ring[i] for i in range(n)] + [ring[0]]]     # 모든 변: 닫힌 한 줄(첫 점에서 시작해 첫 점으로 돌아온다)
-    else:
-        start = next(i for i in range(n) if i not in chosen)   # 선택되지 않은 변 다음에서 시작해 한 바퀴 돈다
-        order = [(start + 1 + k) % n for k in range(n)]
-        cur: list[int] = []
-        pts_runs = []
-        for e in order:
-            if e in chosen:
-                cur.append(e)
-            elif cur:
-                pts_runs.append([ring[cur[0]]] + [ring[(e2 + 1) % n] for e2 in cur])
-                cur = []
-        if cur:
-            pts_runs.append([ring[cur[0]]] + [ring[(e2 + 1) % n] for e2 in cur])
     top = p["top_offset"]
-    out = [_new_railing(ctx, level, "RL", pts, a.height, top, 0.0) for pts in pts_runs]
+    out = [_new_railing(ctx, level, "RL", pts, a.height, top, 0.0, {"src": a.slab, "src_tag": _slab_tag(a.opening, tag)})
+           for tag, pts in _slab_rail_runs(ring, chosen if len(chosen) < n else None)]
     return {"created": out}
 
 
@@ -1268,6 +1438,7 @@ class SpaceFromWalls(A):
     category: Text = Field("", description="새 공간의 분류")
     height: Pos = 2700.0
     min_area_m2: Num = Field(0.5, ge=0, description="all 일 때 이보다 작은 영역(기둥 틈 같은)은 건너뛴다")
+    islands: bool = Field(True, description="참이면 방 안의 섬(이어지지 않은 닫힌 내부 벽 고리)과 자립형 기둥을 구멍으로 빼 면적에 반영한다(공간의 holes). 거짓이면 이전처럼 섬을 무시한다")
 
     @model_validator(mode="after")
     def _one(self):
@@ -1276,6 +1447,51 @@ class SpaceFromWalls(A):
         if self.points is not None and not self.points:
             raise ValueError("points 가 비어 있다")
         return self
+
+
+def _free_columns(ctx, level) -> list:
+    """레벨의 저작 기둥(호스트 없이 서는 column 계열 패밀리 인스턴스)의 바닥 윤곽 [(id, 세계 좌표 반시계 다각형)] (id 순). 가장 넓은 각기둥 단면을 쓴다."""
+    g = ctx.fresh()
+    out = []
+    for e in sorted(ctx.rels_in("on_level", level)):
+        r = ctx.row(e)
+        if r["kind"] != "finst" or r["origin"] != "authored" or not str(r.get("family_id", "")).startswith("column"):
+            continue
+        ff = g.q(D.free_fam, e)
+        if ff is None:
+            continue
+        pr = max(ff[6], key=lambda t: abs(D._area2(t[2])))
+        w = D._free_world(ff)
+        out.append((e, [(round(x, 3), round(y, 3)) for x, y in (w(u, v) for u, v in pr[2])]))
+    return out
+
+
+def _room_holes(ctx, a, RG, face, poly, columns) -> list:
+    """방 하나의 섬 구멍: 방 안의 닫힌 내부 벽 고리(바깥 면까지 넓힌 윤곽)와 방 안에 완전히 서 있는 기둥. 방 경계에 닿거나 서로 겹치는 것은 건너뛴다(경고)."""
+    cand = []
+    for h in face.get("holes", ()):
+        if a.edge == "inner":
+            hp = RG.inner_polygon(h, outer=True)
+            if hp is None:
+                ctx.warn("섬(방 안의 닫힌 벽 고리)의 바깥 면을 구하지 못해 구멍으로 빼지 않았다")
+                continue
+        else:
+            hp = RG._canonical(h["center"][::-1])
+        cand.append([(round(x, 3), round(y, 3)) for x, y in hp])
+    rings = [h["center"] for h in face.get("holes", ())]   # 섬 안쪽에 선 기둥은 그 안쪽 방의 것이다
+    for eid, cp in columns:
+        cx, cy = sum(p[0] for p in cp) / len(cp), sum(p[1] for p in cp) / len(cp)
+        if RG.point_in(poly, (cx, cy)) and not any(RG.point_in(r, (cx, cy)) for r in rings):
+            cand.append(cp)
+    kept: list = []
+    for hp in cand:
+        if polygon_problem([list(q) for q in hp]):
+            continue
+        if K.openings_problem([list(q) for q in poly], [[list(q) for q in o] for o in [*kept, hp]]) is None:
+            kept.append(hp)
+        else:
+            ctx.warn("방 경계에 닿거나 다른 구멍과 겹치는 섬·기둥은 구멍으로 빼지 않았다")
+    return kept
 
 
 @command("space.from_walls", kind="mutation", risk="write", group="model.space",
@@ -1291,7 +1507,8 @@ def space_from_walls(ctx, a: SpaceFromWalls):
             continue
         x1, y1, x2, y2 = r["params"]["axis"]
         walls.append((w, (x1, y1), (x2, y2), r["params"]["thickness"]))
-    faces = RG.find_faces(walls)
+    faces = RG.find_faces(walls, islands=a.islands)
+    columns = _free_columns(ctx, a.level) if a.islands else []   # 방 안에 선 기둥의 바닥 윤곽(구멍 후보)
     existing = []   # 이 레벨의 저작 공간 경계(같은 경계가 이미 있으면 건너뛴다)
     for sp in sorted(ctx.rels_in("on_level", a.level)):
         r = ctx.row(sp)
@@ -1322,6 +1539,7 @@ def space_from_walls(ctx, a: SpaceFromWalls):
     for f in picked:
         poly = shape(f)
         key = sorted(poly)
+        holes = _room_holes(ctx, a, RG, f, poly, columns) if a.islands else []
         if any(len(e) == len(poly) and sorted(e) == key for e in existing):
             skipped.append({"boundary": [list(q) for q in poly], "reason": "같은 경계의 공간이 이미 있다"})
             continue
@@ -1331,6 +1549,8 @@ def space_from_walls(ctx, a: SpaceFromWalls):
             continue
         sid = ctx.new_id("space")
         sp = {"name": f"SP-{sid[-6:]}", "category": a.category, "boundary": [[x, y] for x, y in poly], "height": a.height}
+        if holes:   # 섬 구멍(없으면 키 자체가 없다: 섬 없는 방의 행은 이전과 같다)
+            sp["holes"] = [[[x, y] for x, y in h] for h in holes]
         ctx.put_el(sid, row("space", "IfcSpace", "space.basic", sp))
         ctx.rel("on_level", sid, a.level, True)
         existing.append(list(poly))
@@ -1487,7 +1707,7 @@ def _follow_holes(ctx, eid, old_p: dict, new_p: dict) -> dict:
     new_hole = _hole_rect(new_p["shaft"], new_p["hole_clearance"])
     if _same_ring(old_hole, new_hole):
         return {}
-    moved, lost = [], []
+    moved, lost, rails = [], [], []
     for sid in slabs:
         sr = ctx.st.el.get(sid)
         if sr is None or sr["kind"] != "slab" or sr["origin"] != "authored":
@@ -1504,9 +1724,12 @@ def _follow_holes(ctx, eid, old_p: dict, new_p: dict) -> dict:
         if why:
             raise DobimError("CONSTRAINT", f"슬래브 {sid} 의 승강기 구멍을 옮길 수 없다: {why}", path="/shaft",
                              hint="이동량을 줄이거나 슬래브(경계·다른 구멍)를 먼저 고치세요")
+        rail = _follow_railings(ctx, sid, sr["params"], np_)   # 구멍 둘레에 둔 난간(railing.from_slab opening)도 따라간다
         ctx.put_el(sid, dict(sr, params=np_))
         moved.append(sid)
-    return {"moved": moved, "lost": lost}
+        if rail:
+            rails.append({"slab": sid, **rail})
+    return {"moved": moved, "lost": lost, **({"railings": rails} if rails else {})}
 
 
 @command("elevator.set", kind="mutation", risk="write", group="model.elevator",
@@ -2051,6 +2274,9 @@ def element_get(ctx, a: ElementGet):
     elif r["kind"] == "space":
         b = r["params"]["boundary"]
         out["derived"] = {"area_m2": abs(polygon_area2(b)) / 2.0 / 1e6, "corridor": is_corridor(r["params"]["name"], r["params"]["category"])}
+        if "holes" in r["params"]:   # 섬 구멍이 있으면 면적(㎡)은 구멍을 뺀 값이다(구멍 없는 공간의 응답은 그대로)
+            holes = sum(abs(polygon_area2(o)) for o in r["params"]["holes"]) / 2.0 / 1e6
+            out["derived"].update({"area_m2": out["derived"]["area_m2"] - holes, "hole_area_m2": holes, "holes": len(r["params"]["holes"])})
     elif r["kind"] == "site":
         b = r["params"]["boundary"]
         out["derived"] = {"area_m2": abs(polygon_area2(b)) / 2.0 / 1e6, "roads": len(r["params"]["roads"])}

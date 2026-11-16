@@ -408,8 +408,10 @@ def test_9_종류_레지스트리가_모든_모듈과_맞는다(tmp_path):
         _ok(b.run("wall.split", {"id": F.W3, "at": 2000}, project=p))
         _ok(b.run("slab.create", {"id": F.S1, "level": F.LV2, "boundary": [[0, 0], [6000, 0], [6000, 4000], [0, 4000]]}, project=p))   # 모든 종류(슬래브 포함)
         _ok(b.run("stair.create", {"id": F.ST1, "level": F.LV1, "run": [1000, 1000, 5000, 1000]}, project=p))   # 계단도
-        _ok(b.run("space.create", {"id": F.SP1, "level": F.LV1, "boundary": [[0, 0], [6000, 0], [6000, 4000], [0, 4000]], "name": "사무실"}, project=p))   # 공간도
+        _ok(b.run("space.create", {"id": F.SP1, "level": F.LV1, "boundary": [[0, 0], [6000, 0], [6000, 4000], [0, 4000]], "name": "사무실",
+                                 "holes": [[[1000, 1000], [2000, 1000], [2000, 2000], [1000, 2000]]]}, project=p))   # 공간도(섬 구멍 포함)
         _ok(b.run("railing.create", {"id": F.RL1, "level": F.LV1, "path": [[0, 0], [3000, 0]]}, project=p))   # 난간
+        _ok(b.run("railing.from_stair", {"stair": F.ST1}, project=p))   # 계단에서 만든 난간(출처 src 표식: 병합의 id 참조 검사·관계 검사를 지난다)
         _ok(b.run("elevator.create", {"id": F.EL1, "level": F.LV1, "shaft": [4000, 500, 5800, 2300], "to_level": F.LV2}, project=p))   # 승강기
         _ok(b.run("slab.create", {"id": "6" + "0" * 20 + "2", "level": F.LV2, "boundary": [[0, 0], [3000, 0], [3000, 3000], [0, 3000]], "use": "roof",
                                   "fall": {"dir": 90, "pct": 2}, "drains": [[1500, 1500]], "parapet": {"height": 600, "thickness": 150}}, project=p))   # 지붕 슬래브(파라펫 포함)

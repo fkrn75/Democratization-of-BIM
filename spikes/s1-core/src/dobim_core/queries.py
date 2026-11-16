@@ -408,8 +408,11 @@ def ifc_spec(g, e):
         # 배치는 건물 아래 뼈대 대지 좌표계(원점·무회전)다. 방위·도로는 IFC 가 아니라 의도(DoBIM_Intent)로 왕복한다
         return {"kind": kind, "name": p["name"], "boundary": tuple(tuple(q) for q in p["boundary"]), "elevation": p["elevation"], "intent": intent}
     if kind == "space":
-        return {"kind": kind, "name": p["name"], "category": p["category"], "level": g.q(space_level, e),
+        spec = {"kind": kind, "name": p["name"], "category": p["category"], "level": g.q(space_level, e),
                 "boundary": tuple(tuple(q) for q in p["boundary"]), "height": p["height"], "intent": intent}
+        if "holes" in p:   # 섬 구멍(15단계): 구멍 있는 프로필로 나간다. 없으면 명세는 이전과 같다
+            spec["holes"] = tuple(tuple(tuple(q) for q in o) for o in p["holes"])
+        return spec
     if kind == "railing":
         # 배치는 레벨 좌표계(원점·무회전)이고 높이는 레벨 + base_offset 이므로 레벨 높이는 읽지 않는다
         return {"kind": kind, "name": p["name"], "level": g.q(railing_level, e), "path": tuple(tuple(q) for q in p["path"]), "height": p["height"],

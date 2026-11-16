@@ -728,6 +728,65 @@ def judge_after14_items(out: Path, run: dict, base: dict):
     return res
 
 
+def after15_checks(out: Path, run: dict):
+    """열다섯 번째 작업 검산: [(이름, 통과, 근거)]. 값은 모두 엔진·그리기 코드를 쓰지 않고 내보낸 IFC·벽 축선·계단 걸음선에서 다시 계산한 것과 맞춘다. 산출이 없으면 빈 목록."""
+    a = run.get("after15")
+    sd = out / "sheets15"
+    need = ("annex-plan", "annex-roof", "annex-section", "annex-elev", "A-020")
+    if not a or not all((sd / f"{n}.svg").exists() for n in need):
+        return []
+    res = []
+    exp, zs = a["roof_expected"], a["z_sets"]
+    near = lambda z, zset: any(abs(z - v) <= 0.01 for v in zset)   # noqa: E731
+    sec, es = zs["annex-section"], zs["annex-elev"]
+    res.append(("건물 위의 박공 지붕 높이(math.tan)", near(exp["ridge_z"], sec) and near(exp["eave_end_z"], sec) and near(exp["eave_z"], sec) and near(exp["ridge_z"], es),
+                f"용마루 {exp['ridge_z']:.1f}·처마 끝 {exp['eave_end_z']:.1f}·처마 {exp['eave_z']:.0f} 이 단면·입면 선 높이에 있다"))
+    ri = a["roof_ifc"]
+    res.append(("지붕 IFC", ri["class"] == "IfcRoof" and ri["predefined"] == "GABLE_ROOF" and [c for c, p in ri["faces"]] == ["IfcSlab", "IfcSlab"] and all(p == "ROOF" for _, p in ri["faces"]),
+                f"{ri['class']} {ri['predefined']} 경사면 {len(ri['faces'])}"))
+    sp = a["spaces"]
+    si = a["space_ifc"]
+    hall_area = sp["hall"]["derived"]["area_m2"]
+    if len(si["inner_areas_m2"]) == 2:
+        # 방 안쪽(벽 축선 4500x4000, 두께 200 -> 안쪽 4300x3800) - 섬 바깥 면(축선 1000x1000, 두께 100 -> 1100x1100) - 기둥(IFC 폴리라인 면적)
+        hand_net = (4500.0 - 200.0) * (4000.0 - 200.0) / 1e6 - 1100.0 * 1100.0 / 1e6 - si["inner_areas_m2"][1]
+        good = (si["profile"] == "IfcArbitraryProfileDefWithVoids" and abs(hall_area - hand_net) < 1e-6 and abs(si["net_area_m2"] - hand_net) < 1e-6
+                and sp["hall"]["derived"]["holes"] == 2 and si["intent_holes"][0] == si["hand_island"])
+        res.append(("섬 구멍 공간 면적(신발끈)", good, f"별채 홀 {hall_area:.4f}㎡ = 방 안쪽 4300x3800 - 섬 바깥 면 1100x1100 - 기둥(IFC 폴리라인 면적) = {hand_net:.4f}㎡, 섬 바깥 면 좌표는 벽 축선 ± 두께/2 손계산과 같다"))
+    else:
+        res.append(("섬 구멍 공간 면적(신발끈)", False, "구멍이 2개가 아니다"))
+    core = sp["core"]
+    res.append(("섬 안쪽은 구멍 없는 공간", "holes" not in core["params"] and abs(core["derived"]["area_m2"] - 0.81) < 1e-6 and si["core_profile"] == "IfcArbitraryClosedProfileDef",
+                f"설비실 {core['derived']['area_m2']:.2f}㎡(벽 안쪽 면 900x900)"))
+    res.append(("평면 문자의 면적", f"{hall_area:.2f}㎡" in a["labels"]["annex-plan"] and "설비실" in a["labels"]["annex-plan"], f"평면 문자 {[t for t in a['labels']['annex-plan'] if '㎡' in t]}"))
+    lk = a["linkage"]
+    res.append(("난간 연동: 계단 옆선(걸음선·폭에서 손계산)", bool(lk["initial_ok"] and lk["moved_ok"] and lk["undo_state_equal"]),
+                f"만들 때·계단을 +400 옮긴 뒤 옆선이 걸음선 y ± (폭/2 - 들임) 과 같고 실행 취소가 계단·난간을 함께 되돌린다(상태 해시 같음). 응답: 이동 {len(lk['move']['moved'])}개"))
+    res.append(("난간 연동: 사용자가 고친 난간은 lost", bool(lk["hand_edit_kept"] and len(lk["back"]["lost"]) == 1 and len(lk["back"]["moved"]) >= 1 and lk["released_after_clear"]),
+                f"손으로 고친 난간은 건드리지 않고 lost 1, 같은 계단에서 만든 나머지 난간 {len(lk['back']['moved'])}개는 따라간다, clear_source 로 연동을 끊으면 출처가 없다"))
+    res.append(("난간 연동: 승강기가 소유한 슬래브 구멍 둘레", bool(lk.get("hole_rail_initial") and lk.get("hole_rail_followed") and lk.get("hole_rail_restored")),
+                "승강기를 옮기면 구멍(슬래브 개구부)이 따라가고 그 둘레 난간이 함께 따라가며, 되돌리면 처음 자리로 돌아온다"))
+    res.append(("난간 출처 IFC 의도", all(v["src"] and v["src_tag"] for v in a["rail_ifc"].values()) and not any(a["rail_ifc_cleared"].values()),
+                f"IFC 의도에 src·src_tag·src_inset: {sorted(v['src_tag'] for v in a['rail_ifc'].values())}, 연동을 끊은 난간은 출처 없음"))
+    oc = a["occlusion"]
+    res.append(("슬래브 구멍 가림 조각", not oc["hole_center_covered"] and oc["openings"] >= 1 and 0 <= oc["area_have"] - oc["area_want"] <= 0.001 * oc["area_want"] and oc["pieces"] >= 2,
+                f"S-2F 의 가림 조각 {oc['pieces']}개의 면적 {oc['area_have']:.0f}(= 슬래브 - 구멍 {oc['area_want']:.0f}, 이음매 겹침 포함), 구멍 한가운데는 어느 조각에도 없다"))
+    rt = a["roundtrip"]
+    res.append(("IFC 왕복", all(rt["hash_equal"]) and not rt["warnings"] and all(rt["params_equal"].values()), f"해시 3종 {rt['hash_equal']}, 경고 {len(rt['warnings'])}, 되살린 파라미터 동일 {all(rt['params_equal'].values())}"))
+    return res
+
+
+def judge_after15_items(out: Path, run: dict, base: dict):
+    """열다섯 번째 작업: 위 검산이 모두 통과하면 제도·관행 L-06(각층 및 지붕 평면도)의 근거에 건물 위에 얹은 박공 지붕을 더한다(판정은 그대로 충족). 산출이 없거나 검산이 하나라도 틀리면 빈 결과."""
+    checks = after15_checks(out, run)
+    prev = judge_after14_items(out, run, base).get("L-06")
+    if not checks or not all(c[1] for c in checks) or prev is None:
+        return {}
+    a = run["after15"]
+    return {"L-06": (OK, prev[1] + f" 열다섯 번째 작업에서 지붕을 실제 건물(별채: 벽 4개·문·섬 코어·기둥) 위에 얹은 예(RF-ANNEX, 시트 A-020: 평면·지붕 평면·F-F 단면·남측 입면)를 더했다. "
+                         f"처마 높이 {a['roof_expected']['eave_z']:.0f}(벽 윗면)에서 용마루 {a['roof_expected']['ridge_z']:.1f} 까지, 내보낸 IFC 의도에서 math.tan 으로 다시 계산한 값과 단면·입면 선 높이가 같다.")}
+
+
 def judge_bim_items(out: Path, run: dict, base: dict):
     """여섯 번째 작업 항목(B-02 추출 형상, B-04 뷰 원본 저장)을 run.json 의 probe 로 판정한다."""
     return judge_corner(run) | judge_sheet_def(run)
@@ -815,7 +874,7 @@ def main():
     changed = []
     for judged in (judge_sheet_items(out, run, items), judge_element_items(out, run, items), judge_slab_height_items(out, run, items),
                    judge_stair_space_items(out, run, items), judge_sheet2_items(out, run, items), judge_bim_items(out, run, items), judge_after7_items(out, run, items), judge_after8_items(out, run, items), judge_after9_items(out, run, items),
-                   judge_after11_items(out, run, items), judge_after12_items(out, run, items), judge_after13_items(out, run, items), judge_after14_items(out, run, items)):
+                   judge_after11_items(out, run, items), judge_after12_items(out, run, items), judge_after13_items(out, run, items), judge_after14_items(out, run, items), judge_after15_items(out, run, items)):
         for i, (v, why) in judged.items():
             if items[i]["verdict"] != v:
                 changed.append((i, items[i]["verdict"], v))
@@ -834,6 +893,10 @@ def main():
     lines += ["", f"법정 높이 묶음(X-02·X-03·X-04): {bundle}", "", f"G2 자동 표현 대상 법정 8항목 충족: {n_ok}/8(#1·#5 는 G1 판정 유지, 나머지는 아래 표)", "",
               "자동 표현 대상(G2 5-1절) 중 이번 작업이 다루는 항목(집계와 별개):", "", "| # | 항목 | 판정 | 근거 |", "|---|---|---|---|"]
     lines += [f"| {n} | {nm} | {v} | {why} |" for n, nm, v, why in gate]
+    c15 = after15_checks(out, run)
+    if c15:
+        lines += ["", "열다섯 번째 작업 검산(엔진 코드를 쓰지 않고 다시 계산한 값과 맞춤):", "", "| 검산 | 결과 | 근거 |", "|---|---|---|"]
+        lines += [f"| {n} | {'통과' if ok_ else '실패'} | {why} |" for n, ok_, why in c15]
     lines += ["", "| 항목 | 층 | 판정 | 근거 |", "|---|---|---|---|"]
     for i, r in items.items():
         lines.append(f"| {i} | {r['layer']} | {r['verdict']} | {r['reason']} |")

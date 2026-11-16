@@ -207,6 +207,8 @@ def detect_skeleton(f):
 #   "14" 경사 지붕(IfcRoof 아래 경사면마다 IfcSlab ROOF 를 집합한다)과 지붕 슬래브의 파라펫(슬래브에 집합한 IfcWall PARAPET). 클로저에 슬래브의 집합 부속이
 #       더해졌다(이전에는 계단만 부속을 담았다: 외부 도구가 슬래브에 부속을 붙인 파일은 가져올 때 분리로 판정된다, 안전한 쪽). 승강기의 선택 입력(피트·기계실·승강장 문·
 #       소유 슬래브 구멍)은 의도로만 왕복하고 IFC 형상은 그대로다. 지붕·파라펫·부속이 없는 프로젝트는 요소 행·IFC·클로저가 이전과 같다
+#   (15단계: 올리지 않았다. 난간의 출처 표식(src·src_tag·src_inset)은 의도로만 왕복하고, 섬 구멍 있는 공간(holes)의 몸체는 IfcArbitraryProfileDefWithVoids 로 나가며 클로저가
+#    형상을 그대로 펼쳐 담는다. 구멍이 없는 공간·출처가 없는 난간은 요소 행·IFC·클로저가 이전과 같다)
 CLOSURE_FORMAT = "14"
 
 
@@ -1256,11 +1258,15 @@ class IfcModel:
 
     def _ring_solid(self, outer, inner, depth, z0):
         """바깥 둘레와 안쪽 고리 사이(구멍 있는 프로필)를 +Z 로 depth 만큼 압출한 솔리드(파라펫)."""
+        return self._voided_solid(outer, [inner], depth, z0)
+
+    def _voided_solid(self, outer, inners, depth, z0):
+        """바깥 둘레에서 구멍들(inners)을 뺀 프로필을 +Z 로 depth 만큼 압출한 솔리드(파라펫·섬 구멍이 있는 공간)."""
         f = self.f
 
         def loop(pts):
             return f.createIfcPolyline([f.createIfcCartesianPoint([float(x), float(y)]) for x, y in list(pts) + [pts[0]]])
-        prof = f.createIfcArbitraryProfileDefWithVoids("AREA", None, loop(outer), [loop(inner)])
+        prof = f.createIfcArbitraryProfileDefWithVoids("AREA", None, loop(outer), [loop(i) for i in inners])
         pos = f.createIfcAxis2Placement3D(f.createIfcCartesianPoint([0.0, 0.0, float(z0)]), None, None)
         return f.createIfcExtrudedAreaSolid(prof, pos, f.createIfcDirection([0.0, 0.0, 1.0]), float(depth))
 
@@ -1335,7 +1341,10 @@ class IfcModel:
             api_aggregate.assign_object(f, products=[e], relating_object=self.ents[lv])
             self.container_of[eid] = lv
         self._place(e, self.ents[lv].ObjectPlacement, (0.0, 0.0, 0.0), (1.0, 0.0, 0.0))
-        self._set_body(e, self._solid(spec["boundary"], spec["height"]))
+        if spec.get("holes"):   # 섬 구멍(방 안의 기둥·닫힌 벽 고리): 구멍 있는 프로필을 압출한다
+            self._set_body(e, self._voided_solid(spec["boundary"], spec["holes"], spec["height"], 0.0))
+        else:
+            self._set_body(e, self._solid(spec["boundary"], spec["height"]))
 
     def _project_site(self, eid, spec):
         """대지: 뼈대 대지 아래 하위 IfcSite 로 집합하고(IfcRelAggregates), 경계는 몸체 표현(GeometricCurveSet 의 닫힌 폴리라인)으로 둔다.

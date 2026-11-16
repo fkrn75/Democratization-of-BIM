@@ -18,6 +18,7 @@ G1 때와 같은 방식으로 도면을 다시 뽑는다(s3lib.build 의 RA-01 �
   --no-after12  : 열두 번째 작업(대지 단면·조경·주차·간판 입력과 산출)을 건너뛴다
   --no-after13  : 열세 번째 작업(계단·승강기 상세 뷰, 승강기 평면 치수, 문·창을 지나는 단면, 방위 기본값)을 건너뛴다
   --no-after14  : 열네 번째 작업(경사 지붕·파라펫·승강기 피트/기계실/승강장 문/슬래브 구멍 연동, A-018·A-019)을 건너뛴다
+  --no-after15  : 열다섯 번째 작업(건물 위의 박공 지붕·섬 구멍 공간·난간 연동·슬래브 구멍 가림, A-020)을 건너뛴다
   --no-sheet2   : 다섯 번째 작업(색인 시트·통심선·기호·태그·키 플랜·개정·서명·선 굵기 프로파일·작성기준 프로파일)을 건너뛴다
 
 다섯 번째 작업 산출(--sheets): sheets/A-000(색인: 도면목록·범례·주기·레벨 노트·창호/벽체 일람표·재료표), sheets/A-002(통심선·단면·입면 기호·부위 상세·부호 태그·키 플랜·
@@ -846,6 +847,168 @@ def after14(sess, ids, views, log, out, work, spec):
     log["after14"] = probe
 
 
+def after15(sess, ids, views, log, out, work, spec):
+    """열다섯 번째 작업: (1) 실제 건물 위에 얹은 박공 지붕(별채: 벽 4개·문·섬 코어·기둥 위의 RF-ANNEX), (2) space.from_walls 의 섬 구멍(방 안의 닫힌 내부 벽 고리와 기둥을 구멍으로 뺀 면적),
+    (3) 난간 연동(railing.from_stair·from_slab 이 만든 난간이 계단·승강기가 소유한 슬래브 구멍을 따라간다: 옮기고 되돌리기·사용자가 고친 난간의 lost·실행 취소), (4) 슬래브 구멍을 통한 단면 가림 판정(B5)을 입력으로 더한다.
+    산출은 sheets15/ 에 둔다. 모든 기존 산출을 뽑은 뒤 맨 끝에 더한다(자동 id 가 밀리지 않게 id 는 모두 명시한다. 공간 자동 생성 id 만 자동이다: 이 단계의 마지막 입력).
+    독립 검산(엔진·그리기 코드를 쓰지 않는다): 내보낸 IFC 의 의도에서 math.tan 으로 용마루·처마 끝 높이를, IFC 몸체(IfcArbitraryProfileDefWithVoids)의 폴리라인에서 신발끈 공식으로 공간 면적을,
+    벽 축선·두께에서 손으로 섬 바깥 면 좌표를, 계단 걸음선·폭에서 손으로 난간 옆선 좌표를 다시 계산해 맞춘다."""
+    import math
+
+    import ifcopenshell
+    import ifcopenshell.util.element as ue
+
+    from dobim_core import dispatch
+    sd = out / "sheets15"
+    sd.mkdir(exist_ok=True)
+    probe: dict = {"exports": []}
+    one = ids["1F"]
+    wid = lambda k: "1" + "0" * 19 + k   # noqa: E731
+    vid = lambda k: "4" + "0" * 19 + k   # noqa: E731
+    get = lambda i: ok(sess.run("element.get", {"id": i}))   # noqa: E731
+    # ---- 별채: 1F 에 벽 4개(두께 200, 높이 3000)·남측 벽의 문·방 안의 섬(닫힌 벽 고리 1000 x 1000, 두께 100)·기둥, 그 위에 박공 지붕(처마 선 = 벽 바깥면, 처마 높이 = 벽 윗면 3000)
+    ax = [(13000.0, 500.0), (17500.0, 500.0), (17500.0, 4500.0), (13000.0, 4500.0)]
+    for i in range(4):
+        ids[f"AN-W{i + 1}"] = wid(f"f{i + 1}")
+        ok(sess.run("wall.create", {"id": ids[f"AN-W{i + 1}"], "level": one, "axis": [*ax[i], *ax[(i + 1) % 4]], "thickness": 200.0, "height": 3000.0, "name": f"AN-W{i + 1}"}))
+    for i in range(4):
+        ok(sess.run("join.set", {"a": ids[f"AN-W{i + 1}"], "b": ids[f"AN-W{(i + 1) % 4 + 1}"]}))
+    ids["AN-D1"] = "2" + "0" * 19 + "f1"
+    ok(sess.run("door.place", {"id": ids["AN-D1"], "host": ids["AN-W1"], "offset": 1800.0, "width": 900.0, "height": 2100.0, "name": "AN-D1"}))
+    core = [(15000.0, 2000.0), (16000.0, 2000.0), (16000.0, 3000.0), (15000.0, 3000.0)]
+    for i in range(4):
+        ids[f"AN-C{i + 1}"] = wid(f"g{i + 1}")
+        ok(sess.run("wall.create", {"id": ids[f"AN-C{i + 1}"], "level": one, "axis": [*core[i], *core[(i + 1) % 4]], "thickness": 100.0, "height": 3000.0, "name": f"AN-C{i + 1}"}))
+    for i in range(4):
+        ok(sess.run("join.set", {"a": ids[f"AN-C{i + 1}"], "b": ids[f"AN-C{(i + 1) % 4 + 1}"]}))
+    ids["AN-COL"] = "0" * 20 + "c2"
+    ok(sess.run("family.place", {"id": ids["AN-COL"], "family": "column.section", "type_values": {"section": "round"}, "level": one, "position": [14000.0, 3500.0]}))
+    ids["RF-ANNEX"] = "e" + f"{4:021d}"
+    ok(sess.run("roof.create", {"id": ids["RF-ANNEX"], "level": one, "boundary": [[12900.0, 400.0], [17600.0, 400.0], [17600.0, 4600.0], [12900.0, 4600.0]], "form": "gable", "pitch": 30.0,
+                                "overhang": 400.0, "base_offset": 3000.0, "thickness": 150.0, "name": "RF-ANNEX"}))
+    mk = lambda k, a: ok(sess.run("view.create", {"id": vid(k), **a}))   # noqa: E731
+    box = [12000.0, 0.0, 18500.0, 5200.0]
+    v = {}
+    v["annex-plan"] = mk("j1", {"name": "별채 평면도", "type": "plan", "level": one, "cut_height": 1200.0, "scale": 50, "crop": box})
+    v["annex-roof"] = mk("j2", {"name": "별채 지붕 평면도", "type": "plan", "level": one, "cut_height": 6000.0, "scale": 50, "crop": box})
+    v["annex-section"] = mk("j3", {"name": "F-F 단면(별채)", "type": "section", "p1": [15250.0, -1000.0], "p2": [15250.0, 6000.0], "depth": 2800.0, "scale": 50, "crop": [1000.0, -500.0, 6000.0, 5000.0]})
+    v["annex-elev"] = mk("j4", {"name": "남측 입면(별채)", "type": "elevation", "dir": "S", "scale": 50, "crop": [12000.0, -500.0, 18500.0, 5000.0]})
+    ids15 = {k: x["id"] for k, x in v.items()}
+    probe["views"] = ids15
+    for nm, vv in ids15.items():
+        for ext in ("svg", "pdf"):
+            r = export(sess, "view.export", {"id": vv}, work / f"s15_{nm}.{ext}")
+            (sd / f"{nm}.{ext}").write_bytes((work / f"s15_{nm}.{ext}").read_bytes())
+            probe["exports"].append({"dir": "sheets15", "view": nm, "ext": ext, "bytes": r["bytes"], "segments": r["segments"], "labels": r["labels"], "annotations": r["annotations"]})
+    # 방 안의 섬을 구멍으로 빼는 공간 자동 생성(점 지정): 별채 방(섬·기둥이 구멍)과 섬 안쪽(설비실). 자동 id 를 쓰는 이 단계의 유일한 입력
+    sp = ok(sess.run("space.from_walls", {"level": one, "points": [[14000.0, 1500.0], [15500.0, 2500.0]], "category": "별채"}))
+    rooms = sp["created"]
+    ok(sess.run("space.set", {"id": rooms[0], "name": "별채 홀"}))
+    ok(sess.run("space.set", {"id": rooms[1], "name": "설비실", "category": "설비"}))
+    ids["AN-SP1"], ids["AN-SP2"] = rooms
+    probe["spaces"] = {"created": rooms, "skipped": sp["skipped"], "hall": get(rooms[0]), "core": get(rooms[1])}
+    # 시트 A-020: 별채(평면·지붕 평면·단면·입면)
+    a = {**spec, "views": [ids15["annex-plan"], ids15["annex-roof"], ids15["annex-section"], ids15["annex-elev"]], "paper": "A1", "sheet_name": "별채 평면도·지붕 평면도·단면도·입면도", "sheet_number": "A-020", "dims": []}
+    for ext in ("svg", "pdf"):
+        r = export(sess, "sheet.export", a, work / f"A-020.{ext}")
+        (sd / f"A-020.{ext}").write_bytes((work / f"A-020.{ext}").read_bytes())
+        probe["exports"].append({"dir": "sheets15", "sheet": "A-020", "ext": ext, "bytes": r["bytes"], "font_embedded": r["font_embedded"], "non_ascii_dropped": r["non_ascii_dropped"]})
+    sess.eng.sync()
+    sess.eng._touch_pending()
+    g = sess.eng.g
+    probe["labels"] = {k: [t[2] for t in g.q(D.view_labels, x)] for k, x in ids15.items()}
+    probe["counts"] = {k: {"lines": len(g.q(D.view_lines, x)), "fills": len(g.q(D.view_fills, x))} for k, x in ids15.items()}
+    probe["z_sets"] = {k: sorted({round(z, 3) for ln in g.q(D.view_lines, ids15[k]) for z in (ln[2], ln[4])}) for k in ("annex-section", "annex-elev")}
+    # ---- 난간 연동(모델 변경은 산출을 뽑은 뒤): 계단 ST-1F 옆 난간과 2층 슬래브의 승강기 구멍 둘레 난간이 원본을 따라간다
+    st, s2f, eid = ids["ST-1F"], ids["S-2F"], ids["EV-1"]
+    rl = ok(sess.run("railing.from_stair", {"stair": st, "inset": 50.0}))["created"]
+    shaft = get(eid)["params"]["shaft"]
+    rect = sorted([[shaft[0], shaft[1]], [shaft[2], shaft[1]], [shaft[2], shaft[3]], [shaft[0], shaft[3]]])
+    ops = get(s2f)["params"].get("openings", [])
+    idx = next((i for i, o in enumerate(ops) if sorted(o) == rect), None)
+    hole_rl = ok(sess.run("railing.from_slab", {"slab": s2f, "opening": idx}))["created"][0] if idx is not None else None
+    run = get(st)["params"]["run"]
+    width = get(st)["params"]["width"]
+    side = lambda dx, dy, sgn: [[run[0] + dx, run[1] + dy + sgn * (width / 2.0 - 50.0)], [run[2] + dx, run[3] + dy + sgn * (width / 2.0 - 50.0)]]   # noqa: E731  계단 걸음선에서 손으로 낸 옆선
+    pth = lambda i: get(i)["params"]["path"]   # noqa: E731
+    left, right = (rl[0], rl[1]) if get(rl[0])["params"]["src_tag"] == "f0L" else (rl[1], rl[0])
+    lk: dict = {"stair_rails": rl, "hole_rail": hole_rl, "opening_index": idx, "tags": {i: get(i)["params"]["src_tag"] for i in rl},
+                "initial_ok": pth(left) == side(0, 0, 1) and pth(right) == side(0, 0, -1)}
+    h0 = ok(sess.run("model.hash", {}))["state"]
+    mv = ok(sess.run("stair.move", {"id": st, "dx": 400.0, "dy": 0.0}))
+    lk["move"] = mv["railings"]
+    lk["moved_ok"] = pth(left) == side(400, 0, 1) and pth(right) == side(400, 0, -1)
+    ok(sess.run("history.undo", {}))
+    lk["undo_state_equal"] = ok(sess.run("model.hash", {}))["state"] == h0
+    ok(sess.run("stair.move", {"id": st, "dx": 400.0, "dy": 0.0}))
+    ok(sess.run("railing.move", {"id": right, "dx": 0.0, "dy": 25.0}))   # 사용자가 오른쪽 난간을 손으로 고쳤다
+    hand = pth(right)
+    back = ok(sess.run("stair.move", {"id": st, "dx": -400.0, "dy": 0.0}))
+    lk["back"] = back["railings"]
+    lk["hand_edit_kept"] = pth(right) == hand and pth(left) == side(0, 0, 1)
+    ok(sess.run("railing.set", {"id": right, "clear_source": True}))
+    lk["released_after_clear"] = "src" not in get(right)["params"]
+    if hole_rl is not None:
+        ring = get(s2f)["params"]["openings"][idx]
+        lk["hole_rail_initial"] = pth(hole_rl) == [*ring, ring[0]]
+        em = ok(sess.run("elevator.move", {"id": eid, "dx": 100.0, "dy": 100.0}))
+        lk["hole_move"] = em["holes"].get("railings")
+        ring2 = get(s2f)["params"]["openings"][idx]
+        lk["hole_rail_followed"] = pth(hole_rl) == [*ring2, ring2[0]] and ring2 != ring
+        ok(sess.run("elevator.move", {"id": eid, "dx": -100.0, "dy": -100.0}))
+        lk["hole_rail_restored"] = pth(hole_rl) == [*ring, ring[0]]
+    probe["linkage"] = lk
+    # ---- B5: 슬래브 구멍을 통한 가림 판정 — 2층 슬래브(S-2F)의 가림 조각에 승강기 구멍이 비어 있다(독립 검산: 신발끈 면적, 구멍 한가운데가 어느 조각에도 없다)
+    sess.eng.sync()
+    sess.eng._touch_pending()
+    g = sess.eng.g
+    tris = g.q(D.slab_tris, s2f)
+    sp2 = get(s2f)["params"]
+    ar = lambda poly: abs(sum(poly[i][0] * poly[(i + 1) % len(poly)][1] - poly[(i + 1) % len(poly)][0] * poly[i][1] for i in range(len(poly)))) / 2.0   # noqa: E731
+    want = ar(sp2["boundary"]) - sum(ar(o) for o in sp2.get("openings", []))
+    have = sum(ar(t) for t in tris)
+    cx = [(sum(p[0] for p in o) / len(o), sum(p[1] for p in o) / len(o)) for o in sp2.get("openings", [])]
+    inside = lambda poly, pt: all((poly[(i + 1) % len(poly)][0] - poly[i][0]) * (pt[1] - poly[i][1]) - (poly[(i + 1) % len(poly)][1] - poly[i][1]) * (pt[0] - poly[i][0]) > 0 for i in range(len(poly)))   # noqa: E731
+    probe["occlusion"] = {"slab": "S-2F", "openings": len(sp2.get("openings", [])), "pieces": len(tris), "area_want": want, "area_have": have,
+                          "hole_center_covered": any(inside(list(t), c) for t in tris for c in cx)}
+    # ---- 독립 검산: 내보낸 IFC 의 의도·몸체에서 다시 읽는다
+    ifc_out(sess, "after15.ifc")
+    f = ifcopenshell.open(str(work / "after15.ifc"))
+    intent = lambda gid: json.loads(ue.get_pset(f.by_guid(gid), "DoBIM_Intent")["Intent"])["params"]   # noqa: E731
+    ip = intent(ids["RF-ANNEX"])
+    t = math.tan(math.radians(ip["pitch"]))
+    short = min(abs(ip["boundary"][1][0] - ip["boundary"][0][0]), abs(ip["boundary"][2][1] - ip["boundary"][1][1]))
+    z_eave = ip["base_offset"]
+    probe["roof_expected"] = {"ridge_z": z_eave + t * short / 2.0, "eave_end_z": z_eave - t * ip["overhang"], "eave_z": z_eave}
+    probe["roof_ifc"] = {"class": f.by_guid(ids["RF-ANNEX"]).is_a(), "predefined": f.by_guid(ids["RF-ANNEX"]).PredefinedType,
+                         "faces": [(k.is_a(), k.PredefinedType) for rel in f.by_guid(ids["RF-ANNEX"]).IsDecomposedBy for k in rel.RelatedObjects]}
+    spe = f.by_guid(rooms[0])
+    prof = spe.Representation.Representations[0].Items[0].SweptArea
+    pl = lambda c: [(p.Coordinates[0], p.Coordinates[1]) for p in c.Points][:-1]   # noqa: E731
+    outer_ifc = pl(prof.OuterCurve)
+    inner_ifc = [pl(c) for c in prof.InnerCurves] if prof.is_a("IfcArbitraryProfileDefWithVoids") else []
+    probe["space_ifc"] = {"profile": prof.is_a(), "outer_area_m2": ar(outer_ifc) / 1e6, "inner_areas_m2": [ar(c) / 1e6 for c in inner_ifc],
+                          "net_area_m2": (ar(outer_ifc) - sum(ar(c) for c in inner_ifc)) / 1e6,
+                          "intent_holes": intent(rooms[0]).get("holes"), "hand_island": [[14950.0, 1950.0], [16050.0, 1950.0], [16050.0, 3050.0], [14950.0, 3050.0]]}
+    probe["space_ifc"]["core_profile"] = f.by_guid(rooms[1]).Representation.Representations[0].Items[0].SweptArea.is_a()
+    probe["rail_ifc"] = {i: {k: intent(i).get(k) for k in ("src", "src_tag", "src_inset")} for i in (left, hole_rl) if i}   # 연동이 남은 난간(끊은 난간 right 는 출처가 없어야 한다)
+    probe["rail_ifc_cleared"] = {k: intent(right).get(k) for k in ("src", "src_tag", "src_inset")}
+    # ---- IFC 왕복: 별채·섬 구멍 공간·연동 난간이 되살고 해시 3종이 같다
+    h_before = ok(sess.run("model.hash", {}))
+    imp = ok(dispatch.run(sess.env, "ifc.import", {"source": "after15.ifc", "path": "after15-imp.dobim"}))
+    h_after = ok(dispatch.run(sess.env, "model.hash", {}, project="after15-imp.dobim"))
+    same = {}
+    for k in ("RF-ANNEX", "AN-SP1", "AN-SP2", "AN-COL"):
+        a0 = get(ids[k])["params"]
+        a1 = ok(dispatch.run(sess.env, "element.get", {"id": ids[k]}, project="after15-imp.dobim"))["params"]
+        same[k] = a0 == a1
+    for i in [*rl, hole_rl]:
+        if i is not None:
+            same[f"rail:{i[-6:]}"] = get(i)["params"] == ok(dispatch.run(sess.env, "element.get", {"id": i}, project="after15-imp.dobim"))["params"]
+    probe["roundtrip"] = {"warnings": imp["warnings"], "hash_equal": [h_before[k] == h_after[k] for k in ("state", "derived", "ifc")], "params_equal": same}
+    log["after15"] = probe
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--out", required=True)
@@ -861,6 +1024,7 @@ def main():
     ap.add_argument("--no-after12", action="store_true")
     ap.add_argument("--no-after13", action="store_true")
     ap.add_argument("--no-after14", action="store_true")
+    ap.add_argument("--no-after15", action="store_true")
     ap.add_argument("--no-site", action="store_true")
     for f in ("stairs", "spaces", "fire", "finish"):
         ap.add_argument(f"--no-{f}", action="store_true")
@@ -1061,6 +1225,8 @@ def main():
         after13(sess, ids, views, log, out, work, spec)
     if o.sheets and not o.no_sheet2 and not o.no_after8 and not o.no_site and not o.no_after11 and not o.no_after13 and not o.no_after14:
         after14(sess, ids, views, log, out, work, spec)
+    if o.sheets and not o.no_sheet2 and not o.no_after8 and not o.no_site and not o.no_after11 and not o.no_after13 and not o.no_after14 and not o.no_after15 and ids.get("ST-1F") and ids.get("S-2F"):
+        after15(sess, ids, views, log, out, work, spec)
     (out / "run.json").write_text(json.dumps({"views": views, "ids": ids, **log}, ensure_ascii=False, indent=1), encoding="utf-8")
     print(json.dumps(log, ensure_ascii=False)[:1500])
 
