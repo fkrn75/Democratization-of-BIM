@@ -947,6 +947,16 @@ ROOF_ARROW_LEN = 12.0      # 물매 화살표 길이(용지 mm)
 ROOF_DRAIN_R = 1.5         # 배수구 기호 반지름(용지 mm)
 
 
+def _arrow_label_pos(cx, cy, dx, dy, text, sc):
+    """물매 화살표(중심 cx,cy · 방향 dx,dy)의 옆에 놓는 가로 글의 (x, y 기준선). 글 상자(폭·높이)가 화살표 축 쪽 옆면에 닿지 않도록 수직 방향으로 상자 반 크기 + 틈만큼 띄운다.
+    글은 가로로만 쓰므로 화살표가 세로에 가까울수록 폭의 절반만큼 옆으로 간다(예전에는 1.8 고정이라 세로 화살표에서 글이 축에 걸렸다)."""
+    nx, ny = -dy, dx
+    half_w = _text_w(text, LABEL_SUB_H) * sc / 2.0
+    half_h = 0.4 * LABEL_SUB_H * sc
+    d = abs(nx) * half_w + abs(ny) * half_h + 1.2 * sc
+    return round(cx + nx * d, 3), round(cy + ny * d - 0.35 * LABEL_SUB_H * sc, 3)
+
+
 def slab_roof(g, s):
     """지붕 슬래브의 ((물이 흐르는 방향 도, 물매 %) 또는 None, 배수구들) 또는 None(지붕이 아니다)."""
     row = Q.el(g, s)
@@ -989,7 +999,8 @@ def plan_roof_marks(g, v, s):
             for sg in (1.0, -1.0):   # 화살촉: 진행 방향 뒤로 ±20도 벌어진 두 선
                 bs, bc = _sincos_deg(fall[0] + 180.0 + sg * 20.0)
                 segs.append(("symbol", head[0], head[1], head[0] + bc * hl, head[1] + bs * hl))
-            labels.append((round(cx - sn * 1.8 * sc, 3), round(cy + cs * 1.8 * sc, 3), f"물매 {fall[1]:g}%", LABEL_SUB_H, "middle"))
+            lx, ly = _arrow_label_pos(cx, cy, cs, sn, f"물매 {fall[1]:g}%", sc)
+            labels.append((lx, ly, f"물매 {fall[1]:g}%", LABEL_SUB_H, "middle"))
     for d in drains:   # 배수구: 원과 십자
         r = ROOF_DRAIN_R * sc
         ring = _circle_pts(d, r, 12)
@@ -1698,7 +1709,8 @@ def _door_gap_lines(a, b, door):
 #   입면·단면: 경사 지붕이 가리는 것 = 윗면 아래로 처마 끝 높이까지의 쐐기. 높이를 16 조각으로 나눈 수평 단면(각 조각 윗면 높이의 단면: 보수적으로 작게)의 볼록 기둥 조각이다
 #   벽·슬래브·계단·패밀리가 지붕을 가린다(지붕 모서리는 경사선이라 _visible_slanted). 벽이 지붕에 가려지는 것은 판정하지 않는다(벽은 처마 높이에서 끝난다)
 ROOF_SLICES = 16
-ROOF_SOLID_SLICES_MAX = 64   # 지붕 판 가림 조각 수 상한(두께의 1/4 높이로 쪼개되 이 수를 넘기지 않는다)
+ROOF_SOLID_PIECE_MM = 0.5    # 지붕 판 가림 조각의 높이(mm): 판 아랫면 쪽 가림 경계 오차는 이 값 이하
+ROOF_SOLID_LEAD_MM = 0.55    # 판 윗면 쪽으로 평면에서 이만큼(mm) 더 가린다: 윗면 위에 정확히 얹힌 선(처마 높이 = 벽 윗면)을 EPS_V 깊이 판정 안에서 가리려는 여유
 ROOF_ARROW_BARB = (0.9396926207859084, 0.3420201433256687)   # 화살촉 20도의 (cos, sin)
 
 
@@ -1790,22 +1802,26 @@ def _roof_vpieces(g, v, r):
 
 def roof_solid_slices(g, r):
     """지붕 판(윗면 ~ 두께만큼 아래)의 실제 부피를 높이 조각으로: ((z0, z1, 평면 볼록 다각형), ...). 쐐기(roof_slices)와 달리 판 아래 빈 곳(처마 밑)은 채우지 않는다.
-    조각의 다각형은 면마다 {z0 <= 윗면 높이 <= z0 + 두께}: 조각의 아랫면에서 판이 덮는 자리다(가림 판정은 다각형의 관찰자 쪽 변만 쓰므로 가장자리의 접촉도 가린 것으로 친다).
-    조각 높이는 두께의 1/4 이라 옆에서 본 가림은 조각 높이만큼만 어긋난다(덜 가리는 쪽). 벽 윗선처럼 지붕 판 안에 묻힌 선과 처마 끝 아래 선을 가리는 데 쓴다."""
+    조각의 다각형은 면마다 {조각 아랫면 - 윗면 쪽 여유 <= 윗면 높이 <= 조각 윗면 + 두께}: 조각의 높이 구간 어디서든 판이 덮는 자리의 합집합이다(가림 판정은 다각형의 관찰자 쪽 변만 쓰므로 가장자리의 접촉도 가린 것으로 친다).
+    조각 높이는 ROOF_SOLID_PIECE_MM(0.5mm) 이라 판 아랫면 쪽 가림 경계는 0.5mm 이하로만 더 가린다(예전엔 두께의 1/4 만큼 덜 가렸다). 윗면 쪽은 ROOF_SOLID_LEAD_MM 의 평면 여유만큼 더 가린다.
+    조각은 면마다 판 두께 구간에서만 만든다(윗면이 닿는 높이 범위 [면의 최저 윗면 - 두께, 면의 최고 윗면]). 벽 윗선처럼 지붕 판 안에 묻힌 선과 처마 끝 아래 선을 가리는 데 쓴다."""
     info = g.q(roof_info, r)
     if info is None or info["t"] <= EPS:
         return ()
     t = info["t"]
-    zb, zt = info["zlow"] - t, info["ztop"]
-    h = max(t / 4.0, (zt - zb) / ROOF_SOLID_SLICES_MAX)
-    n = max(1, int((zt - zb) / h + 1.0 - 1e-9))   # 올림(math.ceil 대신: 이 모듈은 sqrt 만 쓴다)
     out = []
-    for i in range(n):
-        z0, z1 = zb + h * i, min(zb + h * (i + 1), zt)
-        for fc, (a, b, c) in zip(info["faces"], info["planes"]):
-            poly = _clip_half([(q[0], q[1]) for q in fc], a, b, c - z0)       # 윗면이 조각 아랫면 이상인 쪽
+    for fc, (a, b, c) in zip(info["faces"], info["planes"]):
+        tops = [q[2] for q in fc]
+        zb, zt = min(tops) - t, max(tops)                 # 이 면의 판이 차지하는 높이 범위
+        n = max(1, int((zt - zb) / ROOF_SOLID_PIECE_MM + 1.0 - 1e-9))   # 올림(math.ceil 대신: 이 모듈은 sqrt 만 쓴다)
+        h = (zt - zb) / n
+        xy = [(q[0], q[1]) for q in fc]
+        lead = ROOF_SOLID_LEAD_MM * sqrt(a * a + b * b)                          # 평면 여유를 높이로 환산(윗면 기울기 배)
+        for i in range(n):
+            z0, z1 = zb + h * i, zb + h * (i + 1)
+            poly = _clip_half(xy, a, b, c - z0 + lead)                         # 윗면이 조각 아랫면(-여유) 이상인 쪽
             if len(poly) >= 3:
-                poly = _clip_half(poly, -a, -b, z0 + t + 1.0 - c)              # 조각 아랫면 + 두께(+1mm 여유) 이하인 쪽: 처마 끝 면도 넓이가 있게
+                poly = _clip_half(poly, -a, -b, z1 + t - c)                    # 조각 윗면 + 두께 이하인 쪽
             if len(poly) >= 3 and abs(_area2(poly)) > 2 * EPS:
                 out.append((z0 - 2 * EPS, z1 + 2 * EPS, tuple(poly)))          # z 를 조금 겹쳐 이음매 높이의 선이 두 조각 사이로 새지 않게 한다
     return tuple(out)
@@ -1905,7 +1921,9 @@ def roof_plan_parts(g, v, r):
             ux, uy = -dx, -dy
             segs.append(("symbol", head[0], head[1], head[0] + (ux * bc - sg * uy * bs) * hl, head[1] + (sg * ux * bs + uy * bc) * hl))
         pn, pc = K.sincos_deg(info["pitch"])   # 물매 표기: 각도와 가로 10 에 대한 세로(관행 "물매 5/10")
-        labels.append((round(cx - dy * 1.8 * sc, 3), round(cy + dx * 1.8 * sc, 3), f"물매 {info['pitch']:g}°({pn / pc * 10:.1f}/10)", LABEL_SUB_H, "middle"))
+        txt = f"물매 {info['pitch']:g}°({pn / pc * 10:.1f}/10)"
+        lx, ly = _arrow_label_pos(cx, cy, dx, dy, txt, sc)
+        labels.append((lx, ly, txt, LABEL_SUB_H, "middle"))
     return (tuple(segs), tuple(labels))
 
 
