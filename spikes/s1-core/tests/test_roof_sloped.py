@@ -396,3 +396,44 @@ def test_파라펫을_내보내고_가져오면_되살아나고_해시_3종이_�
         assert {k: v for k, v in hi.items() if k != "rev"} == {k: v for k, v in h.items() if k != "rev"}
     finally:
         b.close()
+
+
+# ---------------------------------------------------------------- 지붕 판이 뒤의 벽 선을 가린다 (16단계: 처마 높이 = 벽 윗면이라 윗선이 지붕 띠 안으로 비치던 흠)
+def _walled_gable(sess):
+    """1층 직사각 벽 4개(윗면 3000)와 그 위의 박공 지붕(처마 높이 = 벽 윗면, 처마 내밀기 400, 판 두께 150)."""
+    lv = sess.run("level.create", {"name": "1F", "elevation": 0})["result"]["id"]
+    for ax in ([0, 0, 6000, 0], [6000, 0, 6000, 4000], [6000, 4000, 0, 4000], [0, 4000, 0, 0]):
+        assert sess.run("wall.create", {"level": lv, "axis": ax, "thickness": 200, "height": 3000})["ok"]
+    assert sess.run("roof.create", {"level": lv, "boundary": [[-100, -100], [6100, -100], [6100, 4100], [-100, 4100]], "form": "gable", "pitch": 30,
+                                    "overhang": 400, "base_offset": 3000, "thickness": 150})["ok"]
+    return lv
+
+
+def test_처마_높이가_벽_윗면과_같아도_벽_윗선은_지붕_띠_안으로_비치지_않는다(sess):
+    _walled_gable(sess)
+    ln = lines_of(sess, mk(sess, name="S", type="elevation", dir="S"))
+    t = 0.5773502691896257
+    under = 3000 - t * 400 - 150                                   # 처마 끝 판 아랫면 = 앞의 지붕이 벽을 가리기 시작하는 높이
+    assert not [x for x in ln if abs(x[2] - 3000) < 1 and abs(x[4] - 3000) < 1], "벽 윗선(3000)이 지붕 판 뒤에서 비친다"
+    wall_v = [x for x in ln if abs(x[1] - x[3]) < 1e-6 and x[1] in (0.0, 6000.0, -100.0, 6100.0)]
+    assert len(wall_v) == 4
+    for x in wall_v:
+        assert max(x[2], x[4]) == pytest.approx(under, abs=1.0), "벽 세로선은 처마 끝 판 아랫면에서 끝난다"
+
+
+def test_박공_쪽_입면은_처마_밑_빈_곳의_벽_모서리를_가리지_않는다(sess):
+    _walled_gable(sess)
+    ln = lines_of(sess, mk(sess, name="E", type="elevation", dir="E"))
+    corners = [x for x in ln if abs(x[1] - x[3]) < 1e-6 and x[1] in (0.0, 4000.0, -100.0, 4100.0)]
+    assert len(corners) == 4
+    t = 0.5773502691896257
+    for x in corners:   # 모서리가 외곽(처마선 y=-100·4100)에서 d 안쪽이면 판 아랫면은 3000 + d*tan(물매) - 150: 그 아래는 지붕 밑이 비어 벽이 보인다(조각 높이 한 칸 정도의 오차)
+        d = min(abs(x[1] + 100), abs(4100 - x[1]))
+        assert max(x[2], x[4]) == pytest.approx(3000 + d * t - 150 + 20, abs=25)
+
+
+def test_지붕_판_가림은_지붕이_없는_입면과_평면을_바꾸지_않는다(base):
+    # 지붕이 없으면 벽 선은 이전과 같다(기준 프로젝트의 입면 벽 윗선이 그대로)
+    e = mk(base, name="E0", type="elevation", dir="S")
+    ln = lines_of(base, e)
+    assert any(x[0] == "proj" and x[2] == x[4] and x[2] > 2900 for x in ln)

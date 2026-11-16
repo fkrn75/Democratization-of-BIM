@@ -197,3 +197,16 @@ def test_공간이_없으면_도면이_바뀌지_않는다(base):
     assert base.run("space.delete", {"id": F.SP1})["ok"]
     for k, v in views.items():
         assert (lines_of(base, v), labels_of(base, v)) == before[k], k
+
+
+def test_절단_높이가_공간_윗면보다_높은_지붕_평면에는_실명과_면적을_쓰지_않는다(base):
+    mk_space(base)                                                              # 공간 높이 기본 2700
+    low = mk(base, name="P-low", type="plan", level=F.LV1, cut_height=1200)
+    edge = mk(base, name="P-edge", type="plan", level=F.LV1, cut_height=2700)    # 공간 윗면과 같으면 아직 방을 자른다
+    roof = mk(base, name="P-roof", type="plan", level=F.LV1, cut_height=6000)
+    room = lambda v: [t[2] for t in labels_of(base, v) if t[2] in ("사무실", "24.00㎡")]   # noqa: E731
+    assert room(low) == ["사무실", "24.00㎡"]
+    assert room(edge) == ["사무실", "24.00㎡"]
+    assert room(roof) == []
+    base.run("space.set", {"id": F.SP1, "height": 6500})                         # 공간이 더 높으면(예: 강당) 그 높이까지는 방이다
+    assert room(roof) == ["사무실", "24.00㎡"]
