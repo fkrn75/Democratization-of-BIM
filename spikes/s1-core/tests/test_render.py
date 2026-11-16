@@ -326,3 +326,33 @@ def test_mcp_dobim_render는_ImageContent를_돌려준다(tmp_path):
             r = await c.call_tool("dobim_query", {"command": "view.image", "args": {"id": F.V1, "max_px": 700}, "project": "t.dobim"})
             assert not r.is_error and not [x for x in r.content if x.type == "image"] and r.structured_content["result"]["sha256"] == meta["result"]["sha256"]
     asyncio.run(go())
+
+
+# ---------------------------------------------------------------- 19단계: 펜 굵기 위계
+def _line_ink(w_mm, k):
+    """가로 선 하나(용지 mm 좌표)를 그린 화소 어두움 합계(255 - 밝기의 합)."""
+    prims = [("line", 5.0, 20.0, 35.0, 20.0, w_mm, "#000000", None)]
+    out = RA.render(prims, 40.0, 40.0, max_px=round(40 * k))
+    w, h, rows = decode(out["png"])
+    return sum(255 - px(rows, x, y)[0] for y in range(h) for x in range(w))
+
+
+def test_펜_굵기_위계는_축소해도_가는_선과_굵은_선이_달라_보인다():
+    # 1화소 미만 선도 굵기에 비례해 어두워진다(예전엔 0.13mm 와 0.5mm 가 같은 0.75화소 선이라 구별이 안 됐다)
+    for k in (1.6, 2.5, 4.0):
+        thin, mid, thick = _line_ink(0.13, k), _line_ink(0.35, k), _line_ink(0.7, k)
+        assert thin < mid < thick, (k, thin, mid, thick)
+    assert _line_ink(0.7, 2.5) > 2.2 * _line_ink(0.13, 2.5)
+    # 가장 가는 선도 사라지지 않는다
+    assert _line_ink(0.13, 1.6) > 0
+    # 충분히 굵으면 화소 굵기 그대로(불투명), 가는 선은 1화소 폭에 농도만 낮춘다
+    assert RA.pen_px(0.7, 4.0) == (pytest.approx(2.8), 1.0)
+    wpx, a = RA.pen_px(0.13, 1.9)
+    assert wpx == RA.MIN_STROKE_PX and RA.MIN_ALPHA <= a < 0.5
+
+
+def test_펜_굵기_위계가_들어가도_같은_입력은_같은_바이트다():
+    prims = [("line", 5.0, 5.0, 35.0, 30.0, 0.13, "#000000", None), ("line", 5.0, 30.0, 35.0, 8.0, 0.7, "#000000", (3.0, 1.0)),
+             ("circle", 20.0, 20.0, 6.0, 0.25, "#202020", None)]
+    a = RA.render(prims, 40.0, 40.0, max_px=200)["png"]
+    assert a == RA.render(prims, 40.0, 40.0, max_px=200)["png"]

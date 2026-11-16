@@ -153,7 +153,7 @@ def test_지붕_평면은_윤곽_물매_화살표_물매_문자_배수구를_그
     assert len(arms) == 2   # 화살촉 두 선(화살 끝에서 뒤로 +-20도)
     assert has_seg(ln, "symbol", 350.0, 2000.0, 650.0, 2000.0) and has_seg(ln, "symbol", 500.0, 1850.0, 500.0, 2150.0)   # 배수구 십자
     lab = [t for t in labels_of(base, p) if t[2].startswith("물매")]
-    assert lab == [(3000.0, 1820.0, "물매 2%", D.LABEL_SUB_H, "middle")]
+    assert lab == [(3000.0, 1730.0, "물매 2%", D.LABEL_SUB_H, "middle")]
 
 
 def test_절단_높이가_지붕_안이면_지붕_표시_없이_평소처럼_절단선만_그린다(base):

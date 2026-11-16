@@ -18,7 +18,8 @@ from math import ceil, cos, floor, hypot, radians, sin
 from dobim_core import pdf_font as PF
 
 SUB = 4                    # 세로 부표본 수(가로는 정확한 면적)
-MIN_STROKE_PX = 0.75       # 이보다 가는 선은 이 굵기로 그린다(축소하면 0.13mm 선이 사라지지 않게)
+MIN_STROKE_PX = 1.0        # 이보다 가는 선(실제 굵기가 1화소 미만)은 1화소 굵기로 그리되 농도(알파)를 굵기에 비례해 낮춘다
+MIN_ALPHA = 0.3            # 가장 가는 선의 최소 농도(축소해도 가는 선이 완전히 사라지지 않게)
 MAX_PX_LIMIT = 4096        # 출력 긴 변의 상한
 MIN_PX = 64
 MAX_PIXELS = 16_000_000    # 출력 화소 수 상한
@@ -136,8 +137,8 @@ class Canvas:
         self.w, self.h = w, h
         self.buf = bytearray(b"\xff" * (w * h * 3))
 
-    def fill(self, contours, color: tuple[int, int, int]) -> None:
-        """닫힌 다각선들을 감김수(nonzero) 규칙으로 칠한다. 좌표는 화소(왼쪽 위 0,0)."""
+    def fill(self, contours, color: tuple[int, int, int], alpha: float = 1.0) -> None:
+        """닫힌 다각선들을 감김수(nonzero) 규칙으로 칠한다. 좌표는 화소(왼쪽 위 0,0). alpha 는 전체 농도(1 이면 불투명)."""
         w, h = self.w, self.h
         y_lo = min(p[1] for c in contours for p in c)
         y_hi = max(p[1] for c in contours for p in c)
@@ -202,18 +203,18 @@ class Canvas:
                             touch.update((ia - x0, ib - x0, ia + 1 - x0))
             if cov is None:
                 continue
-            self._row(y0 + r, x0, cov, run, touch, color)
+            self._row(y0 + r, x0, cov, run, touch, color, alpha)
 
-    def _row(self, y, x0, cov, run, touch, color) -> None:
+    def _row(self, y, x0, cov, run, touch, color, alpha=1.0) -> None:
         base = y * self.w * 3
         pos, rs = 0, 0.0
         for i in sorted(touch):
             if i > pos and rs > 0.002:
-                self._seg(base, x0 + pos, x0 + i, rs, color)
+                self._seg(base, x0 + pos, x0 + i, rs * alpha, color)
             rs += run[i]
             t = cov[i] + rs
             if t > 0.002:
-                self._seg(base, x0 + i, x0 + i + 1, t, color)
+                self._seg(base, x0 + i, x0 + i + 1, t * alpha, color)
             pos = i + 1
 
     def _seg(self, base, xa, xb, c, color) -> None:
@@ -287,6 +288,15 @@ def _circle_pts(cx, cy, r, n, ccw=True):
     return pts if ccw else pts[::-1]
 
 
+def pen_px(w_mm: float, k: float) -> tuple[float, float]:
+    """펜 굵기(용지 mm)와 배율(화소/mm)로 (그릴 굵기 화소, 농도). 1화소 이상이면 실제 굵기 그대로·불투명.
+    1화소 미만이면 굵기는 1화소로 두고 농도를 굵기에 비례해 낮춘다(최소 MIN_ALPHA): 0.13mm 가는 선과 0.7mm 굵은 선이 축소해도 위계로 보인다."""
+    t = w_mm * k
+    if t >= MIN_STROKE_PX:
+        return t, 1.0
+    return MIN_STROKE_PX, max(MIN_ALPHA, t / MIN_STROKE_PX)
+
+
 def _nseg_for(px_size: float) -> int:
     return 2 if px_size < 14 else (4 if px_size < 60 else 8)
 
@@ -306,7 +316,8 @@ class _Page:
         return not (max(a[0], b[0]) < 0 or max(a[1], b[1]) < 0 or min(a[0], b[0]) > self.cv.w or min(a[1], b[1]) > self.cv.h)
 
     def line(self, x0, y0, x1, y1, w, color, dash):
-        half = max(w * self.k, MIN_STROKE_PX) / 2.0
+        wpx, alpha = pen_px(w, self.k)
+        half = wpx / 2.0
         if not self.visible(min(x0, x1) - w, min(y0, y1) - w, max(x0, x1) + w, max(y0, y1) + w):
             return
         rgb = _rgb(color)
@@ -317,13 +328,13 @@ class _Page:
                 if q:
                     quads.append(q)
             if quads:
-                self.cv.fill(quads, rgb)
+                self.cv.fill(quads, rgb, alpha)
             return
         q = _quad(self.P(x0, y0), self.P(x1, y1), half, half)
         if q is None:   # 길이 0 의 선(점): 굵기만큼의 점
             px, py = self.P(x0, y0)
             q = [(px - half, py - half), (px + half, py - half), (px + half, py + half), (px - half, py + half)]
-        self.cv.fill([q], rgb)
+        self.cv.fill([q], rgb, alpha)
 
     def poly(self, pts, fill, w, color):
         if len(pts) < 2:
@@ -336,7 +347,8 @@ class _Page:
         if fill:
             self.cv.fill([ppts], _rgb(fill))
         if w:
-            half = max(w * self.k, MIN_STROKE_PX) / 2.0
+            wpx, alpha = pen_px(w, self.k)
+            half = wpx / 2.0
             quads = []
             n = len(ppts)
             for i in range(n):
@@ -344,7 +356,7 @@ class _Page:
                 if q:
                     quads.append(q)
             if quads:
-                self.cv.fill(quads, _rgb(color))
+                self.cv.fill(quads, _rgb(color), alpha)
 
     def circle(self, cx, cy, r, w, color, fill):
         if not self.visible(cx - r - w, cy - r - w, cx + r + w, cy + r + w):
@@ -355,8 +367,9 @@ class _Page:
         if fill:
             self.cv.fill([_circle_pts(px, py, rp, n)], _rgb(fill))
         if w:
-            half = max(w * self.k, MIN_STROKE_PX) / 2.0
-            self.cv.fill([_circle_pts(px, py, rp + half, n), _circle_pts(px, py, max(rp - half, 0.05), n, ccw=False)], _rgb(color))
+            wpx, alpha = pen_px(w, self.k)
+            half = wpx / 2.0
+            self.cv.fill([_circle_pts(px, py, rp + half, n), _circle_pts(px, py, max(rp - half, 0.05), n, ccw=False)], _rgb(color), alpha)
 
     def text(self, x, y, size, s, anchor, color, angle, bold):
         px_size = size * self.k

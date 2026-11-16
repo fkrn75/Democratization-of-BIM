@@ -427,9 +427,9 @@ def test_박공_쪽_입면은_처마_밑_빈_곳의_벽_모서리를_가리지_�
     corners = [x for x in ln if abs(x[1] - x[3]) < 1e-6 and x[1] in (0.0, 4000.0, -100.0, 4100.0)]
     assert len(corners) == 4
     t = 0.5773502691896257
-    for x in corners:   # 모서리가 외곽(처마선 y=-100·4100)에서 d 안쪽이면 판 아랫면은 3000 + d*tan(물매) - 150: 그 아래는 지붕 밑이 비어 벽이 보인다(조각 높이 한 칸 정도의 오차)
+    for x in corners:   # 모서리가 외곽(처마선 y=-100·4100)에서 d 안쪽이면 판 아랫면은 3000 + d*tan(물매) - 150: 그 아래는 지붕 밑이 비어 벽이 보인다(조각 높이 0.5mm 이하의 오차)
         d = min(abs(x[1] + 100), abs(4100 - x[1]))
-        assert max(x[2], x[4]) == pytest.approx(3000 + d * t - 150 + 20, abs=25)
+        assert max(x[2], x[4]) == pytest.approx(3000 + d * t - 150, abs=0.6)   # 19단계: 조각 높이 0.5mm 로 오차 0.5mm 대(예전엔 +20 에 abs=25 였다)
 
 
 def test_지붕_판_가림은_지붕이_없는_입면과_평면을_바꾸지_않는다(base):
@@ -437,3 +437,54 @@ def test_지붕_판_가림은_지붕이_없는_입면과_평면을_바꾸지_않
     e = mk(base, name="E0", type="elevation", dir="S")
     ln = lines_of(base, e)
     assert any(x[0] == "proj" and x[2] == x[4] and x[2] > 2900 for x in ln)
+
+
+# ---------------------------------------------------------------- 19단계: 물매 문자가 화살표 축에 걸리지 않는다
+def _label_box(lab, sc):
+    """라벨 (x, 기준선 y, 문자, 높이(용지 mm), 맞춤 middle) 의 대략 글자 상자(모형 mm): (x0, y0, x1, y1)."""
+    x, y, text, size, _ = lab
+    w = D._text_w(text, size) * sc
+    return x - w / 2.0, y, x + w / 2.0, y + 0.72 * size * sc
+
+
+def _seg_hits_box(seg, box):
+    """선분과 직사각형이 만나는가(표본점 검사: 선분을 촘촘히 나눈다)."""
+    _k, x0, y0, x1, y1 = seg[:5]
+    for i in range(201):
+        t = i / 200.0
+        x, y = x0 + (x1 - x0) * t, y0 + (y1 - y0) * t
+        if box[0] <= x <= box[2] and box[1] <= y <= box[3]:
+            return True
+    return False
+
+
+@pytest.mark.parametrize("form,extra", [("gable", {}), ("hip", {}), ("shed", {"dir": 45})])
+def test_지붕_평면의_물매_문자는_화살표_몸통과_촉에_겹치지_않는다(base, form, extra):
+    mk_roof(base, form=form, base_offset=3000, **extra)
+    p = mk(base, name="지붕", type="plan", level=F.LV2, cut_height=9000)
+    sc = base.eng.g.q(D.view_cfg, p)[4]
+    arrows = [x for x in lines_of(base, p) if x[0] == "symbol"]
+    labs = [t for t in labels_of(base, p) if t[2].startswith("물매")]
+    assert arrows and labs
+    for lab in labs:
+        box = _label_box(lab, sc)
+        assert not any(_seg_hits_box(a, box) for a in arrows), lab
+
+
+def test_슬래브_지붕의_물매_문자도_화살표_옆으로_뜬다(base):
+    r = base.run("slab.create", {"level": F.LV2, "boundary": BOUND, "thickness": 150, "use": "roof", "fall": {"dir": 90, "pct": 2}})
+    assert r["ok"], r
+    p = mk(base, name="지붕", type="plan", level=F.LV2, cut_height=9000)
+    sc = base.eng.g.q(D.view_cfg, p)[4]
+    arrows = [x for x in lines_of(base, p) if x[0] == "symbol"]
+    lab = [t for t in labels_of(base, p) if t[2].startswith("물매")][0]   # 세로(+y) 화살표라 글이 옆(x)으로 간다
+    assert not any(_seg_hits_box(a, _label_box(lab, sc)) for a in arrows)
+
+
+def test_지붕_판_가림_조각은_높이_0_5mm_이하이고_처마_밑을_채우지_않는다(sess):
+    _walled_gable(sess)
+    sess.eng.sync()
+    sess.eng._touch_pending()
+    rid = sess.eng.g.q(D.scope_roofs, mk(sess, name="E", type="elevation", dir="E"))[0]
+    pcs = sess.eng.g.q(D.roof_solid_slices, rid)
+    assert pcs and all(z1 - z0 <= D.ROOF_SOLID_PIECE_MM + 4 * D.EPS + 1e-9 for z0, z1, _ in pcs)
