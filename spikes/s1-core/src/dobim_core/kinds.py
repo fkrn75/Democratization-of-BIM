@@ -467,11 +467,20 @@ RAILING_HANDRAIL_R = 25.0         # 손잡이 반지름 mm
 RAILING_POST_R = 15.0             # 난간 기둥 반지름 mm
 
 
+RAILING_TAG_MAX = 64   # 난간 출처 표식(src_tag) 길이 상한
+
+
 def _railing_params(p):
     def path(v):   # 꼭짓점 2~256개, 이웃한 꼭짓점이 1mm 이상 떨어져 있다(열린 선)
         return (isinstance(v, list) and 2 <= len(v) <= RAILING_PTS_MAX and all(_pt_ok(x) for x in v)
                 and all((v[i + 1][0] - v[i][0]) ** 2 + (v[i + 1][1] - v[i][1]) ** 2 >= 1.0 for i in range(len(v) - 1)))
-    return _check_fields("railing", p, {"name": _name, "path": path, "height": _pos, "base_offset": num_ok, "rise": num_ok})
+    err = _check_opt("railing", p, {"name": _name, "path": path, "height": _pos, "base_offset": num_ok, "rise": num_ok},
+                     {"src": id_ok, "src_tag": lambda v: text_ok(v, 1, RAILING_TAG_MAX), "src_inset": lambda v: num_ok(v) and v >= 0})
+    if err is None and ("src" in p) != ("src_tag" in p):
+        return "railing.src 와 railing.src_tag 는 함께 있어야 한다"
+    if err is None and "src_inset" in p and "src" not in p:
+        return "railing.src_inset 은 railing.src 가 있을 때만 둘 수 있다"
+    return err
 
 
 def railing_geom(p) -> dict:
@@ -763,9 +772,12 @@ def is_corridor(name, category) -> bool:
 def _space_params(p):
     def boundary(v):
         return isinstance(v, list) and SLAB_PTS_MIN <= len(v) <= SLAB_PTS_MAX and all(_pt_ok(x) for x in v) and polygon_area2(v) > 0   # 반시계로 저장한다
-    err = _check_opt("space", p, {"name": _name, "category": lambda v: text_ok(v, 0, 255), "boundary": boundary, "height": _pos}, {"ceiling_height": _pos})
+    err = _check_opt("space", p, {"name": _name, "category": lambda v: text_ok(v, 0, 255), "boundary": boundary, "height": _pos},
+                     {"ceiling_height": _pos, "holes": lambda v: isinstance(v, list) and 1 <= len(v) <= SLAB_OPENINGS_MAX and all(_poly_pts_ok(o) for o in v)})
     if err is None and "ceiling_height" in p and p["ceiling_height"] > p["height"]:
         return "space.ceiling_height 가 공간 높이보다 크다"
+    if err is None and "holes" in p and (why := openings_problem(p["boundary"], p["holes"])):   # 섬 구멍 = 슬래브 구멍과 같은 규칙(경계 안쪽·서로 겹치지 않음)
+        return f"space.holes: {why}"
     return err
 
 
@@ -914,7 +926,7 @@ ELEMENT_KINDS: dict[str, ElementKind] = {k.name: k for k in (
     ElementKind("space", True, "IfcSpace", True, 1, _space_params, geometric=True),
     ElementKind("elevator", True, "IfcTransportElement", True, 1, _elevator_params, geometric=True, refs=(("stops", "ids", None), ("hole_slabs", "ids", None))),
     ElementKind("roof", True, "IfcRoof", True, 1, _roof_params, geometric=True),
-    ElementKind("railing", True, "IfcRailing", True, 1, _railing_params, geometric=True),
+    ElementKind("railing", True, "IfcRailing", True, 1, _railing_params, geometric=True, refs=(("src", "id", None),), ref_kinds=(("src", ("stair", "slab")),)),
     ElementKind("site", True, "IfcSite", True, 0, _site_params),
     ElementKind("ftype", True, None, True, 3, _ftype_params),
     ElementKind("finst", True, None, True, 4, _finst_params, geometric=True, refs=(("type", "id", "of_type"),)),

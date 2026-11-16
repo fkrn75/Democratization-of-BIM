@@ -749,11 +749,50 @@ def _in_tri(p, a, b, c):
     return True
 
 
+SEAM = 1e-3   # 구멍 있는 슬래브를 사다리꼴로 나눌 때 이웃 조각이 겹치는 폭 mm(이음매에 놓인 세로선이 두 조각 사이로 빠지지 않게)
+
+
+def _trapezoids(poly, holes):
+    """구멍이 있는 다각형(바깥 경계 poly + 구멍들, 모두 반시계 튜플)을 x 축 방향 사다리꼴(볼록 사각형·삼각형)들로 나눈다.
+    꼭짓점 x 좌표마다 세로로 잘라 각 띠에서 변들을 y 로 정렬해 짝수-홀수 규칙으로 속이 찬 구간을 얻는다(구멍은 자연히 빠진다). 결정적이다.
+    띠는 오른쪽으로 SEAM 만큼 겹쳐 이웃 띠와의 이음매 위의 선이 빠지지 않게 한다."""
+    rings = [poly, *holes]
+    xs = sorted({p[0] for r in rings for p in r})
+    out = []
+    for xa, xb in zip(xs, xs[1:]):
+        if xb - xa <= 1e-9:
+            continue
+        xm = (xa + xb) / 2.0
+        ext = SEAM if xb < xs[-1] - 1e-9 else 0.0   # 맨 오른쪽 띠는 바깥 경계를 넘지 않는다
+        cross = []
+        for r in rings:
+            n = len(r)
+            for i in range(n):
+                p, q = r[i], r[(i + 1) % n]
+                if p[0] == q[0]:
+                    continue
+                lo, hi = (p, q) if p[0] < q[0] else (q, p)
+                if lo[0] <= xa + 1e-9 and hi[0] >= xb - 1e-9:   # 이 띠를 가로지르는 변
+                    sl = (hi[1] - lo[1]) / (hi[0] - lo[0])
+                    cross.append((lo[1] + sl * (xm - lo[0]), lo[1] + sl * (xa - lo[0]), lo[1] + sl * (xb + ext - lo[0])))
+        cross.sort()
+        for k in range(0, len(cross) - 1, 2):
+            (_, a0, a1), (_, b0, b1) = cross[k], cross[k + 1]
+            quad = [(xa, a0), (xb + ext, a1), (xb + ext, b1), (xa, b0)]
+            pts = [q for i, q in enumerate(quad) if i == 0 or (abs(q[0] - quad[i - 1][0]) > 1e-9 or abs(q[1] - quad[i - 1][1]) > 1e-9)]
+            if len(pts) >= 3 and abs(_area2(pts)) > 1e-6:
+                out.append(tuple(pts))
+    return tuple(out)
+
+
 def slab_tris(g, s):
-    """경계 다각형(오목 가능, 반시계)을 볼록 삼각형들로 나눈다. 귀 자르기, 항상 앞 번호의 귀부터라 결정적이다."""
+    """경계 다각형(오목 가능, 반시계)을 볼록 조각들로 나눈다. 구멍이 없으면 삼각형(귀 자르기, 항상 앞 번호의 귀부터라 결정적이다).
+    구멍이 있으면 구멍을 뺀 사다리꼴들이다(구멍 너머가 슬래브에 가리지 않게: 15단계)."""
     info = g.q(slab_info, s)
     if info is None:
         return ()
+    if info[3]:
+        return _trapezoids(info[2], info[3])
     poly = info[2]
     idx = list(range(len(poly)))
     tris = []
@@ -1883,6 +1922,14 @@ def space_info(g, s):
     return (tuple(poly), p["name"], p["category"])
 
 
+def space_holes(g, s):
+    """저작 공간의 섬 구멍 다각형들(반시계 튜플의 튜플). 없으면 빈 튜플."""
+    row = Q.el(g, s)
+    if row is None or row["kind"] != "space" or row["origin"] != "authored":
+        return ()
+    return tuple(tuple(tuple(q) for q in o) for o in row["params"].get("holes", ()))
+
+
 def all_spaces(g):
     out = []
     for b in range(Q.NB):
@@ -1913,9 +1960,29 @@ def polygon_centroid(poly):
     return (cx / (3.0 * a2), cy / (3.0 * a2))
 
 
-def area_text(poly) -> str:
-    """면적 문자: ㎡, 소수 둘째 자리."""
-    return f"{abs(_area2(poly)) / 2.0 / 1.0e6:.2f}㎡"
+def area_text(poly, holes=()) -> str:
+    """면적 문자: ㎡, 소수 둘째 자리. holes(섬 구멍)가 있으면 그 면적을 뺀다."""
+    a2 = abs(_area2(poly)) - sum(abs(_area2(h)) for h in holes)
+    return f"{a2 / 2.0 / 1.0e6:.2f}㎡"
+
+
+def label_point(poly, holes):
+    """공간 문자의 기준점: 무게중심. 섬 구멍(기둥·닫힌 벽 고리) 안이면 구멍 밖의 가장 가까운 격자점으로 옮긴다(결정적)."""
+    cx, cy = polygon_centroid(poly)
+    if not holes or not any(K.point_in_polygon((cx, cy), [list(q) for q in h]) >= 0 for h in holes):
+        return (cx, cy)
+    xs, ys = [p[0] for p in poly], [p[1] for p in poly]
+    outer = [list(q) for q in poly]
+    hs = [[list(q) for q in h] for h in holes]
+    best = None
+    for i in range(1, 16):
+        for j in range(1, 16):
+            q = (min(xs) + (max(xs) - min(xs)) * i / 16.0, min(ys) + (max(ys) - min(ys)) * j / 16.0)
+            if K.point_in_polygon(q, outer) == 1 and all(K.point_in_polygon(q, h) < 0 for h in hs):
+                d = (q[0] - cx) ** 2 + (q[1] - cy) ** 2
+                if best is None or d < best[0]:
+                    best = (d, q)
+    return (cx, cy) if best is None else best[1]
 
 
 def plan_space_labels(g, v, s):
@@ -1924,10 +1991,11 @@ def plan_space_labels(g, v, s):
     info = g.q(space_info, s)
     if info is None or cfg is None or cfg[0] != "plan":
         return ()
-    cx, cy = polygon_centroid(info[0])
+    holes = g.q(space_holes, s)
+    cx, cy = label_point(info[0], holes) if holes else polygon_centroid(info[0])
     sc = cfg[4]
     return ((round(cx, 3), round(cy + 0.9 * sc, 3), info[1], LABEL_NAME_H, "middle"),
-            (round(cx, 3), round(cy - 2.0 * sc, 3), area_text(info[0]), LABEL_SUB_H, "middle"))
+            (round(cx, 3), round(cy - 2.0 * sc, 3), area_text(info[0], holes), LABEL_SUB_H, "middle"))
 
 
 def view_labels(g, v):

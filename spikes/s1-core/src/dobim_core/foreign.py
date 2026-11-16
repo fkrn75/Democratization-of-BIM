@@ -174,7 +174,7 @@ def _parse_intent(kind: str, text: str) -> dict:
         elif "fall" in p or "drains" in p or "parapet" in p:
             raise ValueError("물매·배수구·파라펫은 지붕 슬래브에만 있다")
     elif kind == "space":
-        if (set(p) - {"ceiling_height"} != {"name", "category", "boundary", "height"} or not isinstance(p["boundary"], list) or not 3 <= len(p["boundary"]) <= 256
+        if (set(p) - {"ceiling_height", "holes"} != {"name", "category", "boundary", "height"} or not isinstance(p["boundary"], list) or not 3 <= len(p["boundary"]) <= 256
                 or not isinstance(p["category"], str) or len(p["category"]) > 255):
             raise ValueError("공간 params 가 다르다")
         pts = []
@@ -190,6 +190,21 @@ def _parse_intent(kind: str, text: str) -> dict:
             out["ceiling_height"] = _num(p["ceiling_height"], pos=True)
             if out["ceiling_height"] > out["height"]:
                 raise ValueError("천장 높이가 공간 높이보다 크다")
+        if "holes" in p:   # 섬 구멍(15단계): 슬래브 구멍과 같은 모양·검사
+            hs = p["holes"]
+            if not isinstance(hs, list) or not 1 <= len(hs) <= K.SLAB_OPENINGS_MAX:
+                raise ValueError("공간 구멍 목록이 올바르지 않다")
+            conv = []
+            for o in hs:
+                if not isinstance(o, list) or not 3 <= len(o) <= 256 or any(not isinstance(q, list) or len(q) != 2 for q in o):
+                    raise ValueError("공간 구멍 꼭짓점이 올바르지 않다")
+                conv.append([[_num(q[0]), _num(q[1])] for q in o])
+            if any(K.polygon_area2(o) <= 0 for o in conv):
+                raise ValueError("공간 구멍은 반시계로 저장한다")
+            why = K.openings_problem(pts, conv)
+            if why:
+                raise ValueError(f"공간 구멍이 올바르지 않다({why})")
+            out["holes"] = conv
     elif kind == "site":
         if (set(p) - set(K.SITE_OPTIONAL) != {"name", "boundary", "north_angle", "roads", "elevation"} or not isinstance(p["boundary"], list) or not 3 <= len(p["boundary"]) <= 256
                 or not isinstance(p["roads"], list) or len(p["roads"]) > K.SITE_ROADS_MAX):
@@ -222,11 +237,19 @@ def _parse_intent(kind: str, text: str) -> dict:
         if why:
             raise ValueError(f"대지가 올바르지 않다({why})")
     elif kind == "railing":
-        if (set(p) != {"name", "path", "height", "base_offset", "rise"} or not isinstance(p["path"], list) or not 2 <= len(p["path"]) <= K.RAILING_PTS_MAX
+        if (set(p) - {"src", "src_tag", "src_inset"} != {"name", "path", "height", "base_offset", "rise"} or not isinstance(p["path"], list) or not 2 <= len(p["path"]) <= K.RAILING_PTS_MAX
                 or any(not isinstance(q, list) or len(q) != 2 for q in p["path"])):
             raise ValueError("난간 params 가 다르다")
         out = {"name": _name(p["name"]), "path": [[_num(q[0]), _num(q[1])] for q in p["path"]], "height": _num(p["height"], pos=True),
                "base_offset": _num(p["base_offset"]), "rise": _num(p["rise"])}
+        if "src" in p:   # 원본(계단·슬래브) 출처 표식(15단계 연동): 값 검사는 코어 행 검사와 같은 것이다
+            if not isinstance(p["src"], str) or not _ID.match(p["src"]) or not isinstance(p.get("src_tag"), str):
+                raise ValueError("난간 출처가 올바르지 않다")
+            out["src"], out["src_tag"] = p["src"], p["src_tag"]
+            if "src_inset" in p:
+                out["src_inset"] = _num(p["src_inset"], nonneg=True)
+        elif "src_tag" in p or "src_inset" in p:
+            raise ValueError("난간 출처가 올바르지 않다")
         why = K.row_params_error("railing", out)
         if why:
             raise ValueError(f"난간이 올바르지 않다({why})")
