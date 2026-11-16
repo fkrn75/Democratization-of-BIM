@@ -53,7 +53,8 @@ PRE = {"history.redo": [("history.undo", {})], "ifc.restore": [_EXP, _EXP], "ifc
        "elevator.set": [_EL1], "elevator.move": [_EL1], "elevator.delete": [_EL1], "elevator.cut_slabs": [_EL1, _S2],
        "space.set": [_SP1], "space.move": [_SP1], "space.delete": [_SP1], "space.from_walls": [_W4],
        "site.set": [_SI1], "site.delete": [_SI1],
-       "sheet.define": [_V1], "sheet.delete": [_V1, _SH1], "sheet.list": [_V1, _SH1], "sheet.render": [_V1, _SH1]}
+       "sheet.define": [_V1], "sheet.delete": [_V1, _SH1], "sheet.list": [_V1, _SH1], "sheet.render": [_V1, _SH1],
+       "view.image": [_V1], "sheet.image": [_V1]}
 ERROR_CASES = [
     ("없는 커맨드", "no.such.command", {}, {}),
     ("스키마 오류(타입)", "wall.move", {"id": F.W1, "dx": "abc"}, {}),

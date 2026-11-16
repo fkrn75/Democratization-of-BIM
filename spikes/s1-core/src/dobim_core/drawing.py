@@ -646,6 +646,8 @@ def vfam_nbr_pieces(g, v, e):
         occ.extend(g.q(_slab_vpieces, v, sl))
     for st in g.q(scope_stairs, v):
         occ.extend(g.q(_stair_vpieces, v, st))
+    for rf in g.q(scope_roofs, v):   # 경사 지붕 판이 앞에 있으면 기둥 윗선 같은 선을 가린다
+        occ.extend(g.q(_roof_solid_vpieces, v, rf))
     return tuple(occ)
 
 
@@ -1137,6 +1139,8 @@ def slab_lines(g, v, s):
         occ.extend(g.q(_stair_vpieces, v, st))
     for fe in g.q(scope_fams, v):
         occ.extend(g.q(_fam_vpieces, v, fe))
+    for rf in g.q(scope_roofs, v):
+        occ.extend(g.q(_roof_solid_vpieces, v, rf))
     lines = []
     if occ:
         for e0, e1 in g.q(slab_vedges, v, s):
@@ -1408,6 +1412,8 @@ def stair_lines(g, v, s):
         occ.extend(g.q(_slab_vpieces, v, sl))
     for fe in g.q(scope_fams, v):
         occ.extend(g.q(_fam_vpieces, v, fe))
+    for rf in g.q(scope_roofs, v):
+        occ.extend(g.q(_roof_solid_vpieces, v, rf))
     lines = []
     if occ:
         for e0, e1 in g.q(stair_vedges, v, s):
@@ -1498,6 +1504,8 @@ def railing_lines(g, v, r):
         occ.extend(g.q(_stair_vpieces, v, st))
     for fe in g.q(scope_fams, v):
         occ.extend(g.q(_fam_vpieces, v, fe))
+    for rf in g.q(scope_roofs, v):
+        occ.extend(g.q(_roof_solid_vpieces, v, rf))
     lines = []
     for a, b in raw:
         pa, pb = _sw(cfg, a), _sw(cfg, b)
@@ -1690,6 +1698,7 @@ def _door_gap_lines(a, b, door):
 #   입면·단면: 경사 지붕이 가리는 것 = 윗면 아래로 처마 끝 높이까지의 쐐기. 높이를 16 조각으로 나눈 수평 단면(각 조각 윗면 높이의 단면: 보수적으로 작게)의 볼록 기둥 조각이다
 #   벽·슬래브·계단·패밀리가 지붕을 가린다(지붕 모서리는 경사선이라 _visible_slanted). 벽이 지붕에 가려지는 것은 판정하지 않는다(벽은 처마 높이에서 끝난다)
 ROOF_SLICES = 16
+ROOF_SOLID_SLICES_MAX = 64   # 지붕 판 가림 조각 수 상한(두께의 1/4 높이로 쪼개되 이 수를 넘기지 않는다)
 ROOF_ARROW_BARB = (0.9396926207859084, 0.3420201433256687)   # 화살촉 20도의 (cos, sin)
 
 
@@ -1770,6 +1779,45 @@ def _roof_vpieces(g, v, r):
         return ()
     out = []
     for z0, z1, poly in g.q(roof_slices, r):
+        sw = [_sw(cfg, p) for p in poly]
+        if _area2(sw) < 0:
+            sw.reverse()
+        sw = _clip_w(sw, cfg[7], cfg[8])
+        if len(sw) >= 3 and _area2(sw) > 2 * EPS:
+            out.append((z0, z1, tuple(sw)))
+    return tuple(out)
+
+
+def roof_solid_slices(g, r):
+    """지붕 판(윗면 ~ 두께만큼 아래)의 실제 부피를 높이 조각으로: ((z0, z1, 평면 볼록 다각형), ...). 쐐기(roof_slices)와 달리 판 아래 빈 곳(처마 밑)은 채우지 않는다.
+    조각의 다각형은 면마다 {z0 <= 윗면 높이 <= z0 + 두께}: 조각의 아랫면에서 판이 덮는 자리다(가림 판정은 다각형의 관찰자 쪽 변만 쓰므로 가장자리의 접촉도 가린 것으로 친다).
+    조각 높이는 두께의 1/4 이라 옆에서 본 가림은 조각 높이만큼만 어긋난다(덜 가리는 쪽). 벽 윗선처럼 지붕 판 안에 묻힌 선과 처마 끝 아래 선을 가리는 데 쓴다."""
+    info = g.q(roof_info, r)
+    if info is None or info["t"] <= EPS:
+        return ()
+    t = info["t"]
+    zb, zt = info["zlow"] - t, info["ztop"]
+    h = max(t / 4.0, (zt - zb) / ROOF_SOLID_SLICES_MAX)
+    n = max(1, int((zt - zb) / h + 1.0 - 1e-9))   # 올림(math.ceil 대신: 이 모듈은 sqrt 만 쓴다)
+    out = []
+    for i in range(n):
+        z0, z1 = zb + h * i, min(zb + h * (i + 1), zt)
+        for fc, (a, b, c) in zip(info["faces"], info["planes"]):
+            poly = _clip_half([(q[0], q[1]) for q in fc], a, b, c - z0)       # 윗면이 조각 아랫면 이상인 쪽
+            if len(poly) >= 3:
+                poly = _clip_half(poly, -a, -b, z0 + t + 1.0 - c)              # 조각 아랫면 + 두께(+1mm 여유) 이하인 쪽: 처마 끝 면도 넓이가 있게
+            if len(poly) >= 3 and abs(_area2(poly)) > 2 * EPS:
+                out.append((z0 - 2 * EPS, z1 + 2 * EPS, tuple(poly)))          # z 를 조금 겹쳐 이음매 높이의 선이 두 조각 사이로 새지 않게 한다
+    return tuple(out)
+
+
+def _roof_solid_vpieces(g, v, r):
+    """단면·입면에서 지붕 판이 가리는 볼록 기둥 조각 ((z0, z1, 다각형(s,w)), ...)."""
+    cfg = g.q(view_cfg, v)
+    if cfg is None or cfg[0] in ("plan", "site"):
+        return ()
+    out = []
+    for z0, z1, poly in g.q(roof_solid_slices, r):
         sw = [_sw(cfg, p) for p in poly]
         if _area2(sw) < 0:
             sw.reverse()
@@ -1991,6 +2039,8 @@ def plan_space_labels(g, v, s):
     info = g.q(space_info, s)
     if info is None or cfg is None or cfg[0] != "plan":
         return ()
+    if cfg[1] is not None and cfg[2] > g.q(Q.level_info, cfg[1])[1] + Q.el(g, s)["params"]["height"] + EPS:
+        return ()   # 절단 높이가 공간 윗면보다 높은 평면(지붕 평면)은 방을 자르지 못하고 지붕 위에서 내려다본다: 방 이름·면적은 관행상 쓰지 않는다
     holes = g.q(space_holes, s)
     cx, cy = label_point(info[0], holes) if holes else polygon_centroid(info[0])
     sc = cfg[4]
@@ -2779,6 +2829,8 @@ def vwall_lines(g, v, w):
         occ.extend(g.q(_slab_vpieces, v, sl))
     for st in g.q(scope_stairs, v):                     # 계단이 앞에 있으면 벽 선을 가린다
         occ.extend(g.q(_stair_vpieces, v, st))
+    for rf in g.q(scope_roofs, v):                      # 경사 지붕 판이 앞에 있으면(처마 끝·판 안에 묻힌 벽 윗선) 벽 선을 가린다
+        occ.extend(g.q(_roof_solid_vpieces, v, rf))
     lines = []
     if occ:
         for e0, e1 in g.q(vedges, v, w) + g.q(vfam_hosted_edges, v, w):
@@ -3447,6 +3499,8 @@ def vwall_hidden(g, v, w):
         occ.extend(g.q(_slab_vpieces, v, sl))
     for st in g.q(scope_stairs, v):
         occ.extend(g.q(_stair_vpieces, v, st))
+    for rf in g.q(scope_roofs, v):
+        occ.extend(g.q(_roof_solid_vpieces, v, rf))
     out = []
     for e0, e1 in g.q(vedges, v, w) + g.q(vfam_hosted_edges, v, w):
         for t0, t1 in _complement(visible_parts(e0, e1, occ)):
@@ -3995,7 +4049,7 @@ VIEW_SCOPED = frozenset({view_cfg, scope_walls, view_omitted, plan_pieces, plan_
                          vcut_rects, vedges, vwall_lines, view_lines, view_fills,
                          scope_fams, plan_fam_parts, _fam_vpieces, vfam_bbox, vfam_cut_rects, vfam_edges, vfam_nbr_pieces, fam_lines,
                          vfam_hosted_edges, scope_slabs, plan_slab_parts, _slab_vpieces, slab_vbbox, slab_cut_rects, slab_vedges, slab_nbr_walls, slab_lines,
-                         scope_stairs, scope_railings, railing_lines, scope_elevators, elevator_lines, plan_elevator_labels, plan_roof_marks, scope_roofs, _roof_vpieces, roof_cut_rects, roof_plan_parts, roof_lines, plan_stair_parts, _stair_vpieces, stair_vbbox, stair_cut_rects, stair_vedges, stair_nbr_walls, stair_lines,
+                         scope_stairs, scope_railings, railing_lines, scope_elevators, elevator_lines, plan_elevator_labels, plan_roof_marks, scope_roofs, _roof_vpieces, _roof_solid_vpieces, roof_cut_rects, roof_plan_parts, roof_lines, plan_stair_parts, _stair_vpieces, stair_vbbox, stair_cut_rects, stair_vedges, stair_nbr_walls, stair_lines,
                          scope_spaces, plan_space_labels, view_labels, site_lines, site_labels, site_dims, _elev_signs, site_sign_lines, site_sign_labels, _site_sec, _gl_z, site_section_lines, site_section_labels, vwall_hidden, view_hidden_lines, plan_fire_lines, plan_fire_labels, elev_finish, view_opts, view_dims, view_dim_labels})
 
 

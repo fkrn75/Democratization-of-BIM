@@ -167,6 +167,16 @@ def view_prims(sh: Sheet, data, tx, ty, datums, dx0, dx1, style=None, prof=None)
             sh.text(px + 2.2, py + 0.8, 2.5, label, color=DX.ORPHAN_COLOR)
 
 
+def build_view_page(data) -> Sheet:
+    """뷰 한 장을 자기 크기의 용지(여백·제목 줄 포함, drawing_export.render_svg 와 같은 크기·그림)로 놓는다(view.image·뷰 PNG 용). 시트 틀은 없다."""
+    w, h, tx, ty, datums, (dx0, dx1) = DX._frame(data)
+    sh = Sheet("A3")
+    sh.w, sh.h = w, h
+    view_prims(sh, data, tx, ty, datums, dx0, dx1)
+    sh.text(DX.MARGIN, h - 5.0, 5.0, DX.title_text(data), color=INK)
+    return sh
+
+
 def _natural(data):
     """뷰를 자기 축척으로 그릴 때의 용지 크기(내용만, mm)와 변환 함수."""
     w, h, tx, ty, datums, (x0, x1) = DX._frame(data)
