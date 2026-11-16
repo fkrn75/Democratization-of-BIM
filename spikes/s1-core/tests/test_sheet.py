@@ -85,7 +85,7 @@ def test_뷰가_용지에_안_들어가면_고치는_방법을_알린다(pv):
 
 def test_오류_경로(pv):
     assert pv.run("sheet.export", {"views": ["9" * 22], "path": "s.svg"})["error"]["code"] in ("NOT_FOUND", "CONSTRAINT")
-    assert pv.run("sheet.export", {"views": [F.V1], "path": "s.png"})["error"]["code"] == "PATH_DENIED"
+    assert pv.run("sheet.export", {"views": [F.V1], "path": "s.txt"})["error"]["code"] == "PATH_DENIED"
     assert pv.run("sheet.export", {"views": [], "path": "s.svg"})["error"]["code"] == "SCHEMA_INVALID"
     assert pv.run("sheet.export", {"views": [F.V1], "path": "s.svg", "paper": "A4"})["error"]["code"] == "SCHEMA_INVALID"
     assert pv.run("sheet.export", {"views": [F.V1], "path": "s.svg", "date": "2026/11/15"})["error"]["code"] == "SCHEMA_INVALID"

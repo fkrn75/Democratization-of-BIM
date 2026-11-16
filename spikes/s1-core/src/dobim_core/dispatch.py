@@ -182,8 +182,9 @@ def check_risk(cmd: registry.Command, allowed: set[str] | None, env: Env) -> Non
 
 def run(env: Env, name: str, args: dict | None = None, *, project: str | None = None,
         expected_rev: int | None = None, dry_run: bool = False, confirm: str | None = None,
-        allowed_risks: set[str] | None = None) -> dict:
-    """커맨드 하나를 실행해 결과 봉투를 돌려준다. 예외는 오류 봉투로 바꾼다."""
+        allowed_risks: set[str] | None = None, attach: list | None = None) -> dict:
+    """커맨드 하나를 실행해 결과 봉투를 돌려준다. 예외는 오류 봉투로 바꾼다.
+    attach: 읽기 커맨드가 결과의 비공개 키 _png 에 싣은 이미지 바이트를 받을 목록(MCP dobim_render 용). 주지 않으면 이미지는 버리고 요약만 봉투에 남는다."""
     eng = None
     try:
         cmd = get_command(name)
@@ -201,6 +202,9 @@ def run(env: Env, name: str, args: dict | None = None, *, project: str | None = 
             return _mutation_env(r["rev"], r["results"][0], r["affected"], r["warnings"], r["dry_run"])
         result, warns = eng.read(cmd, model)
         page = result.pop("page", None) if isinstance(result, dict) else None
+        png = result.pop("_png", None) if isinstance(result, dict) else None
+        if png is not None and attach is not None:
+            attach.append(png)
         return ok_env(eng.rev, _clean(result), warnings=warns, page=_clean(page))
     except DobimError as ex:
         return err_env(ex, _rev_of(eng))

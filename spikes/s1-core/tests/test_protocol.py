@@ -141,7 +141,7 @@ def test_mcp_도구_8개_어노테이션_text와_structured_동일(ws):
             r = await c.call_tool("dobim_job", {"id": "x"})
             assert r.structured_content["error"]["code"] == "NOT_FOUND"
             r = await c.call_tool("dobim_render", {})
-            assert r.structured_content["error"]["code"] == "UNSUPPORTED"
+            assert r.structured_content["error"]["code"] == "SCHEMA_INVALID" and r.is_error   # 16단계: 렌더가 구현됐다(뷰 id 없이는 거절)
     asyncio.run(go())
 
 

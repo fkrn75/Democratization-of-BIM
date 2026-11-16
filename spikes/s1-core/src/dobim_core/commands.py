@@ -2762,10 +2762,17 @@ def view_linework(ctx, a: ViewLinework):
     return {**head, "items": items, "page": _page(nxt, len(lines), cut)}
 
 
+PngMaxPx = Annotated[int, Field(ge=64, le=4096, description="PNG 의 긴 변 화소 상한(기본 1600). 큰 시트도 이 안으로 줄인다. .png 일 때만 쓴다")]
+PngCrop = Annotated[list[Annotated[float, Field(ge=0.0, le=1.0, allow_inf_nan=False)]], Field(
+    min_length=4, max_length=4, description="PNG 로 잘라 낼 영역: 용지 비율 [x0, y0, x1, y1](0~1, 왼쪽 위가 0,0). 비우면 전체. 잘라 내면 그 영역에 max_px 를 쓴다")]
+
+
 class ViewExport(A):
     id: Id
-    path: str = Field(max_length=260, description="작업 폴더 안의 .svg 또는 .pdf 경로 (확장자가 형식을 정한다). 응답에는 경로·크기·요약만 담는다. PDF 는 한글 글꼴(시스템의 Noto Sans KR·나눔고딕, OFL)을 부분집합으로 내장한다(못 찾으면 Helvetica 로 내려가 한글이 물음표가 되고 경고한다)")
+    path: str = Field(max_length=260, description="작업 폴더 안의 .svg·.pdf·.png 경로 (확장자가 형식을 정한다). 응답에는 경로·크기·요약만 담는다. PDF 는 한글 글꼴(시스템의 Noto Sans KR·나눔고딕, OFL)을 부분집합으로 내장한다(못 찾으면 Helvetica 로 내려가 한글이 물음표가 되고 경고한다). PNG 는 순수 파이썬 래스터(같은 입력이면 같은 바이트)")
     overwrite: bool = Field(False, description="거짓이면 이미 있는 파일을 덮어쓰지 않는다. 참이면 덮어쓰며 덮어쓰기 전에 자동 스냅숏을 남긴다(이 커맨드는 destructive 라 확인 토큰이 필요하다)")
+    max_px: PngMaxPx = 1600
+    crop: PngCrop | None = None
 
 
 def _warn_omitted(ctx, omitted: dict) -> None:
@@ -2792,12 +2799,24 @@ def _render_view(ctx, vid, detail=False, hidden=False, hier=False):
             "datums": levels, "annots": ctx.g.q(AN.view_annots, vid) + ctx.g.q(D.site_dims, vid) + ctx.g.q(D.view_dims, vid), "labels": ctx.g.q(D.view_labels, vid)}
 
 
+def png_of(ctx, sh, a) -> dict:
+    """시트·뷰 페이지의 그림 요소를 PNG 로 그린다(.png 내보내기와 view.image·sheet.image 가 함께 쓴다). 글꼴이 없으면 글자 자리만 그리고 경고한다."""
+    from dobim_core import raster as RA
+    try:
+        rr = RA.render(sh.prims, sh.w, sh.h, max_px=a.max_px, crop=a.crop)
+    except RA.RasterError as ex:
+        raise DobimError("CONSTRAINT", str(ex), path="/crop" if a.crop is not None else "/max_px")
+    if rr["font"] is None:
+        ctx.warn("한글 글꼴(Noto Sans KR·나눔고딕)을 찾지 못해 PNG 의 글자를 칸 모양으로만 그렸다. 글꼴을 설치하거나 환경 변수 DOBIM_PDF_FONT 에 .ttf 경로를 주세요")
+    return rr
+
+
 def _view_export_target(ctx, a: ViewExport):
     """내보내기 대상 검사(미리보기와 실행이 같이 쓴다): 작업 폴더 안, .svg/.pdf, 스냅숏 폴더·폴더·대체 데이터 스트림(:) 아님, 덮어쓰기 동의."""
     p = resolve_in_workspace(ctx.eng.workspace, a.path)
     ext = p.suffix.lower()
-    if ext not in (".svg", ".pdf"):
-        raise DobimError("PATH_DENIED", f"내보내기 대상은 .svg 또는 .pdf 여야 한다: {p.name}", path="/path")
+    if ext not in (".svg", ".pdf", ".png"):
+        raise DobimError("PATH_DENIED", f"내보내기 대상은 .svg·.pdf·.png 여야 한다: {p.name}", path="/path")
     if SNAP_DIR.lower() in [x.lower() for x in p.parts] or p.is_dir() or ":" in p.name:
         raise DobimError("PATH_DENIED", f"쓸 수 없는 경로다: {p.name}", path="/path")
     if p.exists() and not a.overwrite:
@@ -2822,9 +2841,14 @@ def _view_export_preview(ctx, a: ViewExport):
 def view_export(ctx, a: ViewExport):
     p, ext = _view_export_target(ctx, a)
     data = _render_view(ctx, a.id)
-    dropped, font_name = False, None
+    dropped, font_name, px = False, None, None
     if ext == ".svg":
         blob = DX.render_svg(data)
+    elif ext == ".png":
+        from dobim_core import sheet as SH
+        rr = png_of(ctx, SH.build_view_page(data), a)
+        blob, px = rr["png"], [rr["width"], rr["height"]]
+        font_name = rr["font"]
     else:
         from dobim_core import pdf_font as PF
         font = PF.load_pdf_font()                  # 시트와 같은 글꼴 내장 경로: 한글이 '?' 가 되지 않게
@@ -2840,8 +2864,11 @@ def view_export(ctx, a: ViewExport):
     except BaseException:   # 쓰지 못했으면 방금 만든 스냅숏은 필요 없다(재시도마다 쌓이지 않게)
         _drop_snapshot(p, snap, ctx.eng.workspace)
         raise
-    return {"path": p.name, "bytes": len(blob), "format": ext[1:], "segments": len(data["lines"]), "fills": len(data["fills"]), "annotations": len(data["annots"]), "labels": len(data["labels"]),
-            "font_embedded": font_name, "non_ascii_dropped": dropped, "digest": D.view_summary(data["lines"])["digest"], "rev": ctx.eng.rev, "snapshot": snap}
+    out = {"path": p.name, "bytes": len(blob), "format": ext[1:], "segments": len(data["lines"]), "fills": len(data["fills"]), "annotations": len(data["annots"]), "labels": len(data["labels"]),
+           "font_embedded": font_name, "non_ascii_dropped": dropped, "digest": D.view_summary(data["lines"])["digest"], "rev": ctx.eng.rev, "snapshot": snap}
+    if px is not None:
+        out["pixels"] = px
+    return out
 
 
 class SheetSigner(A):
@@ -2903,7 +2930,7 @@ def site_north(ctx) -> float:
 
 class SheetExport(SheetFrame):
     views: list[Id] = Field(min_length=1, max_length=12, description="시트에 놓을 뷰 id 목록(앞에서부터 왼쪽 위 -> 오른쪽 -> 아래 순). 뷰는 자기 축척 그대로 놓인다")
-    path: str = Field(max_length=260, description="작업 폴더 안의 .svg 또는 .pdf 경로. PDF 는 한글 글꼴(시스템의 Noto Sans KR·나눔고딕, OFL)을 부분집합으로 내장한다")
+    path: str = Field(max_length=260, description="작업 폴더 안의 .svg·.pdf·.png 경로. PDF 는 한글 글꼴(시스템의 Noto Sans KR·나눔고딕, OFL)을 부분집합으로 내장한다. PNG 는 max_px·crop 을 쓴다")
     paper: Literal["A1", "A3"] = Field("A3", description="용지(가로 방향)")
     project_name: Text = Field("", description="표제란 프로젝트명(비우면 '(프로젝트명 없음)')")
     sheet_name: Text = Field("", description="표제란 도면명(비우면 첫 뷰 이름)")
@@ -2922,6 +2949,8 @@ class SheetExport(SheetFrame):
         "stair 평면의 계단 폭(L-09)"))
     detail: bool = Field(False, description="참이면 큰 축척(1:50 이하) 뷰에 상세 표현을 더한다(재료가 있는 벽의 마감선·문짝 두께·문턱선). 1:100 이상의 작은 축척 뷰는 그대로")
     profile: SheetProfile | None = Field(None, description="별도 작성기준 프로파일: 문자 높이·치수 형식(소수·천단위 쉼표)·기호 크기. 생략하면 기본 체계(시트는 이전과 바이트까지 같다)")
+    max_px: PngMaxPx = 1600
+    crop: PngCrop | None = None
 
 
 def _sheet_preview(ctx, a: SheetExport):
@@ -2932,17 +2961,11 @@ def _sheet_preview(ctx, a: SheetExport):
     return {"will_write": p.name, "format": ext[1:], "paper": a.paper, "views": len(a.views), "overwrites": p.exists(), "snapshot_before_overwrite": p.exists()}
 
 
-@command("sheet.export", kind="session", risk="destructive", group="view",
-         summary="시트(표제란)로 SVG·PDF 내보내기",
-         args=SheetExport, since="0.2", preview=_sheet_preview,
-         examples=[{"views": [F.V1], "path": "sheet-example.svg", "paper": "A3", "project_name": "예시 프로젝트", "sheet_number": "A-101", "overwrite": True}])
-def sheet_export(ctx, a: SheetExport):
-    """뷰를 A1·A3 시트에 놓고 윤곽선·표제란(프로젝트명·도면명·도면번호·축척·작성일·개정란·축척 막대·방위표)을 그려 내보낸다."""
+def build_sheet_for(ctx, a):
+    """시트 인자(SheetExport 모양)로 시트(그림 요소 목록)와 spec 을 만든다. sheet.export 와 sheet.image 가 함께 쓴다."""
     import datetime
 
-    from dobim_core import pdf_font as PF
     from dobim_core import sheet as SH
-    p, ext = _view_export_target(ctx, a)
     if len(set(a.views)) != len(a.views):
         raise DobimError("CONSTRAINT", "같은 뷰를 두 번 올릴 수 없다", path="/views")
     hidden = bool(a.profile is not None and a.profile.hidden_lines)
@@ -2959,9 +2982,26 @@ def sheet_export(ctx, a: SheetExport):
         sh = SH.build_sheet(spec, datas)
     except SH.SheetError as ex:
         raise DobimError("CONSTRAINT", str(ex), path="/views")
-    dropped, font_name = False, None
+    return sh, spec
+
+
+@command("sheet.export", kind="session", risk="destructive", group="view",
+         summary="시트(표제란)로 SVG·PDF 내보내기",
+         args=SheetExport, since="0.2", preview=_sheet_preview,
+         examples=[{"views": [F.V1], "path": "sheet-example.svg", "paper": "A3", "project_name": "예시 프로젝트", "sheet_number": "A-101", "overwrite": True}])
+def sheet_export(ctx, a: SheetExport):
+    """뷰를 A1·A3 시트에 놓고 윤곽선·표제란(프로젝트명·도면명·도면번호·축척·작성일·개정란·축척 막대·방위표)을 그려 내보낸다."""
+    from dobim_core import pdf_font as PF
+    from dobim_core import sheet as SH
+    from dobim_core import sheet_extras as SE
+    p, ext = _view_export_target(ctx, a)
+    sh, spec = build_sheet_for(ctx, a)
+    dropped, font_name, px = False, None, None
     if ext == ".svg":
         blob = SH.render_sheet_svg(sh, spec)
+    elif ext == ".png":
+        rr = png_of(ctx, sh, a)
+        blob, px, font_name = rr["png"], [rr["width"], rr["height"]], rr["font"]
     else:
         font = PF.load_pdf_font()
         blob, dropped = SH.render_sheet_pdf(sh, spec, font)
@@ -2976,9 +3016,12 @@ def sheet_export(ctx, a: SheetExport):
     except BaseException:
         _drop_snapshot(p, snap, ctx.eng.workspace)
         raise
-    return {"path": p.name, "bytes": len(blob), "format": ext[1:], "paper": a.paper, "views": sh.placed, "sheet_number": a.sheet_number,
-            "number_check": SE.number_check(a.sheet_number, p.stem),
-            "font_embedded": font_name, "non_ascii_dropped": dropped, "rev": ctx.eng.rev, "snapshot": snap}
+    out = {"path": p.name, "bytes": len(blob), "format": ext[1:], "paper": a.paper, "views": sh.placed, "sheet_number": a.sheet_number,
+           "number_check": SE.number_check(a.sheet_number, p.stem),
+           "font_embedded": font_name, "non_ascii_dropped": dropped, "rev": ctx.eng.rev, "snapshot": snap}
+    if px is not None:
+        out["pixels"] = px
+    return out
 
 
 class ViewAffected(A):

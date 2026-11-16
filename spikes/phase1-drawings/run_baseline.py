@@ -19,6 +19,7 @@ G1 때와 같은 방식으로 도면을 다시 뽑는다(s3lib.build 의 RA-01 �
   --no-after13  : 열세 번째 작업(계단·승강기 상세 뷰, 승강기 평면 치수, 문·창을 지나는 단면, 방위 기본값)을 건너뛴다
   --no-after14  : 열네 번째 작업(경사 지붕·파라펫·승강기 피트/기계실/승강장 문/슬래브 구멍 연동, A-018·A-019)을 건너뛴다
   --no-after15  : 열다섯 번째 작업(건물 위의 박공 지붕·섬 구멍 공간·난간 연동·슬래브 구멍 가림, A-020)을 건너뛴다
+  --no-png      : 열여섯 번째 작업(시트 몇 장의 PNG: png/A-001·A-006·A-007·A-010·A-018·A-020)을 건너뛴다(--sheets 일 때만 만든다)
   --no-sheet2   : 다섯 번째 작업(색인 시트·통심선·기호·태그·키 플랜·개정·서명·선 굵기 프로파일·작성기준 프로파일)을 건너뛴다
 
 다섯 번째 작업 산출(--sheets): sheets/A-000(색인: 도면목록·범례·주기·레벨 노트·창호/벽체 일람표·재료표), sheets/A-002(통심선·단면·입면 기호·부위 상세·부호 태그·키 플랜·
@@ -58,14 +59,33 @@ def ok(r):
     return r["result"]
 
 
-def export(sess, name, args, out_path: Path):
-    """확인 토큰 2단계 호출로 내보낸다. 응답 result 를 돌려준다."""
-    a = {**args, "path": out_path.name, "overwrite": True}
+PNG_SHEETS = ("A-001", "A-006", "A-007", "A-010", "A-018", "A-020")   # 열여섯 번째 작업: 이 시트는 SVG·PDF 와 함께 PNG 도 낸다(dobim_render 가 눈으로 볼 수 있게)
+PNG_STATE: dict = {"dir": None, "done": set(), "log": []}
+
+
+def _export(sess, name, a):
     r = sess.run(name, a)
     if r.get("ok"):   # 덮어쓸 파일이 없으면 확인 절차 없이 쓴다
         return r["result"]
     tok = r["error"]["details"]["confirm_token"]
     return ok(sess.run(name, a, confirm=tok))
+
+
+def export(sess, name, args, out_path: Path):
+    """확인 토큰 2단계 호출로 내보낸다. 응답 result 를 돌려준다."""
+    a = {**args, "path": out_path.name, "overwrite": True}
+    res = _export(sess, name, a)
+    num = args.get("sheet_number")
+    if PNG_STATE["dir"] is not None and name == "sheet.export" and out_path.suffix == ".svg" and num in PNG_SHEETS and num not in PNG_STATE["done"]:
+        import time
+        PNG_STATE["done"].add(num)
+        pa = {**args, "path": out_path.stem + ".png", "overwrite": True, "max_px": 2400}
+        t = time.perf_counter()
+        pr = _export(sess, name, pa)
+        dt = time.perf_counter() - t
+        (PNG_STATE["dir"] / f"{num}.png").write_bytes((out_path.parent / pa["path"]).read_bytes())
+        PNG_STATE["log"].append({"sheet": num, "paper": args.get("paper"), "pixels": pr["pixels"], "bytes": pr["bytes"], "seconds": round(dt, 2)})
+    return res
 
 
 def ifc_out(sess, name):
@@ -1025,6 +1045,7 @@ def main():
     ap.add_argument("--no-after13", action="store_true")
     ap.add_argument("--no-after14", action="store_true")
     ap.add_argument("--no-after15", action="store_true")
+    ap.add_argument("--no-png", action="store_true")
     ap.add_argument("--no-site", action="store_true")
     for f in ("stairs", "spaces", "fire", "finish"):
         ap.add_argument(f"--no-{f}", action="store_true")
@@ -1033,6 +1054,9 @@ def main():
     out.mkdir(parents=True, exist_ok=True)
     work = out / "work"
     work.mkdir(exist_ok=True)
+    if o.sheets and not o.no_png:
+        PNG_STATE["dir"] = out / "png"
+        PNG_STATE["dir"].mkdir(exist_ok=True)
     proj = work / "ra01.dobim"
     if proj.exists():
         proj.unlink()
@@ -1227,6 +1251,8 @@ def main():
         after14(sess, ids, views, log, out, work, spec)
     if o.sheets and not o.no_sheet2 and not o.no_after8 and not o.no_site and not o.no_after11 and not o.no_after13 and not o.no_after14 and not o.no_after15 and ids.get("ST-1F") and ids.get("S-2F"):
         after15(sess, ids, views, log, out, work, spec)
+    if PNG_STATE["log"]:
+        log["png"] = PNG_STATE["log"]
     (out / "run.json").write_text(json.dumps({"views": views, "ids": ids, **log}, ensure_ascii=False, indent=1), encoding="utf-8")
     print(json.dumps(log, ensure_ascii=False)[:1500])
 

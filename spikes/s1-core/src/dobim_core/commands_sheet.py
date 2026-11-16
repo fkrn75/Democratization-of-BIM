@@ -30,7 +30,7 @@ class IndexDrawing(A):
 
 
 class SheetIndex(C.SheetFrame):
-    path: str = Field(max_length=260, description="작업 폴더 안의 .svg 또는 .pdf 경로")
+    path: str = Field(max_length=260, description="작업 폴더 안의 .svg·.pdf·.png 경로")
     paper: Literal["A1", "A3"] = Field("A1", description="용지(가로 방향). 표가 많으면 A1")
     project_name: Text = Field("", description="표제란 프로젝트명")
     sheet_name: Text = Field("", description="표제란 도면명(비우면 '도면목록·범례·일람표')")
@@ -42,6 +42,8 @@ class SheetIndex(C.SheetFrame):
     gl_level: Text = Field("", description="GL(지반) 기준으로 삼을 레벨 이름(비우면 가장 낮은 레벨)")
     notes: list[Text] = Field(default_factory=list, max_length=12, description="주기에 더할 줄")
     overwrite: bool = Field(False, description="거짓이면 이미 있는 파일을 덮어쓰지 않는다. 참이면 덮어쓰며 덮어쓰기 전에 자동 스냅숏을 남긴다(확인 토큰 필요)")
+    max_px: C.PngMaxPx = 1600
+    crop: C.PngCrop | None = None
 
 
 def _index_preview(ctx, a: SheetIndex):
@@ -92,9 +94,12 @@ def sheet_index(ctx, a: SheetIndex):
         sh = SH.build_index_sheet(spec, tables)
     except SH.SheetError as ex:
         raise DobimError("CONSTRAINT", str(ex), path="/tables")
-    dropped, font_name = False, None
+    dropped, font_name, px = False, None, None
     if ext == ".svg":
         blob = SH.render_sheet_svg(sh, spec)
+    elif ext == ".png":
+        rr = C.png_of(ctx, sh, a)
+        blob, px, font_name = rr["png"], [rr["width"], rr["height"]], rr["font"]
     else:
         font = PF.load_pdf_font()
         blob, dropped = SH.render_sheet_pdf(sh, spec, font)
@@ -109,9 +114,12 @@ def sheet_index(ctx, a: SheetIndex):
     except BaseException:
         C._drop_snapshot(p, snap, ctx.eng.workspace)
         raise
-    return {"path": p.name, "bytes": len(blob), "format": ext[1:], "paper": a.paper, "sheet_number": a.sheet_number,
-            "number_check": SE.number_check(a.sheet_number, p.stem), "tables": sorted(tables), "rows": {k: len(v) for k, v in tables.items() if isinstance(v, list)},
-            "font_embedded": font_name, "non_ascii_dropped": dropped, "rev": ctx.eng.rev, "snapshot": snap}
+    out = {"path": p.name, "bytes": len(blob), "format": ext[1:], "paper": a.paper, "sheet_number": a.sheet_number,
+           "number_check": SE.number_check(a.sheet_number, p.stem), "tables": sorted(tables), "rows": {k: len(v) for k, v in tables.items() if isinstance(v, list)},
+           "font_embedded": font_name, "non_ascii_dropped": dropped, "rev": ctx.eng.rev, "snapshot": snap}
+    if px is not None:
+        out["pixels"] = px
+    return out
 
 
 # ---------------------------------------------------------------- 도면 작성기준 프로파일
@@ -217,7 +225,7 @@ def _sheet_def_check(self):
     return self
 
 
-NOT_STORED = ("path", "overwrite", "profile", "detail", "dims")   # 파일을 낼 때만 받는 입력(저장하는 시트 정의에는 넣지 않는다: 저장된 정의의 해시·형식은 그대로)
+NOT_STORED = ("path", "overwrite", "profile", "detail", "dims", "max_px", "crop")   # 파일을 낼 때만 받는 입력(저장하는 시트 정의에는 넣지 않는다: 저장된 정의의 해시·형식은 그대로)
 _DEF_FIELDS = {n: (f.annotation, f) for n, f in C.SheetExport.model_fields.items() if n not in NOT_STORED}
 SheetDef = create_model(
     "SheetDef", __base__=A, __validators__={"_chk": model_validator(mode="after")(_sheet_def_check)},
@@ -295,8 +303,10 @@ def sheet_list(ctx, a: SheetList):
 
 class SheetRender(A):
     id: Id = Field(description="저장된 시트 정의의 id")
-    path: str = Field(max_length=260, description="작업 폴더 안의 .svg 또는 .pdf 경로")
+    path: str = Field(max_length=260, description="작업 폴더 안의 .svg·.pdf·.png 경로")
     overwrite: bool = Field(False, description="거짓이면 이미 있는 파일을 덮어쓰지 않는다. 참이면 덮어쓰며 덮어쓰기 전에 자동 스냅숏을 남긴다(확인 토큰 필요)")
+    max_px: C.PngMaxPx = 1600
+    crop: C.PngCrop | None = None
 
 
 def _export_args(ctx, a: SheetRender):
@@ -305,7 +315,7 @@ def _export_args(ctx, a: SheetRender):
     missing = [v for v in [*p["views"], *([p["key_plan"]] if p.get("key_plan") else [])] if v not in ctx.st.el or ctx.st.el[v]["kind"] != "view"]
     if missing:
         raise DobimError("CONSTRAINT", f"시트가 올린 뷰가 없다: {', '.join(sorted(set(missing)))}", path="/id", hint="sheet.define 으로 시트를 고치세요")
-    return C.SheetExport.model_validate(dict(p, path=a.path, overwrite=a.overwrite))
+    return C.SheetExport.model_validate({**p, "path": a.path, "overwrite": a.overwrite, "max_px": a.max_px, **({"crop": a.crop} if a.crop is not None else {})})
 
 
 def _render_preview(ctx, a: SheetRender):
@@ -319,3 +329,64 @@ def _render_preview(ctx, a: SheetRender):
 def sheet_render(ctx, a: SheetRender):
     """저장된 시트 정의를 sheet.export 와 같은 방식으로 파일에 낸다."""
     return C.sheet_export(ctx, _export_args(ctx, a))
+
+
+# ================================================================ 이미지로 보기 (16단계 dobim_render): 파일을 쓰지 않는 읽기 커맨드
+# view.image·sheet.image 는 PNG 를 만들어 결과의 비공개 키(_png)에 싣는다. dispatch 가 그 키를 봉투 밖으로 빼므로 봉투에는 크기·해시 같은 요약만 남는다
+# (CLI·dobim_query 는 요약만, MCP dobim_render 는 같은 PNG 를 ImageContent 로 돌려준다). 파일로 받으려면 view.export·sheet.export·sheet.render 에 .png 경로를 준다.
+class ViewImage(A):
+    id: Id = Field(description="이미지로 볼 뷰 id")
+    max_px: C.PngMaxPx = 1600
+    crop: C.PngCrop | None = None
+
+
+def _image_result(ctx, rr, extra: dict) -> dict:
+    import hashlib
+    png = rr["png"]
+    return {**extra, "format": "png", "width": rr["width"], "height": rr["height"], "bytes": len(png), "sha256": hashlib.sha256(png).hexdigest(),
+            "px_per_mm": round(rr["px_per_mm"], 4), "region_mm": [round(v, 2) for v in rr["region_mm"]], "font": rr["font"], "_png": png}
+
+
+@command("view.image", kind="query", risk="read", group="view",
+         summary="뷰를 PNG 이미지로 본다(파일 안 씀)",
+         args=ViewImage, idempotent=True, examples=[{"id": F.V1, "max_px": 800}])
+def view_image(ctx, a: ViewImage):
+    """뷰 한 장을 PNG 로 그린다. 같은 입력이면 같은 바이트다. 응답 봉투에는 크기·해시만 담고 이미지는 MCP dobim_render 가 돌려준다."""
+    from dobim_core import sheet as SH
+    r = ctx.row(a.id, "view")
+    rr = C.png_of(ctx, SH.build_view_page(C._render_view(ctx, a.id)), a)
+    return _image_result(ctx, rr, {"id": a.id, "name": r["params"]["name"], "type": r["params"]["type"]})
+
+
+_IMG_SKIP = {"path", "overwrite", "views"}
+_IMG_FIELDS = {n: (f.annotation, f) for n, f in C.SheetExport.model_fields.items() if n not in _IMG_SKIP}
+SheetImageBase = create_model(
+    "SheetImageBase", __base__=A,
+    id=(Id | None, Field(None, description="저장된 시트 정의의 id(sheet.define). 주면 sheet.export 인자(views 등)는 쓰지 않는다")),
+    views=(list[Id] | None, Field(None, min_length=1, max_length=12, description="id 없이 시트를 바로 그릴 때 올릴 뷰 id 목록(sheet.export 와 같은 인자)")),
+    **_IMG_FIELDS)
+
+
+class SheetImage(SheetImageBase):
+    @model_validator(mode="after")
+    def _one_source(self):
+        if (self.id is None) == (self.views is None):
+            raise ValueError("id(저장된 시트) 또는 views(sheet.export 인자) 중 하나만 준다")
+        return self
+
+
+@command("sheet.image", kind="query", risk="read", group="view",
+         summary="시트를 PNG 이미지로 본다(파일 안 씀)",
+         args=SheetImage, idempotent=True, examples=[{"views": [F.V1], "paper": "A3", "project_name": "예시 프로젝트", "sheet_number": "A-101", "max_px": 800}])
+def sheet_image(ctx, a: SheetImage):
+    """시트를 PNG 로 그린다. id 를 주면 저장된 정의(sheet.render 와 같은 값), 아니면 sheet.export 와 같은 인자로 그린다. 큰 시트도 max_px 안으로 줄인다."""
+    if a.id is not None:
+        exp = _export_args(ctx, SheetRender(id=a.id, path="image.png"))
+        exp = C.SheetExport.model_validate({**exp.model_dump(mode="json", exclude={"max_px", "crop"}, exclude_none=True), "max_px": a.max_px, **({"crop": a.crop} if a.crop is not None else {})})
+    else:
+        exp = C.SheetExport.model_validate({**a.model_dump(mode="json", exclude={"id"}, exclude_none=True), "path": "image.png"})
+    for v in exp.views:
+        ctx.row(v, "view")
+    sh, _spec = C.build_sheet_for(ctx, exp)
+    rr = C.png_of(ctx, sh, exp)
+    return _image_result(ctx, rr, {"id": a.id, "paper": exp.paper, "sheet_number": exp.sheet_number, "views": sh.placed})

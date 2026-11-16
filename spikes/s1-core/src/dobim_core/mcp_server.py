@@ -7,11 +7,12 @@
 """
 from __future__ import annotations
 
+import base64
 import json
 from typing import Annotated, Any
 
 from mcp.server.mcpserver import MCPServer
-from mcp_types import CallToolResult, TextContent, ToolAnnotations
+from mcp_types import CallToolResult, ImageContent, TextContent, ToolAnnotations
 from pydantic import Field
 
 from dobim_core import dispatch
@@ -80,9 +81,28 @@ def build(env: dispatch.Env) -> MCPServer:
         return _result(dispatch.err_env(DobimError("NOT_FOUND", f"작업이 없다: {id}", path="/id",
                                                    hint="S1 에는 장시간 작업 커맨드가 없다")))
 
-    @srv.tool(name="dobim_render", annotations=ro, description="뷰·시트·3D 이미지를 돌려준다(S1 미구현)")
-    async def dobim_render(target: str = "view", project: Proj = None) -> CallToolResult:
-        return _result(dispatch.err_env(DobimError("UNSUPPORTED", "렌더는 S1 범위 밖이다(S3, S10)", path="/target")))
+    @srv.tool(name="dobim_render", annotations=ro,
+              description="뷰 또는 시트를 PNG 이미지로 돌려준다(파일 안 씀, ImageContent). target=view 는 id(뷰), target=sheet 는 id(저장된 시트) 또는 sheet(sheet.export 와 같은 인자: views 등). "
+                          "max_px 는 긴 변 상한(기본 1600, 큰 시트도 이 안으로 줄인다), crop=[x0,y0,x1,y1] 은 용지 비율(0~1)로 잘라 확대해 본다")
+    async def dobim_render(target: str = "view", id: str | None = None, sheet: dict[str, Any] | None = None, max_px: int = 1600,
+                           crop: list[float] | None = None, project: Proj = None) -> CallToolResult:
+        args: dict[str, Any] = {"max_px": max_px}
+        if crop is not None:
+            args["crop"] = crop
+        if target == "view":
+            if id is None:
+                return _result(dispatch.err_env(DobimError("SCHEMA_INVALID", "뷰 렌더에는 id(뷰)가 필요하다", path="/id")))
+            cmd, args = "view.image", {**args, "id": id}
+        elif target == "sheet":
+            cmd, args = "sheet.image", {**(sheet or {}), **args, **({"id": id} if id is not None else {})}
+        else:
+            return _result(dispatch.err_env(DobimError("SCHEMA_INVALID", f"알 수 없는 target: {target}", path="/target", hint="view 또는 sheet")))
+        att: list[bytes] = []
+        env_ = dispatch.run(env, cmd, args, project=project, allowed_risks={"read"}, attach=att)
+        res = _result(env_)
+        if att:
+            res.content = [ImageContent(type="image", data=base64.b64encode(att[0]).decode("ascii"), mime_type="image/png"), *res.content]
+        return res
 
     @srv.tool(name="dobim_project", annotations=wr,
               description="프로젝트를 만들거나 열어 핸들을 발급한다. action: create, open, info, close")
