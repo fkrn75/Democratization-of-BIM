@@ -1109,7 +1109,10 @@ class IfcModel:
         # 층에 담는 호출이 배치를 건드릴 수 있으므로 담은 뒤에 배치를 확정한다
         self._contain(eid, spec["level"])
         self._place(e, self.ents[spec["level"]].ObjectPlacement, (x, y, 0.0), (c, sn, 0.0))
-        self._set_body(e, self._solid(spec["footprint"], spec["height"]))
+        if "top" in spec:   # 벽 상단 윤곽(21단계): 지역 (u, z) 수직 윤곽(바닥 ~ 상단 윤곽)을 두께 방향으로 돌출한다(평면 윤곽은 늘 직사각형이라 같은 형상)
+            self._set_body(e, self._vprofile_solid(spec["top"], spec["thickness"] / 2.0, spec["thickness"]))
+        else:
+            self._set_body(e, self._solid(spec["footprint"], spec["height"]))
         layers = spec.get("layers")   # 벽 층 구성: 지역 +v 방향 순서(첫 층 = -v 면), 기준선(축선)에서 -두께/2 만큼 떨어져 시작한다
         if layers:
             self._assign_layers(e, layers, "AXIS2", "POSITIVE", -sum(t for _, t in layers) / 2.0, pairs_label(layers))
