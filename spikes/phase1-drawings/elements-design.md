@@ -678,6 +678,12 @@ L-10 은 승강기 평면에 샤프트·카 치수가 있어야 한다. 이미 �
 
 ## 23. 실무 모델링 보강 3 (스물한 번째 작업, 21단계)
 
+### 23.1 설비 기기·단말 범주(`solid` category)
+- 문제: 설비는 관·덕트·트레이(21.1)만 IFC 범주가 있어, 보일러·분배기·위생기구·계량기·밸브·소화기 같은 기기를 놓으면 IfcBuildingElementProxy 가 되거나 놓을 수 없었다.
+- 선택: 새 종류 없이 `solid` 범주 표(`solids.SOLID_CATEGORIES`)에 IFC4 클래스를 더한다. 형상은 다른 솔리드와 같다(상자 = prism, 관 모양 = member). 범주가 클래스를 정하고 바꾸면 거절하는 규칙(18단계) 그대로.
+- 더한 범주: air_terminal=IfcAirTerminal, fan=IfcFan, boiler=IfcBoiler, unitary_equipment=IfcUnitaryEquipment, tank=IfcTank, valve=IfcValve, flow_meter=IfcFlowMeter, gas_meter=IfcFlowMeter(GASMETER), pipe_fitting=IfcPipeFitting(분배기 헤더 포함), sanitary_terminal=IfcSanitaryTerminal, fire_terminal=IfcFireSuppressionTerminal, fire_extinguisher=IfcFireSuppressionTerminal(USERDEFINED, FIRE_EXTINGUISHER), escape_device=IfcBuildingElementProxy(USERDEFINED, ESCAPE_DEVICE), electric_board=IfcElectricDistributionBoard, control=IfcUnitaryControlElement. IFC4 에 소화기·피난기구 전용 클래스가 없어 앞의 둘은 USERDEFINED + ObjectType 으로 둔다. 세부 형식(세면기·변기 등)은 이름·속성셋으로 남기고 범주를 늘리지 않았다(범주 수 = 스키마 Literal 크기).
+- 해시·왕복: 새 범주를 쓰지 않은 모델은 바이트가 같다. 가져오기는 의도가 밝힌 solid 를 따르므로 복원 표를 늘리지 않았다(CLOSURE_FORMAT 15 그대로). dobim_render 팔레트에 새 클래스 색을 더했다.
+
 ### 23.2 벽 상단 부착(`top_profile`, `wall.attach_top`·`wall.detach_top`)
 - 문제: 벽 상단은 `height` 하나(수평)뿐이라 박공·경사 지붕 아래 벽을 진짜 벽(IfcWall: 층 구성·문/창 호스팅·조인)으로 만들 수 없었고, 윤곽을 계산한 수직 판(`solid` panel, 범주 wall)으로 대신했다(21.3·22.4 의 남은 것). 상용 도구는 벽 윤곽 편집·벽 상단 부착으로 한다.
 - 파라미터: 벽 선택 파라미터 `top_profile` = 축선 따라 거리 s(축 시작점 0 ~ 축 길이)와 레벨 기준 높이 z 의 점 `[[s, z], ...]`. s 는 줄지 않고 양 끝(0, 축 길이, 허용 0.01mm)을 포함, 2~256점, z > 0. 같은 s 두 점은 수직 단(지붕이 끝나는 곳)이다(세 점 이상 같은 s·첫/끝 구간의 단은 거절). 점 사이는 직선. L 조인 연장으로 벽 형상이 축 밖으로 나가면 끝 점 높이를 그대로 늘인다. 윤곽이 있으면 형상은 윤곽이 정하고 `height` 는 떼었을 때·붙이기에서 대상 밖 구간에 쓰는 값으로 남는다. 순수 함수는 새 모듈 `walltop.py`(kinds·drawing·queries·commands 가 함께 쓴다).
@@ -703,3 +709,19 @@ L-10 은 승강기 평면에 샤프트·카 치수가 있어야 한다. 이미 �
 - 단면·입면: 쐐기 조각이 단 묶음·벽·슬래브와 같은 합집합 절단 윤곽·가림 판정에 들어가고, 입면·뒤쪽은 쐐기의 위·아랫면 둘레와 수직 모서리를 투영선으로. 3D(dobim_render)는 IFC 형상을 그대로 그리므로 따로 고칠 것이 없다(IfcStairFlight 색).
 - 수량·난간: `element.get` 파생값에 단 묶음별 챌판(`flight_risers`), 돌음 디딤판 수(`winder_treads`), 직선 디딤판 수, 전체 디딤판 수, 보행선 쐐기 디딤 길이를 더한다(돌음 계단만). `railing.from_stair` 는 층참 난간 대신 회전부 바깥 둘레에 오르는 난간(표식 `winder`, 아래 단 묶음 바깥 난간 끝에서 쐐기 수 x 챌판 높이만큼 올라 위 단 묶음 바깥 난간 시작에 닿는다)을 두고, 계단을 고치면 다른 난간과 같이 따라간다.
 - 한계: 회전 중심이 한 점이라 안쪽 끝이 뾰족한 쐐기(실무의 안쪽 최소 디딤 폭 규정 검사 없음). 쐐기 각은 같은 각만(균형 돌음·두 번 꺾임·세 방향 돌음 없음). 위 단 묶음 아래는 층참 계단과 같이 비어 있다. 평면 치수(dims)는 단 묶음 치수만이고 쐐기 치수·단면의 돌음 높이 문자는 없다. 위층 평면에서 아래층 계단의 위쪽은 그리지 않는다(기존과 같음).
+
+### 23.4 3D 렌더: 범주 필터·고스트·같은 평면 겹침 잡음
+- 범주 필터: `render_ifc(only=, hide=, ghost=)`·CLI `--only/--hide/--ghost`. 이름은 IFC 클래스(상위 클래스도 맞음: 메시 추출 때 스키마 상위 사슬을 요소마다 적는다, 해시 밖) 또는 묶음 structure(보·기둥·기초·말뚝·슬래브·벽·부재·판), mep(IfcDistributionElement 하위 전부), arch(설비가 아닌 전부). 걸러도 화면 틀은 전체 메시로 맞춰(fit) 같은 시점끼리 겹쳐 볼 수 있다. ghost 는 숨긴 요소를 따로 그려 보이는 요소보다 앞인 픽셀만 회색과 섞는다(77/256, 요소 ID 버퍼는 보이는 요소 그대로).
+- 검은 점: 실제 사례에서 슬래브 가장자리·벽 위에 생기던 검은 점의 원인은 같은 평면에 겹친 두 요소(벽 윗면과 위층 슬래브, 층 구성 벽 면과 슬래브 끝면)의 깊이 보간 반올림이 픽셀마다 엇갈려 요소 경계 특징선이 점으로 찍히는 것이었다(z-fighting). `tie_eps`(미터): 깊이가 이만큼 이상 더 가까울 때만 덮어, 겹친 곳은 먼저 그린(GlobalId 순) 요소가 고르게 이긴다. 1e-6 으로 사례 모델의 점이 사라지는 것을 확인했다(특징선 화소 8% 줄어듦).
+- 기본값: `tie_eps` 0(이전과 같은 픽셀). 켜면 RA-01 고정 픽셀 해시(여러 플랫폼 컨테이너에서 같은지 보는 기준값, results/expected.json)가 달라지는데 그 기준값을 이 환경에서 다시 만들 수 없어 기본을 바꾸지 않았다. 실무 렌더는 `--tie-eps 1e-6` 을 권장한다(다음 단계 후보: 기준값을 다시 만들고 기본값 전환).
+
+### 23.5 창틀·리빌 창(`window.framed`)
+- 문제: 기본 창 `window.fixed` 는 틀 깊이가 벽 두께 가운데에 고정(최대 150)이고 벽 안 위치를 바꿀 수 없어 3D 에서 벽면에 붙은 유리판처럼 보인다. 상용 도구의 창은 창틀과 벽 두께 안으로 들어간 깊이(리빌)가 보이고 틀을 벽 바깥/안쪽 어디에 앉힐지 정한다.
+- 선택: 기존 `window.fixed` 는 고치지 않고(고치면 레시피 해시 -> 타입 id 가 달라진다, 22.5) 새 기본 라이브러리 패밀리 `window.framed` 를 더했다. 코어·IFC 투영·도면 코드는 바꾸지 않고 패밀리 레시피(ADR-0008)만으로 만들었다. 시험이 기존 레시피 5개의 해시를 고정한다.
+- 값: 타입 `width`(500~3000, 기본 1200)·`height`(400~2400, 1200)·`operation`(fixed|casement_in|casement_out, 기본 fixed)·`frame_w`(틀 정면 폭 30~120, 60)·`frame_d`(틀 깊이 50~200, 70)·`glass_t`(6~30, 24)·`mullions`(0~2, 고정창만)·`stool_t`(창대 두께 0~60, 20; 0 이면 없음)·`stool_proj`(창대가 벽 안쪽 면 밖으로 내민 길이 0~100, 25)·`casing_w`(문선 폭 0~150, 0 = 없음)·`casing_t`(문선 두께 5~40, 12)·`u_value`·`is_external`. 인스턴스 `sill`(0~1500, 900)·`inset`(0~600, 100)·`hinge`(L|R, 여닫이일 때).
+- 배치 깊이 기준: `inset` = 호스트 벽의 바깥면(기준면)에서 틀 바깥면까지 mm. 기준면은 벽 지역 -v 면(축선 진행 방향의 오른쪽 = 층 구성(`layers`) 벽의 첫 층 쪽)이고, `rotation` 180 이면 지역 좌표가 수직축 둘레로 반 바퀴 돌아 +v 면(마지막 층 쪽)이 기준면이 된다(22.1). 틀은 벽 전체 두께(축선이 코어 가운데가 아니어도 벽은 총 두께 대칭이므로 면 기준이다) 안에 들어가고 개구부(cut)는 벽 전체 두께를 뚫어 틀 앞뒤로 리빌이 남는다. 창대와 문선은 반대쪽(+v, 실내 쪽)에 붙는다. 호스트 두께 문맥 `host_thickness` 로 안쪽 한계를 정한다.
+- 기본값 `inset` 100 은 외벽 마감·단열 두께가 틀 바깥면과 맞닿는 흔한 설계 관행을 따른 값이며 표준 규정에서 온 수치가 아니다. 인스턴스마다 조정한다. 벽이 얇아 `inset + 틀 깊이` 가 벽 두께를 넘으면 `inset` 이 틀이 벽 안에 들어가는 최대값으로 줄어든다(`min(inset, 벽 두께 - 틀 깊이)`, 틀 깊이도 벽 두께로 줄어든다). 제약 위반으로 막지 않는 까닭: 레시피 검증이 호스트 두께 100·300·600 표본과 값 범위 끝 조합에서 제약이 깨지지 않기를 요구하고, 벽 두께는 패밀리 값이 아니라 호스트가 정한다. `wall.set` 으로 벽 두께를 바꾸면 같은 식으로 다시 평가한다.
+- 형상: 틀(사각 압출 - 사각 공극)·유리(틀 깊이 가운데, 두께 `glass_t`)·멀리언(반복)·창대(틀 안쪽 면에서 벽 안쪽 면 밖 `stool_proj` 까지의 하부 판)·문선(개구부 둘레 3변 띠). 여닫이는 틀 안쪽에 문짝 틀(폭 `frame_w`*0.8, 틀보다 10mm 얕음)을 더하고 유리는 그 안쪽이다. 여닫이에는 멀리언을 둘 수 없다. 전부 xz 평면 직사각 압출이라 입면·단면 상자 그리기(`_body_boxes`)가 그대로 그린다.
+- 평면 기호: 양 끝 틀 단면(절단 선)·틀 바깥/안쪽 면 선 둘·유리 중심선, 창대 윤곽(투영). 여닫이는 열린 문짝 선과 1/4 호(안여닫이 = +v 쪽, 밖여닫이 = -v 쪽, 경첩 `hinge`). 1:200 은 틀 두께의 절단 사각형만.
+- IFC: IfcWindow(WINDOW), 타입 `PartitioningType` = SINGLE_PANEL / 멀리언 1 DOUBLE_PANEL_VERTICAL / 2 TRIPLE_PANEL_VERTICAL, OverallWidth/Height. IFC4 의 IfcWindow 에는 문의 OperationType 이 없어(창 패널 속성 IfcWindowPanelProperties 는 속성 템플릿 객체라 레시피로 못 넣는다) 여닫이 구분은 속성셋 `DoBIM_WindowFrame.Operation`(타입)과 `DoBIM_WindowParams.Hinge`(인스턴스)로 남긴다. 의도(DoBIM_Intent)에 레시피 전문이 있어 가져오기가 값을 복원한다(왕복 해시 불변 시험).
+- 한계: 렌더·IFC 는 요소 한 개가 한 색이라 틀과 유리가 색으로 구분되지 않고 깊이·모서리 선으로만 보인다(재료 구분을 하려면 창을 하위 요소로 나눠야 해 이번 범위 밖). 틀 단면은 사각형이라 홈·경사 있는 형강 단면은 없다. 외부 창대(물끊기 턱)·셔터 박스는 없다. 시험: `tests/test_practical3_window.py`(10건: 라이브러리 해시 고정, 형상·inset·클램프, 창대·문선, 여닫이·멀리언, 평면 기호·뒤집기, 층 구성 벽 + 180 의 IFC 형상, dobim_render 메시, IFC 왕복, 벽 두께 변경).
