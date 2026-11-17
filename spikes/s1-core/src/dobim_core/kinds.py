@@ -396,13 +396,17 @@ STAIR_LANDING_T = 150.0   # 층참 두께 mm(꺾인 계단의 층참 판. 층참
 STAIR_TURN_TYPES = ("L", "U")
 STAIR_SIDES = ("left", "right")
 STAIR_GAP_DEFAULT = 100.0   # U형 계단 두 단 묶음 사이 간격 mm
+STAIR_WINDERS_MIN, STAIR_WINDERS_MAX = 2, 12   # 돌음(와인더) 디딤판 수. 1 은 층참과 같으므로 2 부터
+STAIR_TURN_KEYS = frozenset(("type", "side", "risers_a", "landing", "gap"))
 
 
 def _turn_ok(v) -> bool:
-    """꺾임(층참) 입력: {"type": "L"|"U", "side": "left"|"right", "risers_a": 층참 아래 단 묶음의 챌판 수, "landing": 층참 깊이 mm 또는 null(= 폭), "gap": U형 간격 mm(L 은 0)}."""
-    return (isinstance(v, dict) and set(v) == {"type", "side", "risers_a", "landing", "gap"} and v["type"] in STAIR_TURN_TYPES and v["side"] in STAIR_SIDES
-            and type(v["risers_a"]) is int and 2 <= v["risers_a"] <= STAIR_RISERS_MAX and (v["landing"] is None or _pos(v["landing"]))
-            and num_ok(v["gap"]) and v["gap"] >= 0 and (v["type"] == "U" or v["gap"] == 0))
+    """꺾임(층참) 입력: {"type": "L"|"U", "side": "left"|"right", "risers_a": 층참 아래 단 묶음의 챌판 수, "landing": 층참 깊이 mm 또는 null(= 폭), "gap": U형 간격 mm(L 은 0)}.
+    선택 키 "winders"(정수 2~12)가 있으면 층참 대신 그 수의 쐐기 디딤판(돌음 계단)으로 회전부를 채운다(elements-design.md 23.3)."""
+    return (isinstance(v, dict) and (set(v) == STAIR_TURN_KEYS or set(v) == STAIR_TURN_KEYS | {"winders"}) and v["type"] in STAIR_TURN_TYPES
+            and v["side"] in STAIR_SIDES and type(v["risers_a"]) is int and 2 <= v["risers_a"] <= STAIR_RISERS_MAX and (v["landing"] is None or _pos(v["landing"]))
+            and num_ok(v["gap"]) and v["gap"] >= 0 and (v["type"] == "U" or v["gap"] == 0)
+            and ("winders" not in v or (type(v["winders"]) is int and STAIR_WINDERS_MIN <= v["winders"] <= STAIR_WINDERS_MAX)))
 
 
 def stair_turn_problem(p) -> str | None:
@@ -410,7 +414,15 @@ def stair_turn_problem(p) -> str | None:
     t = p.get("turn")
     if t is None:
         return None
-    if not 2 <= t["risers_a"] <= p["risers"] - 2:
+    m = t.get("winders")
+    if m is not None:   # 돌음: 위 단 묶음 챌판 = 전체 - risers_a - winders + 1 (쐐기 m 개 = 디딤판 m 개, 그 사이 챌판 m - 1 개)
+        if not 2 <= t["risers_a"] <= p["risers"] - m - 1:
+            return "turn.risers_a 는 2 이상이고 전체 챌판 수 - winders - 1 이하여야 한다(돌음 위 단 묶음도 챌판 둘 이상)"
+        if t["type"] == "L" and t["landing"] is not None and t["landing"] != p["width"]:
+            return "L형 돌음 계단의 회전부는 폭 x 폭 정사각형이다(turn.landing 은 비우거나 계단 폭과 같아야 한다)"
+        if t["type"] == "U" and t["gap"] > p["width"]:
+            return "U형 돌음 계단의 turn.gap 은 계단 폭 이하여야 한다(보행선 반원이 회전부 안에 들어가야 한다)"
+    elif not 2 <= t["risers_a"] <= p["risers"] - 2:
         return "turn.risers_a 는 2 이상이고 전체 챌판 수 - 2 이하여야 한다(위 단 묶음도 챌판 둘 이상)"
     if t["landing"] is not None and t["landing"] < p["width"]:
         return "turn.landing(층참 깊이)이 계단 폭보다 작다"
@@ -431,7 +443,8 @@ def stair_layout(p) -> dict:
       {"flights": [{"run": (x1,y1,x2,y2), "n": 챌판 수, "z0": 단 묶음 아래 끝(계단 아래 끝 기준 상대 높이), "skirt": 아래로 더 채우는 두께, "length": 걸음선 길이, "td": 디딤판 깊이}, ...],
        "landing": None | {"poly": ((x,y),...), "z": 윗면 상대 높이, "t": 두께}, "rise": 챌판 높이}
     직선 계단은 단 묶음 하나, 층참 없음. 꺾인 계단(turn)은 걸음선(run)이 층참 아래 단 묶음의 걸음선이고 층참은 그 끝에서 이어진다.
-    걸음선 왼쪽이 + 이다. L 은 층참에서 90도, U 는 180도 꺾어 올라간다(side 가 꺾는 쪽)."""
+    걸음선 왼쪽이 + 이다. L 은 층참에서 90도, U 는 180도 꺾어 올라간다(side 가 꺾는 쪽).
+    turn.winders 가 있으면 "landing" 은 None 이고 "winders" 키에 돌음 회전부가 온다(_winder_layout)."""
     x1, y1, x2, y2 = p["run"]
     n, w = p["risers"], p["width"]
     rise = p["height"] / n
@@ -464,8 +477,84 @@ def stair_layout(p) -> dict:
     poly = (pt(length, m_lo), pt(length + d, m_lo), pt(length + d, m_hi), pt(length, m_hi))
     ztop = k * rise
     fa = {"run": (x1, y1, x2, y2), "n": k, "z0": 0.0, "skirt": 0.0, "length": length, "td": td}
+    if t.get("winders") is not None:
+        return _winder_layout(t, pt, fa, poly, n, rise, length, d, w, (ux, uy), (lx, ly), sg)
     fb = {"run": (b0[0], b0[1], b1[0], b1[1]), "n": n - k, "z0": ztop, "skirt": STAIR_LANDING_T, "length": lb, "td": td}
     return {"flights": [fa, fb], "landing": {"poly": poly, "z": ztop, "t": STAIR_LANDING_T}, "rise": rise}
+
+
+def _winder_layout(t, pt, fa, region, n, rise, length, d, w, u, lft, sg) -> dict:
+    """돌음(와인더) 계단의 배치. 층참 자리(회전부)를 회전 중심에서 퍼지는 같은 각의 쐐기 m 개로 나눈다.
+    회전 중심 = 회전부의 안쪽 점(L: 아래 단 묶음 끝선의 꺾는 쪽 끝 = 두 단 묶음 안쪽 옆선이 만나는 모서리, U: 두 단 묶음 사이 간격의 가운데).
+    보행선(단 묶음 중심선)은 회전부 안에서 이 중심 둘레의 원호(반지름 L: 폭/2, U: 폭/2 + 간격/2)로 이어지므로 같은 각 분할이 곧 보행선 위
+    같은 디딤 길이 분할이다(실무 관행인 '균등 보행선 분할'과 같은 결과). 각은 sincos_deg(사칙연산 급수)로 구해 플랫폼 libm 에 기대지 않는다.
+    쐐기 j(0..m-1) 윗면 = (risers_a + j) x 챌판 높이, 밑면은 모두 층참 밑면과 같은 risers_a x 챌판 높이 - 층참 두께(속이 찬 계단 덩어리).
+    위 단 묶음 챌판 수 = 전체 - risers_a - m + 1, 아래 끝 = 마지막 쐐기 윗면, 밑은 쐐기 밑면까지 채운다."""
+    k, m = t["risers_a"], t["winders"]
+    h = w / 2.0
+    c = h if t["type"] == "L" else h + t["gap"] / 2.0          # 회전 중심의 걸음선 기준 옆 거리(꺾는 쪽 +)
+    sweep = 90.0 if t["type"] == "L" else 180.0
+    if t["type"] == "L":   # 바깥 둘레(시작 끝 = 아래 단 묶음 끝선의 바깥쪽 끝 -> 끝 끝 = 위 단 묶음 첫 챌판선의 바깥쪽 끝), (t, m) 좌표
+        outer = [(length, -sg * h), (length + w, -sg * h), (length + w, sg * h)]
+    else:
+        far = sg * (h + t["gap"] + w)
+        outer = [(length, -sg * h), (length + d, -sg * h), (length + d, far), (length, far)]
+    pc = (length, sg * c)
+
+    def hit(f):
+        """회전 중심에서 각 f(도)로 나간 반직선과 바깥 둘레의 교점: (둘레 매개변수 = 변 번호 + 변 위 비율, (t, m))."""
+        sn, cs = sincos_deg(f)
+        dt, dm = sn, -sg * cs   # 각 0 = 아래 단 묶음 끝선을 따라 바깥쪽, 각 sweep = 위 단 묶음이 오르는 쪽
+        best = None
+        for i in range(len(outer) - 1):
+            a, b = outer[i], outer[i + 1]
+            ex, ey = b[0] - a[0], b[1] - a[1]
+            den = dt * ey - dm * ex
+            if abs(den) < 1e-12:
+                continue
+            qx, qy = a[0] - pc[0], a[1] - pc[1]
+            s_ = (qx * ey - qy * ex) / den
+            v_ = (qx * dm - qy * dt) / den
+            if s_ > 1e-9 and -1e-9 <= v_ <= 1.0 + 1e-9:
+                v_ = min(max(v_, 0.0), 1.0)
+                if best is None or i + v_ < best[0]:
+                    best = (i + v_, (a[0] + ex * v_, a[1] + ey * v_))
+        return best
+    cuts = [(0.0, outer[0])] + [hit(sweep * j / m) for j in range(1, m)] + [(float(len(outer) - 1), outer[-1])]
+    zb = k * rise - STAIR_LANDING_T
+    wedges = []
+    for j in range(m):
+        (pa, qa), (pb, qb) = cuts[j], cuts[j + 1]
+        loc = [pc, qa] + [outer[i] for i in range(len(outer)) if pa + 1e-9 < i < pb - 1e-9] + [qb]
+        wp = [pt(tt, mm) for tt, mm in loc]
+        a2 = sum(wp[i][0] * wp[(i + 1) % len(wp)][1] - wp[(i + 1) % len(wp)][0] * wp[i][1] for i in range(len(wp)))
+        if a2 < 0:   # 반시계로 맞춘다
+            wp.reverse()
+        wedges.append({"poly": tuple(wp), "z": (k + j) * rise, "zb": zb, "a0": sweep * j / m, "a1": sweep * (j + 1) / m, "q0": pt(*qa),
+                       "qm": pt(*hit(sweep * (j + 0.5) / m)[1])})   # 시작 반직선 끝점, 가운데 각 반직선이 바깥 둘레와 만나는 점(평면 절단선)
+    nb = n - k - m + 1
+    td = fa["td"]
+    lb = (nb - 1) * td
+    ux, uy = u
+    lx, ly = lft
+    if t["type"] == "L":
+        b0 = pt(length + w / 2.0, sg * h)
+        b1 = (b0[0] + sg * lx * lb, b0[1] + sg * ly * lb)
+    else:
+        b0 = pt(length, sg * (w + t["gap"]))
+        b1 = (b0[0] - ux * lb, b0[1] - uy * lb)
+    z_b = (k + m - 1) * rise
+    fb = {"run": (b0[0], b0[1], b1[0], b1[1]), "n": nb, "z0": z_b, "skirt": z_b - zb, "length": lb, "td": td}
+    return {"flights": [fa, fb], "landing": None, "rise": rise,
+            "winders": {"wedges": wedges, "region": tuple(region), "center": pt(*pc), "radius": c, "sweep": sweep,
+                        "e0": (uy * sg, -ux * sg), "e90": (ux, uy), "tread": c * 3.141592653589793 * sweep / (180.0 * m)}}
+
+
+def winder_walk_point(wd, f):
+    """돌음 회전부 보행선(회전 중심 둘레 원호) 위 각 f(도)의 세계 좌표 점. 각 0 = 아래 단 묶음 끝, 각 sweep = 위 단 묶음 시작."""
+    sn, cs = sincos_deg(f)
+    (cx, cy), r, e0, e9 = wd["center"], wd["radius"], wd["e0"], wd["e90"]
+    return (cx + r * (cs * e0[0] + sn * e9[0]), cy + r * (cs * e0[1] + sn * e9[1]))
 
 
 RAILING_PTS_MAX = 256

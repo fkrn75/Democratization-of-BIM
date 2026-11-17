@@ -1258,6 +1258,58 @@ def stair_geom(g, s):
     return (tuple(flights), None if ld is None else (tuple(tuple(q) for q in ld["poly"]), zb + ld["z"] - ld["t"], zb + ld["z"]))
 
 
+def stair_winders(g, s):
+    """돌음(와인더) 계단의 회전부(elements-design.md 23.3) 또는 None:
+    (쐐기들 ((다각형, 밑면 z, 윗면 z, 시작 각, 끝 각, 시작 반직선 끝점, 가운데 각 바깥 둘레 점), ...), 회전 중심, 보행선 반지름, 회전 각, e0, e90). z 는 절대 높이."""
+    info = g.q(stair_info, s)
+    if info is None:
+        return None
+    t = Q.el(g, s)["params"].get("turn")
+    if t is None or t.get("winders") is None:
+        return None
+    wd = K.stair_layout(Q.el(g, s)["params"])["winders"]
+    zb = info[0]
+    wedges = tuple((tuple(tuple(q) for q in w["poly"]), zb + w["zb"], zb + w["z"], w["a0"], w["a1"], w["q0"], w["qm"]) for w in wd["wedges"])
+    return (wedges, wd["center"], wd["radius"], wd["sweep"], wd["e0"], wd["e90"])
+
+
+def _winder_pt(wg, f, r=None):
+    """회전부 보행선(또는 반지름 r 의 원호) 위 각 f(도)의 점."""
+    sn, cs = K.sincos_deg(f)
+    (cx, cy), rr, e0, e9 = wg[1], (wg[2] if r is None else r), wg[4], wg[5]
+    return (cx + rr * (cs * e0[0] + sn * e9[0]), cy + rr * (cs * e0[1] + sn * e9[1]))
+
+
+def _plan_winders(fa, fb, wg, cutz, width):
+    """돌음 계단의 평면(아래 단 묶음이 다 보일 때만 부른다): 보이는 쐐기(윗면 <= 절단 높이)의 윤곽(proj), 보행선 원호 화살표(symbol),
+    회전부 안에서 끊기면 첫 안 보이는 쐐기를 가로지르는 절단선(cut)과 화살촉, 다 보이면 위 단 묶음(걸음선은 위 단 묶음 화살표가 이어받는다)."""
+    wedges = wg[0]
+    vis = [w for w in wedges if w[2] <= cutz + EPS]
+    segs = []
+    for w in vis:
+        poly = w[0]
+        segs += [("proj", poly[i][0], poly[i][1], poly[(i + 1) % len(poly)][0], poly[(i + 1) % len(poly)][1]) for i in range(len(poly))]
+    whole = len(vis) == len(wedges)
+    a_end = wg[3] if whole else (vis[-1][3] + vis[-1][4]) / 2.0
+    nseg = max(2, int(a_end / 10.0 + 0.5))
+    pts = [_winder_pt(wg, a_end * i / nseg) for i in range(nseg + 1)]
+    segs += [("symbol", pts[i][0], pts[i][1], pts[i + 1][0], pts[i + 1][1]) for i in range(nseg)]
+    if whole:
+        segs += _plan_flight(fb, cutz, arrow_from=0.0)
+        return segs
+    sn, cs = K.sincos_deg(a_end)                                              # 화살촉: 원호 끝 접선 방향
+    e0, e9 = wg[4], wg[5]
+    tx, ty = -sn * e0[0] + cs * e9[0], -sn * e0[1] + cs * e9[1]
+    hl = min(width * STAIR_ARROW, 400.0, wg[2] * 0.5)
+    ex, ey = pts[-1]
+    for sgn in (1.0, -1.0):
+        segs.append(("symbol", ex, ey, ex - tx * hl - sgn * ty * hl * 0.4, ey - ty * hl + sgn * tx * hl * 0.4))
+    nxt = wedges[len(vis)]                                                    # 절단선: 첫 안 보이는 쐐기를 안쪽(보이는 쐐기 변)에서 바깥 둘레로 가로지르는 대각선
+    (cx, cy), q0, qm = wg[1], nxt[5], nxt[6]
+    segs.append(("cut", cx + 0.2 * (q0[0] - cx), cy + 0.2 * (q0[1] - cy), qm[0], qm[1]))
+    return segs
+
+
 def _plan_flight(info, cutz, head=True, arrow_from=None, arrow_to_end=False):
     """단 묶음 하나의 평면 선분(스택: 윤곽·디딤판 선(proj), 걸음선 화살표(symbol), 절단선(cut)). 절단 높이가 아래 끝보다 낮으면 그리지 않는다."""
     if cutz < info[0] - EPS:
@@ -1302,6 +1354,14 @@ def plan_stair_parts(g, v, s):
     if info is None or cfg is None or cfg[0] != "plan" or cfg[2] < info[0] - EPS:
         return ((), ())
     flights, ld = g.q(stair_geom, s)
+    wg = g.q(stair_winders, s)
+    if wg is not None:                                                        # 돌음 계단: 아래 단 묶음이 다 보이면 회전부 쐐기를 잇는다
+        fa, fb = flights
+        seen = cfg[2] >= fa[1] - EPS
+        segs = _plan_flight(fa, cfg[2], head=not seen, arrow_to_end=seen)
+        if seen:
+            segs += _plan_winders(fa, fb, wg, cfg[2], fa[7])
+        return (tuple(segs), ())
     if ld is None:                                                            # 직선 계단: 기존 규약 그대로
         return (tuple(_plan_flight(flights[0], cfg[2])), ())
     fa, fb = flights
@@ -1347,6 +1407,14 @@ def _stair_vpieces(g, v, s):
         quad = _clip_w(quad, cfg[7], cfg[8])
         if len(quad) >= 3 and _area2(quad) > 2 * EPS:
             out.append((ld[1], ld[2], tuple(quad)))
+    wg = g.q(stair_winders, s)
+    for w in (() if wg is None else wg[0]):                                   # 돌음 쐐기: 볼록 각기둥(쐐기 각 90도 이하)
+        quad = [_sw(cfg, q) for q in w[0]]
+        if _area2(quad) < 0:
+            quad.reverse()
+        quad = _clip_w(quad, cfg[7], cfg[8])
+        if len(quad) >= 3 and _area2(quad) > 2 * EPS:
+            out.append((w[1], w[2], tuple(quad)))
     return tuple(out)
 
 
@@ -1412,6 +1480,14 @@ def stair_vedges(g, v, s):
             a, b = pts[i], pts[(i + 1) % len(pts)]
             raw.append(((a[0], a[1], ld[1]), (a[0], a[1], ld[2])))
             for z in (ld[1], ld[2]):
+                raw.append(((a[0], a[1], z), (b[0], b[1], z)))
+    wg = g.q(stair_winders, s)
+    for w in (() if wg is None else wg[0]):                                   # 돌음 쐐기: 윗면 둘레·수직 모서리, 밑면 둘레
+        pts = [_sw(cfg, q) for q in w[0]]
+        for i in range(len(pts)):
+            a, b = pts[i], pts[(i + 1) % len(pts)]
+            raw.append(((a[0], a[1], w[1]), (a[0], a[1], w[2])))
+            for z in (w[1], w[2]):
                 raw.append(((a[0], a[1], z), (b[0], b[1], z)))
     out = []
     for e0, e1 in raw:
@@ -3698,6 +3774,10 @@ def detail_extent(g, e, kind, cfg):
         if ld is not None:
             pts += list(ld[0])
             zs += [ld[1], ld[2]]
+        wg = g.q(stair_winders, e)
+        for w in (() if wg is None else wg[0]):
+            pts += list(w[0])
+            zs += [w[1], w[2]]
     else:
         ev = g.q(elevator_info, e)
         if ev is None:
