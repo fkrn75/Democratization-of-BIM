@@ -890,6 +890,9 @@ test_practical(부재 닫힘·부피·기준선·거절·명령·IFC 클래스·
 
 산출은 비공개 산출 폴더(phase1-after20)에 두었다. 같은 모델에 `run_baseline.py --sheets` 를 돌렸다(새 입력 없음). 설계 메모는 elements-design.md 22절. 해시 형식 그대로.
 
+### 22.0 바이트 비교 (after19 대비, work/·run.json 제외)
+**같은 파일 183개, 달라진 파일 0, 새 산출 0, 사라진 파일 0.** 전체 시험 통과, parity pass.
+
 ### 22.1 변경 요지
 1. 호스팅 패밀리 인스턴스 `rotation` 180 = 뒤집기(문짝 열림 쪽·경첩 쪽). 0/180 외 값과 비대칭 개구부 패밀리 뒤집기는 거절. IFC 배치 방향·평면 기호 반영.
 2. 기본 라이브러리에 `door.sliding`(미닫이 1~2짝, IfcDoor SLIDING_TO_LEFT/RIGHT·DOUBLE_DOOR_SLIDING).
