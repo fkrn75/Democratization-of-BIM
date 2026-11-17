@@ -10,6 +10,7 @@ from math import sqrt
 
 from dobim_core.family import spec as FS
 from dobim_core import solids as SO
+from dobim_core import walltop as WT
 
 JOIN_MAX_EXT = 1000.0   # 조인 지점이 벽 끝에서 이 거리 안일 때만 조인이 성립
 MIN_TRIMMED = 1.0       # 조인 후 벽 길이 하한. 미달이면 조인을 무시하고 경고 상태로 둔다
@@ -264,6 +265,11 @@ def wall_row(g, w):
     lname, elev = g.q(level_info, g.q(wall_level, w))
     length = g.q(wall_length, w)
     gross = length * p["height"]
+    height = p["height"]
+    if "top_profile" in p:   # 벽 상단 윤곽(21단계): 입면 면적은 윤곽 아래 넓이, 높이 칸은 가장 높은 점
+        start, end, _ = g.q(wall_trim, w)
+        gross = WT.area(p["top_profile"], start, end)
+        height = WT.zmax(p["top_profile"], start, end)
     opening = 0.0
     hosted = g.q(wall_hosted, w)
     for d in hosted:
@@ -271,7 +277,7 @@ def wall_row(g, w):
         opening += dp["width"] * dp["height"]
     for o in p.get("openings", ()):   # 모양 개구부(18단계)의 실제 윤곽 면적
         opening += abs(SO.area2(SO.opening_loop(o))) / 2.0
-    return (w, p["name"], lname, elev, length, p["height"], p["thickness"], gross - opening, len(hosted),
+    return (w, p["name"], lname, elev, length, height, p["thickness"], gross - opening, len(hosted),
             _pset_val(g, w, "Pset_WallCommon", "FireRating"),
             _pset_val(g, w, "Pset_WallCommon", "IsExternal"),
             material(g, w), g.q(wall_trim, w)[2])
@@ -392,6 +398,10 @@ def ifc_spec(g, e):
             spec["layers"] = tuple((x["material"], x["thickness"]) for x in p["layers"])
         if "openings" in p:   # 모양 개구부(18단계): 없으면 명세는 이전과 같다
             spec["openings"] = tuple(tuple(SO.opening_loop(o)) for o in p["openings"])
+            spec["thickness"] = p["thickness"]
+        if "top_profile" in p:   # 벽 상단 윤곽(21단계): 지역 (u, z) 수직 윤곽을 두께로 돌출한다. 없으면 명세는 이전과 같다
+            fp = spec["footprint"]
+            spec["top"] = tuple(WT.loop(p["top_profile"], fp[0][0], fp[1][0]))
             spec["thickness"] = p["thickness"]
         return spec
     if kind == "solid":

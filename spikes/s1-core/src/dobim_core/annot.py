@@ -167,7 +167,7 @@ def _wall_ref(g, w, role, row):
         return ("pt", x + t * c, y + t * s)
     if role in ("base", "top"):
         elev = g.q(Q.level_info, g.q(Q.wall_level, w))[1]
-        return ("z", elev if role == "base" else elev + p["height"])
+        return ("z", elev if role == "base" else elev + D._top_rel(p))   # 상단 윤곽(21단계)이 있으면 가장 높은 점
     mx, my = x + c * length / 2.0, y + s * length / 2.0      # 직선의 기준점: 축선 중점(그림용, 값에는 쓰이지 않는다)
     if role == "axis":
         return ("line", mx, my, c, s)
