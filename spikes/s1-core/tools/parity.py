@@ -43,6 +43,7 @@ _SP1 = ("space.create", {"id": F.SP1, "level": F.LV1, "boundary": [[0, 0], [6000
 _SH1 = ("sheet.define", {"id": F.SH1, "name": "A-101 1층 평면", "views": [F.V1], "paper": "A3", "project_name": "예시 프로젝트", "sheet_number": "A-101", "date": "2026-01-01"})
 _SI1 = ("site.create", {"id": F.SI1, "boundary": [[-6000, -6000], [18000, -6000], [18000, 14000], [-6000, 14000]], "name": "대지"})
 _SO1 = ("solid.create", {"id": F.SO1, "level": F.LV1, "category": "buttress", "form": "prism", "polygon": [[0, -900], [600, -900], [600, -100], [0, -100]], "z0": 0, "z1": 2400})   # 일반 솔리드 예시의 준비(18단계)
+_GR1 = ("grid.create", {"id": "g" + "0" * 21, "name": "G0", "line": [-1000, -2000, -1000, 6000]})   # 통심선 예시의 준비(19단계)
 PRE = {"history.redo": [("history.undo", {})], "ifc.restore": [_EXP, _EXP], "ifc.snapshots": [_EXP, _EXP],
        "view.set": [_V1], "view.delete": [_V1], "view.list": [_V1], "view.linework": [_V1], "view.export": [_V1], "view.affected": [_V1],
        "annot.dim.create": [_V1], "annot.tag.create": [_V1], "annot.rebind": [_V1, _A1], "annot.delete": [_V1, _A1],
@@ -56,7 +57,8 @@ PRE = {"history.redo": [("history.undo", {})], "ifc.restore": [_EXP, _EXP], "ifc
        "site.set": [_SI1], "site.delete": [_SI1],
        "sheet.define": [_V1], "sheet.delete": [_V1, _SH1], "sheet.list": [_V1, _SH1], "sheet.render": [_V1, _SH1],
        "view.image": [_V1], "sheet.image": [_V1],
-       "solid.set": [_SO1], "solid.move": [_SO1], "solid.delete": [_SO1]}
+       "solid.set": [_SO1], "solid.move": [_SO1], "solid.delete": [_SO1],
+       "grid.set": [_GR1], "grid.move": [_GR1], "grid.delete": [_GR1]}
 ERROR_CASES = [
     ("없는 커맨드", "no.such.command", {}, {}),
     ("스키마 오류(타입)", "wall.move", {"id": F.W1, "dx": "abc"}, {}),

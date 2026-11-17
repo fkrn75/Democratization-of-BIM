@@ -11,6 +11,7 @@ MATERIAL_COLORS = (
     (("석재", "stone", "화강석", "granite", "limestone", "sandstone", "대리석", "marble"), (214, 207, 190)),
     (("목재", "wood", "timber"), (150, 98, 58)),
     (("슬레이트", "slate"), (92, 96, 104)),
+    (("징크", "아연", "zinc"), (128, 134, 140)),
 )
 
 

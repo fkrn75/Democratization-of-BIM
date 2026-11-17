@@ -425,6 +425,7 @@ def test_9_종류_레지스트리가_모든_모듈과_맞는다(tmp_path):
         _ok(b.run("sheet.define", {"id": F.SH1, "name": "시트", "views": [F.V1]}, project=p))   # 시트 정의도
         _ok(b.run("solid.create", {"id": F.SO1, "level": F.LV1, "category": "buttress", "form": "panel", "line": [0, -900, 3000, -900], "thickness": 500,
                                   "profile": [[0, 0], [3000, 0], [3000, 3000], [0, 3000]], "openings": [{"shape": "pointed", "offset": 1500, "sill": 500, "width": 900, "height": 2000}]}, project=p))   # 일반 솔리드(18단계)
+        _ok(b.run("grid.create", {"name": "X1", "line": [0, -2000, 0, 8000]}, project=p))   # 통심선(19단계)
     finally:
         b.close()
     eng = Engine(tmp_path / p, "t", create=False)

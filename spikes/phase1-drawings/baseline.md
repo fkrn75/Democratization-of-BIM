@@ -865,3 +865,23 @@ test_render(펜 위계·결정성), test_roof_sloped(문자 상자와 화살표 
 
 ### 20.4 시험
 test_solid(30개: 윤곽·다면체 닫힘·부피, 거절 사유, 명령·실행 취소, 벽 개구부 분할·순면적, IFC 클래스·FacetedBrep·부속, 내보내기·가져오기 해시 3종, 외부 변경 분리, 평면·입면·가림, 불변, 증분 == 전체, 결정성), test_integration_g1(종류 레지스트리에 solid).
+
+## 21. 열아홉 번째 작업: 실무 모델링 보강(통심선·곧은 부재·경사 판·벽 자동 조인) (2026-11-17, 브랜치 phase1/practical-modeling)
+
+산출은 비공개 산출 폴더(phase1-after19)에 두었다. 같은 모델에 `run_baseline.py --sheets` 를 돌렸다(새 입력 없음). 설계 메모는 elements-design.md 21절. 해시 형식 CLOSURE_FORMAT 15 그대로(새 IFC 복원 종류 없음: 부재·판은 solid, 통심선은 비 IFC 정의).
+
+### 21.1 바이트 비교 (after18 대비, work/·run.json 제외)
+**같은 파일 183개, 달라진 파일 0, 새 산출 0, 사라진 파일 0.** 새 입력(grid·member·plate·join.auto)이 없는 모델의 도면·시트·PNG 는 바이트가 같다.
+
+### 21.2 변경 요지
+1. 새 비 IFC 종류 `grid`(커맨드 grid.create/set/move/delete): 평면 1점쇄선 + 끝 원 기호·기호 문자, 입면·단면 세로선. DoBIM_Defs 로 IFC 왕복.
+2. `solid` 형태 `member`(3D 축선 곧은 부재, 단면 rect/circle/h/box/pipe, anchor)와 범주 beam(IfcBeam)·pipe(IfcPipeSegment)·duct(IfcDuctSegment)·cable_tray(IfcCableCarrierSegment).
+3. `solid` 형태 `plate`(임의 다각형 + 구멍을 기운 평면 위에, 수직 두께): 다각형 지붕판·경사 슬래브.
+4. `join.auto`(레벨의 L 모서리 자동 조인). 커맨드 101 → 106개.
+5. 재료 겉모습 표에 징크·아연·zinc.
+
+### 21.3 실전 사례(비공개, 저장소 밖)
+일반 철근콘크리트 근린생활시설 실시설계 도면(건축 38장·구조 15장)을 판독 자료 → DoBIM 커맨드로만 만들었다(상용 도구 산출을 형상 입력으로 쓰지 않음): 레벨 7, 통심선 21, 벽 239(경사 지붕 아래 벽은 윤곽 판), 바닥·지붕 슬래브 6, 지붕판 4, U형 계단 3, 난간 2, 창 20(IfcWindow). 같은 범위를 상용 도구로 만든 모델과 3D 시점을 맞춰 비교했다. 생성 스크립트·도면·판독값·비교 산출은 저장소에 넣지 않는다.
+
+### 21.4 시험
+test_practical(부재 닫힘·부피·기준선·거절·명령·IFC 클래스·왕복, 통심선 명령·평면/입면 그림·정의 왕복, 벽 자동 조인, 경사 판 부피·물매·오목 윤곽·거절·명령·왕복), test_integration_g1(종류 레지스트리에 grid), parity PRE 에 통심선 준비.

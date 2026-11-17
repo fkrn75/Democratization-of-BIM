@@ -48,6 +48,7 @@ PALETTE = {
     "IfcWindow": (118, 170, 212), "IfcStairFlight": (190, 170, 140), "IfcStair": (190, 170, 140),
     "IfcRoof": (176, 120, 110), "IfcCovering": (200, 200, 190), "IfcFurnishingElement": (140, 160, 130),
     "IfcGeographicElement": (170, 182, 150), "IfcMember": (170, 160, 150), "IfcPlate": (190, 190, 196),
+    "IfcPipeSegment": (96, 140, 196), "IfcDuctSegment": (150, 180, 200), "IfcCableCarrierSegment": (200, 160, 80),
 }
 DEFAULT_COLOR = (182, 182, 182)
 # 재료 이름의 낱말 -> 겉모습 색(18단계). 앞에서부터 먼저 맞는 것을 쓴다. 표에 없는 재료(콘크리트·석고 등)는 클래스 색 그대로다(기존 렌더 바이트 불변)
@@ -58,6 +59,7 @@ MATERIAL_COLORS = (
     (("석재", "stone", "화강석", "granite", "limestone", "sandstone", "대리석", "marble"), (214, 207, 190)),
     (("목재", "wood", "timber"), (150, 98, 58)),
     (("슬레이트", "slate"), (92, 96, 104)),
+    (("징크", "아연", "zinc"), (128, 134, 140)),
 )
 
 
