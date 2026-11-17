@@ -144,7 +144,7 @@ def _fresh_id(ctx, a, kind):
     if _in_split_history(ctx, a.id):   # 지워진 벽의 id 를 다시 쓰면 분할 이력을 따라가는 참조가 엉뚱한 새 벽을 가리킨다
         raise DobimError("CONSTRAINT", f"벽 분할 이력에 쓰인 id 라 다시 쓸 수 없다: {a.id}", path="/id",
                          hint="새 id 를 쓰거나 생략하세요")
-    if kind in ("view", "dim", "tag", "sheet") and ctx.external_def(a.id):   # 가져온 파일에 되살리지 않은 외부 정의가 이 id 로 있다
+    if kind in ("view", "dim", "tag", "sheet", "grid") and ctx.external_def(a.id):   # 가져온 파일에 되살리지 않은 외부 정의가 이 id 로 있다
         ctx.warn(f"가져온 파일에 이 id 의 {kind} 정의가 되살려지지 않은 채 남아 있다: 새 정의가 그 속성을 덮어쓴다(지우거나 되돌리면 원래 정의가 돌아온다)")
     return a.id
 
@@ -434,6 +434,40 @@ def join_clear(ctx, a: JoinArgs):
     _, _, lo, hi = _join_pair(ctx, a)
     ctx.rel("joins", lo, hi, False)
     return {"cleared": [lo, hi]}
+
+
+class JoinAuto(A):
+    level: Id = Field(description="이 레벨의 벽끼리만 본다")
+    tol: Annotated[float, Field(ge=0, le=500, allow_inf_nan=False)] = Field(50.0, description="두 벽 축선 교점이 각 벽 끝에서 (상대 벽 두께/2 + tol) 안이면 L 조인으로 본다(mm)")
+
+
+@command("join.auto", kind="mutation", risk="write", group="model.join",
+         summary="레벨의 벽 모서리(L 조인)를 자동으로 잇는다: 두 벽 축선의 교점이 두 벽 모두의 끝 가까이에 있으면 join.set 과 같은 조인을 건다(T 조인·나란한 벽은 건드리지 않는다)",
+         args=JoinAuto, since="0.6", examples=[{"level": F.LV1}])
+def join_auto(ctx, a: JoinAuto):
+    ctx.authored(a.level, "level", what="벽 자동 조인")
+    walls = sorted(w for w in ctx.rels_in("on_level", a.level) if (r := ctx.st.el.get(w)) is not None and r["kind"] == "wall" and r["origin"] == "authored")
+    info = {}
+    for w in walls:
+        x1, y1, x2, y2 = ctx.st.el[w]["params"]["axis"]
+        ln = sqrt((x2 - x1) ** 2 + (y2 - y1) ** 2)
+        info[w] = (x1, y1, (x2 - x1) / ln, (y2 - y1) / ln, ln, ctx.st.el[w]["params"]["thickness"])
+    joined = []
+    for i, wa in enumerate(walls):
+        xa, ya, ca, sa, la, ta = info[wa]
+        for wb in walls[i + 1:]:
+            xb, yb, cb, sb, lb, tb = info[wb]
+            det = ca * sb - sa * cb
+            if abs(det) < 0.05:   # 나란한 벽(3도 안)은 모서리가 아니다
+                continue
+            t = ((xb - xa) * sb - (yb - ya) * cb) / det
+            u = ((xb - xa) * sa - (yb - ya) * ca) / det
+            ea = min(abs(t), abs(t - la))
+            eb = min(abs(u), abs(u - lb))
+            if ea <= tb / 2.0 + a.tol and eb <= ta / 2.0 + a.tol and wb not in ctx.rels_out("joins", wa):
+                ctx.rel("joins", wa, wb, True)
+                joined.append([wa, wb])
+    return {"joined": joined, "count": len(joined)}
 
 
 # ================================================================ 벽 분할 (S5: 안정 참조의 규칙을 시험하려고 코어에 더한 모델링 커맨드)
@@ -2027,6 +2061,86 @@ def roof_delete(ctx, a: IdArg):
     return {"deleted": [a.id]}
 
 
+# ---------------------------------------------------------------- 통심선 (19단계, 설계: elements-design.md 21절)
+# 모델 전체에 하나씩 있는 기준선(Revit 그리드). 평면 뷰는 선(1점쇄선)과 끝 원 기호를, 입면·단면은 보는 방향과 나란한 통심선을 세로선으로 그린다.
+GridCoord = Annotated[float, Field(allow_inf_nan=False, ge=-1e7, le=1e7)]
+
+
+def _grid_name_free(ctx, name, me=None):
+    for gid in ctx.st.by_kind.get("grid", ()):
+        if gid != me and ctx.st.el[gid]["params"]["name"] == name:
+            raise DobimError("CONSTRAINT", f"같은 기호의 통심선이 있다: {name}", path="/name")
+
+
+class GridCreate(A):
+    id: Id | None = None
+    name: Annotated[str, Field(min_length=1, max_length=16)] = Field(description="통심선 기호(예: X1, A). 모델 안에서 유일")
+    line: Annotated[list[GridCoord], Field(min_length=4, max_length=4)] = Field(description="평면 선분 [x1,y1,x2,y2] mm")
+    bubbles: Literal["both", "start", "end", "none"] = Field("both", description="기호 원을 둘 끝")
+
+
+@command("grid.create", kind="mutation", risk="write", group="model.grid", summary="통심선(그리드) 생성: 평면에 1점쇄선+원 기호, 입면·단면에 세로선", args=GridCreate, since="0.6",
+         examples=[{"name": "X1", "line": [0, -2000, 0, 12000]}, {"name": "Y1", "line": [-2000, 0, 15000, 0], "bubbles": "start"}])
+def grid_create(ctx, a: GridCreate):
+    _fresh_id(ctx, a, "grid")
+    _grid_name_free(ctx, a.name)
+    p = {"name": a.name, "line": [float(v) for v in a.line], "bubbles": a.bubbles}
+    why = K.row_params_error("grid", p)
+    if why:
+        raise DobimError("CONSTRAINT", f"통심선이 올바르지 않다: {why}", path="/line")
+    ctx.put_el(a.id, row("grid", "", "grid.basic", p))
+    return {"id": a.id}
+
+
+class GridSet(A):
+    forbid_null = True
+    id: Id
+    name: Annotated[str, Field(min_length=1, max_length=16)] | None = None
+    line: Annotated[list[GridCoord], Field(min_length=4, max_length=4)] | None = None
+    bubbles: Literal["both", "start", "end", "none"] | None = None
+
+
+@command("grid.set", kind="mutation", risk="write", group="model.grid", summary="통심선 기호·선분·원 위치 변경", args=GridSet, since="0.6",
+         examples=[{"id": "g" + "0" * 21, "line": [0, -3000, 0, 12000]}])
+def grid_set(ctx, a: GridSet):
+    r = ctx.row(a.id, "grid")
+    p = dict(r["params"])
+    if a.name is not None:
+        _grid_name_free(ctx, a.name, a.id)
+        p["name"] = a.name
+    if a.line is not None:
+        p["line"] = [float(v) for v in a.line]
+    if a.bubbles is not None:
+        p["bubbles"] = a.bubbles
+    why = K.row_params_error("grid", p)
+    if why:
+        raise DobimError("CONSTRAINT", f"통심선이 올바르지 않다: {why}", path="/line")
+    ctx.put_el(a.id, dict(r, params=p))
+    return {"id": a.id}
+
+
+class GridMove(A):
+    id: Id
+    dx: Num = 0.0
+    dy: Num = 0.0
+
+
+@command("grid.move", kind="mutation", risk="write", group="model.grid", summary="통심선을 평행 이동한다(dx, dy)", args=GridMove, since="0.6",
+         examples=[{"id": "g" + "0" * 21, "dx": 300}])
+def grid_move(ctx, a: GridMove):
+    r = ctx.row(a.id, "grid")
+    x1, y1, x2, y2 = r["params"]["line"]
+    ctx.put_el(a.id, dict(r, params=dict(r["params"], line=[x1 + a.dx, y1 + a.dy, x2 + a.dx, y2 + a.dy])))
+    return {"id": a.id}
+
+
+@command("grid.delete", kind="mutation", risk="write", group="model.grid", summary="통심선 삭제", args=IdArg, since="0.6", examples=[{"id": "g" + "0" * 21}])
+def grid_delete(ctx, a: IdArg):
+    ctx.row(a.id, "grid")
+    ctx.put_el(a.id, None)
+    return {"deleted": [a.id]}
+
+
 # ---------------------------------------------------------------- 일반 솔리드 (18단계, 설계: elements-design.md 17절)
 # 벽·지붕 같은 정형 요소로 표현할 수 없는 부재(부벽 단·각뿔/팔각 첨탑·소첨탑·띠돌림·박공 메움·경사 판·지반)를 돌출·로프트·판·스윕·메시로 만든다.
 # 형상 검사와 다면체는 solids.py 가 정본이다. IFC 클래스는 범주(category)가 정한다. z 는 놓인 레벨 기준이다.
@@ -2042,22 +2156,40 @@ class LoftSection(A):
     polygon: SoPoly = Field(description="단면 다각형 [[x,y],...]. 맨 아래·맨 위 단면은 꼭짓점 하나(정점)여도 된다")
 
 
+class MemberSection(A):
+    shape: Literal["rect", "circle", "h", "box", "pipe"] = Field(description="단면 모양: rect 사각, circle 원(지름 = width = depth), h H/I형강, box 각형 강관(속 빈 사각), pipe 원형 관(속 빈 원)")
+    width: Pos = Field(description="단면 폭 mm(원은 지름)")
+    depth: Pos = Field(description="단면 깊이(춤) mm(원은 지름)")
+    web: Pos | None = Field(None, description="h: 웨브 두께 mm")
+    flange: Pos | None = Field(None, description="h: 플랜지 두께 mm")
+    wall: Pos | None = Field(None, description="box·pipe: 관 두께 mm")
+
+
 class SolidGeom(A):
-    form: Literal["prism", "loft", "panel", "sweep", "mesh"] | None = Field(None, description="prism 수직 돌출, loft 단면 잇기(각뿔·첨탑), panel 수직면 위 윤곽 판(+개구부), sweep 평면 경로를 따른 단면(띠돌림), mesh 다면체")
-    polygon: SoPoly | None = Field(None, description="prism: 평면 윤곽 [[x,y],...] (3~256)")
+    form: Literal["prism", "loft", "panel", "sweep", "mesh", "member", "plate"] | None = Field(None, description="prism 수직 돌출, loft 단면 잇기(각뿔·첨탑), panel 수직면 위 윤곽 판(+개구부), sweep 평면 경로를 따른 단면(띠돌림), mesh 다면체, member 3D 축선을 따른 곧은 부재(보·가새·관·덕트), plate 기운 평면 위 윤곽 판(+구멍: 지붕판·경사 슬래브)")
+    polygon: SoPoly | None = Field(None, description="prism·plate: 평면 윤곽 [[x,y],...] (3~256)")
+    holes: Annotated[list[SoPoly], Field(min_length=0, max_length=64)] | None = Field(None, description="plate: 구멍 윤곽 목록(윤곽 안, 서로 겹치지 않음). 빈 목록이면 뗀다")
+    base: SoPt3 | None = Field(None, description="plate: 윗면 위의 한 점 [x,y,z] (z 는 레벨 기준)")
+    pitch: Annotated[float, Field(ge=0, le=80, allow_inf_nan=False)] | None = Field(None, description="plate: 물매(도). 0 이면 수평 판")
+    dir: Annotated[float, Field(ge=-360, le=360, allow_inf_nan=False)] | None = Field(None, description="plate: 물이 흐르는(내려가는) 방향, +x 에서 반시계 도")
     z0: SoCoord | None = Field(None, description="prism: 아랫면 z mm(레벨 기준)")
     z1: SoCoord | None = Field(None, description="prism: 윗면 z mm(레벨 기준)")
     sections: Annotated[list[LoftSection], Field(min_length=2, max_length=32)] | None = Field(None, description="loft: 아래에서 위로 단면 목록(꼭짓점 수가 같아야 한다)")
     line: Annotated[list[SoCoord], Field(min_length=4, max_length=4)] | None = Field(None, description="panel: 판이 놓인 수직면의 기준선 [x1,y1,x2,y2]. 판 두께는 이 선의 양쪽으로 반씩")
-    thickness: Pos | None = Field(None, description="panel: 판 두께 mm")
+    thickness: Pos | None = Field(None, description="panel: 판 두께 mm / plate: 수직 두께 mm(윗면에서 아래로)")
     profile: SoPoly | None = Field(None, description="panel: 윤곽 [[u,z],...] (u = line 시작점에서 길이 방향, z = 레벨 기준) / sweep: 단면 [[o,z],...] (o = 경로 진행 방향 왼쪽 거리)")
     openings: Openings | None = Field(None, description="panel: 모양 개구부(offset 은 line 시작점 기준, sill 은 레벨 기준 z). 빈 목록이면 뗀다")
     path: Annotated[list[SoPt2], Field(min_length=2, max_length=256)] | None = Field(None, description="sweep: 평면 경로 [[x,y],...] (첫 점을 끝에 다시 주면 닫힌 고리)")
     vertices: Annotated[list[SoPt3], Field(min_length=4, max_length=4096)] | None = Field(None, description="mesh: 꼭짓점 [[x,y,z],...] (z 는 레벨 기준)")
     faces: Annotated[list[Annotated[list[Annotated[int, Field(ge=0, le=4095)]], Field(min_length=3, max_length=64)]], Field(min_length=4, max_length=8192)] | None = Field(None, description="mesh: 면 = 꼭짓점 번호 목록(바깥에서 보아 반시계). 닫힌 다면체여야 한다")
+    start: SoPt3 | None = Field(None, description="member: 축선 시작점 [x,y,z] (z 는 레벨 기준)")
+    end: SoPt3 | None = Field(None, description="member: 축선 끝점 [x,y,z]")
+    section: MemberSection | None = Field(None, description="member: 단면")
+    anchor: Literal["top", "center", "bottom"] | None = Field(None, description="member: 축선이 지나는 단면 위치(기본 top: 보 윗면 가운데. 관·덕트는 center)")
 
 
-_SO_KEYS = {"prism": ("polygon", "z0", "z1"), "loft": ("sections",), "panel": ("line", "thickness", "profile", "openings"), "sweep": ("path", "profile"), "mesh": ("vertices", "faces")}
+_SO_KEYS = {"prism": ("polygon", "z0", "z1"), "loft": ("sections",), "panel": ("line", "thickness", "profile", "openings"), "sweep": ("path", "profile"), "mesh": ("vertices", "faces"), "member": ("start", "end", "section", "anchor"),
+           "plate": ("polygon", "holes", "thickness", "base", "pitch", "dir")}
 
 
 def _solid_geom(a: SolidGeom, base: dict | None) -> dict:
@@ -2078,6 +2210,19 @@ def _solid_geom(a: SolidGeom, base: dict | None) -> dict:
             out[k] = float(v)
         elif k == "line":
             out[k] = [float(x) for x in v]
+        elif k in ("start", "end", "base"):
+            out[k] = [float(x) for x in v]
+        elif k in ("pitch", "dir"):
+            out[k] = float(v)
+        elif k == "holes":
+            if v:
+                out[k] = [[[float(c) for c in q] for q in h] for h in v]
+            else:
+                out.pop(k, None)
+        elif k == "section":
+            out[k] = {"shape": v.shape, **{n: float(getattr(v, n)) for n in ("width", "depth", "web", "flange", "wall") if getattr(v, n) is not None}}
+        elif k == "anchor":
+            out[k] = v
         elif k in ("polygon", "profile", "path", "vertices"):
             out[k] = [[float(c) for c in q] for q in v]
         elif k == "sections":
@@ -2089,9 +2234,14 @@ def _solid_geom(a: SolidGeom, base: dict | None) -> dict:
                 out[k] = _openings_in(v)
             else:
                 out.pop(k, None)
-    for k in ("polygon", "z0", "z1", "sections", "line", "thickness", "profile", "path", "vertices", "faces", "openings"):
+    for k in ("polygon", "z0", "z1", "sections", "line", "thickness", "profile", "path", "vertices", "faces", "openings", "start", "end", "section", "anchor", "holes", "base", "pitch", "dir"):
         if k not in _SO_KEYS[form] and getattr(a, k) is not None:
             raise DobimError("CONSTRAINT", f"{k} 는 form={form} 에 쓰지 않는다", path=f"/{k}")
+    if form == "member":
+        out.setdefault("anchor", "top")
+    if form == "plate":
+        out.setdefault("pitch", 0.0)
+        out.setdefault("dir", 0.0)
     return out
 
 
@@ -2113,7 +2263,8 @@ class SolidCreate(SolidGeom):
          summary="일반 솔리드 생성(돌출 prism·단면 잇기 loft·수직 판 panel(+아치 개구부)·스윕 sweep·메시 mesh). 범주가 IFC 클래스를 정한다(IfcWall·IfcRoof·IfcColumn·IfcCovering 등). IFC 는 IfcFacetedBrep",
          args=SolidCreate, since="0.5",
          examples=[{"level": F.LV1, "category": "buttress", "form": "prism", "polygon": [[0, -900], [600, -900], [600, -100], [0, -100]], "z0": 0, "z1": 2400},
-                   {"level": F.LV2, "category": "spire", "form": "loft", "sections": [{"z": 0, "polygon": [[0, 0], [1000, 0], [1000, 1000], [0, 1000]]}, {"z": 3000, "polygon": [[500, 500]]}]}])
+                   {"level": F.LV2, "category": "spire", "form": "loft", "sections": [{"z": 0, "polygon": [[0, 0], [1000, 0], [1000, 1000], [0, 1000]]}, {"z": 3000, "polygon": [[500, 500]]}]},
+                   {"level": F.LV2, "category": "beam", "form": "member", "start": [0, 0, 0], "end": [6000, 0, 0], "section": {"shape": "rect", "width": 400, "depth": 600}}])
 def solid_create(ctx, a: SolidCreate):
     _fresh_id(ctx, a, "solid")
     ctx.authored(a.level, "level", what="레벨에 솔리드를 추가하는 것")
@@ -2134,7 +2285,7 @@ class SolidSet(SolidGeom):
 
     @model_validator(mode="after")
     def _any(self):
-        if all(getattr(self, k) is None for k in ("name", "category", "form", "polygon", "z0", "z1", "sections", "line", "thickness", "profile", "openings", "path", "vertices", "faces")):
+        if all(getattr(self, k) is None for k in ("name", "category", "form", "polygon", "z0", "z1", "sections", "line", "thickness", "profile", "openings", "path", "vertices", "faces", "start", "end", "section", "anchor", "holes", "base", "pitch", "dir")):
             raise ValueError("바꿀 필드가 하나도 없다")
         return self
 
@@ -2177,6 +2328,14 @@ def _solid_moved(p: dict, dx: float, dy: float, dz: float) -> dict:
     elif f == "sweep":
         q["path"] = [[x + dx, y + dy] for x, y in p["path"]]
         q["profile"] = [[o, z + dz] for o, z in p["profile"]]
+    elif f == "plate":
+        q["polygon"] = [[x + dx, y + dy] for x, y in p["polygon"]]
+        if "holes" in p:
+            q["holes"] = [[[x + dx, y + dy] for x, y in h] for h in p["holes"]]
+        q["base"] = [p["base"][0] + dx, p["base"][1] + dy, p["base"][2] + dz]
+    elif f == "member":
+        q["start"] = [p["start"][0] + dx, p["start"][1] + dy, p["start"][2] + dz]
+        q["end"] = [p["end"][0] + dx, p["end"][1] + dy, p["end"][2] + dz]
     else:
         q["vertices"] = [[x + dx, y + dy, z + dz] for x, y, z in p["vertices"]]
     return q

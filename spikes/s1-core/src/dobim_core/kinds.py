@@ -905,6 +905,21 @@ def _site_params(p):
     return None
 
 
+GRID_BUBBLES = ("both", "start", "end", "none")
+
+
+def _grid_params(p):
+    """통심선(grid, 19단계): 기호 문자(1~16자), 평면 선분 [x1,y1,x2,y2](길이 1mm 이상), 기호 원 위치. 비 IFC 의도 요소(도면이 평면·입면·단면에 그린다)."""
+    err = _check_fields("grid", p, {"name": lambda v: text_ok(v, 1, 16), "line": lambda v: isinstance(v, list) and len(v) == 4 and all(num_ok(x) for x in v),
+                                    "bubbles": lambda v: v in GRID_BUBBLES})
+    if err:
+        return err
+    x1, y1, x2, y2 = p["line"]
+    if (x2 - x1) ** 2 + (y2 - y1) ** 2 < 1.0:
+        return "grid.line 길이는 1mm 이상이어야 한다"
+    return None
+
+
 def _solid_params(p):
     """일반 솔리드(18단계): 형상 검사는 solids.solid_problem 이 정본이다."""
     return SO.solid_problem(p)
@@ -946,6 +961,8 @@ ELEMENT_KINDS: dict[str, ElementKind] = {k.name: k for k in (
     ElementKind("ftype", True, None, True, 3, _ftype_params),
     ElementKind("finst", True, None, True, 4, _finst_params, geometric=True, refs=(("type", "id", "of_type"),)),
     ElementKind("foreign", True, None, False, 5, _foreign_params),
+    # 통심선(19단계): 뷰처럼 IFC 신원이 없는 의도 요소. 정의는 DoBIM_Defs 로 왕복한다
+    ElementKind("grid", False, None, False, 6, _grid_params),
     ElementKind("view", False, None, False, 6, _view_params, refs=(("level", "id", None),), ref_kinds=(("level", ("level",)),)),   # 평면 뷰만 level 이 있다
     ElementKind("dim", False, None, False, 7, _dim_params, refs=(("view", "id", "annot_of"), ("a", "ref", None), ("b", "ref", None)),
                 ref_kinds=(("view", ("view",)),)),

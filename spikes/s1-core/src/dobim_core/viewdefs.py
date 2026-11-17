@@ -20,8 +20,8 @@ from dobim_core import annot as AN
 from dobim_core import kinds as K
 from dobim_core.family.recipe import FamilyError, load_json_text
 
-DEF_KINDS = ("view", "dim", "tag", "sheet")                                    # 정의를 IFC 에 싣는 종류(kinds.NON_IFC_KINDS 와 같은 집합)
-FAMILY_ID = {"view": "view.basic", "dim": "annot.dim", "tag": "annot.tag", "sheet": "sheet.basic"}   # 커맨드가 만드는 행의 family_id
+DEF_KINDS = ("view", "dim", "tag", "sheet", "grid")                                    # 정의를 IFC 에 싣는 종류(kinds.NON_IFC_KINDS 와 같은 집합)
+FAMILY_ID = {"view": "view.basic", "dim": "annot.dim", "tag": "annot.tag", "sheet": "sheet.basic", "grid": "grid.basic"}   # 커맨드가 만드는 행의 family_id
 DEFS_PSET = "DoBIM_Defs"                                                # IfcProject 의 예약 속성셋 이름
 MAX_DEF_CHARS = 16 * 1024                                               # 정의 하나의 텍스트 상한(정상 정의는 1KB 안팎)
 MAX_DEFS = 100_000                                                      # 한 파일에서 읽는 정의 수 상한(넘으면 나머지는 읽지 않고 경고)
@@ -107,6 +107,11 @@ def _tag_values(p: dict) -> None:
         raise ValueError("태그에 없는 표시 필드가 있다")
 
 
+def _grid_values(p: dict) -> None:
+    if not all(_in(c, MAX_VIEW) for c in p["line"]):
+        raise ValueError("통심선 좌표가 범위를 벗어났다")
+
+
 def _sheet_values(p: dict) -> None:
     """시트 정의의 값: 커맨드(sheet.define)가 쓰는 같은 모델로 검사하고, 다시 쓴 값이 저장된 값과 같은(정규형) 것만 받는다."""
     from dobim_core import commands_sheet as CS   # 늦게 불러온다: 커맨드 모듈은 이 모듈을 쓰는 엔진보다 늦게 읽힌다
@@ -140,7 +145,7 @@ def parse_def(eid: str, text) -> dict:
     try:
         if not _name_ok(params["name"]) or (kind == "sheet" and not all(_name_ok(params[k]) for k in ("project_name", "sheet_name", "sheet_number", "client", "office"))):
             raise ValueError("이름에 짝 없는 서로게이트가 있다")
-        {"view": _view_values, "dim": _dim_values, "tag": _tag_values, "sheet": _sheet_values}[kind](params)
+        {"view": _view_values, "dim": _dim_values, "tag": _tag_values, "sheet": _sheet_values, "grid": _grid_values}[kind](params)
     except (KeyError, TypeError, IndexError) as ex:
         raise ValueError(f"정의 값이 올바르지 않다({type(ex).__name__})") from None
     if d["check"] != check_of(eid, kind, params):

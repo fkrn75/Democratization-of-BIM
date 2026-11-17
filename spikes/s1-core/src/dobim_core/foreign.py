@@ -507,6 +507,15 @@ def _restore_defs(f, rows: dict, rels: set, taken: set, plan: "ImportPlan") -> N
                 skip(eid, "평면 뷰가 가리키는 레벨이 저작이 아니다(분리·외래·다른 종류)")
                 continue
         ok[eid] = parsed[eid]
+    gnames: dict[str, list] = {}
+    for eid in sorted(e for e, d in parsed.items() if d["kind"] == "grid"):   # 통심선(19단계): 참조가 없다. 기호 문자가 겹치면 어느 쪽이 원본인지 알 수 없다
+        gnames.setdefault(parsed[eid]["params"]["name"], []).append(eid)
+    for nm, ids in sorted(gnames.items()):
+        for eid in ids:
+            if len(ids) > 1:
+                skip(eid, "같은 기호의 통심선이 더 있다")
+            else:
+                ok[eid] = parsed[eid]
     for eid in sorted(e for e, d in parsed.items() if d["kind"] in ("dim", "tag")):
         d = parsed[eid]
         p = d["params"]

@@ -2097,6 +2097,7 @@ def view_labels(g, v):
         out.extend(g.q(site_sign_labels, v))
     elif cfg[0] == "sec":
         out.extend(g.q(site_section_labels, v))
+    out.extend(g.q(view_grid_labels, v))   # 통심선 기호 문자(19단계)
     opts = g.q(view_opts, v)
     if "crop" in opts:   # 부위 상세: 잘라낸 사각형 밖의 문자는 뺀다
         c = opts["crop"]
@@ -4160,6 +4161,104 @@ def _wall_shape_edges(sol, shapes, pt):
     return raw
 
 
+# ================================================================ 통심선 (kinds "grid", 19단계, 설계: elements-design.md 21절)
+# 평면: 선분을 1점쇄선(symbol)으로, 끝(bubbles)에 원 기호와 기호 문자. 입면·단면: 보는 방향과 나란한(1도 안) 통심선을 세로 1점쇄선으로, 위 끝에 원 기호.
+# 통심선이 없으면 선분·문자는 이전과 같다.
+GRID_R = 4.0                          # 원 기호 반지름(용지 mm)
+GRID_DASH, GRID_GAP, GRID_DOT = 12.0, 1.5, 1.0   # 1점쇄선 마디(용지 mm)
+GRID_TEXT_H = 2.5                     # 기호 문자 높이(용지 mm)
+GRID_EXT = 1000.0                     # 입면·단면 세로선이 맨 아래·맨 위 레벨 밖으로 나가는 길이(mm)
+GRID_PAR = 0.01745                    # 나란함 판정(sin 1도)
+
+
+def all_grids(g):
+    out = []
+    for b in range(Q.NB):
+        out.extend(Q.bucket_ids(g, "grid", b))
+    return tuple(sorted(out))
+
+
+def _level_z_range(g):
+    zs = []
+    for b in range(Q.NB):
+        zs.extend(g.q(Q.level_info, lv)[1] for lv in Q.bucket_ids(g, "level", b))
+    return (min(zs), max(zs)) if zs else (0.0, 0.0)
+
+
+def _grid_dash_dot(cls, a, b, sc):
+    """a -> b 1점쇄선(마디·점·간격은 용지 위 일정)."""
+    dx, dy = b[0] - a[0], b[1] - a[1]
+    ln = sqrt(dx * dx + dy * dy)
+    if ln < SEG_MIN:
+        return []
+    ux, uy = dx / ln, dy / ln
+    pat = ((GRID_DASH * sc, True), (GRID_GAP * sc, False), (GRID_DOT * sc, True), (GRID_GAP * sc, False))
+    out, t, i = [], 0.0, 0
+    while t < ln - SEG_MIN:
+        step, draw = pat[i % 4]
+        t1 = min(t + step, ln)
+        if draw:
+            out.append((cls, a[0] + ux * t, a[1] + uy * t, a[0] + ux * t1, a[1] + uy * t1))
+        t, i = t1, i + 1
+    return out
+
+
+def _circle_segs(cls, c, r):
+    pts = [(c[0] + r * cs, c[1] + r * sn) for cs, sn in (_sincos_deg(360.0 * k / CIRC_N) for k in range(CIRC_N))]
+    return [(cls, pts[k][0], pts[k][1], pts[(k + 1) % CIRC_N][0], pts[(k + 1) % CIRC_N][1]) for k in range(CIRC_N)]
+
+
+def grid_marks(g, v, gr):
+    """통심선 하나의 (선분들, 문자들) — 뷰 좌표(평면 x,y / 입면·단면 s,z)."""
+    cfg = g.q(view_cfg, v)
+    if cfg is None or cfg[0] == "site":
+        return ((), ())
+    p = Q.el(g, gr)["params"]
+    x1, y1, x2, y2 = p["line"]
+    sc = cfg[4] if cfg[0] == "plan" else cfg[10]
+    r = GRID_R * sc
+    if cfg[0] == "plan":
+        a, b = (x1, y1), (x2, y2)
+        ends = {"both": (0, 1), "start": (0,), "end": (1,), "none": ()}[p["bubbles"]]
+    else:
+        ln = sqrt((x2 - x1) ** 2 + (y2 - y1) ** 2)
+        ux, uy = (x2 - x1) / ln, (y2 - y1) / ln
+        if abs(ux * cfg[4] - uy * cfg[3]) > GRID_PAR:   # 보는 방향과 나란하지 않다(점으로 투영되지 않는다)
+            return ((), ())
+        s0, w0 = _sw(cfg, (x1, y1))
+        _s1, w1 = _sw(cfg, (x2, y2))
+        if max(w0, w1) < cfg[7] or min(w0, w1) > cfg[8]:   # 단면: 보이는 깊이 범위 밖
+            return ((), ())
+        z0, z1 = g.q(_level_z_range)
+        a, b = (s0, z0 - GRID_EXT), (s0, z1 + GRID_EXT)
+        ends = (1,) if p["bubbles"] != "none" else ()
+    dx, dy = b[0] - a[0], b[1] - a[1]
+    ln = sqrt(dx * dx + dy * dy)
+    ux, uy = dx / ln, dy / ln
+    segs = _grid_dash_dot("symbol", a, b, sc)
+    labels = []
+    for k in ends:
+        e, sg = (a, -1.0) if k == 0 else (b, 1.0)
+        c = (e[0] + sg * ux * r, e[1] + sg * uy * r)   # 원은 선 끝 바깥에 붙는다
+        segs.extend(_circle_segs("symbol", c, r))
+        labels.append((round(c[0], 3), round(c[1] - 0.35 * GRID_TEXT_H * sc, 3), p["name"], GRID_TEXT_H, "middle"))
+    return (tuple(segs), tuple(labels))
+
+
+def view_grid_lines(g, v):
+    out = []
+    for gr in g.q(all_grids):
+        out.extend(g.q(grid_marks, v, gr)[0])
+    return tuple(out)
+
+
+def view_grid_labels(g, v):
+    out = []
+    for gr in g.q(all_grids):
+        out.extend(g.q(grid_marks, v, gr)[1])
+    return tuple(out)
+
+
 def view_lines(g, v):
     cfg = g.q(view_cfg, v)
     if cfg is None:
@@ -4193,6 +4292,7 @@ def view_lines(g, v):
         segs.extend(g.q(site_sign_lines, v))
     elif cfg[0] == "sec":
         segs.extend(g.q(site_section_lines, v))
+    segs.extend(g.q(view_grid_lines, v))   # 통심선(19단계): 없으면 선분은 이전과 같다
     return _crop_if(g, v, merge_lines(segs))
 
 
@@ -4240,6 +4340,7 @@ def view_lines_hier(g, v):
         segs.extend(g.q(site_sign_lines, v))
     elif cfg[0] == "sec":
         segs.extend(g.q(site_section_lines, v))
+    segs.extend(g.q(view_grid_lines, v))   # 통심선(19단계): 없으면 선분은 이전과 같다
     return _crop_if(g, v, merge_lines(segs))
 
 
@@ -4332,7 +4433,8 @@ VIEW_SCOPED = frozenset({view_cfg, scope_walls, view_omitted, plan_pieces, plan_
                          scope_solids, _solid_vpieces, solid_lines, _occ_index, plan_wall_glazing,
                          vfam_hosted_edges, scope_slabs, plan_slab_parts, _slab_vpieces, slab_vbbox, slab_cut_rects, slab_vedges, slab_nbr_walls, slab_lines,
                          scope_stairs, scope_railings, railing_lines, scope_elevators, elevator_lines, plan_elevator_labels, plan_roof_marks, scope_roofs, _roof_vpieces, _roof_solid_vpieces, roof_cut_rects, roof_plan_parts, roof_lines, plan_stair_parts, _stair_vpieces, stair_vbbox, stair_cut_rects, stair_vedges, stair_nbr_walls, stair_lines,
-                         scope_spaces, plan_space_labels, view_labels, site_lines, site_labels, site_dims, _elev_signs, site_sign_lines, site_sign_labels, _site_sec, _gl_z, site_section_lines, site_section_labels, vwall_hidden, view_hidden_lines, plan_fire_lines, plan_fire_labels, elev_finish, view_opts, view_dims, view_dim_labels})
+                         scope_spaces, plan_space_labels, view_labels, site_lines, site_labels, site_dims, _elev_signs, site_sign_lines, site_sign_labels, _site_sec, _gl_z, site_section_lines, site_section_labels, vwall_hidden, view_hidden_lines, plan_fire_lines, plan_fire_labels, elev_finish, view_opts, view_dims, view_dim_labels,
+                         grid_marks, view_grid_lines, view_grid_labels})
 
 
 def forget_views(g, vids) -> int:

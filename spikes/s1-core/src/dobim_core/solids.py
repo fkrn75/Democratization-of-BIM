@@ -25,7 +25,9 @@ OPENINGS_MAX = 64            # 벽·판 하나의 모양 개구부 수 상한
 ARC_DEPTH = 3                # 호 이등분 횟수: 호 하나 = 2**3 = 8 현
 OPENING_SHAPES = ("rect", "round", "pointed", "circle")
 OPENING_FILLS = ("none", "glazing", "door")
-SOLID_FORMS = ("prism", "loft", "panel", "sweep", "mesh")
+SOLID_FORMS = ("prism", "loft", "panel", "sweep", "mesh", "member", "plate")
+MEMBER_SHAPES = ("rect", "circle", "h", "box", "pipe")   # 부재(member) 단면: 사각·원·H/I형강·각형 강관(속 빈 사각)·원형 관(속 빈 원)
+MEMBER_ANCHORS = ("top", "center", "bottom")             # 부재 축선이 단면의 어디를 지나는가(보는 윗면 가운데, 관·덕트는 가운데가 관행)
 
 # 범주 -> (IFC 클래스, PredefinedType 또는 None, ObjectType 또는 None). 범주가 IFC 분류를 정한다(프록시 남발 금지)
 SOLID_CATEGORIES = {
@@ -44,6 +46,10 @@ SOLID_CATEGORIES = {
     "stair": ("IfcStair", None, None),
     "railing": ("IfcRailing", None, None),
     "footing": ("IfcFooting", None, None),
+    "beam": ("IfcBeam", None, None),
+    "pipe": ("IfcPipeSegment", None, None),
+    "duct": ("IfcDuctSegment", None, None),
+    "cable_tray": ("IfcCableCarrierSegment", None, None),
     "terrain": ("IfcGeographicElement", "TERRAIN", None),
 }
 
@@ -253,10 +259,11 @@ def solid_problem(p) -> str | None:
         return "solid 의 파라미터가 객체가 아니다"
     form = p.get("form")
     keys = {"prism": {"polygon", "z0", "z1"}, "loft": {"sections"}, "panel": {"line", "thickness", "profile"},
-            "sweep": {"path", "profile"}, "mesh": {"vertices", "faces"}}.get(form)
+            "sweep": {"path", "profile"}, "mesh": {"vertices", "faces"}, "member": {"start", "end", "section", "anchor"},
+            "plate": {"polygon", "thickness", "base", "pitch", "dir"}}.get(form)
     if keys is None:
         return f"solid.form 은 {'/'.join(SOLID_FORMS)} 중 하나다"
-    opt = {"openings"} if form == "panel" else set()
+    opt = {"openings"} if form == "panel" else {"holes"} if form == "plate" else set()
     base = {"name", "category", "form"} | keys
     if not base <= set(p) or set(p) - base - opt:
         return f"solid({form}) 의 파라미터 이름이 다르다"
@@ -330,6 +337,14 @@ def solid_problem(p) -> str | None:
             la, lb = sqrt(ax * ax + ay * ay), sqrt(bx * bx + by * by)
             if (ax * bx + ay * by) / (la * lb) < -0.94:
                 return "스윕 경로가 140도 넘게 꺾인다(마이터가 너무 길어진다)"
+    elif form == "member":
+        why = member_problem(p)
+        if why:
+            return why
+    elif form == "plate":
+        why = plate_problem(p)
+        if why:
+            return why
     else:
         vs, fs = p["vertices"], p["faces"]
         if not isinstance(vs, list) or not 4 <= len(vs) <= MESH_VERTS_MAX or not all(_pt3(q) for q in vs):
@@ -437,6 +452,10 @@ def solid_mesh(p) -> tuple:
         return _sweep(p["path"], p["profile"])
     if form == "loft":
         return _loft(p["sections"])
+    if form == "member":
+        return _member(p)
+    if form == "plate":
+        return _plate(p)
     verts = [(float(q[0]), float(q[1]), float(q[2])) for q in p["vertices"]]
     return verts, [[list(f)] for f in p["faces"]]
 
@@ -634,3 +653,180 @@ def scan_intervals(loops, z) -> list:
                 xs.append(a[0] + (z - a[1]) / (b[1] - a[1]) * (b[0] - a[0]))
     xs.sort()
     return [(xs[i], xs[i + 1]) for i in range(0, len(xs) - 1, 2) if xs[i + 1] - xs[i] > 1e-6]
+
+
+# ---------------------------------------------------------------- 부재(member, 19단계): 3D 축선을 따라 단면을 곧게 돌출(보·가새·관·덕트·케이블 트레이)
+def member_problem(p) -> str | None:
+    """부재 파라미터 검사(안 되면 이유). start/end = [x,y,z](레벨 기준), section = {shape, width, depth, 선택 web/flange/wall}, anchor."""
+    a, b = p["start"], p["end"]
+    if not (_pt3(a) and _pt3(b)):
+        return "solid.start·end 는 [x,y,z] 여야 한다"
+    if (b[0] - a[0]) ** 2 + (b[1] - a[1]) ** 2 + (b[2] - a[2]) ** 2 < 1.0:
+        return "부재 길이는 1mm 이상이어야 한다"
+    if p["anchor"] not in MEMBER_ANCHORS:
+        return f"solid.anchor 는 {'/'.join(MEMBER_ANCHORS)} 중 하나다"
+    sc = p["section"]
+    if not isinstance(sc, dict) or sc.get("shape") not in MEMBER_SHAPES:
+        return f"solid.section.shape 는 {'/'.join(MEMBER_SHAPES)} 중 하나다"
+    need = {"rect": set(), "circle": set(), "h": {"web", "flange"}, "box": {"wall"}, "pipe": {"wall"}}[sc["shape"]]
+    if set(sc) != {"shape", "width", "depth"} | need:
+        return f"solid.section({sc['shape']}) 의 키가 다르다(shape, width, depth" + "".join(", " + k for k in sorted(need)) + ")"
+    if not all(_num(sc[k]) and sc[k] > 0 for k in sc if k != "shape"):
+        return "solid.section 치수는 0 보다 커야 한다"
+    w, d = sc["width"], sc["depth"]
+    if sc["shape"] in ("circle", "pipe") and abs(w - d) > 1e-9:
+        return "원형 단면은 width 와 depth 가 같아야 한다(지름)"
+    if sc["shape"] == "h" and not (sc["web"] < w and 2 * sc["flange"] < d):
+        return "H형 단면은 web < width, 2*flange < depth 여야 한다"
+    if sc["shape"] in ("box", "pipe") and not 2 * sc["wall"] < min(w, d):
+        return "속 빈 단면의 두께(wall)는 폭·깊이의 절반보다 작아야 한다"
+    return None
+
+
+def _circle(r, cx=0.0, cy=0.0):
+    """원 근사(반시계 32각형, 사분원 4개 x 8현): 삼각함수 없이 _arc 로."""
+    q = [(cx + r, cy), (cx, cy + r), (cx - r, cy), (cx, cy - r)]
+    out = []
+    for i in range(4):
+        out.extend(_arc((cx, cy), q[i], q[(i + 1) % 4]))
+    return out
+
+
+def member_section(sc, anchor) -> tuple:
+    """단면 (바깥 반시계, 구멍 목록(시계)) 2D (a, b). a = 폭 방향(수평 축선이면 진행 방향 왼쪽 +), b = 위쪽. anchor 가 b 원점을 정한다."""
+    w, d = float(sc["width"]), float(sc["depth"])
+    b0 = {"top": -d, "center": -d / 2.0, "bottom": 0.0}[anchor]
+    h = w / 2.0
+    shape = sc["shape"]
+    if shape in ("circle", "pipe"):
+        outer = _circle(h, 0.0, b0 + d / 2.0)
+        holes = [_circle(h - float(sc["wall"]), 0.0, b0 + d / 2.0)[::-1]] if shape == "pipe" else []
+        return outer, holes
+    if shape == "h":
+        tw, tf = float(sc["web"]) / 2.0, float(sc["flange"])
+        y0, y1 = b0, b0 + d
+        outer = [(-h, y0), (h, y0), (h, y0 + tf), (tw, y0 + tf), (tw, y1 - tf), (h, y1 - tf), (h, y1), (-h, y1), (-h, y1 - tf), (-tw, y1 - tf), (-tw, y0 + tf), (-h, y0 + tf)]
+        return outer, []
+    outer = [(-h, b0), (h, b0), (h, b0 + d), (-h, b0 + d)]
+    if shape == "box":
+        t = float(sc["wall"])
+        return outer, [[(-h + t, b0 + t), (-h + t, b0 + d - t), (h - t, b0 + d - t), (h - t, b0 + t)]]
+    return outer, []
+
+
+def member_frame(p) -> tuple:
+    """부재 좌표계 (원점, 축 방향 D, 폭 방향 S, 위 방향 U, 길이). S x U = D(돌출 방향이 단면의 오른손 법선과 같다).
+    U 는 세계 z 를 축에 수직으로 투영한 것, 축이 거의 수직이면(|D.z| > 0.999) 세계 x 를 투영한다."""
+    a = tuple(float(v) for v in p["start"])
+    b = tuple(float(v) for v in p["end"])
+    dv = _sub(b, a)
+    ln = sqrt(_dot(dv, dv))
+    D = (dv[0] / ln, dv[1] / ln, dv[2] / ln)
+    ref = (0.0, 0.0, 1.0) if abs(D[2]) <= 0.999 else (1.0, 0.0, 0.0)
+    k = _dot(ref, D)
+    u = (ref[0] - k * D[0], ref[1] - k * D[1], ref[2] - k * D[2])
+    lu = sqrt(_dot(u, u))
+    U = (u[0] / lu, u[1] / lu, u[2] / lu)
+    S = _cross(U, D)
+    return a, D, S, U, ln
+
+
+def _member(p):
+    o, D, S, U, ln = member_frame(p)
+    outer, holes = member_section(p["section"], p["anchor"])
+
+    def to3(q, t):
+        return (o[0] + q[0] * S[0] + q[1] * U[0] + t * D[0], o[1] + q[0] * S[1] + q[1] * U[1] + t * D[1], o[2] + q[0] * S[2] + q[1] * U[2] + t * D[2])
+    return _extrude(outer, holes, to3, None, ln)
+
+
+# ---------------------------------------------------------------- 경사 판(plate, 19단계): 임의 평면 윤곽(+구멍)을 기운 평면 위에 놓고 수직 두께만큼 아래로(지붕판·경사 슬래브)
+PLATE_PITCH_MAX = 80.0
+
+
+def sincos_deg(a):
+    """도 -> (sin, cos). libm 없이 90도 단위로 줄인 뒤 테일러 급수(kinds.sincos_deg 와 같은 알고리즘: solids 는 kinds 를 import 하지 않는다)."""
+    a = a - 360.0 * int(a / 360.0) if a >= 0 else a - 360.0 * (int(a / 360.0) - 1)
+    a = a - 360.0 if a >= 360.0 else a
+    k = int((a + 45.0) / 90.0)
+    x = (a - 90.0 * k) * 3.141592653589793 / 180.0
+    x2 = x * x
+    sn = cs = 0.0
+    tn, tc = x, 1.0
+    for i in range(1, 9):
+        sn += tn
+        cs += tc
+        tn = -tn * x2 / ((2 * i) * (2 * i + 1))
+        tc = -tc * x2 / ((2 * i - 1) * (2 * i))
+    return [(sn, cs), (cs, -sn), (-sn, -cs), (-cs, sn)][k % 4]
+
+
+def plate_problem(p) -> str | None:
+    """판 파라미터 검사: polygon(단순 다각형), 선택 holes(윤곽 안, 서로·윤곽과 교차 없음), thickness > 0, base [x,y,z](윗면 위의 한 점), pitch 0~80도, dir 물이 흐르는 방향(도)."""
+    if not isinstance(p["polygon"], list) or not all(_pt2(q) for q in p["polygon"]):
+        return "solid.polygon 값이 올바르지 않다"
+    why = poly_problem(p["polygon"])
+    if why:
+        return f"solid.polygon: {why}"
+    if not (_num(p["thickness"]) and p["thickness"] > 0):
+        return "solid.thickness 는 0 보다 커야 한다"
+    if not _pt3(p["base"]):
+        return "solid.base 는 [x,y,z] 여야 한다"
+    if not (_num(p["pitch"]) and 0 <= p["pitch"] <= PLATE_PITCH_MAX):
+        return f"solid.pitch 는 0~{PLATE_PITCH_MAX:g}도여야 한다"
+    if not (_num(p["dir"]) and -360.0 <= p["dir"] <= 360.0):
+        return "solid.dir 은 -360~360 도여야 한다"
+    holes = p.get("holes", [])
+    if "holes" in p and (not isinstance(holes, list) or not 1 <= len(holes) <= OPENINGS_MAX):
+        return f"solid.holes 는 1~{OPENINGS_MAX}개여야 한다"
+    outer = p["polygon"]
+    loops = [outer]
+    for i, h in enumerate(holes):
+        if not isinstance(h, list) or not all(_pt2(q) for q in h):
+            return f"solid.holes[{i}] 값이 올바르지 않다"
+        why = poly_problem(h)
+        if why:
+            return f"solid.holes[{i}]: {why}"
+        if any(point_in(q, ccw(outer)) != 1 for q in h):
+            return f"solid.holes[{i}] 가 윤곽 안에 있지 않다"
+        loops.append(h)
+    for i in range(len(loops)):          # 고리끼리 변이 교차하지 않는다(구멍끼리 겹침·윤곽에 닿음)
+        for j in range(i + 1, len(loops)):
+            a, b = loops[i], loops[j]
+            for k in range(len(a)):
+                for m in range(len(b)):
+                    if _seg_cross(a[k], a[(k + 1) % len(a)], b[m], b[(m + 1) % len(b)]):
+                        return "solid.holes 가 윤곽이나 다른 구멍과 겹친다"
+        if i > 0 and any(point_in(q, ccw(loops[j])) == 1 for j in range(1, len(loops)) if j != i for q in loops[i][:1]):
+            return "solid.holes 가 다른 구멍 안에 있다"
+    return None
+
+
+def plate_plane(p):
+    """윗면 평면 z = a x + b y + c (레벨 기준)."""
+    s, c = sincos_deg(float(p["dir"]))
+    ps, pc = sincos_deg(float(p["pitch"]))
+    t = ps / pc
+    a, b = -t * c, -t * s   # dir 쪽으로 내려간다
+    x0, y0, z0 = (float(v) for v in p["base"])
+    return a, b, z0 - a * x0 - b * y0
+
+
+def _plate(p):
+    a, b, c = plate_plane(p)
+    th = float(p["thickness"])
+    loops = [ccw(p["polygon"])] + [_cw(h) for h in p.get("holes", ())]
+    verts, top, bot, sides = [], [], [], []
+    for lp in loops:
+        base = len(verts)
+        n = len(lp)
+        for x, y in lp:
+            verts.append((x, y, a * x + b * y + c))
+        for x, y in lp:
+            verts.append((x, y, a * x + b * y + c - th))
+        top.append([base + i for i in range(n)])
+        bot.append([base + n + i for i in range(n)][::-1])
+        for i in range(n):
+            j = (i + 1) % n
+            sides.append([[base + n + i, base + n + j, base + j, base + i]])
+    return verts, [top, bot] + sides
