@@ -904,3 +904,24 @@ test_practical(부재 닫힘·부피·기준선·거절·명령·IFC 클래스·
 
 ### 22.3 시험
 test_practical2(뒤집기 평면 기호·거절·실행 취소, IFC 배치 방향과 왕복 해시, 미닫이문 기호·폭 거절, 슬래브 경계·구멍 교체와 솔리드 형태 교체 id 유지, 벽 길이를 다 차지한 문 기호).
+
+## 23. 스물한 번째 작업: 설비 기기 범주·벽 상단 윤곽·돌음 계단·렌더 범주 필터·창틀 창 (2026-11-18, 브랜치 phase1/practical-modeling-3)
+
+산출은 비공개 산출 폴더(phase1-after21)에 두었다. 같은 모델에 `run_baseline.py --sheets` 를 돌렸다(새 입력 없음). 설계 메모는 elements-design.md 23절. 해시 형식 그대로(CLOSURE_FORMAT 15).
+
+### 23.0 바이트 비교 (after20 대비, work/·run.json 제외)
+**같은 파일 183개, 달라진 파일 0, 새 산출 0, 사라진 파일 0.** s1-core 전체 시험 통과, parity pass(커맨드 108, 100%).
+s10-headless 시험: 새 시험(test_render_filter) 통과. 실패 2건(test_gui_scan 의 설치 메타데이터 검사, test_headless_ra01 의 IFC 기준 해시)은 origin/main 에서도 같이 실패하는 기존 상태다(이 작업과 무관, 기준값 갱신은 별도).
+
+### 23.1 변경 요지
+1. `solid` 범주에 설비 기기·단말 15종(IfcAirTerminal·IfcFan·IfcBoiler·IfcUnitaryEquipment·IfcTank·IfcValve·IfcFlowMeter(GASMETER)·IfcPipeFitting·IfcSanitaryTerminal·IfcFireSuppressionTerminal·IfcElectricDistributionBoard·IfcUnitaryControlElement, 소화기·피난기구는 USERDEFINED).
+2. 벽 상단 윤곽 `top_profile`과 `wall.attach_top`·`wall.detach_top`(커맨드 106 → 108).
+3. 돌음 계단 `stair.turn.winders`(IfcStair QUARTER/HALF_WINDING_STAIR, IfcStairFlight WINDER).
+4. dobim_render 범주 필터(`--only/--hide`, 묶음 structure·mep·arch, `--ghost`)와 같은 평면 겹침 잡음 억제 `--tie-eps`(기본 0 = 이전 픽셀).
+5. 기본 라이브러리 `window.framed`(창틀·리빌·창대·문선, 기존 레시피 무수정).
+
+### 23.2 실전 사례(비공개, 저장소 밖)
+같은 사례 모델에 설비 기기·단말 188, 관 891, 인방 56, 기초 연단·승강기 피트, 돌음 계단, 경사 지붕 아래 벽 상단 윤곽을 DoBIM 커맨드만으로 더했다. 구조만·설비만 렌더를 상용 도구 모델과 같은 시점으로 비교했다.
+
+### 23.3 시험
+test_practical3_mep(범주·IFC 클래스·형식·왕복 해시), test_practical3_wall_top, test_practical3_winder, test_practical3_window, s10-headless test_render_filter(묶음·상위 클래스 필터, 부분 메시, 고스트, tie_eps).
