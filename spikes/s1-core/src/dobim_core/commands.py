@@ -26,6 +26,7 @@ from dobim_core import queries as Q
 from dobim_core import registry
 from dobim_core.errors import DobimError
 from dobim_core import kinds as K
+from dobim_core import walltop as WT
 from dobim_core.kinds import KIND_NAMES, READ_REL_NAMES, REL_KINDS, is_corridor, param_ref_targets, polygon_area2, polygon_problem
 from dobim_core.paths import resolve_in_workspace
 from dobim_core.registry import command
@@ -268,8 +269,35 @@ def _openings_in(ops) -> list:
 def _wall_checked(p: dict) -> dict:
     why = K.row_params_error("wall", p)
     if why:
-        raise DobimError("CONSTRAINT", f"벽이 올바르지 않다: {why}", path="/openings" if "openings" in why else None)
+        raise DobimError("CONSTRAINT", f"벽이 올바르지 않다: {why}", path="/openings" if "openings" in why else ("/top_profile" if "top_profile" in why else None))
     return p
+
+
+TopProfile = Annotated[list[Annotated[list[Num], Field(min_length=2, max_length=2)]], Field(max_length=WT.TOP_PTS_MAX, description=(
+    "벽 상단 윤곽(21단계): 축선 따라 거리 s(축 시작점 0 ~ 축 길이)와 레벨 기준 높이 z 의 점 [[s, z], ...]. s 오름차순, 양 끝 포함, 2점 이상, z > 0. "
+    "같은 s 두 점은 수직 단. wall.set 에 빈 목록을 주면 윤곽을 뗀다(상단이 height 로 수평)"))]
+
+
+def _door_box(dp: dict) -> tuple:
+    return (dp["offset"] - dp["width"] / 2.0, dp["offset"] + dp["width"] / 2.0, dp["sill"], dp["sill"] + dp["height"])
+
+
+def _hosted_under_top(ctx, wid, p: dict) -> None:
+    """상단 윤곽이 있는 벽: 호스팅된 문의 위 끝이 윤곽 아래인가(21단계). 패밀리 인스턴스는 보지 않는다(한계: elements-design 23.2)."""
+    top = p.get("top_profile")
+    if top is None:
+        return
+    boxes = [_door_box(ctx.st.el[d]["params"]) for d in sorted(ctx.rels_out("hosts", wid)) if ctx.st.el[d]["kind"] == "door"]
+    why = WT.under_problem(top, boxes=boxes)
+    if why:
+        raise DobimError("CONSTRAINT", f"벽이 올바르지 않다: {why}", path="/top_profile")
+
+
+def _door_under_top(ctx, host, dp: dict) -> None:
+    """문을 놓거나 고칠 때: 호스트 벽에 상단 윤곽이 있으면 문 위 끝이 그 아래여야 한다(21단계)."""
+    top = ctx.st.el[host]["params"].get("top_profile")
+    if top is not None and WT.under_problem(top, boxes=[_door_box(dp)]):
+        raise DobimError("CONSTRAINT", "문이 호스트 벽의 상단 윤곽 위로 나간다", path="/height")
 
 
 class WallCreate(A):
@@ -280,6 +308,7 @@ class WallCreate(A):
     height: Pos = 3000.0
     name: Name | None = None
     openings: Openings | None = Field(None, description="모양 개구부(아치 창·원창·출입구). IFC 는 모양 윤곽의 IfcOpeningElement + IfcRelVoidsElement")
+    top_profile: TopProfile | None = Field(None, description="벽 상단 윤곽(경사·박공 벽): 생략하면 상단은 height 로 수평")
 
 
 @command("wall.create", kind="mutation", risk="write", group="model.wall", summary="벽 생성",
@@ -297,6 +326,9 @@ def wall_create(ctx, a: WallCreate):
     p = {"name": a.name, "axis": list(a.axis), "thickness": a.thickness, "height": a.height}
     if a.openings:   # 개구부가 없으면 행은 이전과 같다
         p["openings"] = _openings_in(a.openings)
+    if a.top_profile:   # 상단 윤곽이 없으면 행은 이전과 같다
+        p["top_profile"] = WT.norm(a.top_profile)
+    if a.openings or a.top_profile:
         _wall_checked(p)
     ctx.put_el(a.id, row("wall", "IfcWall", "wall.basic", p))
     ctx.rel("on_level", a.id, a.level, True)
@@ -327,10 +359,11 @@ class WallSet(A):
     height: Pos | None = None
     axis: Annotated[list[Num], Field(min_length=4, max_length=4)] | None = None
     openings: Openings | None = Field(None, description="모양 개구부 목록을 통째로 바꾼다(빈 목록 = 모두 뗀다)")
+    top_profile: TopProfile | None = Field(None, description="벽 상단 윤곽을 통째로 바꾼다(빈 목록 = 뗀다)")
 
     @model_validator(mode="after")
     def _any(self):
-        if all(v is None for v in (self.name, self.thickness, self.height, self.axis, self.openings)):
+        if all(v is None for v in (self.name, self.thickness, self.height, self.axis, self.openings, self.top_profile)):
             raise ValueError("바꿀 필드가 하나도 없다")
         return self
 
@@ -362,8 +395,17 @@ def wall_set(ctx, a: WallSet):
             p["openings"] = _openings_in(a.openings)
         else:
             p.pop("openings", None)
-    if "openings" in p:   # 축·높이가 바뀌어 개구부가 벽 밖으로 나가면 거절한다
+    if a.top_profile is not None:
+        if a.top_profile:
+            p["top_profile"] = WT.norm(a.top_profile)
+        else:
+            p.pop("top_profile", None)
+    if a.top_profile is None and "top_profile" in p and WT.profile_problem(p["top_profile"], sqrt(_axis_len2(p["axis"]))):
+        raise DobimError("CONSTRAINT", "상단 윤곽이 있는 벽의 축 길이가 바뀌면 윤곽이 맞지 않는다", path="/axis",
+                         hint="새 top_profile 을 함께 주거나, wall.detach_top 으로 뗀 뒤 wall.attach_top 으로 다시 붙이세요")
+    if "openings" in p or "top_profile" in p:   # 축·높이가 바뀌어 개구부가 벽 밖으로 나가면 거절한다
         _wall_checked(p)
+    _hosted_under_top(ctx, a.id, p)
     from dobim_core.commands_family import check_hosted_fit
     check_hosted_fit(ctx, a.id, r["params"], p)
     ctx.put_el(a.id, dict(r, params=p))
@@ -587,6 +629,9 @@ def wall_split(ctx, a: WallSplit):
             raise DobimError("CONSTRAINT", "분할 위치가 모양 개구부를 가로지른다", path="/at")
     name = (p["name"][:62] + "-b")
     pw = dict(p, axis=ax_w)
+    top_n = None
+    if "top_profile" in p:   # 상단 윤곽(21단계)은 분할점에서 둘로 나눈다(끝 쪽은 s 를 당긴다)
+        pw["top_profile"], top_n = WT.split(p["top_profile"], a.at, length)
     if "openings" in p:
         if ops_w:
             pw["openings"] = ops_w
@@ -598,6 +643,8 @@ def wall_split(ctx, a: WallSplit):
         np_["layers"] = [dict(x) for x in p["layers"]]
     if ops_n:
         np_["openings"] = ops_n
+    if top_n is not None:
+        np_["top_profile"] = top_n
     ctx.put_el(nid, row("wall", "IfcWall", "wall.basic", np_))
     ctx.rel("on_level", nid, ctx.rels_out("on_level", a.id)[0], True)
     for d in doors_n:
@@ -646,6 +693,7 @@ def door_place(ctx, a: DoorPlace):
     _fits(ctx, a.host, a.offset, a.width)
     a.name = a.name or f"D-{a.id[-6:]}"
     dp = {"name": a.name, "width": a.width, "height": a.height, "sill": a.sill, "offset": a.offset}
+    _door_under_top(ctx, a.host, dp)
     if a.leaf is not None:   # 입력이 없으면 파라미터에 키가 없다(저장 형식·해시 그대로)
         dp["leaf"] = a.leaf
     ctx.put_el(a.id, row("door", "IfcDoor", "door.single", dp))
@@ -685,6 +733,7 @@ def door_set(ctx, a: DoorSet):
         p.pop("leaf", None)
     host = ctx.rels_in("hosts", a.id)[0]
     _fits(ctx, host, p["offset"], p["width"])
+    _door_under_top(ctx, host, p)
     ctx.put_el(a.id, dict(r, params=p))
     return {"id": a.id}
 
@@ -991,11 +1040,17 @@ class StairTurn(A):
     risers_a: int = Field(ge=2, le=100, description="층참 아래 단 묶음의 챌판 수(2 이상, 전체 챌판 수 - 2 이하). 층참 윗면은 이 챌판 수만큼 올라온 높이다")
     landing: Pos | None = Field(None, description="층참 깊이 mm(걸음선 방향). 비우면 계단 폭. 폭보다 작을 수 없다")
     gap: Num | None = Field(None, ge=0, description="U형에서 두 단 묶음 사이 간격 mm(비우면 100). L형은 쓰지 않는다")
+    winders: int | None = Field(None, ge=K.STAIR_WINDERS_MIN, le=K.STAIR_WINDERS_MAX,
+                                description="돌음(와인더) 계단: 층참 대신 회전부를 이 수의 쐐기 디딤판으로 채운다(회전 중심에서 같은 각 분할). "
+                                            "위 단 묶음 챌판 = 전체 - risers_a - winders + 1. L형은 회전부가 폭 x 폭(landing 비움)")
 
 
 def _stair_turn(t) -> dict:
-    return {"type": t.type, "side": t.side, "risers_a": t.risers_a, "landing": None if t.landing is None else float(t.landing),
-            "gap": (K.STAIR_GAP_DEFAULT if t.gap is None else float(t.gap)) if t.type == "U" else 0.0}
+    out = {"type": t.type, "side": t.side, "risers_a": t.risers_a, "landing": None if t.landing is None else float(t.landing),
+           "gap": (K.STAIR_GAP_DEFAULT if t.gap is None else float(t.gap)) if t.type == "U" else 0.0}
+    if t.winders is not None:   # 없으면 키 자체가 없다(기존 계단 바이트 불변)
+        out["winders"] = t.winders
+    return out
 
 
 def _stair_checked(p: dict) -> dict:
@@ -1320,7 +1375,7 @@ RAIL_TOL = 1e-3   # 난간선 비교 허용 mm
 
 
 def _stair_rail_specs(p: dict, side: str, inset: float, landing: bool) -> list:
-    """계단 파라미터에서 난간 자리들: [{"tag", "path", "base_offset", "rise"}]. 단 묶음마다 왼쪽(`f{i}L`)·오른쪽(`f{i}R`), 층참은 `landing`. 순서는 생성 순서다."""
+    """계단 파라미터에서 난간 자리들: [{"tag", "path", "base_offset", "rise"}]. 단 묶음마다 왼쪽(`f{i}L`)·오른쪽(`f{i}R`), 층참은 `landing`, 돌음 회전부 바깥 둘레는 `winder`. 순서는 생성 순서다."""
     lay = K.stair_layout(p)
     w, base = p["width"], p["base_offset"]
     rise = lay["rise"]
@@ -1357,6 +1412,25 @@ def _stair_rail_specs(p: dict, side: str, inset: float, landing: bool) -> list:
         else:
             path = [i3, i2, i1]                                        # 왼쪽 옆변 + 먼 변
         out.append({"tag": "landing", "path": path, "base_offset": base + ld["z"], "rise": 0.0})
+    wd = lay.get("winders")
+    if wd is not None and landing and side in ("both", "right" if p["turn"]["side"] == "left" else "left"):   # 돌음 회전부의 바깥 둘레(23.3): 아래 단 묶음 바깥 난간 끝에서 위 단 묶음 바깥 난간 시작까지, 쐐기 수만큼 오른다
+        t = p["turn"]
+        x1, y1, x2, y2 = p["run"]
+        ln = ((x2 - x1) ** 2 + (y2 - y1) ** 2) ** 0.5
+        ux, uy = (x2 - x1) / ln, (y2 - y1) / ln
+        sg = 1.0 if t["side"] == "left" else -1.0
+        h = w / 2.0
+        far_t = ln + (w if t["type"] == "L" else (t["landing"] if t["landing"] is not None else w))
+
+        def lp(tt, mm):
+            return [x1 + ux * tt - uy * mm, y1 + uy * tt + ux * mm]
+        if t["type"] == "L":
+            loc = [(ln, -sg * (h - inset)), (far_t - inset, -sg * (h - inset)), (far_t - inset, sg * h)]
+        else:
+            far = sg * (h + t["gap"] + w - inset)
+            loc = [(ln, -sg * (h - inset)), (far_t - inset, -sg * (h - inset)), (far_t - inset, far), (ln, far)]
+        k = t["risers_a"]
+        out.append({"tag": "winder", "path": [lp(*q) for q in loc], "base_offset": base + k * rise, "rise": len(wd["wedges"]) * rise})
     return out
 
 
@@ -2657,6 +2731,11 @@ def element_get(ctx, a: ElementGet):
     if r["kind"] == "wall":
         start, end, status = ctx.g.q(Q.wall_trim, a.id)
         out["derived"] = {"trim_start": start, "trim_end": end, "length": end - start, "status": status}
+        if "top_profile" in r["params"]:   # 상단 윤곽(21단계): 높이 범위·입면 면적·부피(개구부 빼기 전). 없으면 응답은 그대로
+            tp, th = r["params"]["top_profile"], r["params"]["thickness"]
+            gross = WT.area(tp, start, end)
+            out["derived"].update({"top_min": WT.zmin(tp, start, end), "top_max": WT.zmax(tp, start, end),
+                                   "gross_area_m2": gross / 1e6, "volume_m3": gross * th / 1e9})
     elif r["kind"] == "door":
         out["derived"] = {"world": list(ctx.g.q(Q.door_world, a.id)), "status": ctx.g.q(Q.door_status, a.id)}
     elif r["kind"] == "slab":
@@ -2692,6 +2771,11 @@ def element_get(ctx, a: ElementGet):
         p = r["params"]
         out["derived"] = {"bottom": zb, "top": zt, "riser_height": p["height"] / p["risers"],
                           "tread_depth": sqrt(_axis_len2(p["run"])) / (p["risers"] - 1)}
+        if "turn" in p and "winders" in p["turn"]:   # 돌음 계단 수량(23.3): 직선 디딤판·쐐기 디딤판 수, 단 묶음별 챌판, 보행선 위 쐐기 디딤 길이
+            lay = K.stair_layout(p)
+            fa, fb = lay["flights"]
+            out["derived"].update({"tread_depth": fa["td"], "flight_risers": [fa["n"], fb["n"]], "winder_treads": p["turn"]["winders"],
+                                   "straight_treads": fa["n"] - 1 + fb["n"] - 1, "treads": p["risers"] - 1, "winder_walkline_tread": lay["winders"]["tread"]})
     elif r["kind"] == "elevator":
         gm = K.elevator_geom(r["params"])
         lv = ctx.g.q(Q.level_info, ctx.g.q(Q.elevator_level, a.id))[1]
@@ -4399,3 +4483,4 @@ def ifc_restore(ctx, a: IfcRestore):
 # S4 패밀리 커맨드: 이 모듈의 정의가 모두 끝난 뒤에 등록한다
 from dobim_core import commands_family  # noqa: E402,F401
 from dobim_core import commands_sheet  # noqa: E402,F401
+from dobim_core import commands_walltop  # noqa: E402,F401

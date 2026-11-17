@@ -58,7 +58,8 @@ PRE = {"history.redo": [("history.undo", {})], "ifc.restore": [_EXP, _EXP], "ifc
        "sheet.define": [_V1], "sheet.delete": [_V1, _SH1], "sheet.list": [_V1, _SH1], "sheet.render": [_V1, _SH1],
        "view.image": [_V1], "sheet.image": [_V1],
        "solid.set": [_SO1], "solid.move": [_SO1], "solid.delete": [_SO1],
-       "grid.set": [_GR1], "grid.move": [_GR1], "grid.delete": [_GR1]}
+       "grid.set": [_GR1], "grid.move": [_GR1], "grid.delete": [_GR1],
+       "wall.attach_top": [_RF1]}
 ERROR_CASES = [
     ("없는 커맨드", "no.such.command", {}, {}),
     ("스키마 오류(타입)", "wall.move", {"id": F.W1, "dx": "abc"}, {}),

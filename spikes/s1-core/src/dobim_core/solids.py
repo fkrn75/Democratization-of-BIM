@@ -51,6 +51,22 @@ SOLID_CATEGORIES = {
     "duct": ("IfcDuctSegment", None, None),
     "cable_tray": ("IfcCableCarrierSegment", None, None),
     "terrain": ("IfcGeographicElement", "TERRAIN", None),
+    # 설비 기기·단말(21단계, 설계: elements-design.md 23.1). 형상은 다른 솔리드와 같다(상자는 prism, 관 모양은 member)
+    "air_terminal": ("IfcAirTerminal", None, None),                 # 급배기구·디퓨저·후드 배기구
+    "fan": ("IfcFan", None, None),                                  # 송풍기·환풍기
+    "boiler": ("IfcBoiler", None, None),                            # 보일러
+    "unitary_equipment": ("IfcUnitaryEquipment", None, None),       # 일체형 기기(실외기·환기 유닛 등)
+    "tank": ("IfcTank", None, None),                                # 탱크(팽창탱크 등)
+    "valve": ("IfcValve", None, None),                              # 밸브
+    "flow_meter": ("IfcFlowMeter", None, None),                     # 계량기(수도·열량)
+    "gas_meter": ("IfcFlowMeter", "GASMETER", None),                # 가스 계량기
+    "pipe_fitting": ("IfcPipeFitting", None, None),                 # 관 이음·분배기(헤더)
+    "sanitary_terminal": ("IfcSanitaryTerminal", None, None),       # 위생기구(대·소변기·세면기·욕조·싱크)
+    "fire_terminal": ("IfcFireSuppressionTerminal", None, None),    # 소화 단말(스프링클러·소화전)
+    "fire_extinguisher": ("IfcFireSuppressionTerminal", "USERDEFINED", "FIRE_EXTINGUISHER"),   # 소화기(IFC4 에 전용 형식 없음)
+    "escape_device": ("IfcBuildingElementProxy", "USERDEFINED", "ESCAPE_DEVICE"),             # 완강기 등 피난기구(IFC4 에 클래스 없음)
+    "electric_board": ("IfcElectricDistributionBoard", None, None), # 분전반
+    "control": ("IfcUnitaryControlElement", None, None),            # 온도조절기·조작반
 }
 
 

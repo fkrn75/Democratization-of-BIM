@@ -24,6 +24,7 @@ from math import sqrt
 from dobim_core import kinds as K
 from dobim_core import queries as Q
 from dobim_core import solids as SO
+from dobim_core import walltop as WT
 from dobim_core.family import spec as FS
 from dobim_core.graph import CLEAN
 
@@ -177,7 +178,7 @@ def _openings(g, w, doors_only):
     start, end, _ = g.q(Q.wall_trim, w)
     p = Q.el(g, w)["params"]
     _, elev = g.q(Q.level_info, g.q(Q.wall_level, w))
-    zb, zt = elev, elev + p["height"]
+    zb, zt = elev, elev + _top_rel(p)
     out = []
     for d in g.q(Q.wall_hosted, w):
         if doors_only and Q.el(g, d)["kind"] != "door":
@@ -221,15 +222,207 @@ def _bands(start, end, zb, zt, ops):
     return tuple(bands)
 
 
+def _top_rel(p) -> float:
+    """벽 윗면의 레벨 기준 높이: 상단 윤곽(21단계)이 있으면 가장 높은 점, 없으면 height."""
+    return WT.zmax(p["top_profile"]) if "top_profile" in p else p["height"]
+
+
 def wall_solid(g, w):
-    """(x, y, c, s, half, start, end, zb, zt, openings, bands). 벽 지역 (u,v) -> 세계 (x+u*c-v*s, y+u*s+v*c)."""
+    """(x, y, c, s, half, start, end, zb, zt, openings, bands, top). 벽 지역 (u,v) -> 세계 (x+u*c-v*s, y+u*s+v*c).
+    top: 상단 윤곽(21단계)이 있으면 형상 범위로 자른 절대 높이 점들 ((u, z), ...), 없으면 None. 있으면 zt 는 가장 높은 점이고 띠(bands)는 zt 까지의
+    사각 띠다(윤곽 위의 빈 곳을 빼지 않았다): 띠를 쓰는 곳은 wall_top_pieces(정확한 볼록 조각)·wall_top_steps(가림용 계단 근사)를 쓴다."""
     x, y, c, s, _ = g.q(Q.wall_frame, w)
     p = Q.el(g, w)["params"]
     start, end = g.q(wall_range, w)
     ops = g.q(wall_openings, w)
     _, elev = g.q(Q.level_info, g.q(Q.wall_level, w))
-    zb, zt = elev, elev + p["height"]
-    return (x, y, c, s, p["thickness"] / 2.0, start, end, zb, zt, ops, _bands(start, end, zb, zt, ops))
+    top = None
+    if "top_profile" in p:
+        top = tuple((u, elev + z) for u, z in WT.clip(p["top_profile"], start, end))
+        zb, zt = elev, max(z for _, z in top)
+    else:
+        zb, zt = elev, elev + p["height"]
+    return (x, y, c, s, p["thickness"] / 2.0, start, end, zb, zt, ops, _bands(start, end, zb, zt, ops), top)
+
+
+# ---- 벽 상단 윤곽(21단계, 설계: elements-design.md 23.2). 상단 윤곽이 없는 벽은 이 함수들을 거치지 않는다(도면 바이트 그대로)
+WALL_TOP_STEP = 20.0   # 가림 조각(계단 근사)의 높이 단계(mm): 기울어진 상단 아래 이 높이 이하의 삼각형만 가림에서 빠진다
+
+
+def _below_line(poly, u0, t0, u1, t1):
+    """볼록 다각형 (u, z) 를 직선 z = t(u) (u0 -> t0, u1 -> t1) 아래로 자른다(Sutherland-Hodgman)."""
+    k = (t1 - t0) / (u1 - u0)
+
+    def f(q):
+        return q[1] - (t0 + k * (q[0] - u0))
+    out = []
+    n = len(poly)
+    for i in range(n):
+        a, b = poly[i], poly[(i + 1) % n]
+        fa, fb = f(a), f(b)
+        if fa <= 0.0:
+            out.append(a)
+        if fa < 0.0 < fb or fb < 0.0 < fa:
+            t = fa / (fa - fb)
+            out.append((a[0] + t * (b[0] - a[0]), a[1] + t * (b[1] - a[1])))
+    clean = []
+    for q in out:
+        if not clean or abs(q[0] - clean[-1][0]) > 1e-9 or abs(q[1] - clean[-1][1]) > 1e-9:
+            clean.append(q)
+    if len(clean) > 1 and abs(clean[0][0] - clean[-1][0]) <= 1e-9 and abs(clean[0][1] - clean[-1][1]) <= 1e-9:
+        clean.pop()
+    return clean if len(clean) >= 3 and _area2(clean) > 2 * EPS else []
+
+
+def wall_top_pieces(g, w):
+    """상단 윤곽 벽의 속이 찬 볼록 조각들 ((u0, u1, (u,z) 다각형 반시계), ...): 띠의 구간을 윤곽 꺾임점에서 나눠 윤곽 아래로 자른다(정확)."""
+    sol = g.q(wall_solid, w)
+    out = []
+    for z0, z1, ivs in sol[10]:
+        for a, b in ivs:
+            for u0, t0, u1, t1 in WT.segments(WT.clip(sol[11], a, b)):
+                poly = _below_line([(u0, z0), (u1, z0), (u1, z1), (u0, z1)], u0, t0, u1, t1)
+                if poly:
+                    out.append((u0, u1, tuple(poly)))
+    return tuple(out)
+
+
+def wall_top_steps(g, w):
+    """상단 윤곽 벽의 계단 근사 띠 ((z0, z1, ((u0, u1),)), ...): 윤곽 아래에 다 드는 사각 조각만 둔다(보수적: 가림·층 해치가 쓴다).
+    기울어진 구간은 높이 WALL_TOP_STEP 이하가 되게 나눠 각 조각의 위를 그 구간의 낮은 끝 높이로 둔다."""
+    sol = g.q(wall_solid, w)
+    out = []
+
+    def push(z0, z1, u0, u1):
+        if out and out[-1][0] == z0 and out[-1][1] == z1 and abs(out[-1][2][0][1] - u0) <= 1e-9:
+            out[-1] = (z0, z1, ((out[-1][2][0][0], u1),))
+        else:
+            out.append((z0, z1, ((u0, u1),)))
+    for z0, z1, ivs in sol[10]:
+        for a, b in ivs:
+            for u0, t0, u1, t1 in WT.segments(WT.clip(sol[11], a, b)):
+                if min(t0, t1) >= z1:
+                    push(z0, z1, u0, u1)
+                    continue
+                if max(t0, t1) <= z0 + EPS:
+                    continue
+                n = max(1, int(abs(t1 - t0) / WALL_TOP_STEP + 1.0 - 1e-9))
+                for i in range(n):
+                    p0, p1 = u0 + (u1 - u0) * i / n, u0 + (u1 - u0) * (i + 1) / n
+                    ztop = min(z1, t0 + (t1 - t0) * i / n, t0 + (t1 - t0) * (i + 1) / n)
+                    if ztop - z0 > EPS:
+                        push(z0, ztop, p0, p1)
+    return tuple(out)
+
+
+def _wall_bands(g, w, sol):
+    """띠 목록: 상단 윤곽 벽은 계단 근사 띠, 아니면 wall_solid 의 띠 그대로."""
+    return sol[10] if sol[11] is None else g.q(wall_top_steps, w)
+
+
+def _isect_ivs(xs, ys):
+    """정렬된 두 구간 목록의 교집합."""
+    out = []
+    for a0, a1 in xs:
+        for b0, b1 in ys:
+            lo, hi = max(a0, b0), min(a1, b1)
+            if hi - lo > EPS:
+                out.append((lo, hi))
+    return tuple(out)
+
+
+def _u_of(cfg, sol, s_, w_):
+    """뷰 좌표 (s, w) -> 벽 지역 u."""
+    px = cfg[1] + s_ * cfg[5] + w_ * cfg[3]
+    py = cfg[2] + s_ * cfg[6] + w_ * cfg[4]
+    return (px - sol[0]) * sol[2] + (py - sol[1]) * sol[3]
+
+
+def _clip_u(poly, lo, hi):
+    """볼록 다각형 (u, z) 를 lo <= u <= hi 로 자른다."""
+    for bound, keep_ge in ((lo, True), (hi, False)):
+        out = []
+        n = len(poly)
+        for i in range(n):
+            a, b = poly[i], poly[(i + 1) % n]
+            ina = a[0] >= bound if keep_ge else a[0] <= bound
+            inb = b[0] >= bound if keep_ge else b[0] <= bound
+            if ina:
+                out.append(a)
+            if ina != inb:
+                t = (bound - a[0]) / (b[0] - a[0])
+                out.append((bound, a[1] + t * (b[1] - a[1])))
+        poly = out
+        if len(poly) < 3:
+            return []
+    return poly
+
+
+def _z_span(poly, u):
+    """볼록 다각형 (u, z) 를 수직선 u 로 자른 z 범위 (낮은, 높은). 만나지 않으면 None."""
+    zs = []
+    n = len(poly)
+    for i in range(n):
+        a, b = poly[i], poly[(i + 1) % n]
+        if abs(a[0] - u) <= 1e-9:
+            zs.append(a[1])
+        if (a[0] - u) * (b[0] - u) < 0.0:
+            zs.append(a[1] + (u - a[0]) / (b[0] - a[0]) * (b[1] - a[1]))
+    return (min(zs), max(zs)) if zs else None
+
+
+def _vcut_top(g, v, w):
+    """단면: 상단 윤곽 벽의 절단 다각형((s, z) 반시계). 절단면이 벽을 지나는 현의 u 범위로 조각을 자르고 u -> s 로 옮긴다(기울어진 윗변이 그대로 나온다)."""
+    cfg = g.q(view_cfg, v)
+    sol = g.q(wall_solid, w)
+    near = cfg[7]
+    out = []
+    for u0, u1, poly in g.q(wall_top_pieces, w):
+        q = _clip_w([_sw(cfg, p) for p in _quad(sol, u0, u1)], cfg[7], cfg[8])
+        if len(q) < 3 or _area2(q) <= 2 * EPS:
+            continue
+        ss = [p[0] for p in q if abs(p[1] - near) <= EPS]
+        if len(ss) < 2:
+            continue
+        s0, s1 = min(ss), max(ss)
+        if s1 - s0 <= EPS:
+            continue
+        ua, ub = _u_of(cfg, sol, s0, near), _u_of(cfg, sol, s1, near)
+        if abs(ub - ua) < 1e-6:   # 축에 수직으로 자른다: 그 u 에서의 높이 범위
+            span = _z_span(poly, max(u0, min(u1, (ua + ub) / 2.0)))
+            if span is not None and span[1] - span[0] > EPS:
+                out.append(((s0, span[0]), (s1, span[0]), (s1, span[1]), (s0, span[1])))
+            continue
+        cp = _clip_u(list(poly), min(ua, ub), max(ua, ub))
+        if not cp:
+            continue
+        k = (s1 - s0) / (ub - ua)
+        pts = [(s0 + (u - ua) * k, z) for u, z in cp]
+        if _area2(pts) < 0:
+            pts = pts[::-1]
+        if _area2(pts) > 2 * EPS:
+            out.append(tuple(pts))
+    return tuple(out)
+
+
+def _top_vedges(sol, pt):
+    """입면·단면용 상단 윤곽 벽의 바깥 모서리: 양 끝 수직 모서리, 밑면 둘레, 두 면의 상단 윤곽 선(기울어진 선·단), 꺾이는 곳의 두께 방향 선."""
+    h, start, end, zb, top = sol[4], sol[5], sol[6], sol[7], sol[11]
+    raw = []
+    for u, z in ((start, top[0][1]), (end, top[-1][1])):
+        for vv in (-h, h):
+            raw.append((pt(u, vv, zb), pt(u, vv, z)))
+        raw.append((pt(u, -h, zb), pt(u, h, zb)))
+        raw.append((pt(u, -h, z), pt(u, h, z)))
+    for vv in (-h, h):
+        raw.append((pt(start, vv, zb), pt(end, vv, zb)))
+        for (ua, za), (ub, zc) in zip(top, top[1:]):
+            raw.append((pt(ua, vv, za), pt(ub, vv, zc)))
+    for i in range(1, len(top) - 1):
+        (ua, za), (u, z), (ub, zc) = top[i - 1], top[i], top[i + 1]
+        if u - ua <= 1e-9 or ub - u <= 1e-9 or abs((z - za) * (ub - u) - (zc - z) * (u - ua)) > 1e-6 * (ub - ua):
+            raw.append((pt(u, -h, z), pt(u, h, z)))
+    return raw
 
 
 def _world(sol, u, v):
@@ -339,6 +532,10 @@ def plan_pieces(g, v, w):
     cutz, depth = cfg[2], cfg[3]
     zb, zt = sol[7], sol[8]
     cut, proj = [], []
+    if sol[11] is not None:   # 상단 윤곽(21단계): 윤곽이 절단 높이보다 높은 구간은 절단, 낮은 구간(보이는 깊이 안)은 투영
+        cut = [_quad(sol, a, b) for a, b in _cut_intervals(sol, cutz)]
+        proj = [_quad(sol, a, b) for a, b in WT.ivs_between(sol[11], max(zb, cutz - depth) - EPS, cutz - EPS)]
+        return (tuple(cut), tuple(proj))
     if zb - EPS <= cutz <= zt + EPS:
         for z0, z1, ivs in sol[10]:
             if z0 - EPS <= cutz <= z1 + EPS:
@@ -1258,6 +1455,58 @@ def stair_geom(g, s):
     return (tuple(flights), None if ld is None else (tuple(tuple(q) for q in ld["poly"]), zb + ld["z"] - ld["t"], zb + ld["z"]))
 
 
+def stair_winders(g, s):
+    """돌음(와인더) 계단의 회전부(elements-design.md 23.3) 또는 None:
+    (쐐기들 ((다각형, 밑면 z, 윗면 z, 시작 각, 끝 각, 시작 반직선 끝점, 가운데 각 바깥 둘레 점), ...), 회전 중심, 보행선 반지름, 회전 각, e0, e90). z 는 절대 높이."""
+    info = g.q(stair_info, s)
+    if info is None:
+        return None
+    t = Q.el(g, s)["params"].get("turn")
+    if t is None or t.get("winders") is None:
+        return None
+    wd = K.stair_layout(Q.el(g, s)["params"])["winders"]
+    zb = info[0]
+    wedges = tuple((tuple(tuple(q) for q in w["poly"]), zb + w["zb"], zb + w["z"], w["a0"], w["a1"], w["q0"], w["qm"]) for w in wd["wedges"])
+    return (wedges, wd["center"], wd["radius"], wd["sweep"], wd["e0"], wd["e90"])
+
+
+def _winder_pt(wg, f, r=None):
+    """회전부 보행선(또는 반지름 r 의 원호) 위 각 f(도)의 점."""
+    sn, cs = K.sincos_deg(f)
+    (cx, cy), rr, e0, e9 = wg[1], (wg[2] if r is None else r), wg[4], wg[5]
+    return (cx + rr * (cs * e0[0] + sn * e9[0]), cy + rr * (cs * e0[1] + sn * e9[1]))
+
+
+def _plan_winders(fa, fb, wg, cutz, width):
+    """돌음 계단의 평면(아래 단 묶음이 다 보일 때만 부른다): 보이는 쐐기(윗면 <= 절단 높이)의 윤곽(proj), 보행선 원호 화살표(symbol),
+    회전부 안에서 끊기면 첫 안 보이는 쐐기를 가로지르는 절단선(cut)과 화살촉, 다 보이면 위 단 묶음(걸음선은 위 단 묶음 화살표가 이어받는다)."""
+    wedges = wg[0]
+    vis = [w for w in wedges if w[2] <= cutz + EPS]
+    segs = []
+    for w in vis:
+        poly = w[0]
+        segs += [("proj", poly[i][0], poly[i][1], poly[(i + 1) % len(poly)][0], poly[(i + 1) % len(poly)][1]) for i in range(len(poly))]
+    whole = len(vis) == len(wedges)
+    a_end = wg[3] if whole else (vis[-1][3] + vis[-1][4]) / 2.0
+    nseg = max(2, int(a_end / 10.0 + 0.5))
+    pts = [_winder_pt(wg, a_end * i / nseg) for i in range(nseg + 1)]
+    segs += [("symbol", pts[i][0], pts[i][1], pts[i + 1][0], pts[i + 1][1]) for i in range(nseg)]
+    if whole:
+        segs += _plan_flight(fb, cutz, arrow_from=0.0)
+        return segs
+    sn, cs = K.sincos_deg(a_end)                                              # 화살촉: 원호 끝 접선 방향
+    e0, e9 = wg[4], wg[5]
+    tx, ty = -sn * e0[0] + cs * e9[0], -sn * e0[1] + cs * e9[1]
+    hl = min(width * STAIR_ARROW, 400.0, wg[2] * 0.5)
+    ex, ey = pts[-1]
+    for sgn in (1.0, -1.0):
+        segs.append(("symbol", ex, ey, ex - tx * hl - sgn * ty * hl * 0.4, ey - ty * hl + sgn * tx * hl * 0.4))
+    nxt = wedges[len(vis)]                                                    # 절단선: 첫 안 보이는 쐐기를 안쪽(보이는 쐐기 변)에서 바깥 둘레로 가로지르는 대각선
+    (cx, cy), q0, qm = wg[1], nxt[5], nxt[6]
+    segs.append(("cut", cx + 0.2 * (q0[0] - cx), cy + 0.2 * (q0[1] - cy), qm[0], qm[1]))
+    return segs
+
+
 def _plan_flight(info, cutz, head=True, arrow_from=None, arrow_to_end=False):
     """단 묶음 하나의 평면 선분(스택: 윤곽·디딤판 선(proj), 걸음선 화살표(symbol), 절단선(cut)). 절단 높이가 아래 끝보다 낮으면 그리지 않는다."""
     if cutz < info[0] - EPS:
@@ -1302,6 +1551,14 @@ def plan_stair_parts(g, v, s):
     if info is None or cfg is None or cfg[0] != "plan" or cfg[2] < info[0] - EPS:
         return ((), ())
     flights, ld = g.q(stair_geom, s)
+    wg = g.q(stair_winders, s)
+    if wg is not None:                                                        # 돌음 계단: 아래 단 묶음이 다 보이면 회전부 쐐기를 잇는다
+        fa, fb = flights
+        seen = cfg[2] >= fa[1] - EPS
+        segs = _plan_flight(fa, cfg[2], head=not seen, arrow_to_end=seen)
+        if seen:
+            segs += _plan_winders(fa, fb, wg, cfg[2], fa[7])
+        return (tuple(segs), ())
     if ld is None:                                                            # 직선 계단: 기존 규약 그대로
         return (tuple(_plan_flight(flights[0], cfg[2])), ())
     fa, fb = flights
@@ -1347,6 +1604,14 @@ def _stair_vpieces(g, v, s):
         quad = _clip_w(quad, cfg[7], cfg[8])
         if len(quad) >= 3 and _area2(quad) > 2 * EPS:
             out.append((ld[1], ld[2], tuple(quad)))
+    wg = g.q(stair_winders, s)
+    for w in (() if wg is None else wg[0]):                                   # 돌음 쐐기: 볼록 각기둥(쐐기 각 90도 이하)
+        quad = [_sw(cfg, q) for q in w[0]]
+        if _area2(quad) < 0:
+            quad.reverse()
+        quad = _clip_w(quad, cfg[7], cfg[8])
+        if len(quad) >= 3 and _area2(quad) > 2 * EPS:
+            out.append((w[1], w[2], tuple(quad)))
     return tuple(out)
 
 
@@ -1412,6 +1677,14 @@ def stair_vedges(g, v, s):
             a, b = pts[i], pts[(i + 1) % len(pts)]
             raw.append(((a[0], a[1], ld[1]), (a[0], a[1], ld[2])))
             for z in (ld[1], ld[2]):
+                raw.append(((a[0], a[1], z), (b[0], b[1], z)))
+    wg = g.q(stair_winders, s)
+    for w in (() if wg is None else wg[0]):                                   # 돌음 쐐기: 윗면 둘레·수직 모서리, 밑면 둘레
+        pts = [_sw(cfg, q) for q in w[0]]
+        for i in range(len(pts)):
+            a, b = pts[i], pts[(i + 1) % len(pts)]
+            raw.append(((a[0], a[1], w[1]), (a[0], a[1], w[2])))
+            for z in (w[1], w[2]):
                 raw.append(((a[0], a[1], z), (b[0], b[1], z)))
     out = []
     for e0, e1 in raw:
@@ -2330,6 +2603,8 @@ def _cut_intervals(sol, cutz):
     if sol[7] - EPS <= cutz <= sol[8] + EPS:
         for z0, z1, ivs in sol[10]:
             if z0 - EPS <= cutz <= z1 + EPS:
+                if sol[11] is not None:   # 상단 윤곽(21단계): 윤곽이 절단 높이보다 높은 구간만
+                    return _isect_ivs(ivs, WT.ivs_between(sol[11], cutz, BIG))
                 return tuple(ivs)
     return ()
 
@@ -2338,7 +2613,7 @@ def _door_leaf_map(g, w):
     """벽의 문 개구부 (u0, u1, z0, z1) -> 문 속성의 문짝 두께(leaf). 입력이 없는 문은 넣지 않는다(규약값을 쓴다)."""
     start, end, _ = g.q(Q.wall_trim, w)
     _, elev = g.q(Q.level_info, g.q(Q.wall_level, w))
-    zb, zt = elev, elev + Q.el(g, w)["params"]["height"]
+    zb, zt = elev, elev + _top_rel(Q.el(g, w)["params"])
     out = {}
     for d in g.q(Q.wall_hosted, w):
         row = Q.el(g, d)
@@ -2476,7 +2751,7 @@ def vwall_detail(g, v, w):
     others = _cut_boxes([q for o in g.q(vnbrs, v, w) for q in g.q(vcut_rects, v, o)])
     step = LAYER_HATCH_STEP * cfg[10]
     out = []
-    for z0, z1, ivs in sol[10]:
+    for z0, z1, ivs in _wall_bands(g, w, sol):
         for a, b in ivs:
             ss = [_sec_chord(cfg, sol, a, b, -h + c) for c in bounds]
             if any(x is None for x in ss):
@@ -2655,7 +2930,7 @@ def vpieces(g, v, w):
     cfg = g.q(view_cfg, v)
     sol = g.q(wall_solid, w)
     out = []
-    for z0, z1, ivs in sol[10]:
+    for z0, z1, ivs in _wall_bands(g, w, sol):
         for a, b in ivs:
             poly = [_sw(cfg, p) for p in _quad(sol, a, b)]
             poly = _clip_w(poly, cfg[7], cfg[8])
@@ -2681,6 +2956,8 @@ def vcut_rects(g, v, w):
     cfg = g.q(view_cfg, v)
     if not cfg[9]:
         return ()
+    if g.q(wall_solid, w)[11] is not None:   # 상단 윤곽(21단계): 기울어진 윗변의 절단 다각형
+        return g.q(_vcut_top, v, w)
     near = cfg[7]
     rects = []
     for z0, z1, poly in g.q(vpieces, v, w):
@@ -2724,11 +3001,14 @@ def vedges(g, v, w):
 
     raw = []
     corners = [(start, -h), (end, -h), (end, h), (start, h)]
-    for u, vv in corners:                                          # 수직 모서리
-        raw.append((pt(u, vv, zb), pt(u, vv, zt)))
-    for i in range(4):                                             # 밑·윗면 수평 모서리
-        for z in (zb, zt):
-            raw.append((pt(*corners[i], z), pt(*corners[(i + 1) % 4], z)))
+    if sol[11] is not None:                                        # 상단 윤곽(21단계): 기울어진 윗변
+        raw.extend(_top_vedges(sol, pt))
+    else:
+        for u, vv in corners:                                      # 수직 모서리
+            raw.append((pt(u, vv, zb), pt(u, vv, zt)))
+        for i in range(4):                                         # 밑·윗면 수평 모서리
+            for z in (zb, zt):
+                raw.append((pt(*corners[i], z), pt(*corners[(i + 1) % 4], z)))
     shapes = g.q(wall_shape_openings, w)                           # 모양 개구부(18단계): 사각 상자 대신 실제 윤곽을 그린다
     shaped = {s_[0] for s_ in shapes if s_[0] is not None}
     raw.extend(_wall_shape_edges(sol, shapes, pt))
@@ -2844,7 +3124,7 @@ def _bridges(g, v, w):
     cfg = g.q(view_cfg, v)
     sol = g.q(wall_solid, w)
     out = []
-    bands = sol[10]
+    bands = _wall_bands(g, w, sol)
     for (_a0, a1, aiv), (b0, _b1, biv) in zip(bands, bands[1:]):
         if abs(a1 - b0) > EPS:
             continue
@@ -3698,6 +3978,10 @@ def detail_extent(g, e, kind, cfg):
         if ld is not None:
             pts += list(ld[0])
             zs += [ld[1], ld[2]]
+        wg = g.q(stair_winders, e)
+        for w in (() if wg is None else wg[0]):
+            pts += list(w[0])
+            zs += [w[1], w[2]]
     else:
         ev = g.q(elevator_info, e)
         if ev is None:
@@ -4450,7 +4734,7 @@ def views_depending_on(g, input_keys, vids, include_not_fresh=True):
 # 뷰 하나에 딸린 질의 노드의 함수들 (첫 인자가 뷰 id). 뷰를 지우면 이 노드들을 그래프에서 치운다.
 VIEW_SCOPED = frozenset({view_cfg, scope_walls, view_omitted, plan_pieces, plan_bbox, plan_nbrs, plan_wall_lines, plan_detail_lines, view_detail_lines, vpieces, vbbox, vnbrs,
                          vwall_detail, slab_detail_lines, space_ceiling_lines, vwin_detail, view_lines_hier,
-                         vcut_rects, vedges, vwall_lines, view_lines, view_fills,
+                         vcut_rects, _vcut_top, vedges, vwall_lines, view_lines, view_fills,
                          scope_fams, plan_fam_parts, _fam_vpieces, vfam_bbox, vfam_cut_rects, vfam_edges, vfam_nbr_pieces, fam_lines,
                          scope_solids, _solid_vpieces, solid_lines, _occ_index, plan_wall_glazing,
                          vfam_hosted_edges, scope_slabs, plan_slab_parts, _slab_vpieces, slab_vbbox, slab_cut_rects, slab_vedges, slab_nbr_walls, slab_lines,

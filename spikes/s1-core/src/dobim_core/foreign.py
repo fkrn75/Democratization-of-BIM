@@ -153,7 +153,7 @@ def _parse_intent(kind: str, text: str) -> dict:
             raise ValueError("레벨 params 키가 다르다")
         out = {"name": _name(p["name"]), "elevation": _num(p["elevation"])}
     elif kind == "wall":
-        if set(p) - {"layers", "openings"} != {"name", "axis", "thickness", "height"} or not isinstance(p["axis"], list) or len(p["axis"]) != 4:
+        if set(p) - {"layers", "openings", "top_profile"} != {"name", "axis", "thickness", "height"} or not isinstance(p["axis"], list) or len(p["axis"]) != 4:
             raise ValueError("벽 params 가 다르다")
         axis = [_num(x) for x in p["axis"]]
         if (axis[2] - axis[0]) ** 2 + (axis[3] - axis[1]) ** 2 < 1.0:
@@ -163,6 +163,12 @@ def _parse_intent(kind: str, text: str) -> dict:
             out["layers"] = _layers(p["layers"], out["thickness"])
         if "openings" in p:   # 모양 개구부(18단계): 값 검사는 코어 행 검사와 같다
             out["openings"] = _openings(p["openings"])
+        if "top_profile" in p:   # 벽 상단 윤곽(21단계)
+            v = p["top_profile"]
+            if not isinstance(v, list) or any(not isinstance(q, list) or len(q) != 2 for q in v):
+                raise ValueError("벽 상단 윤곽이 올바르지 않다")
+            out["top_profile"] = [[_num(q[0]), _num(q[1])] for q in v]
+        if "openings" in p or "top_profile" in p:
             why = K.row_params_error("wall", out)
             if why:
                 raise ValueError(f"벽이 올바르지 않다({why})")
@@ -350,10 +356,12 @@ def _parse_intent(kind: str, text: str) -> dict:
                "risers": p["risers"], "base_offset": _num(p["base_offset"])}
         if "turn" in p:
             t = p["turn"]
-            if not isinstance(t, dict) or set(t) != {"type", "side", "risers_a", "landing", "gap"}:
+            if not isinstance(t, dict) or set(t) - {"winders"} != {"type", "side", "risers_a", "landing", "gap"}:
                 raise ValueError("계단 turn 이 올바르지 않다")
             out["turn"] = {"type": t["type"], "side": t["side"], "risers_a": t["risers_a"],
                            "landing": None if t["landing"] is None else _num(t["landing"], pos=True), "gap": _num(t["gap"], nonneg=True)}
+            if "winders" in t:   # 돌음 계단(23.3): 정수 검사는 row_params_error 가 한다
+                out["turn"]["winders"] = t["winders"]
             why = K.row_params_error("stair", out)
             if why:
                 raise ValueError(f"계단 turn 이 올바르지 않다({why})")

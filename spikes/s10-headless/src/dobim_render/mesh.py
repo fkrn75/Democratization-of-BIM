@@ -23,6 +23,7 @@ class Mesh:
     face_elem: np.ndarray        # (M,) int32 — elems 인덱스
     elems: list[tuple[str, str]] = field(default_factory=list)   # (GlobalId, IFC 클래스)
     mats: list = field(default_factory=list)   # 요소별 (재료 이름 또는 None, IFC 재료 표면 스타일 색 (r,g,b) 0~255 또는 None). 해시에 넣지 않는다
+    supers: list = field(default_factory=list)   # 요소별 IFC 클래스와 그 상위 클래스 이름들(21단계 범주 필터용). 해시에 넣지 않는다
 
     def sha256(self) -> str:
         """양자화한 메시의 해시(플랫폼 비교용)."""
@@ -56,11 +57,15 @@ def extract(path: str, threads: int = 1) -> Mesh:
                     per[prod.GlobalId] = (cls, v, t, _material_name(ue, prod))
             if not it.next():
                 break
-    verts, faces, fe, elems, mats = [], [], [], [], []
+    verts, faces, fe, elems, mats, sups = [], [], [], [], [], []
     base = 0
+    chain: dict[str, tuple] = {}
     for gid in sorted(per):
         cls, v, t, mname = per[gid]
         mats.append(mname)
+        if cls not in chain:
+            chain[cls] = _supers(f, cls)
+        sups.append(chain[cls])
         verts.append(np.rint(v * QUANT) / QUANT)
         faces.append((t + base).astype(np.int32))
         fe.append(np.full(len(t), len(elems), np.int32))
@@ -68,7 +73,18 @@ def extract(path: str, threads: int = 1) -> Mesh:
         base += len(v)
     if not verts:
         return Mesh(np.zeros((0, 3)), np.zeros((0, 3), np.int32), np.zeros(0, np.int32), [])
-    return Mesh(np.concatenate(verts), np.concatenate(faces), np.concatenate(fe), elems, mats)
+    return Mesh(np.concatenate(verts), np.concatenate(faces), np.concatenate(fe), elems, mats, sups)
+
+
+def _supers(f, cls):
+    """IFC 클래스와 그 상위 클래스 이름들(스키마 선언을 따라 올라간다)."""
+    import ifcopenshell.ifcopenshell_wrapper as w
+    out = []
+    d = w.schema_by_name(f.schema).declaration_by_name(cls)
+    while d is not None:
+        out.append(d.name())
+        d = d.supertype()
+    return tuple(out)
 
 
 def _material_name(ue, prod):
