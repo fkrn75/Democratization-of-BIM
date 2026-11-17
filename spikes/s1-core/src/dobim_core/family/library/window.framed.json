@@ -1,0 +1,593 @@
+{
+  "schema": "dobim.family/1",
+  "id": "window.framed",
+  "version": 1,
+  "name": "창틀 창(리빌 표현)",
+  "description": "벽에 호스팅되는 창. 깊이 있는 창틀·유리·(여닫이면 문짝 틀)·선택 창대/문선. 틀의 벽 안 위치(inset = 기준면에서 틀 바깥면까지)로 리빌이 보인다. 기준면 = 호스트 지역 -v 면(층 구성 벽의 첫 층 쪽), 180 뒤집으면 +v 면.",
+  "ifc": {
+    "class": "IfcWindow",
+    "type_class": "IfcWindowType",
+    "predefined": "WINDOW",
+    "type_attrs": {
+      "PartitioningType": {
+        "expr": "'SINGLE_PANEL' if mullions == 0 else ('DOUBLE_PANEL_VERTICAL' if mullions == 1 else 'TRIPLE_PANEL_VERTICAL')"
+      },
+      "ParameterTakesPrecedence": false
+    },
+    "attrs": {
+      "OverallWidth": {
+        "expr": "width"
+      },
+      "OverallHeight": {
+        "expr": "height"
+      }
+    }
+  },
+  "host": {
+    "kinds": [
+      "wall"
+    ],
+    "cut": {
+      "x": [
+        "left",
+        "right"
+      ],
+      "z": [
+        "z0",
+        "z1"
+      ]
+    }
+  },
+  "params": {
+    "width": {
+      "kind": "type",
+      "default": 1200,
+      "unit": "mm",
+      "description": "개구부 폭(틀 바깥)",
+      "min": 500,
+      "max": 3000
+    },
+    "height": {
+      "kind": "type",
+      "default": 1200,
+      "unit": "mm",
+      "description": "개구부 높이(틀 바깥)",
+      "min": 400,
+      "max": 2400
+    },
+    "operation": {
+      "kind": "type",
+      "default": "fixed",
+      "type": "enum",
+      "values": [
+        "fixed",
+        "casement_in",
+        "casement_out"
+      ],
+      "description": "fixed=고정창, casement_in=안여닫이(실내로 열림), casement_out=밖여닫이"
+    },
+    "frame_w": {
+      "kind": "type",
+      "default": 60,
+      "unit": "mm",
+      "description": "창틀 단면 폭(정면에서 본 틀 두께)",
+      "min": 30,
+      "max": 120
+    },
+    "frame_d": {
+      "kind": "type",
+      "default": 70,
+      "unit": "mm",
+      "description": "창틀 깊이(벽 두께 방향). 벽보다 깊으면 벽 두께로 줄어든다",
+      "min": 50,
+      "max": 200
+    },
+    "glass_t": {
+      "kind": "type",
+      "default": 24,
+      "unit": "mm",
+      "description": "유리 두께",
+      "min": 6,
+      "max": 30
+    },
+    "mullions": {
+      "kind": "type",
+      "default": 0,
+      "type": "int",
+      "unit": "none",
+      "description": "세로 멀리언 개수(고정창만)",
+      "min": 0,
+      "max": 2
+    },
+    "stool_t": {
+      "kind": "type",
+      "default": 20,
+      "unit": "mm",
+      "description": "창대(실내 쪽 하부 판) 두께, 0 이면 없음",
+      "min": 0,
+      "max": 60
+    },
+    "stool_proj": {
+      "kind": "type",
+      "default": 25,
+      "unit": "mm",
+      "description": "창대가 벽 안쪽 면 밖으로 내민 길이",
+      "min": 0,
+      "max": 100
+    },
+    "casing_w": {
+      "kind": "type",
+      "default": 0,
+      "unit": "mm",
+      "description": "문선(실내 쪽 개구부 둘레 띠) 폭, 0 이면 없음",
+      "min": 0,
+      "max": 150
+    },
+    "casing_t": {
+      "kind": "type",
+      "default": 12,
+      "unit": "mm",
+      "description": "문선 두께(벽 안쪽 면에서 튀어나온 길이)",
+      "min": 5,
+      "max": 40
+    },
+    "u_value": {
+      "kind": "type",
+      "default": 1.6,
+      "unit": "none",
+      "description": "열관류율 W/m2K",
+      "min": 0.5,
+      "max": 5.0
+    },
+    "is_external": {
+      "kind": "type",
+      "default": true,
+      "type": "bool"
+    },
+    "sill": {
+      "kind": "instance",
+      "default": 900,
+      "unit": "mm",
+      "description": "바닥에서 창 하단까지",
+      "min": 0,
+      "max": 1500
+    },
+    "inset": {
+      "kind": "instance",
+      "default": 100,
+      "unit": "mm",
+      "description": "기준면(호스트 지역 -v 면, 뒤집으면 +v 면)에서 창틀 바깥면까지 거리(리빌 깊이). 0 이면 기준면에 맞춤. 벽이 얇으면 틀이 벽 안에 들어가는 최대값으로 줄어든다",
+      "min": 0,
+      "max": 600
+    },
+    "hinge": {
+      "kind": "instance",
+      "default": "L",
+      "type": "enum",
+      "values": [
+        "L",
+        "R"
+      ],
+      "description": "여닫이일 때 경첩 쪽(L = 지역 -x 쪽)"
+    }
+  },
+  "derived": {
+    "z0": "sill",
+    "z1": "sill + height",
+    "fd": "min(frame_d, host_thickness)",
+    "ie": "max(0, min(inset, host_thickness - fd))",
+    "fy0": "-host_thickness/2 + ie",
+    "fy1": "fy0 + fd",
+    "gy": "fy0 + fd/2",
+    "sash_w": "frame_w*0.8",
+    "sash_d": "fd - 10",
+    "gm": "frame_w if operation == 'fixed' else frame_w + sash_w",
+    "inner_w": "width - 2*gm",
+    "inner_h": "height - 2*gm",
+    "leaf_w": "width - 2*frame_w",
+    "hinge_x": "(-width/2 + frame_w) if hinge == 'L' else (width/2 - frame_w)",
+    "open_sign": "1 if operation == 'casement_in' else -1",
+    "arc0": "(0 if hinge == 'L' else 90) if operation == 'casement_in' else (270 if hinge == 'L' else 180)",
+    "st_y1": "host_thickness/2 + stool_proj",
+    "stool_on": "stool_t > 0 and st_y1 > fy1",
+    "glass_ratio": "inner_w*inner_h/(width*height)"
+  },
+  "refs": {
+    "left": {
+      "axis": "x",
+      "at": "-width/2"
+    },
+    "right": {
+      "axis": "x",
+      "at": "width/2"
+    }
+  },
+  "constraints": [
+    {
+      "expr": "inner_w >= 100 and inner_h >= 100",
+      "message": "유리 개구가 100mm 미만이다(frame_w 를 줄이거나 width/height 를 키우세요)"
+    },
+    {
+      "expr": "glass_t <= fd - 10",
+      "message": "유리가 틀 깊이보다 10mm 이상 얇아야 한다(frame_d 를 키우거나 glass_t 를 줄이세요)"
+    },
+    {
+      "expr": "operation == 'fixed' or mullions == 0",
+      "message": "여닫이 창에는 멀리언을 둘 수 없다(mullions 를 0 으로)"
+    }
+  ],
+  "solids": [
+    {
+      "id": "frame",
+      "op": "extrude",
+      "plane": "xz",
+      "profile": {
+        "shape": "rect",
+        "u": [
+          "left",
+          "right"
+        ],
+        "v": [
+          "z0",
+          "z1"
+        ]
+      },
+      "range": [
+        "fy0",
+        "fy1"
+      ]
+    },
+    {
+      "id": "frame_hole",
+      "op": "extrude",
+      "plane": "xz",
+      "role": "void",
+      "cuts": [
+        "frame"
+      ],
+      "profile": {
+        "shape": "rect",
+        "u": [
+          "left + frame_w",
+          "right - frame_w"
+        ],
+        "v": [
+          "z0 + frame_w",
+          "z1 - frame_w"
+        ]
+      },
+      "range": [
+        "fy0 - fd",
+        "fy1 + fd"
+      ]
+    },
+    {
+      "id": "sash",
+      "op": "extrude",
+      "plane": "xz",
+      "when": "operation != 'fixed'",
+      "profile": {
+        "shape": "rect",
+        "u": [
+          "left + frame_w",
+          "right - frame_w"
+        ],
+        "v": [
+          "z0 + frame_w",
+          "z1 - frame_w"
+        ]
+      },
+      "range": [
+        "gy - sash_d/2",
+        "gy + sash_d/2"
+      ]
+    },
+    {
+      "id": "sash_hole",
+      "op": "extrude",
+      "plane": "xz",
+      "role": "void",
+      "cuts": [
+        "sash"
+      ],
+      "when": "operation != 'fixed'",
+      "profile": {
+        "shape": "rect",
+        "u": [
+          "left + gm",
+          "right - gm"
+        ],
+        "v": [
+          "z0 + gm",
+          "z1 - gm"
+        ]
+      },
+      "range": [
+        "gy - sash_d",
+        "gy + sash_d"
+      ]
+    },
+    {
+      "id": "glass",
+      "op": "extrude",
+      "plane": "xz",
+      "profile": {
+        "shape": "rect",
+        "u": [
+          "left + gm",
+          "right - gm"
+        ],
+        "v": [
+          "z0 + gm",
+          "z1 - gm"
+        ]
+      },
+      "range": [
+        "gy - glass_t/2",
+        "gy + glass_t/2"
+      ]
+    },
+    {
+      "id": "mullion",
+      "op": "extrude",
+      "plane": "xz",
+      "repeat": {
+        "var": "i",
+        "count": "mullions"
+      },
+      "profile": {
+        "shape": "rect",
+        "u": [
+          "left + frame_w + (i + 1)*inner_w/(mullions + 1) - frame_w/4",
+          "left + frame_w + (i + 1)*inner_w/(mullions + 1) + frame_w/4"
+        ],
+        "v": [
+          "z0 + frame_w",
+          "z1 - frame_w"
+        ]
+      },
+      "range": [
+        "fy0",
+        "fy1"
+      ]
+    },
+    {
+      "id": "stool",
+      "op": "extrude",
+      "plane": "xz",
+      "when": "stool_on",
+      "profile": {
+        "shape": "rect",
+        "u": [
+          "left",
+          "right"
+        ],
+        "v": [
+          "z0",
+          "z0 + stool_t"
+        ]
+      },
+      "range": [
+        "fy1",
+        "st_y1"
+      ]
+    },
+    {
+      "id": "casing_l",
+      "op": "extrude",
+      "plane": "xz",
+      "when": "casing_w > 0",
+      "profile": {
+        "shape": "rect",
+        "u": [
+          "left - casing_w",
+          "left"
+        ],
+        "v": [
+          "z0",
+          "z1"
+        ]
+      },
+      "range": [
+        "host_thickness/2",
+        "host_thickness/2 + casing_t"
+      ]
+    },
+    {
+      "id": "casing_r",
+      "op": "extrude",
+      "plane": "xz",
+      "when": "casing_w > 0",
+      "profile": {
+        "shape": "rect",
+        "u": [
+          "right",
+          "right + casing_w"
+        ],
+        "v": [
+          "z0",
+          "z1"
+        ]
+      },
+      "range": [
+        "host_thickness/2",
+        "host_thickness/2 + casing_t"
+      ]
+    },
+    {
+      "id": "casing_h",
+      "op": "extrude",
+      "plane": "xz",
+      "when": "casing_w > 0",
+      "profile": {
+        "shape": "rect",
+        "u": [
+          "left - casing_w",
+          "right + casing_w"
+        ],
+        "v": [
+          "z1",
+          "z1 + casing_w"
+        ]
+      },
+      "range": [
+        "host_thickness/2",
+        "host_thickness/2 + casing_t"
+      ]
+    }
+  ],
+  "plan_symbol": {
+    "default": [
+      {
+        "type": "rect",
+        "u": [
+          "left",
+          "left + frame_w"
+        ],
+        "v": [
+          "fy0",
+          "fy1"
+        ],
+        "style": "cut"
+      },
+      {
+        "type": "rect",
+        "u": [
+          "right - frame_w",
+          "right"
+        ],
+        "v": [
+          "fy0",
+          "fy1"
+        ],
+        "style": "cut"
+      },
+      {
+        "type": "line",
+        "from": [
+          "left + frame_w",
+          "fy0"
+        ],
+        "to": [
+          "right - frame_w",
+          "fy0"
+        ]
+      },
+      {
+        "type": "line",
+        "from": [
+          "left + frame_w",
+          "fy1"
+        ],
+        "to": [
+          "right - frame_w",
+          "fy1"
+        ]
+      },
+      {
+        "type": "line",
+        "from": [
+          "left + frame_w",
+          "gy"
+        ],
+        "to": [
+          "right - frame_w",
+          "gy"
+        ]
+      },
+      {
+        "type": "line",
+        "from": [
+          "hinge_x",
+          "gy"
+        ],
+        "to": [
+          "hinge_x",
+          "gy + open_sign*leaf_w"
+        ],
+        "when": "operation != 'fixed'"
+      },
+      {
+        "type": "arc",
+        "center": [
+          "hinge_x",
+          "gy"
+        ],
+        "radius": "leaf_w",
+        "start": "arc0",
+        "end": "arc0 + 90",
+        "when": "operation != 'fixed'"
+      },
+      {
+        "type": "rect",
+        "u": [
+          "left",
+          "right"
+        ],
+        "v": [
+          "fy1",
+          "st_y1"
+        ],
+        "when": "stool_on"
+      }
+    ],
+    "1:200": [
+      {
+        "type": "rect",
+        "u": [
+          "left",
+          "right"
+        ],
+        "v": [
+          "fy0",
+          "fy1"
+        ],
+        "style": "cut"
+      }
+    ]
+  },
+  "psets": {
+    "Pset_WindowCommon": {
+      "on": "type",
+      "props": {
+        "IsExternal": {
+          "expr": "is_external"
+        },
+        "ThermalTransmittance": {
+          "expr": "u_value"
+        },
+        "GlazingAreaFraction": {
+          "expr": "round(glass_ratio, 3)"
+        }
+      }
+    },
+    "DoBIM_WindowFrame": {
+      "on": "type",
+      "props": {
+        "Operation": {
+          "expr": "operation"
+        },
+        "FrameWidth": {
+          "expr": "frame_w"
+        },
+        "FrameDepth": {
+          "expr": "frame_d"
+        }
+      }
+    },
+    "DoBIM_WindowParams": {
+      "on": "instance",
+      "props": {
+        "SillHeight": {
+          "expr": "sill"
+        },
+        "Inset": {
+          "expr": "ie"
+        },
+        "Hinge": {
+          "expr": "hinge"
+        }
+      }
+    }
+  }
+}
