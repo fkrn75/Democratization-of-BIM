@@ -76,3 +76,19 @@ def test_코어가_내보낸_IFC도_렌더된다(tmp_path):
     r = render_ifc(str(tmp_path / "ws" / "ra01.ifc"), 1280)
     assert r.info["elements"] >= 19 and r.info["stats"]["covered_pixels"] > 20000
     json.dumps(r.info)
+
+
+def test_네_방위_시점과_임의_방향_시점(tmp_path):
+    """18단계: iso_se 는 iso 와 같은 방향이고(기존 바이트 불변), 임의 방향 "x,y,z" 와 이름 시점이 같은 방향이면 같은 픽셀이다."""
+    v, f, fe = cube_mesh()
+    cls = ["IfcWall"]
+    a = raster.render(v, f, fe, cls, width=200, view="iso")
+    b = raster.render(v, f, fe, cls, width=200, view="iso_se")
+    c = raster.render(v, f, fe, cls, width=200, view="1,-1,0.9")
+    assert np.array_equal(a.color, b.color) and np.array_equal(a.color, c.color)
+    d = raster.render(v, f, fe, cls, width=200, view="iso_nw")
+    assert not np.array_equal(a.ids, d.ids) or not np.array_equal(a.color, d.color)
+    for bad in ("0,0,0", "1,2", "abc"):
+        with pytest.raises(ValueError):
+            raster.view_dir(bad)
+

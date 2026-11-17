@@ -392,7 +392,7 @@ def test_9_종류_레지스트리가_모든_모듈과_맞는다(tmp_path):
     assert queries.NON_IFC_KINDS == NON_IFC_KINDS and ifc_model.IFC_CLASS == FIXED_IFC_CLASS
     assert merge.GENESIS_OP == E.GENESIS_OP
     assert set(commands.DELETE_REL_NAMES) == {k for k, r in REL_KINDS.items() if not r.dangling_ok}
-    assert PROJECTED_KINDS == ("level", "site", "elevator", "railing", "roof", "slab", "space", "stair", "wall", "door", "ftype", "finst")   # 호스트·타입이 의존하는 것보다 먼저(슬래브는 레벨에만 의존)
+    assert PROJECTED_KINDS == ("level", "site", "elevator", "railing", "roof", "slab", "solid", "space", "stair", "wall", "door", "ftype", "finst")   # 호스트·타입이 의존하는 것보다 먼저(슬래브는 레벨에만 의존)
     # 모든 효과 태그는 뒤집으면 원래대로 돌아오고, 키 계산이 정의돼 있다
     for t in EFFECT_TAGS:
         assert EFFECTS[t].keys is not None
@@ -423,6 +423,8 @@ def test_9_종류_레지스트리가_모든_모듈과_맞는다(tmp_path):
         _ok(b.run("view.create", {"id": "4" + "0" * 20 + "6", "name": "계단 상세", "type": "plan", "level": F.LV1, "scale": 20, "around": F.ST1, "dims": True}, project=p))   # 부위 상세 뷰(crop·dims)
         _ok(b.run("view.create", {"id": "4" + "0" * 20 + "5", "name": "남측 입면 마감", "type": "elevation", "dir": "S", "finish": True}, project=p))   # 입면 외부 마감 옵션
         _ok(b.run("sheet.define", {"id": F.SH1, "name": "시트", "views": [F.V1]}, project=p))   # 시트 정의도
+        _ok(b.run("solid.create", {"id": F.SO1, "level": F.LV1, "category": "buttress", "form": "panel", "line": [0, -900, 3000, -900], "thickness": 500,
+                                  "profile": [[0, 0], [3000, 0], [3000, 3000], [0, 3000]], "openings": [{"shape": "pointed", "offset": 1500, "sill": 500, "width": 900, "height": 2000}]}, project=p))   # 일반 솔리드(18단계)
     finally:
         b.close()
     eng = Engine(tmp_path / p, "t", create=False)

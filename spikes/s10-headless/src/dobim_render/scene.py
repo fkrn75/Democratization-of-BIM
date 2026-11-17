@@ -27,7 +27,8 @@ def render_ifc(path: str, width: int = 1280, view: str = "iso", threads: int = 1
     t0 = time.perf_counter()
     m = _mesh.extract(path, threads)
     t1 = time.perf_counter()
-    fr = raster.render(m.verts, m.faces, m.face_elem, [c for _, c in m.elems], width=width, view=view)
+    fr = raster.render(m.verts, m.faces, m.face_elem, [c for _, c in m.elems], width=width, view=view,
+                       elem_colors=[rgb or raster.material_color(nm) for nm, rgb in m.mats] if m.mats else None)
     t2 = time.perf_counter()
     data = png.encode_rgb(fr.color, png_level)
     t3 = time.perf_counter()

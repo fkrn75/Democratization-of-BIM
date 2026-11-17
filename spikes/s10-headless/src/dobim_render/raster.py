@@ -17,7 +17,27 @@ VIEWS = {  # 장면 중심에서 카메라 쪽 방향
     "top": (0.0, 0.0, 1.0),
     "south": (0.0, -1.0, 0.0),
     "east": (1.0, 0.0, 0.0),
+    # 18단계: 네 방위 위 시점(남동 = +x·-y 쪽 위, iso 와 같은 방향)과 북·서 정면
+    "iso_se": (1.0, -1.0, 0.9),
+    "iso_sw": (-1.0, -1.0, 0.9),
+    "iso_ne": (1.0, 1.0, 0.9),
+    "iso_nw": (-1.0, 1.0, 0.9),
+    "north": (0.0, 1.0, 0.0),
+    "west": (-1.0, 0.0, 0.0),
 }
+
+
+def view_dir(view: str):
+    """시점 이름(VIEWS) 또는 "x,y,z"(장면 중심에서 카메라 쪽 방향) -> 방향 튜플. 알 수 없으면 ValueError."""
+    if view in VIEWS:
+        return VIEWS[view]
+    parts = view.split(",")
+    if len(parts) != 3:
+        raise ValueError(f"알 수 없는 시점: {view} (이름 {', '.join(VIEWS)} 또는 x,y,z)")
+    d = tuple(float(x) for x in parts)
+    if not all(abs(x) < 1e9 for x in d) or d[0] * d[0] + d[1] * d[1] + d[2] * d[2] < 1e-12:
+        raise ValueError("시점 방향이 0 이거나 범위를 벗어났다")
+    return d
 LIGHT = (-0.35, -0.55, 0.76)   # 빛이 오는 쪽(카메라 방향과 별개의 고정 방향)
 BG = (245, 245, 245)
 LINE = (35, 35, 40)
@@ -27,8 +47,29 @@ PALETTE = {
     "IfcColumn": (150, 156, 170), "IfcBeam": (160, 150, 140), "IfcDoor": (150, 98, 58),
     "IfcWindow": (118, 170, 212), "IfcStairFlight": (190, 170, 140), "IfcStair": (190, 170, 140),
     "IfcRoof": (176, 120, 110), "IfcCovering": (200, 200, 190), "IfcFurnishingElement": (140, 160, 130),
+    "IfcGeographicElement": (170, 182, 150), "IfcMember": (170, 160, 150), "IfcPlate": (190, 190, 196),
 }
 DEFAULT_COLOR = (182, 182, 182)
+# 재료 이름의 낱말 -> 겉모습 색(18단계). 앞에서부터 먼저 맞는 것을 쓴다. 표에 없는 재료(콘크리트·석고 등)는 클래스 색 그대로다(기존 렌더 바이트 불변)
+MATERIAL_COLORS = (
+    (("녹청", "patina", "동판", "copper"), (96, 156, 136)),
+    (("벽돌", "brick"), (168, 86, 64)),
+    (("유리", "glass"), (118, 170, 212)),
+    (("석재", "stone", "화강석", "granite", "limestone", "sandstone", "대리석", "marble"), (214, 207, 190)),
+    (("목재", "wood", "timber"), (150, 98, 58)),
+    (("슬레이트", "slate"), (92, 96, 104)),
+)
+
+
+def material_color(name):
+    """재료 이름 -> RGB 또는 None(표에 없음)."""
+    if not name:
+        return None
+    low = name.lower()
+    for keys, rgb in MATERIAL_COLORS:
+        if any(k in low for k in keys):
+            return rgb
+    return None
 
 
 def _norm3(a, b, c):
@@ -37,7 +78,7 @@ def _norm3(a, b, c):
 
 
 def camera_basis(view: str):
-    e = _norm3(*VIEWS[view])
+    e = _norm3(*view_dir(view))
     up = (0.0, 0.0, 1.0) if abs(e[2]) < 0.999 else (0.0, 1.0, 0.0)
     r = _norm3(up[1] * e[2] - up[2] * e[1], up[2] * e[0] - up[0] * e[2], up[0] * e[1] - up[1] * e[0])
     u = (e[1] * r[2] - e[2] * r[1], e[2] * r[0] - e[0] * r[2], e[0] * r[1] - e[1] * r[0])
@@ -69,7 +110,7 @@ def face_normals(verts: np.ndarray, faces: np.ndarray) -> np.ndarray:
 
 
 def render(verts: np.ndarray, faces: np.ndarray, face_elem: np.ndarray, elem_classes: list[str],
-           width: int = 1280, height: int | None = None, view: str = "iso", margin: int = 24) -> Frame:
+           width: int = 1280, height: int | None = None, view: str = "iso", margin: int = 24, elem_colors: list | None = None) -> Frame:
     height = height or (width * 5) // 8
     H, W = height, width
     stats: dict = {"triangles": int(len(faces)), "width": W, "height": H, "view": view}
@@ -137,7 +178,8 @@ def render(verts: np.ndarray, faces: np.ndarray, face_elem: np.ndarray, elem_cla
     nv = normals * np.where(dot3(normals, e) < 0, -1.0, 1.0)[:, None]   # 보는 쪽으로 뒤집기(양면)
     lam = np.clip(dot3(nv, _norm3(*LIGHT)), 0.0, 1.0)
     shade = np.floor((0.45 + 0.55 * lam) * 256.0).astype(np.int32).clip(0, 256)
-    base = np.array([PALETTE.get(c, DEFAULT_COLOR) for c in elem_classes], dtype=np.int32)
+    cols = elem_colors or [None] * len(elem_classes)   # 요소별 재료 색(없으면 클래스 색)
+    base = np.array([tuple(k) if k else PALETTE.get(c, DEFAULT_COLOR) for c, k in zip(elem_classes, cols)], dtype=np.int32)
     color = np.empty((H, W, 3), np.uint8)
     color[:] = BG
     m = fib >= 0

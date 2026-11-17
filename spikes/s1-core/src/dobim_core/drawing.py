@@ -23,6 +23,7 @@ from math import sqrt
 
 from dobim_core import kinds as K
 from dobim_core import queries as Q
+from dobim_core import solids as SO
 from dobim_core.graph import CLEAN
 
 EPS = 0.01          # 기하 허용 오차(mm): 같은 선·같은 점 판정
@@ -189,6 +190,10 @@ def _openings(g, w, doors_only):
         z1 = min(zt, box[3])
         if u1 - u0 > EPS and z1 - z0 > EPS:
             out.append((u0, u1, z0, z1))
+    if not doors_only:   # 모양 개구부(18단계)의 사각 부분: 아치 머리·원은 띠에서 속이 찬 것으로 두고 윤곽선만 따로 그린다(가림 근사)
+        for box, _loop, _fill in g.q(wall_shape_openings, w):
+            if box is not None and box[0] >= start - EPS and box[1] <= end + EPS:
+                out.append(box)
     return tuple(sorted(out))
 
 
@@ -2701,7 +2706,12 @@ def vedges(g, v, w):
     for i in range(4):                                             # 밑·윗면 수평 모서리
         for z in (zb, zt):
             raw.append((pt(*corners[i], z), pt(*corners[(i + 1) % 4], z)))
+    shapes = g.q(wall_shape_openings, w)                           # 모양 개구부(18단계): 사각 상자 대신 실제 윤곽을 그린다
+    shaped = {s_[0] for s_ in shapes if s_[0] is not None}
+    raw.extend(_wall_shape_edges(sol, shapes, pt))
     for u0, u1, z0, z1 in ops:
+        if (u0, u1, z0, z1) in shaped:
+            continue
         zs = (z1,) + ((z0,) if z0 > zb + EPS else ())
         for vv in (-h, h):
             for u in (u0, u1):
@@ -2849,10 +2859,12 @@ def vwall_lines(g, v, w):
         occ.extend(g.q(_stair_vpieces, v, st))
     for rf in g.q(scope_roofs, v):                      # 경사 지붕 판이 앞에 있으면(처마 끝·판 안에 묻힌 벽 윗선) 벽 선을 가린다
         occ.extend(g.q(_roof_solid_vpieces, v, rf))
+    occ.extend(_solid_wall_occ(g, v, w))                # 돌출·판 솔리드(부벽 등)가 앞에 있으면 벽 선을 가린다(18단계)
     lines = []
     if occ:
         for e0, e1 in g.q(vedges, v, w) + g.q(vfam_hosted_edges, v, w):
-            for t0, t1 in visible_parts(e0, e1, occ):
+            slanted = abs(e1[2] - e0[2]) > 1e-9 and (abs(e1[0] - e0[0]) > 1e-9 or abs(e1[1] - e0[1]) > 1e-9)   # 아치 윤곽의 현(18단계)
+            for t0, t1 in (_visible_slanted(e0, e1, occ) if slanted else visible_parts(e0, e1, occ)):
                 x0, z0 = e0[0] + t0 * (e1[0] - e0[0]), e0[2] + t0 * (e1[2] - e0[2])
                 x1, z1 = e0[0] + t1 * (e1[0] - e0[0]), e0[2] + t1 * (e1[2] - e0[2])
                 lines.append(("proj", x0, z0, x1, z1))
@@ -3903,6 +3915,251 @@ def _subtract(ivs, cuts):
     return out
 
 
+# ================================================================ 일반 솔리드 (kinds "solid", 18단계, 설계: elements-design.md 17절)
+# 형상은 solids.solid_mesh 의 다면체다(IFC 투영과 같은 값). 그리는 모서리는 경계이거나 이웃 면이 5도 넘게 꺾이는 모서리다(같은 평면을 나눈 대각선은 그리지 않는다).
+#   평면: 절단 높이의 수평면으로 자른 선(cut)과, 절단면 아래 보이는 깊이 안에서 위를 향한 면에 붙은 모서리(proj). 레벨과 무관하게 높이 범위가 걸치는 솔리드를 그린다
+#   단면·입면: 보는 쪽을 향한 면에 붙은 모서리(뒷면끼리의 모서리는 그리지 않는다)를 투영선으로, 단면은 절단면으로 자른 선(cut)을 더한다.
+#   가림: 벽·슬래브·계단·지붕·패밀리 조각과 돌출(prism)·판(panel) 솔리드의 볼록 조각이 가린다. 로프트·스윕·메시는 가리지 않는다(알려진 한계)
+#   벽 선도 돌출·판 솔리드(부벽 등)가 앞에 있으면 가려진다. 솔리드가 없는 프로젝트의 도면은 이전과 같다
+OCC_BIN = 2000.0    # 가림 조각 색인의 s 방향 칸 폭(mm)
+
+
+def solid_info(g, e):
+    """(꼭짓점(절대 z), 면, 모서리, 면 법선, 경계 상자(x0,y0,z0,x1,y1,z1)) 또는 None. 저작 솔리드만 그린다."""
+    row = Q.el(g, e)
+    if row is None or row["kind"] != "solid" or row["origin"] != "authored":
+        return None
+    lv = g.q(Q.level_info, g.q(Q.solid_level, e))[1]
+    verts, faces = SO.solid_mesh(row["params"])
+    verts = tuple((x, y, z + lv) for x, y, z in verts)
+    edges, nrm = SO.feature_edges(verts, faces)
+    return (verts, tuple(tuple(tuple(lp) for lp in f) for f in faces), edges, nrm, SO.mesh_bbox(verts))
+
+
+def all_solids(g):
+    out = []
+    for b in range(Q.NB):
+        out.extend(e for e in Q.bucket_ids(g, "solid", b) if g.q(solid_info, e) is not None)
+    return tuple(sorted(out))
+
+
+def scope_solids(g, v):
+    """뷰가 그리는 솔리드. 평면은 높이 범위가 (절단 높이 - 보이는 깊이, 절단 높이) 에 걸치는 것, 단면·입면은 모델 전체."""
+    cfg = g.q(view_cfg, v)
+    if cfg is None or cfg[0] == "site":
+        return ()
+    if cfg[0] == "plan":
+        if cfg[1] is None:
+            return ()
+        c, lo = cfg[2], cfg[2] - cfg[3]
+        return tuple(e for e in g.q(all_solids) if (bb := g.q(solid_info, e)[4])[2] <= c + EPS and bb[5] >= lo - EPS)
+    return g.q(all_solids)
+
+
+def _solid_vpieces(g, v, e):
+    """단면·입면에서 솔리드가 가리는 볼록 기둥 조각 ((z0, z1, 다각형(s,w)), ...): 돌출은 윤곽의 삼각형, 판은 윤곽을 높이 띠로 나눈 사각형. 그 밖은 없다.
+    판의 띠는 위아래로 2*EPS 겹친다: 띠 경계 높이의 수평선(구멍 둘레)이 어느 띠 안쪽도 아니라서 보이는 선으로 남지 않게(벽의 _bridges 와 같은 이유)."""
+    cfg = g.q(view_cfg, v)
+    row = Q.el(g, e)
+    p = row["params"]
+    lv = g.q(Q.level_info, g.q(Q.solid_level, e))[1]
+    out = []
+
+    def add(z0, z1, poly):
+        poly = _clip_w([_sw(cfg, q) for q in poly], cfg[7], cfg[8])
+        if len(poly) >= 3 and _area2(poly) > 2 * EPS:
+            out.append((z0, z1, tuple(poly)))
+    if p["form"] == "prism":
+        for tri in SO.triangulate(SO.ccw(p["polygon"])):
+            add(p["z0"] + lv, p["z1"] + lv, tri)
+    elif p["form"] == "panel":
+        x1, y1, ux, uy, _ = SO.panel_frame(p["line"])
+        h = p["thickness"] / 2.0
+        loops = [SO.ccw(p["profile"])] + [SO.opening_loop(o) for o in p.get("openings", ())]
+        zs = sorted({q[1] for lp in loops for q in lp})
+        for za, zb in zip(zs, zs[1:]):
+            if zb - za < EPS:
+                continue
+            for u0, u1 in SO.scan_intervals(loops, (za + zb) / 2.0):
+                add(za + lv - 2 * EPS, zb + lv + 2 * EPS, [(x1 + u * ux - vv * uy, y1 + u * uy + vv * ux) for u, vv in ((u0, -h), (u1, -h), (u1, h), (u0, h))])
+    return tuple(out)
+
+
+def _occ_index(g, v):
+    """뷰 하나의 가림 조각 전체와 s 방향 칸 색인: (조각들, 경계 상자들 (s0, s1, w0, z0, z1), {칸: (번호, ...)})."""
+    pieces = []
+    for w in g.q(scope_walls, v):
+        pieces.extend(g.q(vpieces, v, w))
+        pieces.extend(_bridges(g, v, w))
+    for sl in g.q(scope_slabs, v):
+        pieces.extend(g.q(_slab_vpieces, v, sl))
+    for st in g.q(scope_stairs, v):
+        pieces.extend(g.q(_stair_vpieces, v, st))
+    for fe in g.q(scope_fams, v):
+        pieces.extend(g.q(_fam_vpieces, v, fe))
+    for rf in g.q(scope_roofs, v):
+        pieces.extend(g.q(_roof_solid_vpieces, v, rf))
+    for e in g.q(scope_solids, v):
+        pieces.extend(g.q(_solid_vpieces, v, e))
+    boxes, bins = [], {}
+    for i, (z0, z1, poly) in enumerate(pieces):
+        s0, s1 = min(q[0] for q in poly), max(q[0] for q in poly)
+        boxes.append((s0, s1, min(q[1] for q in poly), z0, z1))
+        for k in range(int(s0 // OCC_BIN), int(s1 // OCC_BIN) + 1):
+            bins.setdefault(k, []).append(i)
+    return (tuple(pieces), tuple(boxes), {k: tuple(x) for k, x in bins.items()})
+
+
+def _occ_near(idx, s0, s1, z0, z1, wmax):
+    """색인에서 (s, z) 범위가 겹치고 wmax 보다 앞(작은 w)에 걸친 조각들."""
+    pieces, boxes, bins = idx
+    seen, out = set(), []
+    for k in range(int(s0 // OCC_BIN), int(s1 // OCC_BIN) + 1):
+        for i in bins.get(k, ()):
+            if i in seen:
+                continue
+            seen.add(i)
+            b = boxes[i]
+            if b[0] <= s1 + EPS and b[1] >= s0 - EPS and b[3] <= z1 + EPS and b[4] >= z0 - EPS and b[2] < wmax:
+                out.append(pieces[i])
+    return out
+
+
+def _vis(e0, e1, occ):
+    """보이는 매개변수 구간: 수평·수직은 visible_parts, 비스듬한 선은 _visible_slanted."""
+    if not occ:
+        return [(0.0, 1.0)]
+    vertical = abs(e1[0] - e0[0]) < 1e-9 and abs(e1[1] - e0[1]) < 1e-9
+    if vertical or abs(e1[2] - e0[2]) < 1e-9:
+        return visible_parts(e0, e1, occ)
+    return _visible_slanted(e0, e1, occ)
+
+
+def solid_lines(g, v, e):
+    """솔리드 하나가 뷰에 기여하는 선분."""
+    cfg = g.q(view_cfg, v)
+    info = g.q(solid_info, e)
+    if cfg is None or info is None:
+        return ()
+    verts, faces, edges, nrm, _bb = info
+    out = []
+    if cfg[0] == "plan":
+        c, lo = cfg[2], cfg[2] - cfg[3]
+        for a, b in SO.plane_section(verts, faces, nrm, (0.0, 0.0, 1.0), c):
+            if sqrt((b[0] - a[0]) ** 2 + (b[1] - a[1]) ** 2) > SEG_MIN:
+                out.append(("cut", a[0], a[1], b[0], b[1]))
+        for ia, ib, fl in edges:
+            if len(fl) == 2 and all(nrm[f][2] <= 1e-6 for f in fl):
+                continue   # 위를 향한 면에 붙지 않은 모서리(옆면끼리·밑면)는 위에서 보이지 않거나 윤곽과 겹친다
+            a, b = verts[ia], verts[ib]
+            t0, t1 = 0.0, 1.0
+            dz = b[2] - a[2]
+            for bound, keep_le in ((c, True), (lo, False)):
+                da = a[2] - bound
+                if abs(dz) < 1e-12:
+                    if (da > EPS) if keep_le else (da < -EPS):
+                        t0, t1 = 1.0, 0.0
+                    continue
+                t = -da / dz
+                if (dz > 0) == keep_le:
+                    t1 = min(t1, t)
+                else:
+                    t0 = max(t0, t)
+            if t1 - t0 <= 1e-9:
+                continue
+            ax, ay = a[0] + (b[0] - a[0]) * t0, a[1] + (b[1] - a[1]) * t0
+            bx, by = a[0] + (b[0] - a[0]) * t1, a[1] + (b[1] - a[1]) * t1
+            if sqrt((bx - ax) ** 2 + (by - ay) ** 2) > SEG_MIN:
+                out.append(("proj", ax, ay, bx, by))
+        return tuple(out)
+    d = (cfg[3], cfg[4], 0.0)
+    idx = g.q(_occ_index, v)
+    if cfg[9]:
+        c = cfg[1] * d[0] + cfg[2] * d[1] + cfg[7]
+        for a, b in SO.plane_section(verts, faces, nrm, d, c):
+            sa, sb = _sw(cfg, a), _sw(cfg, b)
+            if sqrt((sb[0] - sa[0]) ** 2 + (b[2] - a[2]) ** 2) > SEG_MIN:
+                out.append(("cut", sa[0], a[2], sb[0], b[2]))
+    for ia, ib, fl in edges:
+        if len(fl) == 2 and all(nrm[f][0] * d[0] + nrm[f][1] * d[1] >= -1e-9 for f in fl):
+            continue   # 뒷면끼리의 모서리
+        a, b = verts[ia], verts[ib]
+        pa, pb = _sw(cfg, a), _sw(cfg, b)
+        e0, e1 = (pa[0], pa[1], a[2]), (pb[0], pb[1], b[2])
+        if abs(e1[0] - e0[0]) < EPS and abs(e1[2] - e0[2]) < EPS:
+            continue
+        cl = _clip_edge(e0, e1, cfg[7], cfg[8])
+        if cl is None:
+            continue
+        e0, e1 = cl
+        occ = _occ_near(idx, min(e0[0], e1[0]), max(e0[0], e1[0]), min(e0[2], e1[2]), max(e0[2], e1[2]), max(e0[1], e1[1]))
+        for t0, t1 in _vis(e0, e1, occ):
+            out.append(("proj", e0[0] + t0 * (e1[0] - e0[0]), e0[2] + t0 * (e1[2] - e0[2]), e0[0] + t1 * (e1[0] - e0[0]), e0[2] + t1 * (e1[2] - e0[2])))
+    return tuple(out)
+
+
+def _solid_wall_occ(g, v, w):
+    """벽 w 의 선을 가릴 수 있는 솔리드 조각(벽의 화면 범위와 겹치는 것만). 솔리드가 없으면 빈 목록."""
+    if not g.q(scope_solids, v):
+        return []
+    bb = g.q(vbbox, v, w)
+    if bb is None:
+        return []
+    pieces = []
+    for e in g.q(scope_solids, v):
+        pieces.extend(g.q(_solid_vpieces, v, e))
+    return [p for p in pieces if min(q[0] for q in p[2]) <= bb[2] + EPS and max(q[0] for q in p[2]) >= bb[0] - EPS and p[0] <= bb[3] + EPS and p[1] >= bb[1] - EPS]
+
+
+# ---------------------------------------------------------------- 벽의 모양 개구부(18단계): 입면 윤곽선과 평면 유리선
+def wall_shape_openings(g, w):
+    """벽의 모양 개구부: ((사각 부분 상자 (u0,u1,z0,z_spring) 절대 z 또는 None, 윤곽 ((u, z) 절대), 채움), ...)."""
+    p = Q.el(g, w)["params"]
+    if "openings" not in p:
+        return ()
+    _, elev = g.q(Q.level_info, g.q(Q.wall_level, w))
+    out = []
+    for o in p["openings"]:
+        u0, u1, z0, zs, _zt = SO.opening_box(o)
+        box = (u0, u1, elev + z0, elev + zs) if zs - z0 > EPS else None
+        out.append((box, tuple((u, elev + z) for u, z in SO.opening_loop(o)), o.get("fill", "none")))
+    return tuple(out)
+
+
+def plan_wall_glazing(g, v, w):
+    """평면: 유리 채움(glazing) 모양 개구부가 절단 높이에 걸치면 개구부 가운데에 유리선 하나(proj)."""
+    cfg = g.q(view_cfg, v)
+    if cfg is None or cfg[0] != "plan":
+        return ()
+    sol = g.q(wall_solid, w)
+    out = []
+    for box, loop, fill in g.q(wall_shape_openings, w):
+        if fill != "glazing":
+            continue
+        for u0, u1 in SO.scan_intervals([list(loop)], cfg[2]):
+            a, b = _world(sol, u0, 0.0), _world(sol, u1, 0.0)
+            out.append(("proj", a[0], a[1], b[0], b[1]))
+    return tuple(out)
+
+
+def _wall_shape_edges(sol, shapes, pt):
+    """입면용 모양 개구부 윤곽선: 두 면의 윤곽(현) + 두께 방향 선(사각 부분 모서리)."""
+    h = sol[4]
+    raw = []
+    for box, loop, _fill in shapes:
+        n = len(loop)
+        for vv in (-h, h):
+            for i in range(n):
+                (ua, za), (ub, zb) = loop[i], loop[(i + 1) % n]
+                raw.append((pt(ua, vv, za), pt(ub, vv, zb)))
+        if box is not None:
+            u0, u1, z0, zs = box
+            for u in (u0, u1):
+                for z in ((z0, zs) if z0 > sol[7] + EPS else (zs,)):
+                    raw.append((pt(u, -h, z), pt(u, h, z)))
+    return raw
+
+
 def view_lines(g, v):
     cfg = g.q(view_cfg, v)
     if cfg is None:
@@ -3915,6 +4172,7 @@ def view_lines(g, v):
         segs.extend(g.q(fn, v, w))
         if cfg[0] == "plan":
             segs.extend(g.q(plan_fire_lines, v, w))
+            segs.extend(g.q(plan_wall_glazing, v, w))
         elif cfg[0] == "elev":
             segs.extend(g.q(elev_finish, v, w)[0])
     for e in g.q(scope_fams, v):
@@ -3929,6 +4187,8 @@ def view_lines(g, v):
         segs.extend(g.q(elevator_lines, v, ev))
     for rf in g.q(scope_roofs, v):
         segs.extend(g.q(roof_lines, v, rf))
+    for so in g.q(scope_solids, v):   # 일반 솔리드(18단계): 없으면 선분은 이전과 같다
+        segs.extend(g.q(solid_lines, v, so))
     if cfg[0] == "elev":
         segs.extend(g.q(site_sign_lines, v))
     elif cfg[0] == "sec":
@@ -3961,6 +4221,7 @@ def view_lines_hier(g, v):
         segs.extend(ws)
         if cfg[0] == "plan":
             segs.extend(g.q(plan_fire_lines, v, w))
+            segs.extend(g.q(plan_wall_glazing, v, w))
     for e in g.q(scope_fams, v):
         segs.extend(g.q(fam_lines, v, e))
     for sl in g.q(scope_slabs, v):
@@ -3973,6 +4234,8 @@ def view_lines_hier(g, v):
         segs.extend(g.q(elevator_lines, v, ev))
     for rf in g.q(scope_roofs, v):
         segs.extend(g.q(roof_lines, v, rf))
+    for so in g.q(scope_solids, v):   # 일반 솔리드(18단계): 없으면 선분은 이전과 같다
+        segs.extend(g.q(solid_lines, v, so))
     if cfg[0] == "elev":
         segs.extend(g.q(site_sign_lines, v))
     elif cfg[0] == "sec":
@@ -4066,6 +4329,7 @@ VIEW_SCOPED = frozenset({view_cfg, scope_walls, view_omitted, plan_pieces, plan_
                          vwall_detail, slab_detail_lines, space_ceiling_lines, vwin_detail, view_lines_hier,
                          vcut_rects, vedges, vwall_lines, view_lines, view_fills,
                          scope_fams, plan_fam_parts, _fam_vpieces, vfam_bbox, vfam_cut_rects, vfam_edges, vfam_nbr_pieces, fam_lines,
+                         scope_solids, _solid_vpieces, solid_lines, _occ_index, plan_wall_glazing,
                          vfam_hosted_edges, scope_slabs, plan_slab_parts, _slab_vpieces, slab_vbbox, slab_cut_rects, slab_vedges, slab_nbr_walls, slab_lines,
                          scope_stairs, scope_railings, railing_lines, scope_elevators, elevator_lines, plan_elevator_labels, plan_roof_marks, scope_roofs, _roof_vpieces, _roof_solid_vpieces, roof_cut_rects, roof_plan_parts, roof_lines, plan_stair_parts, _stair_vpieces, stair_vbbox, stair_cut_rects, stair_vedges, stair_nbr_walls, stair_lines,
                          scope_spaces, plan_space_labels, view_labels, site_lines, site_labels, site_dims, _elev_signs, site_sign_lines, site_sign_labels, _site_sec, _gl_z, site_section_lines, site_section_labels, vwall_hidden, view_hidden_lines, plan_fire_lines, plan_fire_labels, elev_finish, view_opts, view_dims, view_dim_labels})
