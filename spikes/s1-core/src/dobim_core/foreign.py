@@ -356,10 +356,12 @@ def _parse_intent(kind: str, text: str) -> dict:
                "risers": p["risers"], "base_offset": _num(p["base_offset"])}
         if "turn" in p:
             t = p["turn"]
-            if not isinstance(t, dict) or set(t) != {"type", "side", "risers_a", "landing", "gap"}:
+            if not isinstance(t, dict) or set(t) - {"winders"} != {"type", "side", "risers_a", "landing", "gap"}:
                 raise ValueError("계단 turn 이 올바르지 않다")
             out["turn"] = {"type": t["type"], "side": t["side"], "risers_a": t["risers_a"],
                            "landing": None if t["landing"] is None else _num(t["landing"], pos=True), "gap": _num(t["gap"], nonneg=True)}
+            if "winders" in t:   # 돌음 계단(23.3): 정수 검사는 row_params_error 가 한다
+                out["turn"]["winders"] = t["winders"]
             why = K.row_params_error("stair", out)
             if why:
                 raise ValueError(f"계단 turn 이 올바르지 않다({why})")

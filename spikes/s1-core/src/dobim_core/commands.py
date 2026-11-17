@@ -1040,11 +1040,17 @@ class StairTurn(A):
     risers_a: int = Field(ge=2, le=100, description="층참 아래 단 묶음의 챌판 수(2 이상, 전체 챌판 수 - 2 이하). 층참 윗면은 이 챌판 수만큼 올라온 높이다")
     landing: Pos | None = Field(None, description="층참 깊이 mm(걸음선 방향). 비우면 계단 폭. 폭보다 작을 수 없다")
     gap: Num | None = Field(None, ge=0, description="U형에서 두 단 묶음 사이 간격 mm(비우면 100). L형은 쓰지 않는다")
+    winders: int | None = Field(None, ge=K.STAIR_WINDERS_MIN, le=K.STAIR_WINDERS_MAX,
+                                description="돌음(와인더) 계단: 층참 대신 회전부를 이 수의 쐐기 디딤판으로 채운다(회전 중심에서 같은 각 분할). "
+                                            "위 단 묶음 챌판 = 전체 - risers_a - winders + 1. L형은 회전부가 폭 x 폭(landing 비움)")
 
 
 def _stair_turn(t) -> dict:
-    return {"type": t.type, "side": t.side, "risers_a": t.risers_a, "landing": None if t.landing is None else float(t.landing),
-            "gap": (K.STAIR_GAP_DEFAULT if t.gap is None else float(t.gap)) if t.type == "U" else 0.0}
+    out = {"type": t.type, "side": t.side, "risers_a": t.risers_a, "landing": None if t.landing is None else float(t.landing),
+           "gap": (K.STAIR_GAP_DEFAULT if t.gap is None else float(t.gap)) if t.type == "U" else 0.0}
+    if t.winders is not None:   # 없으면 키 자체가 없다(기존 계단 바이트 불변)
+        out["winders"] = t.winders
+    return out
 
 
 def _stair_checked(p: dict) -> dict:
@@ -1369,7 +1375,7 @@ RAIL_TOL = 1e-3   # 난간선 비교 허용 mm
 
 
 def _stair_rail_specs(p: dict, side: str, inset: float, landing: bool) -> list:
-    """계단 파라미터에서 난간 자리들: [{"tag", "path", "base_offset", "rise"}]. 단 묶음마다 왼쪽(`f{i}L`)·오른쪽(`f{i}R`), 층참은 `landing`. 순서는 생성 순서다."""
+    """계단 파라미터에서 난간 자리들: [{"tag", "path", "base_offset", "rise"}]. 단 묶음마다 왼쪽(`f{i}L`)·오른쪽(`f{i}R`), 층참은 `landing`, 돌음 회전부 바깥 둘레는 `winder`. 순서는 생성 순서다."""
     lay = K.stair_layout(p)
     w, base = p["width"], p["base_offset"]
     rise = lay["rise"]
@@ -1406,6 +1412,25 @@ def _stair_rail_specs(p: dict, side: str, inset: float, landing: bool) -> list:
         else:
             path = [i3, i2, i1]                                        # 왼쪽 옆변 + 먼 변
         out.append({"tag": "landing", "path": path, "base_offset": base + ld["z"], "rise": 0.0})
+    wd = lay.get("winders")
+    if wd is not None and landing and side in ("both", "right" if p["turn"]["side"] == "left" else "left"):   # 돌음 회전부의 바깥 둘레(23.3): 아래 단 묶음 바깥 난간 끝에서 위 단 묶음 바깥 난간 시작까지, 쐐기 수만큼 오른다
+        t = p["turn"]
+        x1, y1, x2, y2 = p["run"]
+        ln = ((x2 - x1) ** 2 + (y2 - y1) ** 2) ** 0.5
+        ux, uy = (x2 - x1) / ln, (y2 - y1) / ln
+        sg = 1.0 if t["side"] == "left" else -1.0
+        h = w / 2.0
+        far_t = ln + (w if t["type"] == "L" else (t["landing"] if t["landing"] is not None else w))
+
+        def lp(tt, mm):
+            return [x1 + ux * tt - uy * mm, y1 + uy * tt + ux * mm]
+        if t["type"] == "L":
+            loc = [(ln, -sg * (h - inset)), (far_t - inset, -sg * (h - inset)), (far_t - inset, sg * h)]
+        else:
+            far = sg * (h + t["gap"] + w - inset)
+            loc = [(ln, -sg * (h - inset)), (far_t - inset, -sg * (h - inset)), (far_t - inset, far), (ln, far)]
+        k = t["risers_a"]
+        out.append({"tag": "winder", "path": [lp(*q) for q in loc], "base_offset": base + k * rise, "rise": len(wd["wedges"]) * rise})
     return out
 
 
@@ -2746,6 +2771,11 @@ def element_get(ctx, a: ElementGet):
         p = r["params"]
         out["derived"] = {"bottom": zb, "top": zt, "riser_height": p["height"] / p["risers"],
                           "tread_depth": sqrt(_axis_len2(p["run"])) / (p["risers"] - 1)}
+        if "turn" in p and "winders" in p["turn"]:   # 돌음 계단 수량(23.3): 직선 디딤판·쐐기 디딤판 수, 단 묶음별 챌판, 보행선 위 쐐기 디딤 길이
+            lay = K.stair_layout(p)
+            fa, fb = lay["flights"]
+            out["derived"].update({"tread_depth": fa["td"], "flight_risers": [fa["n"], fb["n"]], "winder_treads": p["turn"]["winders"],
+                                   "straight_treads": fa["n"] - 1 + fb["n"] - 1, "treads": p["risers"] - 1, "winder_walkline_tread": lay["winders"]["tread"]})
     elif r["kind"] == "elevator":
         gm = K.elevator_geom(r["params"])
         lv = ctx.g.q(Q.level_info, ctx.g.q(Q.elevator_level, a.id))[1]

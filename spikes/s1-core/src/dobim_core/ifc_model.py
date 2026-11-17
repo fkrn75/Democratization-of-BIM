@@ -1190,7 +1190,7 @@ class IfcModel:
             return [f"opening:{i}" for i in range(SLAB_OPENINGS_MAX)] + ["parapet"]
         if kind == "wall":   # 모양 개구부(18단계)
             return [f"opening:{i}" for i in range(OPENINGS_MAX)]
-        return [f"face:{i}" for i in range(4)] if kind == "roof" else ["flight:0", "flight:1", "landing"]
+        return [f"face:{i}" for i in range(4)] if kind == "roof" else ["flight:0", "flight:1", "landing", "winder"]
 
     def _adopt_parts(self, eid: str, kind: str, e) -> None:
         """가져온 파일에서 요소에 이미 달린 부속(GlobalId 가 part_guid 와 같고 요소와 관계가 이어진 것)을 이어받는다."""
@@ -1271,7 +1271,10 @@ class IfcModel:
         e = self.ents[eid]
         e.Name = spec["name"]
         turn = dict(spec["turn"]) if "turn" in spec else None
-        e.PredefinedType = "STRAIGHT_RUN_STAIR" if turn is None else ("QUARTER_TURN_STAIR" if turn["type"] == "L" else "HALF_TURN_STAIR")
+        if turn is not None and turn.get("winders") is not None:   # 돌음 계단(23.3): 층참 대신 쐐기 디딤판
+            e.PredefinedType = "QUARTER_WINDING_STAIR" if turn["type"] == "L" else "HALF_WINDING_STAIR"
+        else:
+            e.PredefinedType = "STRAIGHT_RUN_STAIR" if turn is None else ("QUARTER_TURN_STAIR" if turn["type"] == "L" else "HALF_TURN_STAIR")
         self._contain(eid, spec["level"])
         self._place(e, self.ents[spec["level"]].ObjectPlacement, (0.0, 0.0, 0.0), (1.0, 0.0, 0.0))
         n, z0 = spec["risers"], spec["base_offset"]
@@ -1294,8 +1297,16 @@ class IfcModel:
                 "attrs": {"NumberOfRisers": fl["n"], "NumberOfTreads": fl["n"] - 1, "RiserHeight": float(rise), "TreadLength": float(fl["td"]), "PredefinedType": "STRAIGHT"},
                 "solid": (lambda fl=fl: self._stair_solid(fl["run"], spec["width"], fl["n"], rise, z0 + fl["z0"], z0 + fl["z0"] - fl["skirt"]))}
         ld = lay["landing"]
-        wanted["landing"] = {"cls": "IfcSlab", "name": f"{spec['name']}-landing", "rel": "aggregate", "attrs": {"PredefinedType": "LANDING"},
-                             "solid": (lambda: self._solid(ld["poly"], ld["t"], z0=z0 + ld["z"] - ld["t"]))}
+        if ld is not None:
+            wanted["landing"] = {"cls": "IfcSlab", "name": f"{spec['name']}-landing", "rel": "aggregate", "attrs": {"PredefinedType": "LANDING"},
+                                 "solid": (lambda: self._solid(ld["poly"], ld["t"], z0=z0 + ld["z"] - ld["t"]))}
+        else:   # 돌음: 회전부 쐐기들을 IfcStairFlight(WINDER) 하나에 담는다(쐐기마다 수직 압출 솔리드). 챌판은 쐐기 사이 m - 1 개
+            wd = lay["winders"]
+            m = len(wd["wedges"])
+            wanted["winder"] = {
+                "cls": "IfcStairFlight", "name": f"{spec['name']}-winder", "rel": "aggregate",
+                "attrs": {"NumberOfRisers": m - 1, "NumberOfTreads": m, "RiserHeight": float(rise), "TreadLength": float(wd["tread"]), "PredefinedType": "WINDER"},
+                "solid": (lambda: [self._solid(w["poly"], w["z"] - w["zb"], z0=z0 + w["zb"]) for w in wd["wedges"]])}
         self._sync_parts(eid, wanted)
 
     def _project_railing(self, eid, spec):
