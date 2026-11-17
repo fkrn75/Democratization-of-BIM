@@ -45,7 +45,7 @@ def wall_attach_top(ctx, a: WallAttachTop):
             raise DobimError("CONSTRAINT", f"저작 요소가 아니라(외래·분리됨) 형상을 읽을 수 없다: {t}", path=f"/targets/{i}")
         dz = ctx.g.q(Q.level_info, ctx.rels_out("on_level", t)[0])[1] - wall_elev
         faces += WT.target_faces(tr["kind"], tr["params"], a.face, dz)
-    prof, covered = WT.attach_profile(p["axis"], p["height"], faces, a.face)
+    prof, covered = WT.attach_profile(p["axis"], WT.base(p) + p["height"], faces, a.face)   # 바닥 오프셋(22단계): 덮이지 않은 구간 = 레벨 기준 윗면
     if prof is None:
         raise DobimError("CONSTRAINT", "벽 축선이 대상 면 아래(위)를 지나지 않는다", path="/targets",
                          hint="평면에서 벽 축선이 대상 외곽 안을 지나야 한다")

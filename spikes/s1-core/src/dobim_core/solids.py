@@ -67,6 +67,16 @@ SOLID_CATEGORIES = {
     "escape_device": ("IfcBuildingElementProxy", "USERDEFINED", "ESCAPE_DEVICE"),             # 완강기 등 피난기구(IFC4 에 클래스 없음)
     "electric_board": ("IfcElectricDistributionBoard", None, None), # 분전반
     "control": ("IfcUnitaryControlElement", None, None),            # 온도조절기·조작반
+    # 마감·소방 전기(22단계, 설계: elements-design.md 24.2). 천장·바닥 마감은 구멍 있는 수평 판(plate, pitch 0)이나 prism 으로 만든다
+    "ceiling": ("IfcCovering", "CEILING", None),                    # 천장 마감(석고보드·PVC 천장판)
+    "flooring": ("IfcCovering", "FLOORING", None),                  # 바닥 마감 층(몰탈·타일·장판·누름콘크리트)
+    "cladding": ("IfcCovering", "CLADDING", None),                  # 외장 마감(석재·패널)
+    "insulation": ("IfcCovering", "INSULATION", None),              # 단열 층
+    "smoke_detector": ("IfcSensor", "SMOKESENSOR", None),           # 연기 감지기
+    "heat_detector": ("IfcSensor", "HEATSENSOR", None),             # 열 감지기
+    "alarm_panel": ("IfcUnitaryControlElement", "ALARMPANEL", None),   # 화재 수신반
+    "light_fixture": ("IfcLightFixture", None, None),               # 조명 기구
+    "exit_sign": ("IfcLightFixture", "SECURITYLIGHTING", None),     # 유도등(피난구·통로)
 }
 
 

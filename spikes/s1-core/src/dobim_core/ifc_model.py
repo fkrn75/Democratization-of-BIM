@@ -1112,7 +1112,7 @@ class IfcModel:
         if "top" in spec:   # 벽 상단 윤곽(21단계): 지역 (u, z) 수직 윤곽(바닥 ~ 상단 윤곽)을 두께 방향으로 돌출한다(평면 윤곽은 늘 직사각형이라 같은 형상)
             self._set_body(e, self._vprofile_solid(spec["top"], spec["thickness"] / 2.0, spec["thickness"]))
         else:
-            self._set_body(e, self._solid(spec["footprint"], spec["height"]))
+            self._set_body(e, self._solid(spec["footprint"], spec["height"], spec.get("base", 0.0)))   # 바닥 오프셋(22단계): 배치는 레벨 그대로, 몸체만 올리고 내린다
         layers = spec.get("layers")   # 벽 층 구성: 지역 +v 방향 순서(첫 층 = -v 면), 기준선(축선)에서 -두께/2 만큼 떨어져 시작한다
         if layers:
             self._assign_layers(e, layers, "AXIS2", "POSITIVE", -sum(t for _, t in layers) / 2.0, pairs_label(layers))

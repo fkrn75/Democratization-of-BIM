@@ -243,7 +243,7 @@ class OpeningIn(A):
     """모양 개구부 하나(18단계): 벽·판에 뚫는 사각·반원 아치·뾰족 아치·원 구멍."""
     shape: Literal["rect", "round", "pointed", "circle"] = Field(description="rect 사각, round 반원 머리, pointed 뾰족 아치, circle 원(폭 = 높이)")
     offset: Num = Field(description="개구부 중심의 길이 방향 위치 mm(벽은 축선 시작점, 판은 line 시작점에서)")
-    sill: Num = Field(description="개구부 바닥 높이 mm(벽은 레벨 기준 0 이상, 판은 레벨 기준 z)")
+    sill: Num = Field(description="개구부 바닥 높이 mm(벽은 레벨 기준 0 이상(바닥 오프셋이 있으면 벽 바닥 이상), 판은 레벨 기준 z)")
     width: Pos = Field(description="개구부 폭 mm")
     height: Pos = Field(description="개구부 전체 높이 mm(아치 꼭대기까지)")
     rise: Pos | None = Field(None, description="뾰족 아치의 아치 높이 mm(폭/2 이상 높이 이하). 생략하면 정삼각 아치(폭 x 0.866)")
@@ -294,7 +294,10 @@ def _hosted_under_top(ctx, wid, p: dict) -> None:
 
 
 def _door_under_top(ctx, host, dp: dict) -> None:
-    """문을 놓거나 고칠 때: 호스트 벽에 상단 윤곽이 있으면 문 위 끝이 그 아래여야 한다(21단계)."""
+    """문을 놓거나 고칠 때: 호스트 벽에 상단 윤곽이 있으면 문 위 끝이 그 아래여야 한다(21단계).
+    바닥 오프셋(22단계)이 0 보다 크면 문턱이 벽 바닥 아래로 내려갈 수 없다."""
+    if dp["sill"] < WT.base(ctx.st.el[host]["params"]) - 1e-9:
+        raise DobimError("CONSTRAINT", "문턱이 호스트 벽 바닥(base_offset) 아래다", path="/sill")
     top = ctx.st.el[host]["params"].get("top_profile")
     if top is not None and WT.under_problem(top, boxes=[_door_box(dp)]):
         raise DobimError("CONSTRAINT", "문이 호스트 벽의 상단 윤곽 위로 나간다", path="/height")
@@ -309,6 +312,8 @@ class WallCreate(A):
     name: Name | None = None
     openings: Openings | None = Field(None, description="모양 개구부(아치 창·원창·출입구). IFC 는 모양 윤곽의 IfcOpeningElement + IfcRelVoidsElement")
     top_profile: TopProfile | None = Field(None, description="벽 상단 윤곽(경사·박공 벽): 생략하면 상단은 height 로 수평")
+    base_offset: Num | None = Field(None, description="벽 바닥 오프셋(레벨 기준 mm, 상용 도구의 Base Offset). 음수면 레벨 아래에서 시작한다. height 는 바닥에서 잰다. "
+                                                     "생략·0 이면 레벨에서 시작(키 없음)")
 
 
 @command("wall.create", kind="mutation", risk="write", group="model.wall", summary="벽 생성",
@@ -328,7 +333,9 @@ def wall_create(ctx, a: WallCreate):
         p["openings"] = _openings_in(a.openings)
     if a.top_profile:   # 상단 윤곽이 없으면 행은 이전과 같다
         p["top_profile"] = WT.norm(a.top_profile)
-    if a.openings or a.top_profile:
+    if a.base_offset:   # 바닥 오프셋(22단계): 0 이면 키가 없다(행·해시 이전과 같다)
+        p["base_offset"] = float(a.base_offset)
+    if a.openings or a.top_profile or a.base_offset:
         _wall_checked(p)
     ctx.put_el(a.id, row("wall", "IfcWall", "wall.basic", p))
     ctx.rel("on_level", a.id, a.level, True)
@@ -360,10 +367,11 @@ class WallSet(A):
     axis: Annotated[list[Num], Field(min_length=4, max_length=4)] | None = None
     openings: Openings | None = Field(None, description="모양 개구부 목록을 통째로 바꾼다(빈 목록 = 모두 뗀다)")
     top_profile: TopProfile | None = Field(None, description="벽 상단 윤곽을 통째로 바꾼다(빈 목록 = 뗀다)")
+    base_offset: Num | None = Field(None, description="벽 바닥 오프셋(레벨 기준 mm). 0 이면 뗀다. 바닥만 움직이고 height 는 그대로다(상단도 함께 움직인다)")
 
     @model_validator(mode="after")
     def _any(self):
-        if all(v is None for v in (self.name, self.thickness, self.height, self.axis, self.openings, self.top_profile)):
+        if all(v is None for v in (self.name, self.thickness, self.height, self.axis, self.openings, self.top_profile, self.base_offset)):
             raise ValueError("바꿀 필드가 하나도 없다")
         return self
 
@@ -400,12 +408,21 @@ def wall_set(ctx, a: WallSet):
             p["top_profile"] = WT.norm(a.top_profile)
         else:
             p.pop("top_profile", None)
+    if a.base_offset is not None:   # 바닥 오프셋(22단계): 0 이면 키를 뗀다
+        if a.base_offset:
+            p["base_offset"] = float(a.base_offset)
+        else:
+            p.pop("base_offset", None)
     if a.top_profile is None and "top_profile" in p and WT.profile_problem(p["top_profile"], sqrt(_axis_len2(p["axis"]))):
         raise DobimError("CONSTRAINT", "상단 윤곽이 있는 벽의 축 길이가 바뀌면 윤곽이 맞지 않는다", path="/axis",
                          hint="새 top_profile 을 함께 주거나, wall.detach_top 으로 뗀 뒤 wall.attach_top 으로 다시 붙이세요")
-    if "openings" in p or "top_profile" in p:   # 축·높이가 바뀌어 개구부가 벽 밖으로 나가면 거절한다
+    if "openings" in p or "top_profile" in p or "base_offset" in p:   # 축·높이가 바뀌어 개구부가 벽 밖으로 나가면 거절한다
         _wall_checked(p)
     _hosted_under_top(ctx, a.id, p)
+    if WT.base(p) > 0.0:   # 바닥 오프셋(22단계): 호스팅된 문의 문턱이 새 바닥 아래면 거절한다
+        for d in sorted(ctx.rels_out("hosts", a.id)):
+            if ctx.st.el[d]["kind"] == "door" and ctx.st.el[d]["params"]["sill"] < WT.base(p) - 1e-9:
+                raise DobimError("CONSTRAINT", f"호스팅된 문의 문턱이 새 벽 바닥 아래다: {d}", path="/base_offset")
     from dobim_core.commands_family import check_hosted_fit
     check_hosted_fit(ctx, a.id, r["params"], p)
     ctx.put_el(a.id, dict(r, params=p))
@@ -639,6 +656,8 @@ def wall_split(ctx, a: WallSplit):
             pw.pop("openings")
     ctx.put_el(a.id, dict(r, params=pw))
     np_ = {"name": name, "axis": ax_n, "thickness": p["thickness"], "height": p["height"]}
+    if "base_offset" in p:   # 바닥 오프셋(22단계)은 끝 쪽 새 벽도 같다
+        np_["base_offset"] = p["base_offset"]
     if "layers" in p:   # 층 구성이 있으면 끝 쪽 새 벽도 같은 층 구성(복사)
         np_["layers"] = [dict(x) for x in p["layers"]]
     if ops_n:
@@ -2731,9 +2750,11 @@ def element_get(ctx, a: ElementGet):
     if r["kind"] == "wall":
         start, end, status = ctx.g.q(Q.wall_trim, a.id)
         out["derived"] = {"trim_start": start, "trim_end": end, "length": end - start, "status": status}
+        if "base_offset" in r["params"]:   # 바닥 오프셋(22단계): 레벨 기준 바닥·윗면 높이. 없으면 응답은 그대로
+            out["derived"].update({"bottom_rel": WT.base(r["params"]), "top_rel": WT.top_rel(r["params"])})
         if "top_profile" in r["params"]:   # 상단 윤곽(21단계): 높이 범위·입면 면적·부피(개구부 빼기 전). 없으면 응답은 그대로
             tp, th = r["params"]["top_profile"], r["params"]["thickness"]
-            gross = WT.area(tp, start, end)
+            gross = WT.area(tp, start, end) - WT.base(r["params"]) * (end - start)
             out["derived"].update({"top_min": WT.zmin(tp, start, end), "top_max": WT.zmax(tp, start, end),
                                    "gross_area_m2": gross / 1e6, "volume_m3": gross * th / 1e9})
     elif r["kind"] == "door":

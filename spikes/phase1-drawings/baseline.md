@@ -925,3 +925,17 @@ s10-headless 시험: 새 시험(test_render_filter) 통과. 실패 2건(test_gui
 
 ### 23.3 시험
 test_practical3_mep(범주·IFC 클래스·형식·왕복 해시), test_practical3_wall_top, test_practical3_winder, test_practical3_window, s10-headless test_render_filter(묶음·상위 클래스 필터, 부분 메시, 고스트, tie_eps).
+## 24. 스물두 번째 작업: 벽 바닥 오프셋·마감·소방 전기 범주 (2026-11-18, 브랜치 phase1/practical-modeling-4)
+
+산출은 비공개 산출 폴더(phase1-after22)에 두었다. 같은 모델에 `run_baseline.py --sheets` 를 돌렸다(새 입력 없음). 설계 메모는 elements-design.md 24절. 해시 형식 그대로(CLOSURE_FORMAT 15).
+
+### 24.0 바이트 비교 (after21 대비, work/·run.json 제외)
+**같은 파일 183개, 달라진 파일 0, 새 산출 0, 사라진 파일 0.** 새 키(base_offset)·새 범주를 쓰지 않은 모델은 행·IFC·도면이 이전과 같다.
+s10-headless 실패 2건(test_gui_scan, test_headless_ra01 IFC 기준 해시)은 23절과 같은 기존 상태다.
+
+### 24.1 변경 요지
+1. 벽 선택 파라미터 `base_offset`(바닥 오프셋, height 는 바닥에서 잰다). `wall.create`·`wall.set` 에 인자 추가(커맨드 수 그대로).
+2. `solid` 범주 9종: 천장·바닥 마감·외장·단열(IfcCovering CEILING·FLOORING·CLADDING·INSULATION), 감지기(IfcSensor SMOKESENSOR·HEATSENSOR), 화재 수신반(IfcUnitaryControlElement ALARMPANEL), 조명·유도등(IfcLightFixture).
+
+### 24.2 시험
+test_practical4_wall_base, test_practical4_finish.

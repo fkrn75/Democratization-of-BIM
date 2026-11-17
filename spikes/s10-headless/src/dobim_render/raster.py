@@ -54,6 +54,7 @@ PALETTE = {
     "IfcTank": (200, 150, 110), "IfcValve": (210, 90, 90), "IfcFlowMeter": (230, 190, 60), "IfcPipeFitting": (96, 140, 196),
     "IfcSanitaryTerminal": (236, 236, 240), "IfcFireSuppressionTerminal": (220, 50, 50), "IfcElectricDistributionBoard": (120, 120, 140),
     "IfcUnitaryControlElement": (240, 240, 200),
+    "IfcSensor": (230, 120, 120), "IfcLightFixture": (250, 230, 150),
 }
 DEFAULT_COLOR = (182, 182, 182)
 # 재료 이름의 낱말 -> 겉모습 색(18단계). 앞에서부터 먼저 맞는 것을 쓴다. 표에 없는 재료(콘크리트·석고 등)는 클래스 색 그대로다(기존 렌더 바이트 불변)
