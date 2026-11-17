@@ -49,6 +49,11 @@ PALETTE = {
     "IfcRoof": (176, 120, 110), "IfcCovering": (200, 200, 190), "IfcFurnishingElement": (140, 160, 130),
     "IfcGeographicElement": (170, 182, 150), "IfcMember": (170, 160, 150), "IfcPlate": (190, 190, 196),
     "IfcPipeSegment": (96, 140, 196), "IfcDuctSegment": (150, 180, 200), "IfcCableCarrierSegment": (200, 160, 80),
+    # 설비 기기·단말(21단계)
+    "IfcAirTerminal": (150, 196, 210), "IfcFan": (120, 170, 190), "IfcBoiler": (200, 110, 90), "IfcUnitaryEquipment": (170, 176, 190),
+    "IfcTank": (200, 150, 110), "IfcValve": (210, 90, 90), "IfcFlowMeter": (230, 190, 60), "IfcPipeFitting": (96, 140, 196),
+    "IfcSanitaryTerminal": (236, 236, 240), "IfcFireSuppressionTerminal": (220, 50, 50), "IfcElectricDistributionBoard": (120, 120, 140),
+    "IfcUnitaryControlElement": (240, 240, 200),
 }
 DEFAULT_COLOR = (182, 182, 182)
 # 재료 이름의 낱말 -> 겉모습 색(18단계). 앞에서부터 먼저 맞는 것을 쓴다. 표에 없는 재료(콘크리트·석고 등)는 클래스 색 그대로다(기존 렌더 바이트 불변)
@@ -112,7 +117,10 @@ def face_normals(verts: np.ndarray, faces: np.ndarray) -> np.ndarray:
 
 
 def render(verts: np.ndarray, faces: np.ndarray, face_elem: np.ndarray, elem_classes: list[str],
-           width: int = 1280, height: int | None = None, view: str = "iso", margin: int = 24, elem_colors: list | None = None) -> Frame:
+           width: int = 1280, height: int | None = None, view: str = "iso", margin: int = 24, elem_colors: list | None = None,
+           tie_eps: float = 0.0, fit: tuple | None = None) -> Frame:
+    """tie_eps(21단계): 깊이가 이 값(미터) 이하로만 더 가까우면 덮지 않는다(같은 평면에 겹친 두 요소의 반올림 잡음 = 검은 점 방지).
+    0 이면 이전과 같다(엄격히 더 가까울 때 덮음). fit = (x0, x1, y0, y1): 화면 맞춤 범위를 바깥에서 준다(고스트 합성에서 두 장을 같은 틀로)."""
     height = height or (width * 5) // 8
     H, W = height, width
     stats: dict = {"triangles": int(len(faces)), "width": W, "height": H, "view": view}
@@ -125,7 +133,7 @@ def render(verts: np.ndarray, faces: np.ndarray, face_elem: np.ndarray, elem_cla
     x = dot3(verts, r)
     y = dot3(verts, u)
     z = dot3(verts, e)
-    x0, x1, y0, y1 = x.min(), x.max(), y.min(), y.max()
+    x0, x1, y0, y1 = fit if fit is not None else (x.min(), x.max(), y.min(), y.max())
     ex, ey = max(x1 - x0, 1e-9), max(y1 - y0, 1e-9)
     scale = min((W - 2 * margin) / ex, (H - 2 * margin) / ey)
     cx = (W - (x1 - x0) * scale) / 2 - x0 * scale          # 화면 가운데 맞춤
@@ -167,7 +175,7 @@ def render(verts: np.ndarray, faces: np.ndarray, face_elem: np.ndarray, elem_cla
             continue
         d = wa * az + wb * bz + wc * cz
         sub = zbuf[ya:yb, xa:xb]
-        upd = inside & (d > sub)
+        upd = inside & (d > sub + tie_eps) if tie_eps else inside & (d > sub)
         if not upd.any():
             continue
         sub[upd] = d[upd]
