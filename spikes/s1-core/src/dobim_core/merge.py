@@ -30,6 +30,7 @@ from pathlib import Path
 from typing import Any
 
 from dobim_core import queries as Q
+from dobim_core import walltop as WT
 from dobim_core.errors import DobimError
 from dobim_core.graph import RefGraph
 from dobim_core.kinds import (ELEMENT_KINDS, FIXED_IFC_CLASS, NAME_MAX, NON_IFC_KINDS, REL_KINDS, class_error, id_ok as _id_ok, invert,
@@ -584,7 +585,8 @@ def violations(view: View) -> list[dict]:
             continue
         cut = spec.get("cut")
         if cut and (spec["offset"] + cut["x"][0] < -EPS or spec["offset"] + cut["x"][1] > length + EPS
-                    or spec["elevation"] + cut["z"][0] < -EPS or spec["elevation"] + cut["z"][1] > view.p(w)["height"] + EPS):
+                    or spec["elevation"] + cut["z"][0] < WT.base(view.p(w)) - EPS
+                    or spec["elevation"] + cut["z"][1] > WT.base(view.p(w)) + view.p(w)["height"] + EPS):
             out.append(_v("FINST_OUT_OF_HOST", (f, w), f"패밀리 인스턴스 개구부가 호스트 벽({length:.1f}mm) 밖으로 나간다",
                           {"wall_length": length}, focus=focus))
     # 7) 평면 뷰의 레벨, 뷰 이름 (view.create·view.set 의 규칙)

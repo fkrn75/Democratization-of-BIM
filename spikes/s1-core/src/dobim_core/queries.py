@@ -266,10 +266,11 @@ def wall_row(g, w):
     length = g.q(wall_length, w)
     gross = length * p["height"]
     height = p["height"]
-    if "top_profile" in p:   # 벽 상단 윤곽(21단계): 입면 면적은 윤곽 아래 넓이, 높이 칸은 가장 높은 점
+    if "top_profile" in p:   # 벽 상단 윤곽(21단계): 입면 면적은 윤곽 아래 넓이, 높이 칸은 가장 높은 점(바닥 오프셋 22단계: 벽 바닥에서 잰다)
         start, end, _ = g.q(wall_trim, w)
-        gross = WT.area(p["top_profile"], start, end)
-        height = WT.zmax(p["top_profile"], start, end)
+        b0 = WT.base(p)
+        gross = WT.area(p["top_profile"], start, end) - b0 * (end - start)
+        height = WT.zmax(p["top_profile"], start, end) - b0
     opening = 0.0
     hosted = g.q(wall_hosted, w)
     for d in hosted:
@@ -394,6 +395,8 @@ def ifc_spec(g, e):
         x, y, c, s, _ = g.q(wall_frame, e)
         spec = {"kind": kind, "name": p["name"], "level": g.q(wall_level, e), "origin": (x, y), "xdir": (c, s),
                 "footprint": g.q(wall_footprint, e), "height": p["height"], "intent": intent}
+        if "base_offset" in p:   # 바닥 오프셋(22단계): 몸체가 레벨 + base 에서 시작한다. 없으면 명세는 이전과 같다
+            spec["base"] = WT.base(p)
         if "layers" in p:   # 층 구성이 없으면 명세는 이전과 같다
             spec["layers"] = tuple((x["material"], x["thickness"]) for x in p["layers"])
         if "openings" in p:   # 모양 개구부(18단계): 없으면 명세는 이전과 같다
@@ -401,7 +404,7 @@ def ifc_spec(g, e):
             spec["thickness"] = p["thickness"]
         if "top_profile" in p:   # 벽 상단 윤곽(21단계): 지역 (u, z) 수직 윤곽을 두께로 돌출한다. 없으면 명세는 이전과 같다
             fp = spec["footprint"]
-            spec["top"] = tuple(WT.loop(p["top_profile"], fp[0][0], fp[1][0]))
+            spec["top"] = tuple(WT.loop(p["top_profile"], fp[0][0], fp[1][0], WT.base(p)))
             spec["thickness"] = p["thickness"]
         return spec
     if kind == "solid":

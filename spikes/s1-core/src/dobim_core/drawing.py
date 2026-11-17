@@ -178,7 +178,7 @@ def _openings(g, w, doors_only):
     start, end, _ = g.q(Q.wall_trim, w)
     p = Q.el(g, w)["params"]
     _, elev = g.q(Q.level_info, g.q(Q.wall_level, w))
-    zb, zt = elev, elev + _top_rel(p)
+    zb, zt = elev + WT.base(p), elev + _top_rel(p)
     out = []
     for d in g.q(Q.wall_hosted, w):
         if doors_only and Q.el(g, d)["kind"] != "door":
@@ -223,8 +223,8 @@ def _bands(start, end, zb, zt, ops):
 
 
 def _top_rel(p) -> float:
-    """벽 윗면의 레벨 기준 높이: 상단 윤곽(21단계)이 있으면 가장 높은 점, 없으면 height."""
-    return WT.zmax(p["top_profile"]) if "top_profile" in p else p["height"]
+    """벽 윗면의 레벨 기준 높이: 상단 윤곽(21단계)이 있으면 가장 높은 점, 없으면 바닥 오프셋(22단계) + height."""
+    return WT.top_rel(p)
 
 
 def wall_solid(g, w):
@@ -237,11 +237,12 @@ def wall_solid(g, w):
     ops = g.q(wall_openings, w)
     _, elev = g.q(Q.level_info, g.q(Q.wall_level, w))
     top = None
+    b0 = elev + WT.base(p)   # 바닥 오프셋(22단계): 없으면 레벨 높이 그대로
     if "top_profile" in p:
         top = tuple((u, elev + z) for u, z in WT.clip(p["top_profile"], start, end))
-        zb, zt = elev, max(z for _, z in top)
+        zb, zt = b0, max(z for _, z in top)
     else:
-        zb, zt = elev, elev + p["height"]
+        zb, zt = b0, b0 + p["height"]
     return (x, y, c, s, p["thickness"] / 2.0, start, end, zb, zt, ops, _bands(start, end, zb, zt, ops), top)
 
 
@@ -2613,7 +2614,7 @@ def _door_leaf_map(g, w):
     """벽의 문 개구부 (u0, u1, z0, z1) -> 문 속성의 문짝 두께(leaf). 입력이 없는 문은 넣지 않는다(규약값을 쓴다)."""
     start, end, _ = g.q(Q.wall_trim, w)
     _, elev = g.q(Q.level_info, g.q(Q.wall_level, w))
-    zb, zt = elev, elev + _top_rel(Q.el(g, w)["params"])
+    zb, zt = elev + WT.base(Q.el(g, w)["params"]), elev + _top_rel(Q.el(g, w)["params"])
     out = {}
     for d in g.q(Q.wall_hosted, w):
         row = Q.el(g, d)

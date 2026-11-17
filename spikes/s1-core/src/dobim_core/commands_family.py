@@ -15,6 +15,7 @@ from pydantic import Field, StrictStr, model_validator
 
 from dobim_core import commands as C
 from dobim_core import limits
+from dobim_core import walltop as WT
 from dobim_core.commands import A, Id, Name, Num, PropValue, command
 from dobim_core.errors import DobimError
 from dobim_core.family import evaluate as FE
@@ -289,7 +290,8 @@ def _inst_geometry(ctx, tp: dict, values: dict, host_id: str | None, offset, ele
         z0, z1 = ev["cut"]["z"]
         if offset + x0 < 0 or offset + x1 > length:
             raise DobimError("CONSTRAINT", f"개구부({offset + x0:.0f}..{offset + x1:.0f}mm)가 호스트 벽({length:.1f}mm) 밖으로 나간다", path="/offset")
-        if elevation + z0 < 0 or elevation + z1 > _wall_height(ctx, host_id):
+        b0 = WT.base(ctx.st.el[host_id]["params"])   # 바닥 오프셋(22단계)
+        if elevation + z0 < b0 - 1e-9 or elevation + z1 > b0 + _wall_height(ctx, host_id):
             raise DobimError("CONSTRAINT", "개구부가 호스트 벽의 높이 밖으로 나간다", path="/elevation")
     return ev, host_ctx
 
@@ -318,6 +320,8 @@ def check_hosted_fit(ctx, wall_id: str, old_wp: dict, new_wp: dict) -> None:
     호스트 형상을 바꾸는 커맨드는 wall.set 뿐이다(wall.move 는 평행이동이라 두께·높이·길이가 그대로고, join 은 파생 트림만 바꾼다).
     """
     changed = next((k for k in ("thickness", "height", "axis") if old_wp[k] != new_wp[k]), None)
+    if changed is None and WT.base(old_wp) != WT.base(new_wp):   # 바닥 오프셋(22단계)만 바뀌어도 높이 범위를 다시 본다
+        changed = "base_offset"
     if changed is None:
         return
     path = "/" + changed
@@ -344,7 +348,8 @@ def check_hosted_fit(ctx, wall_id: str, old_wp: dict, new_wp: dict) -> None:
         if p["offset"] + x0 < 0 or p["offset"] + x1 > length:
             raise DobimError("CONSTRAINT", f"호스팅된 패밀리 인스턴스 {d} 의 개구부가 새 벽({length:.1f}mm) 밖으로 나간다", path=path,
                              details={"instance": d})
-        if p["elevation"] + z0 < 0 or p["elevation"] + z1 > new_wp["height"]:
+        b0 = WT.base(new_wp)
+        if p["elevation"] + z0 < b0 - 1e-9 or p["elevation"] + z1 > b0 + new_wp["height"]:
             raise DobimError("CONSTRAINT", f"호스팅된 패밀리 인스턴스 {d} 의 개구부가 새 벽 높이({new_wp['height']:g}mm) 밖으로 나간다", path=path,
                              details={"instance": d})
         w, h = x1 - x0, z1 - z0

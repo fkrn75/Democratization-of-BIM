@@ -153,7 +153,7 @@ def _parse_intent(kind: str, text: str) -> dict:
             raise ValueError("레벨 params 키가 다르다")
         out = {"name": _name(p["name"]), "elevation": _num(p["elevation"])}
     elif kind == "wall":
-        if set(p) - {"layers", "openings", "top_profile"} != {"name", "axis", "thickness", "height"} or not isinstance(p["axis"], list) or len(p["axis"]) != 4:
+        if set(p) - {"layers", "openings", "top_profile", "base_offset"} != {"name", "axis", "thickness", "height"} or not isinstance(p["axis"], list) or len(p["axis"]) != 4:
             raise ValueError("벽 params 가 다르다")
         axis = [_num(x) for x in p["axis"]]
         if (axis[2] - axis[0]) ** 2 + (axis[3] - axis[1]) ** 2 < 1.0:
@@ -168,7 +168,11 @@ def _parse_intent(kind: str, text: str) -> dict:
             if not isinstance(v, list) or any(not isinstance(q, list) or len(q) != 2 for q in v):
                 raise ValueError("벽 상단 윤곽이 올바르지 않다")
             out["top_profile"] = [[_num(q[0]), _num(q[1])] for q in v]
-        if "openings" in p or "top_profile" in p:
+        if "base_offset" in p:   # 벽 바닥 오프셋(22단계): 0 은 키 없음과 같으므로 받지 않는다(저작 행에는 0 이 없다)
+            out["base_offset"] = _num(p["base_offset"])
+            if out["base_offset"] == 0.0:
+                raise ValueError("벽 바닥 오프셋 0 은 키 없음으로 적는다")
+        if "openings" in p or "top_profile" in p or "base_offset" in p:
             why = K.row_params_error("wall", out)
             if why:
                 raise ValueError(f"벽이 올바르지 않다({why})")

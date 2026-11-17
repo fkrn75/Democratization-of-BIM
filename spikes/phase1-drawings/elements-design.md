@@ -725,3 +725,20 @@ L-10 은 승강기 평면에 샤프트·카 치수가 있어야 한다. 이미 �
 - 평면 기호: 양 끝 틀 단면(절단 선)·틀 바깥/안쪽 면 선 둘·유리 중심선, 창대 윤곽(투영). 여닫이는 열린 문짝 선과 1/4 호(안여닫이 = +v 쪽, 밖여닫이 = -v 쪽, 경첩 `hinge`). 1:200 은 틀 두께의 절단 사각형만.
 - IFC: IfcWindow(WINDOW), 타입 `PartitioningType` = SINGLE_PANEL / 멀리언 1 DOUBLE_PANEL_VERTICAL / 2 TRIPLE_PANEL_VERTICAL, OverallWidth/Height. IFC4 의 IfcWindow 에는 문의 OperationType 이 없어(창 패널 속성 IfcWindowPanelProperties 는 속성 템플릿 객체라 레시피로 못 넣는다) 여닫이 구분은 속성셋 `DoBIM_WindowFrame.Operation`(타입)과 `DoBIM_WindowParams.Hinge`(인스턴스)로 남긴다. 의도(DoBIM_Intent)에 레시피 전문이 있어 가져오기가 값을 복원한다(왕복 해시 불변 시험).
 - 한계: 렌더·IFC 는 요소 한 개가 한 색이라 틀과 유리가 색으로 구분되지 않고 깊이·모서리 선으로만 보인다(재료 구분을 하려면 창을 하위 요소로 나눠야 해 이번 범위 밖). 틀 단면은 사각형이라 홈·경사 있는 형강 단면은 없다. 외부 창대(물끊기 턱)·셔터 박스는 없다. 시험: `tests/test_practical3_window.py`(10건: 라이브러리 해시 고정, 형상·inset·클램프, 창대·문선, 여닫이·멀리언, 평면 기호·뒤집기, 층 구성 벽 + 180 의 IFC 형상, dobim_render 메시, IFC 왕복, 벽 두께 변경).
+
+## 24. 실무 모델링 보강 4 (스물두 번째 작업, 22단계)
+
+### 24.1 벽 바닥 오프셋(`base_offset`)
+- 문제: 벽 바닥은 늘 레벨 높이였다. 기초 매트 상면(레벨 아래)에서 시작하는 1층 벽처럼 바닥이 레벨과 다른 벽은 레벨을 따로 만들거나 높이·문 높이를 함께 고쳐야 했다. 상용 도구의 Base Offset 에 해당한다.
+- 파라미터: 벽 선택 파라미터 `base_offset`(레벨 기준 mm, 음수 = 레벨 아래, 절댓값 100000 이하). `height` 는 바닥에서 잰다(상단 = 레벨 + base_offset + height). 0 이면 키가 없다(`wall.create` 생략·0, `wall.set` 0 = 뗀다): 키 없는 벽은 행·해시·IFC·도면이 이전과 바이트까지 같다. 순수 함수 `walltop.base`·`walltop.top_rel`.
+- 레벨 기준으로 남는 값: 상단 윤곽 `top_profile` 의 z, 모양 개구부 `sill`, 문 `sill`, 패밀리 인스턴스 `elevation` 은 모두 레벨 기준 그대로다(바닥을 움직여도 문·창이 따라 움직이지 않는다, 상용 도구와 같다). 그래서 검사가 바뀐다: 윤곽 z > base_offset, 모양 개구부 윤곽은 [base, base + height](또는 윤곽) 안(바닥이 음수면 sill 음수 허용), 문턱 >= base_offset(`door.place`·`door.set`·바닥을 올리는 `wall.set`), 패밀리 개구부 범위 [base, base + height](`family.place`, `check_hosted_fit`, 병합 검사 FINST_OUT_OF_HOST). `wall.attach_top` 의 덮이지 않은 구간 높이 = base + height. `wall.split` 은 끝 쪽 새 벽에 같은 값을 준다.
+- IFC: 배치는 레벨 그대로 두고 몸체만 바닥에서 시작한다(돌출 위치 z = base, 상단 윤곽 벽은 수직 윤곽의 바닥 z = base). 개구부·문·층 구성 배치가 바뀌지 않는다. 의도(DoBIM_Intent)에 실려 왕복하고 `foreign` 이 키를 받는다(0 은 거절: 저작 행에 0 은 없다). CLOSURE_FORMAT 15 그대로.
+- 도면·수량: `wall_solid` 의 zb = 레벨 + base(평면 절단 판정·단면·입면·가림·문 개구부 자르기가 모두 이 값을 쓴다). 치수 참조 base 도 같다. 일람표 height 칸 = 바닥에서 잰 높이(윤곽 벽은 가장 높은 점 - base), net_area 는 바닥부터. `element.get` derived 에 bottom_rel·top_rel(키가 있을 때만).
+- 시험: `tests/test_practical4_wall_base.py`(키 없음·0 떼기·실행취소 해시, 분할·검사, 윤곽 넓이, IFC 몸체·왕복 해시, 단면·입면·평면, 증분 도면 = 전체 계산).
+
+### 24.2 마감·소방 전기 범주(`solid` category)
+- 더한 범주(23.1 과 같은 방식, 범주가 클래스를 정한다): ceiling=IfcCovering(CEILING), flooring=IfcCovering(FLOORING), cladding=IfcCovering(CLADDING), insulation=IfcCovering(INSULATION), smoke_detector=IfcSensor(SMOKESENSOR), heat_detector=IfcSensor(HEATSENSOR), alarm_panel=IfcUnitaryControlElement(ALARMPANEL), light_fixture=IfcLightFixture, exit_sign=IfcLightFixture(SECURITYLIGHTING). 기존 covering(MOLDING)은 그대로.
+- 천장·바닥 마감은 구멍 있는 수평 판(`plate`, pitch 0, holes)으로 방 폴리곤을 그대로 쓴다. 천장 하면 = 레벨 + 마감 바닥 높이 + 천장고, 바닥 마감 하면 = 구조 슬래브 상면. 천장틀처럼 두께 근거가 없는 층은 모델에 넣지 않는다(기록).
+- dobim_render 팔레트에 IfcSensor·IfcLightFixture 색. 둘 다 IfcDistributionElement 하위라 mep 묶음에 든다.
+- 시험: `tests/test_practical4_finish.py`(IFC4 클래스·형식, 만들기·실행취소, 왕복 해시, 렌더 묶음).
+- 한계: 경사 천장(지붕 아래 천장)은 판 pitch 로 만들 수 있으나 판 하나가 한 평면이라 꺾인 천장은 판을 나눠야 한다. 실(space)과 천장·마감 판 사이에 관계는 없다(실 경계를 바꿔도 마감 판은 따라가지 않는다).

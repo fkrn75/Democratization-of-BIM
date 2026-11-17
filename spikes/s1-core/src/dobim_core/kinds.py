@@ -137,7 +137,8 @@ def _wall_params(p):
     def axis(v):   # 벽 길이 1mm 이상(wall.create 의 규칙)
         return (isinstance(v, list) and len(v) == 4 and all(num_ok(x) for x in v)
                 and (v[2] - v[0]) ** 2 + (v[3] - v[1]) ** 2 >= 1.0)
-    err = _check_opt("wall", p, {"name": _name, "axis": axis, "thickness": _pos, "height": _pos}, {"layers": layers_ok, "openings": lambda v: isinstance(v, list), "top_profile": lambda v: isinstance(v, list)})
+    err = _check_opt("wall", p, {"name": _name, "axis": axis, "thickness": _pos, "height": _pos}, {"layers": layers_ok, "openings": lambda v: isinstance(v, list), "top_profile": lambda v: isinstance(v, list),
+                                                                                                         "base_offset": lambda v: num_ok(v) and abs(v) <= WT.BASE_OFFSET_MAX})
     if err is None and "layers" in p and abs(layers_total(p["layers"]) - p["thickness"]) > LAYER_SUM_TOL:
         return "wall.layers 두께의 합이 벽 두께와 다르다"
     top = p.get("top_profile") if err is None else None   # 벽 상단 윤곽(21단계): 없으면 이전과 같다
@@ -146,11 +147,14 @@ def _wall_params(p):
         why = WT.profile_problem(top, sqrt((ax[2] - ax[0]) ** 2 + (ax[3] - ax[1]) ** 2))
         if why:
             return f"wall.top_profile: {why}"
+        if "base_offset" in p and WT.zmin(top) <= p["base_offset"]:   # 바닥 오프셋(22단계): 윤곽은 벽 바닥보다 높아야 한다
+            return "wall.top_profile: 상단 윤곽의 높이 z 는 벽 바닥(base_offset)보다 커야 한다"
     if err is None and "openings" in p:   # 모양 개구부(18단계): 벽 입면 사각형(축 길이 x 높이) 안, 서로 겹치지 않는다
         ax = p["axis"]
         ln = sqrt((ax[2] - ax[0]) ** 2 + (ax[3] - ax[1]) ** 2)
-        outer = WT.loop(top, 0.0, ln) if top is not None else [(0.0, 0.0), (ln, 0.0), (ln, p["height"]), (0.0, p["height"])]
-        why = SO.openings_problem(outer, p["openings"]) or (WT.under_problem(top, p["openings"]) if top is not None else None)
+        b0 = WT.base(p)   # 바닥 오프셋(22단계): 개구부 높이는 레벨 기준이고 벽은 b0 에서 시작한다
+        outer = WT.loop(top, 0.0, ln, b0) if top is not None else [(0.0, b0), (ln, b0), (ln, b0 + p["height"]), (0.0, b0 + p["height"])]
+        why = SO.openings_problem(outer, p["openings"], absolute_sill="base_offset" in p) or (WT.under_problem(top, p["openings"]) if top is not None else None)
         if why:
             return f"wall.openings: {why}"
     return err

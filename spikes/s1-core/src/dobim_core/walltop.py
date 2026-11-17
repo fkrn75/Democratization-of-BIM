@@ -47,6 +47,19 @@ def profile_problem(v, length: float) -> str | None:
     return None
 
 
+BASE_OFFSET_MAX = 100000.0   # 벽 바닥 오프셋(22단계)의 절댓값 상한 mm
+
+
+def base(p: dict) -> float:
+    """벽 바닥의 레벨 기준 높이(22단계 base_offset, 상용 도구의 Base Offset). 키가 없으면 0(이전과 같다)."""
+    return float(p.get("base_offset", 0.0))
+
+
+def top_rel(p: dict) -> float:
+    """벽 윗면의 레벨 기준 높이: 상단 윤곽이 있으면 가장 높은 점, 없으면 바닥 오프셋 + height(height 는 바닥에서 잰다)."""
+    return zmax(p["top_profile"]) if "top_profile" in p else base(p) + p["height"]
+
+
 def norm(v) -> list:
     """저장 모양(float 쌍 목록)."""
     return [[float(q[0]), float(q[1])] for q in v]
