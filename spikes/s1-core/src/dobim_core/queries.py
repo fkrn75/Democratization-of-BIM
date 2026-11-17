@@ -9,6 +9,7 @@ from __future__ import annotations
 from math import sqrt
 
 from dobim_core.family import spec as FS
+from dobim_core import solids as SO
 
 JOIN_MAX_EXT = 1000.0   # 조인 지점이 벽 끝에서 이 거리 안일 때만 조인이 성립
 MIN_TRIMMED = 1.0       # 조인 후 벽 길이 하한. 미달이면 조인을 무시하고 경고 상태로 둔다
@@ -187,6 +188,11 @@ def roof_level(g, s):
     return rel_out(g, "on_level", s)[0]
 
 
+# ---------------------------------------------------------------- 일반 솔리드(18단계)
+def solid_level(g, s):
+    return rel_out(g, "on_level", s)[0]
+
+
 # ---------------------------------------------------------------- 공간
 def space_level(g, s):
     return rel_out(g, "on_level", s)[0]
@@ -263,6 +269,8 @@ def wall_row(g, w):
     for d in hosted:
         dp = el(g, d)["params"]
         opening += dp["width"] * dp["height"]
+    for o in p.get("openings", ()):   # 모양 개구부(18단계)의 실제 윤곽 면적
+        opening += abs(SO.area2(SO.opening_loop(o))) / 2.0
     return (w, p["name"], lname, elev, length, p["height"], p["thickness"], gross - opening, len(hosted),
             _pset_val(g, w, "Pset_WallCommon", "FireRating"),
             _pset_val(g, w, "Pset_WallCommon", "IsExternal"),
@@ -321,7 +329,7 @@ def schedule_sorted(g, kind):
 
 def model_stats(g):
     out = {k: g.q(count, k) for k in ("level", "wall", "door")}
-    for k in ("slab", "stair", "space", "railing", "elevator", "roof", "site"):
+    for k in ("slab", "stair", "space", "railing", "elevator", "roof", "site", "solid"):
         n = g.q(count, k)
         if n:   # 슬래브·계단·공간·난간·대지가 없는 프로젝트의 응답·해시는 그대로다
             out[k] = n
@@ -346,8 +354,8 @@ def intent_of(g, e):
     elif row["kind"] == "wall":
         out["level"] = g.q(wall_level, e)
         out["joins"] = list(g.q(wall_joins, e))
-    elif row["kind"] in ("slab", "stair", "space", "railing", "elevator", "roof"):
-        out["level"] = g.q({"slab": slab_level, "stair": stair_level, "space": space_level, "railing": railing_level, "elevator": elevator_level, "roof": roof_level}[row["kind"]], e)
+    elif row["kind"] in ("slab", "stair", "space", "railing", "elevator", "roof", "solid"):
+        out["level"] = g.q({"slab": slab_level, "stair": stair_level, "space": space_level, "railing": railing_level, "elevator": elevator_level, "roof": roof_level, "solid": solid_level}[row["kind"]], e)
     elif row["kind"] == "door":
         out["host"] = g.q(door_host, e)
     return out
@@ -382,7 +390,16 @@ def ifc_spec(g, e):
                 "footprint": g.q(wall_footprint, e), "height": p["height"], "intent": intent}
         if "layers" in p:   # 층 구성이 없으면 명세는 이전과 같다
             spec["layers"] = tuple((x["material"], x["thickness"]) for x in p["layers"])
+        if "openings" in p:   # 모양 개구부(18단계): 없으면 명세는 이전과 같다
+            spec["openings"] = tuple(tuple(SO.opening_loop(o)) for o in p["openings"])
+            spec["thickness"] = p["thickness"]
         return spec
+    if kind == "solid":
+        # 배치는 레벨 좌표계(원점·무회전)이고 형상 z 는 레벨 기준이므로 레벨 높이는 읽지 않는다. 형상은 solids.solid_mesh 가 정한다(도면과 같은 값)
+        verts, faces = SO.solid_mesh(p)
+        cls, pre, otype = SO.SOLID_CATEGORIES[p["category"]]
+        return {"kind": kind, "name": p["name"], "level": g.q(solid_level, e), "ifc_class": cls, "predefined": pre, "object_type": otype,
+                "verts": tuple(verts), "faces": tuple(tuple(tuple(lp) for lp in f) for f in faces), "intent": intent}
     if kind == "slab":
         # 배치는 레벨 좌표계(원점·무회전)이고 윗면은 레벨 + top_offset 이므로 레벨 높이는 읽지 않는다(레벨을 옮기면 배치가 따라간다)
         spec = {"kind": kind, "name": p["name"], "level": g.q(slab_level, e), "boundary": tuple(tuple(q) for q in p["boundary"]),

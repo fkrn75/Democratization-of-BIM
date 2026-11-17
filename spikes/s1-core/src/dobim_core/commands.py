@@ -238,6 +238,40 @@ def level_create(ctx, a: LevelCreate):
     return {"id": a.id}
 
 
+class OpeningIn(A):
+    """모양 개구부 하나(18단계): 벽·판에 뚫는 사각·반원 아치·뾰족 아치·원 구멍."""
+    shape: Literal["rect", "round", "pointed", "circle"] = Field(description="rect 사각, round 반원 머리, pointed 뾰족 아치, circle 원(폭 = 높이)")
+    offset: Num = Field(description="개구부 중심의 길이 방향 위치 mm(벽은 축선 시작점, 판은 line 시작점에서)")
+    sill: Num = Field(description="개구부 바닥 높이 mm(벽은 레벨 기준 0 이상, 판은 레벨 기준 z)")
+    width: Pos = Field(description="개구부 폭 mm")
+    height: Pos = Field(description="개구부 전체 높이 mm(아치 꼭대기까지)")
+    rise: Pos | None = Field(None, description="뾰족 아치의 아치 높이 mm(폭/2 이상 높이 이하). 생략하면 정삼각 아치(폭 x 0.866)")
+    fill: Literal["none", "glazing", "door"] | None = Field(None, description="채움(기록·평면 표시용): none 빈 구멍, glazing 유리, door 출입구")
+
+
+Openings = Annotated[list[OpeningIn], Field(max_length=64, description="모양 개구부 목록(0~64개). 빈 목록이면 개구부를 모두 뗀다")]
+
+
+def _openings_in(ops) -> list:
+    """입력 개구부 -> 행에 저장하는 모양(없는 선택 키는 두지 않는다)."""
+    out = []
+    for o in ops:
+        d = {"shape": o.shape, "offset": float(o.offset), "sill": float(o.sill), "width": float(o.width), "height": float(o.height)}
+        if o.rise is not None:
+            d["rise"] = float(o.rise)
+        if o.fill is not None:
+            d["fill"] = o.fill
+        out.append(d)
+    return out
+
+
+def _wall_checked(p: dict) -> dict:
+    why = K.row_params_error("wall", p)
+    if why:
+        raise DobimError("CONSTRAINT", f"벽이 올바르지 않다: {why}", path="/openings" if "openings" in why else None)
+    return p
+
+
 class WallCreate(A):
     id: Id | None = None
     level: Id
@@ -245,19 +279,26 @@ class WallCreate(A):
     thickness: Pos = 200.0
     height: Pos = 3000.0
     name: Name | None = None
+    openings: Openings | None = Field(None, description="모양 개구부(아치 창·원창·출입구). IFC 는 모양 윤곽의 IfcOpeningElement + IfcRelVoidsElement")
 
 
 @command("wall.create", kind="mutation", risk="write", group="model.wall", summary="벽 생성",
          args=WallCreate, since="0.1",
-         examples=[{"level": F.LV1, "axis": [0, 4000, 6000, 4000], "thickness": 200}])
+         examples=[{"level": F.LV1, "axis": [0, 4000, 6000, 4000], "thickness": 200},
+                   {"level": F.LV1, "axis": [0, 6000, 6000, 6000], "thickness": 600, "height": 6000,
+                    "openings": [{"shape": "pointed", "offset": 1500, "sill": 900, "width": 900, "height": 3000, "fill": "glazing"},
+                                 {"shape": "circle", "offset": 4000, "sill": 3600, "width": 1200, "height": 1200}]}])
 def wall_create(ctx, a: WallCreate):
     _fresh_id(ctx, a, "wall")
     ctx.authored(a.level, "level", what="레벨에 벽을 추가하는 것")
     if _axis_len2(a.axis) < 1.0:
         raise DobimError("CONSTRAINT", "벽 길이는 1mm 이상이어야 한다", path="/axis")
     a.name = a.name or f"W-{a.id[-6:]}"
-    ctx.put_el(a.id, row("wall", "IfcWall", "wall.basic", {
-        "name": a.name, "axis": list(a.axis), "thickness": a.thickness, "height": a.height}))
+    p = {"name": a.name, "axis": list(a.axis), "thickness": a.thickness, "height": a.height}
+    if a.openings:   # 개구부가 없으면 행은 이전과 같다
+        p["openings"] = _openings_in(a.openings)
+        _wall_checked(p)
+    ctx.put_el(a.id, row("wall", "IfcWall", "wall.basic", p))
     ctx.rel("on_level", a.id, a.level, True)
     return {"id": a.id}
 
@@ -285,10 +326,11 @@ class WallSet(A):
     thickness: Pos | None = None
     height: Pos | None = None
     axis: Annotated[list[Num], Field(min_length=4, max_length=4)] | None = None
+    openings: Openings | None = Field(None, description="모양 개구부 목록을 통째로 바꾼다(빈 목록 = 모두 뗀다)")
 
     @model_validator(mode="after")
     def _any(self):
-        if all(v is None for v in (self.name, self.thickness, self.height, self.axis)):
+        if all(v is None for v in (self.name, self.thickness, self.height, self.axis, self.openings)):
             raise ValueError("바꿀 필드가 하나도 없다")
         return self
 
@@ -315,6 +357,13 @@ def wall_set(ctx, a: WallSet):
             if dp["offset"] - dp["width"] / 2 < 0 or dp["offset"] + dp["width"] / 2 > length:
                 raise DobimError("CONSTRAINT", f"호스팅된 문이 벽 밖으로 나간다: {d}", path="/axis")
     # 호스팅된 패밀리 인스턴스(finst)는 호스트 두께·높이·길이에 제약을 가진다: 새 벽 치수로 미리 재평가해 깨지면 거절한다
+    if a.openings is not None:
+        if a.openings:
+            p["openings"] = _openings_in(a.openings)
+        else:
+            p.pop("openings", None)
+    if "openings" in p:   # 축·높이가 바뀌어 개구부가 벽 밖으로 나가면 거절한다
+        _wall_checked(p)
     from dobim_core.commands_family import check_hosted_fit
     check_hosted_fit(ctx, a.id, r["params"], p)
     ctx.put_el(a.id, dict(r, params=p))
@@ -493,11 +542,28 @@ def wall_split(ctx, a: WallSplit):
     if abs(w0 - b0) > tol or abs(w1 - a.at) > tol or abs(n0) > tol or abs(n1 - (b1 - a.at)) > tol:
         raise DobimError("CONSTRAINT", "이 위치에서 나누면 조인 정리(trim)가 달라진다", path="/at",
                          hint="조인 지점에서 1000mm 넘게 떨어진 곳에서 나누세요")
+    ops_w, ops_n = [], []
+    for o in p.get("openings", ()):   # 모양 개구부(18단계)는 놓인 쪽 벽으로 간다. 가로지르면 거절한다
+        h2 = o["width"] / 2.0
+        if o["offset"] + h2 <= a.at:
+            ops_w.append(dict(o))
+        elif o["offset"] - h2 >= a.at:
+            ops_n.append(dict(o, offset=o["offset"] - a.at))
+        else:
+            raise DobimError("CONSTRAINT", "분할 위치가 모양 개구부를 가로지른다", path="/at")
     name = (p["name"][:62] + "-b")
-    ctx.put_el(a.id, dict(r, params=dict(p, axis=ax_w)))
+    pw = dict(p, axis=ax_w)
+    if "openings" in p:
+        if ops_w:
+            pw["openings"] = ops_w
+        else:
+            pw.pop("openings")
+    ctx.put_el(a.id, dict(r, params=pw))
     np_ = {"name": name, "axis": ax_n, "thickness": p["thickness"], "height": p["height"]}
     if "layers" in p:   # 층 구성이 있으면 끝 쪽 새 벽도 같은 층 구성(복사)
         np_["layers"] = [dict(x) for x in p["layers"]]
+    if ops_n:
+        np_["openings"] = ops_n
     ctx.put_el(nid, row("wall", "IfcWall", "wall.basic", np_))
     ctx.rel("on_level", nid, ctx.rels_out("on_level", a.id)[0], True)
     for d in doors_n:
@@ -1957,6 +2023,178 @@ def roof_move(ctx, a: SlabMove):
          args=IdArg, since="0.4", examples=[{"id": F.RF1}])
 def roof_delete(ctx, a: IdArg):
     ctx.authored(a.id, "roof", what="삭제")
+    _delete_one(ctx, a.id)
+    return {"deleted": [a.id]}
+
+
+# ---------------------------------------------------------------- 일반 솔리드 (18단계, 설계: elements-design.md 17절)
+# 벽·지붕 같은 정형 요소로 표현할 수 없는 부재(부벽 단·각뿔/팔각 첨탑·소첨탑·띠돌림·박공 메움·경사 판·지반)를 돌출·로프트·판·스윕·메시로 만든다.
+# 형상 검사와 다면체는 solids.py 가 정본이다. IFC 클래스는 범주(category)가 정한다. z 는 놓인 레벨 기준이다.
+SoCoord = Annotated[float, Field(allow_inf_nan=False, ge=-1e7, le=1e7)]
+SoPt2 = Annotated[list[SoCoord], Field(min_length=2, max_length=2)]
+SoPt3 = Annotated[list[SoCoord], Field(min_length=3, max_length=3)]
+SoPoly = Annotated[list[SoPt2], Field(min_length=1, max_length=256)]
+SoCategory = Literal[tuple(K.SO.SOLID_CATEGORIES)]
+
+
+class LoftSection(A):
+    z: SoCoord = Field(description="단면 높이 mm(레벨 기준)")
+    polygon: SoPoly = Field(description="단면 다각형 [[x,y],...]. 맨 아래·맨 위 단면은 꼭짓점 하나(정점)여도 된다")
+
+
+class SolidGeom(A):
+    form: Literal["prism", "loft", "panel", "sweep", "mesh"] | None = Field(None, description="prism 수직 돌출, loft 단면 잇기(각뿔·첨탑), panel 수직면 위 윤곽 판(+개구부), sweep 평면 경로를 따른 단면(띠돌림), mesh 다면체")
+    polygon: SoPoly | None = Field(None, description="prism: 평면 윤곽 [[x,y],...] (3~256)")
+    z0: SoCoord | None = Field(None, description="prism: 아랫면 z mm(레벨 기준)")
+    z1: SoCoord | None = Field(None, description="prism: 윗면 z mm(레벨 기준)")
+    sections: Annotated[list[LoftSection], Field(min_length=2, max_length=32)] | None = Field(None, description="loft: 아래에서 위로 단면 목록(꼭짓점 수가 같아야 한다)")
+    line: Annotated[list[SoCoord], Field(min_length=4, max_length=4)] | None = Field(None, description="panel: 판이 놓인 수직면의 기준선 [x1,y1,x2,y2]. 판 두께는 이 선의 양쪽으로 반씩")
+    thickness: Pos | None = Field(None, description="panel: 판 두께 mm")
+    profile: SoPoly | None = Field(None, description="panel: 윤곽 [[u,z],...] (u = line 시작점에서 길이 방향, z = 레벨 기준) / sweep: 단면 [[o,z],...] (o = 경로 진행 방향 왼쪽 거리)")
+    openings: Openings | None = Field(None, description="panel: 모양 개구부(offset 은 line 시작점 기준, sill 은 레벨 기준 z). 빈 목록이면 뗀다")
+    path: Annotated[list[SoPt2], Field(min_length=2, max_length=256)] | None = Field(None, description="sweep: 평면 경로 [[x,y],...] (첫 점을 끝에 다시 주면 닫힌 고리)")
+    vertices: Annotated[list[SoPt3], Field(min_length=4, max_length=4096)] | None = Field(None, description="mesh: 꼭짓점 [[x,y,z],...] (z 는 레벨 기준)")
+    faces: Annotated[list[Annotated[list[Annotated[int, Field(ge=0, le=4095)]], Field(min_length=3, max_length=64)]], Field(min_length=4, max_length=8192)] | None = Field(None, description="mesh: 면 = 꼭짓점 번호 목록(바깥에서 보아 반시계). 닫힌 다면체여야 한다")
+
+
+_SO_KEYS = {"prism": ("polygon", "z0", "z1"), "loft": ("sections",), "panel": ("line", "thickness", "profile", "openings"), "sweep": ("path", "profile"), "mesh": ("vertices", "faces")}
+
+
+def _solid_geom(a: SolidGeom, base: dict | None) -> dict:
+    """입력 형상 필드 -> 행 params 의 형상 부분. base 가 있으면(solid.set) 바꾸지 않은 키를 이어받는다. 형태가 바뀌면 이전 형태 키는 버린다."""
+    form = a.form or (base or {}).get("form")
+    if form is None:
+        raise DobimError("CONSTRAINT", "solid.form 이 필요하다", path="/form")
+    out = {"form": form}
+    if base and base.get("form") == form:
+        for k in _SO_KEYS[form]:
+            if k in base:
+                out[k] = base[k]
+    for k in _SO_KEYS[form]:
+        v = getattr(a, k)
+        if v is None:
+            continue
+        if k in ("z0", "z1", "thickness"):
+            out[k] = float(v)
+        elif k == "line":
+            out[k] = [float(x) for x in v]
+        elif k in ("polygon", "profile", "path", "vertices"):
+            out[k] = [[float(c) for c in q] for q in v]
+        elif k == "sections":
+            out[k] = [{"z": float(s_.z), "polygon": [[float(c) for c in q] for q in s_.polygon]} for s_ in v]
+        elif k == "faces":
+            out[k] = [list(f) for f in v]
+        elif k == "openings":
+            if v:
+                out[k] = _openings_in(v)
+            else:
+                out.pop(k, None)
+    for k in ("polygon", "z0", "z1", "sections", "line", "thickness", "profile", "path", "vertices", "faces", "openings"):
+        if k not in _SO_KEYS[form] and getattr(a, k) is not None:
+            raise DobimError("CONSTRAINT", f"{k} 는 form={form} 에 쓰지 않는다", path=f"/{k}")
+    return out
+
+
+def _solid_checked(p: dict) -> dict:
+    why = K.row_params_error("solid", p)
+    if why:
+        raise DobimError("CONSTRAINT", f"솔리드가 올바르지 않다: {why}")
+    return p
+
+
+class SolidCreate(SolidGeom):
+    id: Id | None = None
+    level: Id = Field(description="놓인 레벨(형상의 z 는 이 레벨 높이 기준)")
+    category: SoCategory = Field("proxy", description="부재 범주(IFC 분류를 정한다): " + ", ".join(f"{k}={v[0]}" + (f"({v[1]})" if v[1] else "") for k, v in K.SO.SOLID_CATEGORIES.items()))
+    name: Name | None = None
+
+
+@command("solid.create", kind="mutation", risk="write", group="model.solid",
+         summary="일반 솔리드 생성(돌출 prism·단면 잇기 loft·수직 판 panel(+아치 개구부)·스윕 sweep·메시 mesh). 범주가 IFC 클래스를 정한다(IfcWall·IfcRoof·IfcColumn·IfcCovering 등). IFC 는 IfcFacetedBrep",
+         args=SolidCreate, since="0.5",
+         examples=[{"level": F.LV1, "category": "buttress", "form": "prism", "polygon": [[0, -900], [600, -900], [600, -100], [0, -100]], "z0": 0, "z1": 2400},
+                   {"level": F.LV2, "category": "spire", "form": "loft", "sections": [{"z": 0, "polygon": [[0, 0], [1000, 0], [1000, 1000], [0, 1000]]}, {"z": 3000, "polygon": [[500, 500]]}]}])
+def solid_create(ctx, a: SolidCreate):
+    _fresh_id(ctx, a, "solid")
+    ctx.authored(a.level, "level", what="레벨에 솔리드를 추가하는 것")
+    if a.form is None:
+        raise DobimError("CONSTRAINT", "solid.form 이 필요하다", path="/form")
+    a.name = a.name or f"SO-{a.id[-6:]}"
+    p = _solid_checked({"name": a.name, "category": a.category, **_solid_geom(a, None)})
+    ctx.put_el(a.id, row("solid", K.SO.SOLID_CATEGORIES[a.category][0], "solid.generic", p))
+    ctx.rel("on_level", a.id, a.level, True)
+    return {"id": a.id}
+
+
+class SolidSet(SolidGeom):
+    forbid_null = True
+    id: Id
+    name: Name | None = None
+    category: SoCategory | None = None
+
+    @model_validator(mode="after")
+    def _any(self):
+        if all(getattr(self, k) is None for k in ("name", "category", "form", "polygon", "z0", "z1", "sections", "line", "thickness", "profile", "openings", "path", "vertices", "faces")):
+            raise ValueError("바꿀 필드가 하나도 없다")
+        return self
+
+
+@command("solid.set", kind="mutation", risk="write", group="model.solid", summary="솔리드 속성 변경(이름·범주·형태·형상 필드). 형태를 바꾸면 그 형태의 필드를 모두 준다",
+         args=SolidSet, since="0.5", examples=[{"id": F.SO1, "z1": 3000}])
+def solid_set(ctx, a: SolidSet):
+    r = ctx.authored(a.id, "solid")
+    old = r["params"]
+    p = {"name": a.name or old["name"], "category": a.category or old["category"], **_solid_geom(a, old)}
+    p = _solid_checked(p)
+    if K.SO.SOLID_CATEGORIES[p["category"]][0] != r["ifc_class"]:   # IFC 신원(클래스)은 만들 때 정해진다
+        raise DobimError("CONSTRAINT", f"범주를 바꾸면 IFC 클래스가 달라진다({r['ifc_class']} -> {K.SO.SOLID_CATEGORIES[p['category']][0]})", path="/category",
+                         hint="같은 IFC 클래스의 범주로 바꾸거나, 지우고 새로 만드세요")
+    ctx.put_el(a.id, dict(r, params=p))
+    return {"id": a.id}
+
+
+class SolidMove(A):
+    id: Id
+    dx: Num = 0.0
+    dy: Num = 0.0
+    dz: Num = 0.0
+
+
+def _solid_moved(p: dict, dx: float, dy: float, dz: float) -> dict:
+    f = p["form"]
+    q = dict(p)
+    if f == "prism":
+        q["polygon"] = [[x + dx, y + dy] for x, y in p["polygon"]]
+        q["z0"], q["z1"] = p["z0"] + dz, p["z1"] + dz
+    elif f == "loft":
+        q["sections"] = [{"z": s_["z"] + dz, "polygon": [[x + dx, y + dy] for x, y in s_["polygon"]]} for s_ in p["sections"]]
+    elif f == "panel":
+        x1, y1, x2, y2 = p["line"]
+        q["line"] = [x1 + dx, y1 + dy, x2 + dx, y2 + dy]
+        q["profile"] = [[u, z + dz] for u, z in p["profile"]]
+        if "openings" in p:
+            q["openings"] = [dict(o, sill=o["sill"] + dz) for o in p["openings"]]
+    elif f == "sweep":
+        q["path"] = [[x + dx, y + dy] for x, y in p["path"]]
+        q["profile"] = [[o, z + dz] for o, z in p["profile"]]
+    else:
+        q["vertices"] = [[x + dx, y + dy, z + dz] for x, y, z in p["vertices"]]
+    return q
+
+
+@command("solid.move", kind="mutation", risk="write", group="model.solid", summary="솔리드를 평행 이동한다(dx, dy, dz)",
+         args=SolidMove, since="0.5", examples=[{"id": F.SO1, "dx": 600, "dy": 0}])
+def solid_move(ctx, a: SolidMove):
+    r = ctx.authored(a.id, "solid")
+    p = _solid_checked(_solid_moved(r["params"], float(a.dx), float(a.dy), float(a.dz)))
+    ctx.put_el(a.id, dict(r, params=p))
+    return {"id": a.id}
+
+
+@command("solid.delete", kind="mutation", risk="write", group="model.solid", summary="솔리드 삭제",
+         args=IdArg, since="0.5", examples=[{"id": F.SO1}])
+def solid_delete(ctx, a: IdArg):
+    ctx.authored(a.id, "solid", what="삭제")
     _delete_one(ctx, a.id)
     return {"deleted": [a.id]}
 

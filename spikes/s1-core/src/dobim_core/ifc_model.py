@@ -27,14 +27,17 @@ import ifcopenshell.api.project as api_project
 import ifcopenshell.api.pset as api_pset
 import ifcopenshell.api.root as api_root
 import ifcopenshell.api.spatial as api_spatial
+import ifcopenshell.api.style as api_style
 import ifcopenshell.api.unit as api_unit
 import ifcopenshell.guid
 import ifcopenshell.util.element as ue
 import ifcopenshell.util.unit as uunit
 import ifcopenshell.validate
 
+from dobim_core import appearance as AP
 from dobim_core.errors import DobimError
 from dobim_core.kinds import FIXED_IFC_CLASS, SLAB_OPENINGS_MAX, parapet_ring, roof_geom, stair_layout
+from dobim_core.solids import OPENINGS_MAX
 from dobim_core.kinds import _plane_of as plane_of
 from dobim_core.family import ifcproj as fp
 from dobim_core.viewdefs import DEFS_PSET
@@ -209,7 +212,9 @@ def detect_skeleton(f):
 #       소유 슬래브 구멍)은 의도로만 왕복하고 IFC 형상은 그대로다. 지붕·파라펫·부속이 없는 프로젝트는 요소 행·IFC·클로저가 이전과 같다
 #   (15단계: 올리지 않았다. 난간의 출처 표식(src·src_tag·src_inset)은 의도로만 왕복하고, 섬 구멍 있는 공간(holes)의 몸체는 IfcArbitraryProfileDefWithVoids 로 나가며 클로저가
 #    형상을 그대로 펼쳐 담는다. 구멍이 없는 공간·출처가 없는 난간은 요소 행·IFC·클로저가 이전과 같다)
-CLOSURE_FORMAT = "14"
+#   "15" 일반 솔리드 종류 신설(IfcFacetedBrep 한 몸체, 클래스는 범주가 정하고 가져오기는 의도가 밝힌 종류 solid 를 따른다)과 벽의 모양 개구부(벽이 소유하는
+#       IfcOpeningElement 부속: 클로저에 벽을 뚫는 개구부로 들어간다). 솔리드가 없고 벽에 openings 가 없는 프로젝트는 요소 행·IFC·클로저가 이전과 같다
+CLOSURE_FORMAT = "15"
 
 
 def make_norm():
@@ -771,7 +776,7 @@ class IfcModel:
                         if r.is_a("IfcRelFillsElement") and r.RelatedBuildingElement == e:
                             self.openings[eid] = r.RelatingOpeningElement
                             self._opening_gid[eid] = r.RelatingOpeningElement.GlobalId
-                if kind in ("slab", "stair", "roof"):
+                if kind in ("slab", "stair", "roof", "wall"):
                     self._adopt_parts(eid, kind, e)
                 self._adopt_family_state(eid, kind, e)
                 return
@@ -985,13 +990,24 @@ class IfcModel:
         if mat is None:
             mat = api_material.add_material(self.f, name=name)
             self._mats[name] = mat
+            rgb = AP.material_rgb(name)
+            if rgb is not None:   # 겉모습 표에 있는 재료(벽돌·동판·석재·유리 등, 18단계): 재료에 표면 스타일 색을 붙인다
+                st = api_style.add_style(self.f, name=name)
+                api_style.add_surface_style(self.f, style=st, ifc_class="IfcSurfaceStyleShading",
+                                            attributes={"SurfaceColour": {"Name": None, "Red": rgb[0] / 255.0, "Green": rgb[1] / 255.0, "Blue": rgb[2] / 255.0}})
+                api_style.assign_material_style(self.f, material=mat, style=st, context=self.body)
         return mat
 
     def _gc_material(self, mat) -> None:
         """사용처가 없는 재료는 지운다. 재료 목록이 상태의 함수가 되어야 취소 후 해시가 복원된다."""
-        if mat.is_a("IfcMaterial") and not self.f.get_inverse(mat):
+        if mat.is_a("IfcMaterial") and not [x for x in self.f.get_inverse(mat) if not x.is_a("IfcMaterialDefinitionRepresentation")]:
             self._mats.pop(mat.Name, None)
+            # 재료의 표면 스타일(18단계)도 함께 치운다(취소 후 해시 복원): 표현·스타일 항목은 remove_material 이 지우고, 스타일 자체는 여기서 지운다
+            styles = [st for rep in (mat.HasRepresentation or ()) for r in rep.Representations for it in r.Items for st in (it.Styles or ())]
             api_material.remove_material(self.f, material=mat)
+            for st in styles:
+                if not self.f.get_inverse(st):
+                    api_style.remove_style(self.f, style=st)
         elif our_usage(mat) and not self.f.get_inverse(mat):   # 지정이 끊긴 코어 층 구성: 층·층 집합·쓰던 재료까지 치운다
             self._drop_layer_set(mat.ForLayerSet)
 
@@ -1045,7 +1061,7 @@ class IfcModel:
     def project(self, eid: str, spec: dict) -> None:
         kind = spec["kind"]
         {"level": self._project_level, "wall": self._project_wall, "door": self._project_door, "slab": self._project_slab, "stair": self._project_stair, "space": self._project_space, "railing": self._project_railing, "elevator": self._project_elevator, "roof": self._project_roof,
-         "site": self._project_site, "ftype": lambda i, sp: fp.project_type(self, i, sp), "finst": lambda i, sp: fp.project_inst(self, i, sp)}[kind](eid, spec)
+         "site": self._project_site, "solid": self._project_solid, "ftype": lambda i, sp: fp.project_type(self, i, sp), "finst": lambda i, sp: fp.project_inst(self, i, sp)}[kind](eid, spec)
         # 의도를 IFC 에도 복제한다. 정본은 의도 저장소이고 이 속성셋은 매번 덮어쓴다.
         e = self.ents[eid]
         text = json.dumps(spec["intent"], sort_keys=True, separators=(",", ":"))
@@ -1099,6 +1115,44 @@ class IfcModel:
             self._assign_layers(e, layers, "AXIS2", "POSITIVE", -sum(t for _, t in layers) / 2.0, pairs_label(layers))
         else:
             self._clear_layers(e)
+        # 모양 개구부(18단계): 벽 지역 (u, z) 윤곽을 두께 방향(지역 y)으로 벽보다 양쪽 10mm 더 길게 돌출한 IfcOpeningElement. 없으면 부속도 없다(이전과 같다)
+        ops = spec.get("openings", ())
+        if ops or eid in self.parts:
+            half = spec.get("thickness", 0.0) / 2.0 + 10.0
+            self._sync_parts(eid, {f"opening:{i}": {"cls": "IfcOpeningElement", "name": f"{spec['name']}-opening{i + 1}", "rel": "void",
+                                                     "solid": (lambda lp=lp: self._vprofile_solid(lp, half, 2.0 * half))} for i, lp in enumerate(ops)})
+
+    def _vprofile_solid(self, loop, y0, depth):
+        """지역 (u, z) 수직 윤곽을 지역 y = y0 에서 -y 방향으로 depth 만큼 돌출한 솔리드(축 (0,-1,0), 기준 방향 (1,0,0): 윤곽의 y 가 위쪽 z 가 된다)."""
+        f = self.f
+        pl = f.createIfcPolyline([f.createIfcCartesianPoint([float(u), float(z)]) for u, z in list(loop) + [loop[0]]])
+        prof = f.createIfcArbitraryClosedProfileDef("AREA", None, pl)
+        pos = f.createIfcAxis2Placement3D(f.createIfcCartesianPoint([0.0, float(y0), 0.0]), f.createIfcDirection([0.0, -1.0, 0.0]), f.createIfcDirection([1.0, 0.0, 0.0]))
+        return f.createIfcExtrudedAreaSolid(prof, pos, f.createIfcDirection([0.0, 0.0, 1.0]), float(depth))
+
+    def _brep(self, verts, faces):
+        """다면체(solids.solid_mesh 의 값) -> IfcFacetedBrep. 꼭짓점 점 엔티티는 면끼리 공유한다."""
+        f = self.f
+        pts = [f.createIfcCartesianPoint([float(x), float(y), float(z)]) for x, y, z in verts]
+        out = []
+        for face in faces:
+            bounds = [f.createIfcFaceOuterBound(f.createIfcPolyLoop([pts[i] for i in face[0]]), True)]
+            bounds += [f.createIfcFaceBound(f.createIfcPolyLoop([pts[i] for i in lp]), True) for lp in face[1:]]
+            out.append(f.createIfcFace(bounds))
+        return f.createIfcFacetedBrep(f.createIfcClosedShell(out))
+
+    def _project_solid(self, eid, spec):
+        """일반 솔리드(18단계): 레벨 좌표계 원점에 IfcFacetedBrep 하나. 범주가 정한 PredefinedType·ObjectType 을 적는다."""
+        e = self.ents[eid]
+        e.Name = spec["name"]
+        if spec["predefined"] and hasattr(e, "PredefinedType"):
+            e.PredefinedType = spec["predefined"]
+        if spec["object_type"]:
+            e.ObjectType = spec["object_type"]
+        self._contain(eid, spec["level"])
+        self._place(e, self.ents[spec["level"]].ObjectPlacement, (0.0, 0.0, 0.0), (1.0, 0.0, 0.0))
+        self._set_body(e, self._brep(spec["verts"], spec["faces"]))
+        e.Representation.Representations[0].RepresentationType = "Brep"
 
     def _project_slab(self, eid, spec):
         """슬래브: 레벨 좌표계 원점에 경계 프로필을 압출한다. 윗면 = 레벨 + top_offset 이므로 솔리드는 (top_offset - 두께)에서 두께만큼 +Z 로 올린다."""
@@ -1131,6 +1185,8 @@ class IfcModel:
     def _part_labels(kind: str) -> list[str]:
         if kind == "slab":
             return [f"opening:{i}" for i in range(SLAB_OPENINGS_MAX)] + ["parapet"]
+        if kind == "wall":   # 모양 개구부(18단계)
+            return [f"opening:{i}" for i in range(OPENINGS_MAX)]
         return [f"face:{i}" for i in range(4)] if kind == "roof" else ["flight:0", "flight:1", "landing"]
 
     def _adopt_parts(self, eid: str, kind: str, e) -> None:

@@ -16,6 +16,8 @@ import zlib
 from math import isfinite, sqrt
 from typing import Callable, NamedTuple
 
+from dobim_core import solids as SO
+
 ID_LEN = 22
 NAME_MAX = 64
 NB = 64  # 일람표 버킷 수. 요소 하나가 바뀌면 그 버킷만 다시 계산한다
@@ -134,9 +136,15 @@ def _wall_params(p):
     def axis(v):   # 벽 길이 1mm 이상(wall.create 의 규칙)
         return (isinstance(v, list) and len(v) == 4 and all(num_ok(x) for x in v)
                 and (v[2] - v[0]) ** 2 + (v[3] - v[1]) ** 2 >= 1.0)
-    err = _check_opt("wall", p, {"name": _name, "axis": axis, "thickness": _pos, "height": _pos}, {"layers": layers_ok})
+    err = _check_opt("wall", p, {"name": _name, "axis": axis, "thickness": _pos, "height": _pos}, {"layers": layers_ok, "openings": lambda v: isinstance(v, list)})
     if err is None and "layers" in p and abs(layers_total(p["layers"]) - p["thickness"]) > LAYER_SUM_TOL:
         return "wall.layers 두께의 합이 벽 두께와 다르다"
+    if err is None and "openings" in p:   # 모양 개구부(18단계): 벽 입면 사각형(축 길이 x 높이) 안, 서로 겹치지 않는다
+        ax = p["axis"]
+        ln = sqrt((ax[2] - ax[0]) ** 2 + (ax[3] - ax[1]) ** 2)
+        why = SO.openings_problem([(0.0, 0.0), (ln, 0.0), (ln, p["height"]), (0.0, p["height"])], p["openings"])
+        if why:
+            return f"wall.openings: {why}"
     return err
 
 
@@ -897,6 +905,11 @@ def _site_params(p):
     return None
 
 
+def _solid_params(p):
+    """일반 솔리드(18단계): 형상 검사는 solids.solid_problem 이 정본이다."""
+    return SO.solid_problem(p)
+
+
 def _foreign_params(p):
     return _check_fields("foreign", p, {"name": lambda v: text_ok(v, 0, 255)})
 
@@ -928,6 +941,8 @@ ELEMENT_KINDS: dict[str, ElementKind] = {k.name: k for k in (
     ElementKind("roof", True, "IfcRoof", True, 1, _roof_params, geometric=True),
     ElementKind("railing", True, "IfcRailing", True, 1, _railing_params, geometric=True, refs=(("src", "id", None),), ref_kinds=(("src", ("stair", "slab")),)),
     ElementKind("site", True, "IfcSite", True, 0, _site_params),
+    # 일반 솔리드(18단계): 돌출·로프트·판·스윕·메시. IFC 클래스는 범주(category)가 정한다(행마다 다르다)
+    ElementKind("solid", True, None, True, 1, _solid_params, geometric=True),
     ElementKind("ftype", True, None, True, 3, _ftype_params),
     ElementKind("finst", True, None, True, 4, _finst_params, geometric=True, refs=(("type", "id", "of_type"),)),
     ElementKind("foreign", True, None, False, 5, _foreign_params),
@@ -948,7 +963,7 @@ KIND_NAMES = tuple(ELEMENT_KINDS)
 # 의도 복원(S2 가져오기)이 IFC 클래스로 종류를 정하는 것: IFC 클래스 -> 종류. 패밀리 타입·인스턴스(ftype/finst)는 클래스가 레시피마다 달라 의도가 스스로 밝힌
 # 종류를 따른다(family.restore, ADR-0014). 뷰·주석은 IFC 신원이 없어 IFC 에서 복원할 수 없다(알려진 한계)
 IMPORTABLE_BY_CLASS = {"IfcBuildingStorey": "level", "IfcWall": "wall", "IfcDoor": "door", "IfcSlab": "slab", "IfcStair": "stair", "IfcSpace": "space", "IfcRailing": "railing", "IfcTransportElement": "elevator", "IfcRoof": "roof", "IfcSite": "site"}
-FAMILY_OF_KIND = {"level": "level.basic", "wall": "wall.basic", "door": "door.single", "slab": "slab.basic", "stair": "stair.straight", "space": "space.basic", "railing": "railing.basic", "elevator": "elevator.basic", "roof": "roof.basic", "site": "site.basic"}
+FAMILY_OF_KIND = {"level": "level.basic", "wall": "wall.basic", "door": "door.single", "slab": "slab.basic", "stair": "stair.straight", "space": "space.basic", "railing": "railing.basic", "elevator": "elevator.basic", "roof": "roof.basic", "site": "site.basic", "solid": "solid.generic"}
 
 
 def _remap_ref(form: str, v, m: dict):
@@ -1041,7 +1056,7 @@ def _fs(*a):
 
 REL_KINDS: dict[str, RelKind] = {r.name: r for r in (
     # 레벨은 분리돼 있어도 그 위의 저작 벽이 레벨을 따른다(S2): 레벨 쪽은 막지 않고, 놓이는 요소만 저작이어야 한다
-    RelKind("on_level", _fs("wall", "slab", "stair", "space", "railing", "elevator", "roof", "finst", "foreign"), _fs("level"), guard=("src",), violation="LEVEL_DELETED", message="벽이 놓인 레벨이 지워졌다"),
+    RelKind("on_level", _fs("wall", "slab", "stair", "space", "railing", "elevator", "roof", "solid", "finst", "foreign"), _fs("level"), guard=("src",), violation="LEVEL_DELETED", message="벽이 놓인 레벨이 지워졌다"),
     RelKind("joins", _fs("wall"), _fs("wall"), guard=("src", "dst"), violation="JOIN_TARGET_DELETED", message="조인 대상 벽이 지워졌다"),
     RelKind("hosts", _fs("wall"), _fs("door", "finst"), guard=("src", "dst"), violation="HOST_DELETED",
             message="호스트 벽이 지워졌는데 문이 그 벽에 놓여 있다"),
