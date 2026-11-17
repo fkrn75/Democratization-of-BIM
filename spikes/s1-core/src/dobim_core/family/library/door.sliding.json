@@ -1,0 +1,313 @@
+{
+  "schema": "dobim.family/1",
+  "id": "door.sliding",
+  "version": 1,
+  "name": "미닫이문",
+  "description": "벽에 호스팅되는 미닫이문(한 짝 또는 두 짝). 문틀(스윕)과 문짝(압출, 닫힌 상태), 평면에 문짝 선과 미는 방향 화살표.",
+  "ifc": {
+    "class": "IfcDoor",
+    "type_class": "IfcDoorType",
+    "predefined": "DOOR",
+    "type_attrs": {
+      "OperationType": {
+        "expr": "'DOUBLE_DOOR_SLIDING' if panels == 2 else 'SLIDING_TO_LEFT'"
+      },
+      "ParameterTakesPrecedence": false
+    },
+    "attrs": {
+      "OverallWidth": {
+        "expr": "width"
+      },
+      "OverallHeight": {
+        "expr": "height"
+      },
+      "OperationType": {
+        "expr": "'DOUBLE_DOOR_SLIDING' if panels == 2 else ('SLIDING_TO_LEFT' if slide == 'L' else 'SLIDING_TO_RIGHT')"
+      }
+    }
+  },
+  "host": {
+    "kinds": [
+      "wall"
+    ],
+    "cut": {
+      "x": [
+        "left",
+        "right"
+      ],
+      "z": [
+        0,
+        "height"
+      ]
+    }
+  },
+  "params": {
+    "width": {
+      "kind": "type",
+      "default": 1800,
+      "unit": "mm",
+      "description": "개구부 폭(문틀 바깥)",
+      "min": 700,
+      "max": 4000
+    },
+    "height": {
+      "kind": "type",
+      "default": 2100,
+      "unit": "mm",
+      "description": "개구부 높이",
+      "min": 1800,
+      "max": 2700
+    },
+    "panels": {
+      "kind": "type",
+      "default": 1,
+      "type": "int",
+      "unit": "none",
+      "description": "문짝 수(1 = 외미닫이, 2 = 양미닫이)",
+      "min": 1,
+      "max": 2
+    },
+    "frame_w": {
+      "kind": "type",
+      "default": 50,
+      "unit": "mm",
+      "description": "문틀 단면 폭",
+      "min": 30,
+      "max": 100
+    },
+    "leaf_t": {
+      "kind": "type",
+      "default": 40,
+      "unit": "mm",
+      "description": "문짝 두께",
+      "min": 20,
+      "max": 60
+    },
+    "is_external": {
+      "kind": "type",
+      "default": false,
+      "type": "bool",
+      "description": "외부 문 여부"
+    },
+    "slide": {
+      "kind": "instance",
+      "default": "L",
+      "type": "enum",
+      "values": [
+        "L",
+        "R"
+      ],
+      "description": "한 짝일 때 열 때 미는 쪽(L = 지역 -x 쪽). 두 짝이면 양쪽으로 갈라진다"
+    }
+  },
+  "derived": {
+    "inner_w": "width - 2*frame_w",
+    "leaf_w": "inner_w / panels",
+    "leaf_h": "height - frame_w",
+    "fx0": "-width/2 + frame_w/2",
+    "fx1": "width/2 - frame_w/2",
+    "fz1": "height - frame_w/2",
+    "arrow_v": "host_thickness/2 + 80",
+    "arrow_dir": "-1 if slide == 'L' else 1"
+  },
+  "refs": {
+    "left": {
+      "axis": "x",
+      "at": "-width/2"
+    },
+    "right": {
+      "axis": "x",
+      "at": "width/2"
+    }
+  },
+  "constraints": [
+    {
+      "expr": "leaf_w >= 300",
+      "message": "문짝 폭이 300mm 미만이다(width 를 키우거나 panels 를 줄이세요)"
+    },
+    {
+      "expr": "host_thickness >= 2*leaf_t + 10",
+      "message": "벽이 문짝 두 겹보다 10mm 이상 두꺼워야 한다"
+    }
+  ],
+  "solids": [
+    {
+      "id": "frame",
+      "op": "sweep",
+      "normal": "y",
+      "closed": false,
+      "path": [
+        [
+          "fx0",
+          0,
+          0
+        ],
+        [
+          "fx0",
+          0,
+          "fz1"
+        ],
+        [
+          "fx1",
+          0,
+          "fz1"
+        ],
+        [
+          "fx1",
+          0,
+          0
+        ]
+      ],
+      "profile": {
+        "shape": "rect",
+        "w": "frame_w",
+        "h": "host_thickness"
+      }
+    },
+    {
+      "id": "leaf",
+      "op": "extrude",
+      "plane": "xz",
+      "repeat": {
+        "var": "i",
+        "count": "panels"
+      },
+      "profile": {
+        "shape": "rect",
+        "u": [
+          "-inner_w/2 + i*leaf_w",
+          "-inner_w/2 + (i + 1)*leaf_w"
+        ],
+        "v": [
+          0,
+          "leaf_h"
+        ]
+      },
+      "range": [
+        "-leaf_t + i*leaf_t",
+        "i*leaf_t"
+      ]
+    }
+  ],
+  "plan_symbol": {
+    "default": [
+      {
+        "type": "rect",
+        "u": [
+          "left",
+          "left + frame_w"
+        ],
+        "v": [
+          "-host_thickness/2",
+          "host_thickness/2"
+        ],
+        "style": "cut"
+      },
+      {
+        "type": "rect",
+        "u": [
+          "right - frame_w",
+          "right"
+        ],
+        "v": [
+          "-host_thickness/2",
+          "host_thickness/2"
+        ],
+        "style": "cut"
+      },
+      {
+        "type": "rect",
+        "u": [
+          "-inner_w/2",
+          "-inner_w/2 + leaf_w"
+        ],
+        "v": [
+          "-leaf_t",
+          0
+        ]
+      },
+      {
+        "type": "rect",
+        "when": "panels == 2",
+        "u": [
+          "0",
+          "inner_w/2"
+        ],
+        "v": [
+          0,
+          "leaf_t"
+        ]
+      },
+      {
+        "type": "line",
+        "when": "panels == 1",
+        "from": [
+          "-arrow_dir*leaf_w/4",
+          "arrow_v"
+        ],
+        "to": [
+          "arrow_dir*leaf_w/4",
+          "arrow_v"
+        ]
+      },
+      {
+        "type": "line",
+        "when": "panels == 1",
+        "from": [
+          "arrow_dir*leaf_w/4",
+          "arrow_v"
+        ],
+        "to": [
+          "arrow_dir*leaf_w/4 - arrow_dir*80",
+          "arrow_v + 50"
+        ]
+      },
+      {
+        "type": "line",
+        "when": "panels == 2",
+        "from": [
+          "-inner_w/4",
+          "arrow_v"
+        ],
+        "to": [
+          "inner_w/4",
+          "arrow_v"
+        ]
+      }
+    ],
+    "1:200": [
+      {
+        "type": "rect",
+        "u": [
+          "-inner_w/2",
+          "inner_w/2"
+        ],
+        "v": [
+          "-leaf_t",
+          0
+        ]
+      }
+    ]
+  },
+  "psets": {
+    "Pset_DoorCommon": {
+      "on": "type",
+      "props": {
+        "IsExternal": {
+          "expr": "is_external"
+        },
+        "HandicapAccessible": {
+          "expr": "width >= 900"
+        }
+      }
+    },
+    "DoBIM_DoorParams": {
+      "on": "instance",
+      "props": {
+        "Slide": {
+          "expr": "slide"
+        }
+      }
+    }
+  }
+}

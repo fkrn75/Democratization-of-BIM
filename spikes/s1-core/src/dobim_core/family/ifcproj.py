@@ -22,6 +22,8 @@ import ifcopenshell.api.feature as api_feature
 import ifcopenshell.api.root as api_root
 import ifcopenshell.util.element as ue
 
+from dobim_core.family import spec as FS
+
 _ZERO = [0.0, 0.0, 0.0]
 
 
@@ -304,7 +306,8 @@ def project_inst(model, eid: str, spec: dict) -> None:
     model._contain(eid, spec["level"])
     if spec["host"]:
         wall = model.ents[spec["host"]]
-        model._place(e, wall.ObjectPlacement, (spec["offset"], 0.0, spec["elevation"]), (1.0, 0.0, 0.0))
+        xd = (-1.0, 0.0, 0.0) if FS.hosted_flipped(spec.get("rotation")) else (1.0, 0.0, 0.0)   # 뒤집은 호스팅 인스턴스는 지역 x 를 반대로(수직축 반 바퀴)
+        model._place(e, wall.ObjectPlacement, (spec["offset"], 0.0, spec["elevation"]), xd)
     else:
         rot = math.radians(spec["rotation"])
         x, y = spec["position"]

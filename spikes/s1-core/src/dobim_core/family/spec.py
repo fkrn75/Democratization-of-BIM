@@ -98,6 +98,13 @@ def finst_spec(tp: dict, ip: dict, type_id: str, host_id: str | None, level_id: 
             "same_body": e["body_hash"] == t["body_hash"], "same_plan": e["plan_hash"] == t["plan_hash"]}
 
 
+def hosted_flipped(rotation) -> bool:
+    """호스팅 인스턴스의 뒤집기(20단계): rotation 이 180(도, 360 의 배수 차이 허용)이면 패밀리 지역 좌표를 수직축 둘레로 반 바퀴 돌려
+    문짝이 벽 반대쪽으로 열리고 경첩 쪽도 바뀐다. 개구부(cut)는 좌우 대칭일 때만 허용하므로 벽을 자르는 범위는 그대로다. 0 이면 이전과 같다."""
+    r = float(rotation or 0.0) % 360.0
+    return abs(r - 180.0) < 1e-6
+
+
 def inst_params(name, tid, values, ev, hosted, offset, position, rotation, elevation) -> dict:
     """인스턴스 행의 params. family.place/family.set 이 쓰는 것이 정본이고, 가져오기가 의도를 복원할 때 같은 식으로 다시 계산해 대조한다
     (width/height 는 평가한 개구부에서 나오는 파생값이라 의도 텍스트의 값이 평가와 다르면 손상으로 본다)."""

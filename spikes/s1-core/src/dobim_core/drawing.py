@@ -24,6 +24,7 @@ from math import sqrt
 from dobim_core import kinds as K
 from dobim_core import queries as Q
 from dobim_core import solids as SO
+from dobim_core.family import spec as FS
 from dobim_core.graph import CLEAN
 
 EPS = 0.01          # 기하 허용 오차(mm): 같은 선·같은 점 판정
@@ -482,9 +483,30 @@ def hosted_fam(g, w):
         if not cut:
             continue
         zb = elev + spec["elevation"]
+        plan, boxes = _freeze_plan(spec["plan"]), _body_boxes(spec["body"])
+        if FS.hosted_flipped(spec.get("rotation")):   # 뒤집은 인스턴스(20단계): 지역 (u, v) -> (-u, -v). 개구부는 대칭이라 cut 범위는 그대로
+            plan, boxes = _flip_plan(plan), tuple((-b[1], -b[0], b[2], b[3], -b[5], -b[4]) for b in boxes)
         out.append((spec["offset"] + cut["x"][0], spec["offset"] + cut["x"][1], zb + cut["z"][0], zb + cut["z"][1],
-                    spec["offset"], zb, _freeze_plan(spec["plan"]), _body_boxes(spec["body"])))
+                    spec["offset"], zb, plan, boxes))
     return tuple(sorted(out, key=repr))
+
+
+def _flip_plan(items):
+    """얼린 평면 기호를 지역 원점 둘레로 반 바퀴 돌린다((u, v) -> (-u, -v), 호는 시작·끝 각에 180 을 더한다)."""
+    def neg(p):
+        return (-p[0], -p[1])
+    out = []
+    for it in items:
+        t = it[0]
+        if t == "line":
+            out.append(("line", neg(it[1]), neg(it[2]), it[3]))
+        elif t == "arc":
+            out.append(("arc", neg(it[1]), it[2], it[3] + 180.0, it[4] + 180.0, it[5]))
+        elif t == "circle":
+            out.append(("circle", neg(it[1]), it[2], it[3]))
+        else:
+            out.append(("poly", tuple(neg(p) for p in it[1]), it[2], it[3]))
+    return tuple(out)
 
 
 def _prism_poly(pr):
@@ -2284,7 +2306,7 @@ def plan_wall_lines(g, v, w):
         if proj:
             others = [(o, q) for o in nb for q in g.q(plan_pieces, v, o)[1]]
             lines += [("proj", a[0], a[1], b[0], b[1]) for a, b in outline_edges(list(proj), others, w)]
-    if cut:
+    if cut or sol[7] - EPS <= cfg[2] <= sol[8] + EPS:   # 20단계: 개구부가 벽 길이를 다 차지해 절단 조각이 없어도 기호는 그린다
         for op in g.q(wall_door_openings, w):
             if op[2] <= cfg[2] + EPS and cfg[2] <= op[3] + EPS:   # 절단면이 문 개구부 높이 안에 있을 때만(문 위를 자르면 벽이 이어져 문이 안 보인다)
                 lines += _door_symbol(sol, op)

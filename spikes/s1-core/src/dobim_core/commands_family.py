@@ -252,7 +252,7 @@ class FamilyPlace(A):
     offset: Num | None = Field(None, description="호스트 축선 시작점에서 패밀리 원점(개구부 중심)까지 mm")
     level: Id | None = Field(None, description="레벨(자립형 패밀리)")
     position: Annotated[list[Num], Field(min_length=2, max_length=2)] | None = Field(None, description="[x, y] mm, 레벨 기준(자립형)")
-    rotation: Num = Field(0.0, description="자립형 패밀리의 z 축 회전 deg")
+    rotation: Num = Field(0.0, description="자립형: z 축 회전 deg. 호스팅: 0 또는 180(180 = 뒤집기, 문짝이 벽 반대쪽으로 열리고 경첩 쪽도 바뀐다)")
     elevation: Num = Field(0.0, description="원점의 높이 mm(호스팅이면 벽 아래, 자립형이면 레벨 위)")
     name: Name | None = None
 
@@ -292,6 +292,17 @@ def _inst_geometry(ctx, tp: dict, values: dict, host_id: str | None, offset, ele
         if elevation + z0 < 0 or elevation + z1 > _wall_height(ctx, host_id):
             raise DobimError("CONSTRAINT", "개구부가 호스트 벽의 높이 밖으로 나간다", path="/elevation")
     return ev, host_ctx
+
+
+def _check_hosted_rotation(ev, rotation) -> None:
+    """호스팅 인스턴스의 rotation 은 0(그대로) 또는 180(뒤집기)만 받는다. 뒤집기는 개구부가 좌우 대칭일 때만(벽을 자르는 범위가 그대로여야 한다)."""
+    r = float(rotation) % 360.0
+    if abs(r) > 1e-6 and abs(r - 360.0) > 1e-6 and not FS.hosted_flipped(rotation):
+        raise DobimError("CONSTRAINT", f"호스팅 인스턴스의 rotation 은 0 또는 180 이어야 한다({rotation:g})", path="/rotation",
+                         hint="180 이면 문짝 열림 쪽과 경첩 쪽이 함께 뒤집힌다")
+    cut = ev.get("cut")
+    if FS.hosted_flipped(rotation) and cut and abs(cut["x"][0] + cut["x"][1]) > 1e-6:
+        raise DobimError("CONSTRAINT", "개구부가 좌우 대칭이 아닌 패밀리는 뒤집을 수 없다", path="/rotation")
 
 
 def _wall_height(ctx, host_id: str) -> float:
@@ -386,6 +397,8 @@ def family_place(ctx, a: FamilyPlace):
     else:
         ctx.authored(a.level, "level", what="레벨에 패밀리 인스턴스를 놓는 것")
     ev, _ = _inst_geometry(ctx, tp, iv, a.host, a.offset, a.elevation)
+    if hosted:
+        _check_hosted_rotation(ev, a.rotation)
     name = a.name or f"{r.id.split('.')[0][:1].upper()}-{a.id[-6:]}"
     ctx.put_el(a.id, {"kind": "finst", "ifc_class": r.ifc.class_, "origin": "authored", "family_id": r.id,
                       "params": _inst_params(name, tid, iv, ev, hosted, a.offset, a.position, a.rotation, a.elevation)})
@@ -437,6 +450,8 @@ def family_set(ctx, a: FamilySet):
     offset = a.offset if a.offset is not None else p.get("offset")
     elevation = a.elevation if a.elevation is not None else p["elevation"]
     ev, _ = _inst_geometry(ctx, tp, iv, host_id, offset, elevation)
+    if hosted and a.rotation is not None:
+        _check_hosted_rotation(ev, a.rotation)
     np_ = _inst_params(a.name or p["name"], p["type"], iv, ev, hosted, offset, a.position or p.get("position"),
                        a.rotation if a.rotation is not None else p["rotation"], elevation)
     ctx.put_el(a.id, dict(r_, params=np_))
