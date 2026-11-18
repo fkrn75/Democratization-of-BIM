@@ -122,7 +122,9 @@ IfcOpenShell은 API 리스너(`add_pre_listener`, `add_post_listener`)와 파일
 
 ### 4.1 외래 IFC 가져오기와 분류 (S2 구현 사실)
 
-`ifc.import {source, path}`는 작업 폴더 안의 IFC4 파일을 **새 프로젝트**(`project.new`와 같다. 기존 프로젝트에 합치지 않는다)로 가져온다. IFC2x3·IFC4X3은 `UNSUPPORTED_SCHEMA`, 읽을 수 없거나 GlobalId가 22자 형식이 아니거나 겹치면 `IMPORT_INVALID`, 실패하면 반쯤 만든 프로젝트 파일을 남기지 않는다. 원본 바이트는 SQLite의 `foreign_base`에 압축해 **외래 기반**으로 보존한다. 가져오기는 로그 항목이 아니라 프로젝트의 시작 상태(rev 0)이고, 이후 편집이 로그에 쌓인다. 프로젝트를 열 때마다 외래 기반을 열고(작업 사본) 로그를 그 위에 재생한다.
+`ifc.import {source, path}`는 작업 폴더 안의 IFC4 파일을 **새 프로젝트**(`project.new`와 같다. 기존 프로젝트에 합치지 않는다)로 가져온다. IFC2x3 은 IFC4 로 올린 뒤 가져온다(외래 기반은 올린 IFC4, 경고에 적는다). IFC4X3은 `UNSUPPORTED_SCHEMA`, 읽을 수 없거나 GlobalId가 22자 형식이 아니거나 겹치면 `IMPORT_INVALID`, 실패하면 반쯤 만든 프로젝트 파일을 남기지 않는다. 원본 바이트는 SQLite의 `foreign_base`에 압축해 **외래 기반**으로 보존한다. 가져오기는 로그 항목이 아니라 프로젝트의 시작 상태(rev 0)이고, 이후 편집이 로그에 쌓인다. 프로젝트를 열 때마다 외래 기반을 열고(작업 사본) 로그를 그 위에 재생한다.
+
+IFC2x3 내보내기(W1, IO-03): `ifc.export {path, schema: "IFC2X3"}`. 정본은 IFC4 투영이고 IFC2x3 은 그 복사본을 ifcopenshell 스키마 이전기로 내린다(IFC4 출력 바이트·응답은 그대로). IFC2x3 에 없는 클래스는 가까운 클래스로 바꾸고(위생기구·조명·소화 단말 → IfcFlowTerminal, 감지기·조작반 → IfcDistributionControlElement, 지형 → IfcBuildingElementProxy, IfcFurniture → IfcFurnishingElement, 문·창 타입 → IfcDoorStyle·IfcWindowStyle 등) 원래 클래스·PredefinedType 을 ObjectType 에 남긴다. 필수 IfcOwnerHistory 는 하나 만들어 모든 IfcRoot 에 붙인다(작성 시각 0, 사용자 신원 없음). 담지 못한 속성·PredefinedType·클래스 대체는 응답 `losses` 와 경고로 알린다. 검증: 스키마·EXPRESS 규칙 검증과 다시 읽은 제품 GlobalId 집합 일치(시험).
 
 분류 단위는 코어 뼈대(`IfcProject "dobim"` > `IfcSite "Site"` > `IfcBuilding "Building"`. 코어가 만든 파일의 뼈대는 요소가 아니라 투영 소유 구조)를 뺀 모든 `IfcProduct`다. 외래 파일의 사이트·건물은 외래 요소다. 뼈대는 **구조·이름·형상 없음·항등 배치**로 알아본다. 위경도·주소·설명 같은 **비형상 속성은 보지 않으므로** 외부 도구가 사이트에 위경도만 적어도 뼈대는 뼈대다(요소 분류에 영향 없음, 내보낼 때 그대로 남는다). 뼈대의 배치·표현이 바뀌었으면 보수적으로 뼈대로 보지 않고(사이트·건물은 외래 요소, 레벨은 분리) 경고한다. GlobalId는 프로젝트 UUID에서 파생돼 파일마다 달라 인식 기준이 될 수 없다.
 
@@ -241,6 +243,8 @@ Bonsai의 벡터 HLR이 이미 있으므로 **벡터 출력 자체는 차별점�
 시트는 도곽 + 뷰포트 목록이다. 참조 표기(시트 번호↔단면 기호)는 파생 질의로 자동 갱신한다. 출력은 SVG(내부 표준) → PDF, DXF다. PDF 변환기와 한글 글꼴 임베드는 S3에서 정한다. DWG는 직접 쓰지 않는다. ODA 변환기는 약관이 불명확하고 사용자 환경 설치가 필요하므로 선택 기능으로 둔다.
 
 일람표는 필터·정렬·집계 정의 + `schedule.rows` 질의다. 일람표에서 값을 고치면 해당 요소의 커맨드로 들어간다.
+
+구현(W1): 문·벽 전용 `schedule.rows`·`schedule.summary`(T0 동기 층, 응답 불변) 옆에 범용 일람표가 있다. `schedule.categories`는 범주 21개(벽·문·창·바닥·지붕·천장·마감·계단·난간·기둥·보·실·승강기·위생기구·가구·배관·덕트·기계·전기·소방·일반)와 요소 수·필드를 준다. 범주는 요소 종류와 IFC 분류(솔리드 category, 패밀리 레시피 ifc.class)로 정하고, 외래 요소·대지는 범주가 아니다. `schedule.table`은 필드 선택·계산 필드(수·필드·사칙연산·괄호, eval 없이 직접 구문 분석)·필터(AND)·정렬·그룹·합계(가산 필드만)·단위(mm/m)를 한 질의로 한다. `schedule.takeoff`는 재료 물량(범주·레벨·재료별 면적·부피, 층 구성은 층 두께 비율로 나눈다), `schedule.export`는 둘 중 하나를 CSV(UTF-8 BOM·CRLF) 또는 일람표 시트(SVG·PDF·PNG, 길면 단을 나눈다)로 쓴다. 행 계산은 `schedules.py`(순수 질의, 요소별 캐시)가 하고 시트 그리기는 기존 `Sheet`·표제란·`draw_table`을 그대로 쓴다. 벽 면적·부피: 면적은 `schedule.rows` 의 net_area, 부피는 net_area x 두께(근사). 지붕 면적은 경사면 실면적, 솔리드 부피는 메시 발산 정리, 패밀리는 개구부 폭·높이(부피 없음).
 
 주석: 치수는 의미 참조 2개 + 배치 오프셋, 태그는 대상 요소 + 표시 필드 + 위치. 값은 항상 파생이다. 대상이 삭제되면 고아 주석으로 표시하고 조용히 지우지 않는다.
 

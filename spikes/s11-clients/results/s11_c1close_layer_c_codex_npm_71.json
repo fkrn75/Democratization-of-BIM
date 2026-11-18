@@ -1,0 +1,1259 @@
+{
+  "G9": {
+    "group": "G9",
+    "title": "조인·공간·슬래브·벽 층",
+    "exit": 0,
+    "wall_s": 74.9,
+    "tool_calls": 37,
+    "search_calls": 22,
+    "usage": {
+      "input_tokens": 708399,
+      "cached_input_tokens": 659712,
+      "output_tokens": 1983,
+      "reasoning_output_tokens": 333
+    },
+    "post_state": {
+      "rev": 23,
+      "counts": {
+        "level": 2,
+        "wall": 4,
+        "door": 2,
+        "space": 1
+      },
+      "escape_file_outside_workspace": false
+    },
+    "other_item_types": {
+      "error": 1,
+      "agent_message": 2,
+      "mcp_tool_call": 37
+    },
+    "errors": [],
+    "tool_result_bytes": [
+      291,
+      608,
+      1083,
+      2494,
+      488,
+      1177,
+      3046,
+      731,
+      1861,
+      2899,
+      5242,
+      5222,
+      1823,
+      730,
+      2435,
+      882,
+      881,
+      291,
+      291,
+      291,
+      417,
+      4057,
+      1836,
+      420,
+      570,
+      518,
+      346,
+      310,
+      286,
+      366,
+      317,
+      310,
+      286,
+      323,
+      364,
+      317,
+      323
+    ],
+    "protocol": {
+      "initialize": {
+        "protocolVersion": "2025-06-18",
+        "clientInfo": {
+          "name": "codex-mcp-client",
+          "title": "Codex",
+          "version": "0.147.0"
+        },
+        "capabilities": [
+          "elicitation"
+        ]
+      },
+      "negotiated": "2025-06-18",
+      "non_json_stdout_lines": 0
+    },
+    "latency": {
+      "tool_calls": 37,
+      "initialize_ms": 1363.6,
+      "handshake_method": "initialize",
+      "median_ms": 4.3,
+      "max_ms": 884.1,
+      "slowest_tool": "dobim_project",
+      "max_response_wire_bytes": 10795
+    },
+    "server_start_sec": 1.3747,
+    "commands": {
+      "join.auto": {
+        "invoked": true,
+        "outcomes": [
+          "ok"
+        ],
+        "succeeded": true,
+        "all_defined": true,
+        "pass": true
+      },
+      "space.from_walls": {
+        "invoked": true,
+        "outcomes": [
+          "ok"
+        ],
+        "succeeded": true,
+        "all_defined": true,
+        "pass": true
+      },
+      "space.create": {
+        "invoked": true,
+        "outcomes": [
+          "ok"
+        ],
+        "succeeded": true,
+        "all_defined": true,
+        "pass": true
+      },
+      "space.set": {
+        "invoked": true,
+        "outcomes": [
+          "ok"
+        ],
+        "succeeded": true,
+        "all_defined": true,
+        "pass": true
+      },
+      "space.move": {
+        "invoked": true,
+        "outcomes": [
+          "ok"
+        ],
+        "succeeded": true,
+        "all_defined": true,
+        "pass": true
+      },
+      "space.delete": {
+        "invoked": true,
+        "outcomes": [
+          "ok"
+        ],
+        "succeeded": true,
+        "all_defined": true,
+        "pass": true
+      },
+      "slab.create": {
+        "invoked": true,
+        "outcomes": [
+          "ok"
+        ],
+        "succeeded": true,
+        "all_defined": true,
+        "pass": true
+      },
+      "slab.set": {
+        "invoked": true,
+        "outcomes": [
+          "ok"
+        ],
+        "succeeded": true,
+        "all_defined": true,
+        "pass": true
+      },
+      "slab.layers": {
+        "invoked": true,
+        "outcomes": [
+          "ok"
+        ],
+        "succeeded": true,
+        "all_defined": true,
+        "pass": true
+      },
+      "slab.move": {
+        "invoked": true,
+        "outcomes": [
+          "ok"
+        ],
+        "succeeded": true,
+        "all_defined": true,
+        "pass": true
+      },
+      "slab.delete": {
+        "invoked": true,
+        "outcomes": [
+          "ok"
+        ],
+        "succeeded": true,
+        "all_defined": true,
+        "pass": true
+      },
+      "wall.layers": {
+        "invoked": true,
+        "outcomes": [
+          "ok"
+        ],
+        "succeeded": true,
+        "all_defined": true,
+        "pass": true
+      }
+    },
+    "final_text_chars": 210
+  },
+  "G10": {
+    "group": "G10",
+    "title": "계단·난간·승강기",
+    "exit": 0,
+    "wall_s": 74.2,
+    "tool_calls": 52,
+    "search_calls": 35,
+    "usage": {
+      "input_tokens": 563842,
+      "cached_input_tokens": 509312,
+      "output_tokens": 2380,
+      "reasoning_output_tokens": 442
+    },
+    "post_state": {
+      "rev": 26,
+      "counts": {
+        "level": 2,
+        "wall": 3,
+        "door": 2,
+        "slab": 1,
+        "railing": 3
+      },
+      "escape_file_outside_workspace": false
+    },
+    "other_item_types": {
+      "error": 1,
+      "agent_message": 3,
+      "mcp_tool_call": 52
+    },
+    "errors": [],
+    "tool_result_bytes": [
+      291,
+      291,
+      291,
+      1889,
+      1155,
+      1450,
+      1816,
+      734,
+      3912,
+      1816,
+      770,
+      885,
+      3949,
+      1043,
+      2172,
+      4631,
+      1376,
+      881,
+      3745,
+      1956,
+      730,
+      291,
+      291,
+      1296,
+      404,
+      943,
+      2494,
+      516,
+      885,
+      2172,
+      1836,
+      1956,
+      734,
+      1816,
+      730,
+      360,
+      420,
+      310,
+      286,
+      327,
+      369,
+      444,
+      310,
+      286,
+      325,
+      317,
+      317,
+      326,
+      286,
+      345,
+      414,
+      317
+    ],
+    "protocol": {
+      "initialize": {
+        "protocolVersion": "2025-06-18",
+        "clientInfo": {
+          "name": "codex-mcp-client",
+          "title": "Codex",
+          "version": "0.147.0"
+        },
+        "capabilities": [
+          "elicitation"
+        ]
+      },
+      "negotiated": "2025-06-18",
+      "non_json_stdout_lines": 0
+    },
+    "latency": {
+      "tool_calls": 52,
+      "initialize_ms": 1492.1,
+      "handshake_method": "initialize",
+      "median_ms": 7.9,
+      "max_ms": 874.0,
+      "slowest_tool": "dobim_query",
+      "max_response_wire_bytes": 9574
+    },
+    "server_start_sec": 1.4705,
+    "commands": {
+      "stair.create": {
+        "invoked": true,
+        "outcomes": [
+          "ok"
+        ],
+        "succeeded": true,
+        "all_defined": true,
+        "pass": true
+      },
+      "stair.set": {
+        "invoked": true,
+        "outcomes": [
+          "ok"
+        ],
+        "succeeded": true,
+        "all_defined": true,
+        "pass": true
+      },
+      "stair.move": {
+        "invoked": true,
+        "outcomes": [
+          "ok"
+        ],
+        "succeeded": true,
+        "all_defined": true,
+        "pass": true
+      },
+      "stair.delete": {
+        "invoked": true,
+        "outcomes": [
+          "ok"
+        ],
+        "succeeded": true,
+        "all_defined": true,
+        "pass": true
+      },
+      "railing.create": {
+        "invoked": true,
+        "outcomes": [
+          "ok"
+        ],
+        "succeeded": true,
+        "all_defined": true,
+        "pass": true
+      },
+      "railing.set": {
+        "invoked": true,
+        "outcomes": [
+          "ok"
+        ],
+        "succeeded": true,
+        "all_defined": true,
+        "pass": true
+      },
+      "railing.move": {
+        "invoked": true,
+        "outcomes": [
+          "ok"
+        ],
+        "succeeded": true,
+        "all_defined": true,
+        "pass": true
+      },
+      "railing.delete": {
+        "invoked": true,
+        "outcomes": [
+          "ok"
+        ],
+        "succeeded": true,
+        "all_defined": true,
+        "pass": true
+      },
+      "railing.from_slab": {
+        "invoked": true,
+        "outcomes": [
+          "ok"
+        ],
+        "succeeded": true,
+        "all_defined": true,
+        "pass": true
+      },
+      "railing.from_stair": {
+        "invoked": true,
+        "outcomes": [
+          "ok"
+        ],
+        "succeeded": true,
+        "all_defined": true,
+        "pass": true
+      },
+      "elevator.create": {
+        "invoked": true,
+        "outcomes": [
+          "ok"
+        ],
+        "succeeded": true,
+        "all_defined": true,
+        "pass": true
+      },
+      "elevator.set": {
+        "invoked": true,
+        "outcomes": [
+          "ok"
+        ],
+        "succeeded": true,
+        "all_defined": true,
+        "pass": true
+      },
+      "elevator.move": {
+        "invoked": true,
+        "outcomes": [
+          "ok"
+        ],
+        "succeeded": true,
+        "all_defined": true,
+        "pass": true
+      },
+      "elevator.cut_slabs": {
+        "invoked": true,
+        "outcomes": [
+          "ok"
+        ],
+        "succeeded": true,
+        "all_defined": true,
+        "pass": true
+      },
+      "elevator.delete": {
+        "invoked": true,
+        "outcomes": [
+          "ok"
+        ],
+        "succeeded": true,
+        "all_defined": true,
+        "pass": true
+      }
+    },
+    "final_text_chars": 369
+  },
+  "G11": {
+    "group": "G11",
+    "title": "지붕·솔리드·벽 상단/잘라내기",
+    "exit": 0,
+    "wall_s": 61.7,
+    "tool_calls": 49,
+    "search_calls": 35,
+    "usage": {
+      "input_tokens": 651864,
+      "cached_input_tokens": 613504,
+      "output_tokens": 1783,
+      "reasoning_output_tokens": 370
+    },
+    "post_state": {
+      "rev": 22,
+      "counts": {
+        "level": 2,
+        "wall": 3,
+        "door": 2,
+        "solid": 1
+      },
+      "escape_file_outside_workspace": false
+    },
+    "other_item_types": {
+      "error": 1,
+      "agent_message": 3,
+      "mcp_tool_call": 49
+    },
+    "errors": [],
+    "tool_result_bytes": [
+      627,
+      589,
+      490,
+      613,
+      523,
+      423,
+      409,
+      620,
+      509,
+      433,
+      407,
+      3120,
+      1463,
+      824,
+      1384,
+      2419,
+      886,
+      735,
+      13236,
+      10859,
+      954,
+      733,
+      291,
+      291,
+      291,
+      291,
+      637,
+      853,
+      291,
+      291,
+      404,
+      1836,
+      420,
+      500,
+      362,
+      886,
+      735,
+      13236,
+      310,
+      384,
+      303,
+      376,
+      286,
+      364,
+      317,
+      310,
+      286,
+      286,
+      317
+    ],
+    "protocol": {
+      "initialize": {
+        "protocolVersion": "2025-06-18",
+        "clientInfo": {
+          "name": "codex-mcp-client",
+          "title": "Codex",
+          "version": "0.147.0"
+        },
+        "capabilities": [
+          "elicitation"
+        ]
+      },
+      "negotiated": "2025-06-18",
+      "non_json_stdout_lines": 0
+    },
+    "latency": {
+      "tool_calls": 49,
+      "initialize_ms": 1520.4,
+      "handshake_method": "initialize",
+      "median_ms": 2.7,
+      "max_ms": 868.2,
+      "slowest_tool": "dobim_query",
+      "max_response_wire_bytes": 27148
+    },
+    "server_start_sec": 1.4446,
+    "commands": {
+      "roof.create": {
+        "invoked": true,
+        "outcomes": [
+          "ok"
+        ],
+        "succeeded": true,
+        "all_defined": true,
+        "pass": true
+      },
+      "roof.set": {
+        "invoked": true,
+        "outcomes": [
+          "ok"
+        ],
+        "succeeded": true,
+        "all_defined": true,
+        "pass": true
+      },
+      "roof.move": {
+        "invoked": true,
+        "outcomes": [
+          "ok"
+        ],
+        "succeeded": true,
+        "all_defined": true,
+        "pass": true
+      },
+      "roof.delete": {
+        "invoked": true,
+        "outcomes": [
+          "ok"
+        ],
+        "succeeded": true,
+        "all_defined": true,
+        "pass": true
+      },
+      "solid.create": {
+        "invoked": true,
+        "outcomes": [
+          "ok"
+        ],
+        "succeeded": true,
+        "all_defined": true,
+        "pass": true
+      },
+      "solid.set": {
+        "invoked": true,
+        "outcomes": [
+          "ok"
+        ],
+        "succeeded": true,
+        "all_defined": true,
+        "pass": true
+      },
+      "solid.move": {
+        "invoked": true,
+        "outcomes": [
+          "ok"
+        ],
+        "succeeded": true,
+        "all_defined": true,
+        "pass": true
+      },
+      "solid.delete": {
+        "invoked": true,
+        "outcomes": [
+          "ok"
+        ],
+        "succeeded": true,
+        "all_defined": true,
+        "pass": true
+      },
+      "wall.attach_top": {
+        "invoked": true,
+        "outcomes": [
+          "ok"
+        ],
+        "succeeded": true,
+        "all_defined": true,
+        "pass": true
+      },
+      "wall.detach_top": {
+        "invoked": true,
+        "outcomes": [
+          "ok"
+        ],
+        "succeeded": true,
+        "all_defined": true,
+        "pass": true
+      },
+      "wall.cut_by": {
+        "invoked": true,
+        "outcomes": [
+          "ok"
+        ],
+        "succeeded": true,
+        "all_defined": true,
+        "pass": true
+      }
+    },
+    "final_text_chars": 197
+  },
+  "G12": {
+    "group": "G12",
+    "title": "대지·통심선·전개 창호",
+    "exit": 0,
+    "wall_s": 61.7,
+    "tool_calls": 28,
+    "search_calls": 19,
+    "usage": {
+      "input_tokens": 815712,
+      "cached_input_tokens": 755072,
+      "output_tokens": 1732,
+      "reasoning_output_tokens": 439
+    },
+    "post_state": {
+      "rev": 18,
+      "counts": {
+        "level": 2,
+        "wall": 3,
+        "door": 2
+      },
+      "escape_file_outside_workspace": false
+    },
+    "other_item_types": {
+      "error": 1,
+      "agent_message": 2,
+      "mcp_tool_call": 28
+    },
+    "errors": [],
+    "tool_result_bytes": [
+      291,
+      574,
+      291,
+      291,
+      291,
+      8524,
+      1446,
+      1252,
+      4996,
+      9236,
+      731,
+      881,
+      728,
+      9236,
+      728,
+      286,
+      286,
+      293,
+      286,
+      286,
+      286,
+      293,
+      291,
+      1296,
+      943,
+      1836,
+      500,
+      581
+    ],
+    "protocol": {
+      "initialize": {
+        "protocolVersion": "2025-06-18",
+        "clientInfo": {
+          "name": "codex-mcp-client",
+          "title": "Codex",
+          "version": "0.147.0"
+        },
+        "capabilities": [
+          "elicitation"
+        ]
+      },
+      "negotiated": "2025-06-18",
+      "non_json_stdout_lines": 0
+    },
+    "latency": {
+      "tool_calls": 28,
+      "initialize_ms": 1400.7,
+      "handshake_method": "initialize",
+      "median_ms": 3.2,
+      "max_ms": 854.1,
+      "slowest_tool": "dobim_execute",
+      "max_response_wire_bytes": 19063
+    },
+    "server_start_sec": 1.4102,
+    "commands": {
+      "site.create": {
+        "invoked": true,
+        "outcomes": [
+          "ok"
+        ],
+        "succeeded": true,
+        "all_defined": true,
+        "pass": true
+      },
+      "site.set": {
+        "invoked": true,
+        "outcomes": [
+          "ok"
+        ],
+        "succeeded": true,
+        "all_defined": true,
+        "pass": true
+      },
+      "site.delete": {
+        "invoked": true,
+        "outcomes": [
+          "ok"
+        ],
+        "succeeded": true,
+        "all_defined": true,
+        "pass": true
+      },
+      "grid.create": {
+        "invoked": true,
+        "outcomes": [
+          "ok"
+        ],
+        "succeeded": true,
+        "all_defined": true,
+        "pass": true
+      },
+      "grid.set": {
+        "invoked": true,
+        "outcomes": [
+          "ok"
+        ],
+        "succeeded": true,
+        "all_defined": true,
+        "pass": true
+      },
+      "grid.move": {
+        "invoked": true,
+        "outcomes": [
+          "ok"
+        ],
+        "succeeded": true,
+        "all_defined": true,
+        "pass": true
+      },
+      "grid.delete": {
+        "invoked": true,
+        "outcomes": [
+          "ok"
+        ],
+        "succeeded": true,
+        "all_defined": true,
+        "pass": true
+      },
+      "family.place_corner": {
+        "invoked": true,
+        "outcomes": [
+          "ok"
+        ],
+        "succeeded": true,
+        "all_defined": true,
+        "pass": true
+      }
+    },
+    "final_text_chars": 141
+  },
+  "G13": {
+    "group": "G13",
+    "title": "2D 작도",
+    "exit": 0,
+    "wall_s": 75.1,
+    "tool_calls": 48,
+    "search_calls": 29,
+    "usage": {
+      "input_tokens": 554211,
+      "cached_input_tokens": 509184,
+      "output_tokens": 2401,
+      "reasoning_output_tokens": 503
+    },
+    "post_state": {
+      "rev": 26,
+      "counts": {
+        "level": 2,
+        "wall": 3,
+        "door": 2
+      },
+      "escape_file_outside_workspace": false
+    },
+    "other_item_types": {
+      "error": 1,
+      "agent_message": 4,
+      "mcp_tool_call": 48
+    },
+    "errors": [],
+    "tool_result_bytes": [
+      422,
+      837,
+      291,
+      291,
+      2869,
+      3347,
+      1479,
+      4852,
+      603,
+      1174,
+      1176,
+      3260,
+      1460,
+      1554,
+      1213,
+      2210,
+      1751,
+      1899,
+      1212,
+      1325,
+      771,
+      1460,
+      1554,
+      1176,
+      1213,
+      1174,
+      3260,
+      523,
+      1118,
+      4691,
+      303,
+      463,
+      469,
+      310,
+      310,
+      310,
+      318,
+      318,
+      286,
+      804,
+      362,
+      341,
+      365,
+      289,
+      313,
+      310,
+      317,
+      408
+    ],
+    "protocol": {
+      "initialize": {
+        "protocolVersion": "2025-06-18",
+        "clientInfo": {
+          "name": "codex-mcp-client",
+          "title": "Codex",
+          "version": "0.147.0"
+        },
+        "capabilities": [
+          "elicitation"
+        ]
+      },
+      "negotiated": "2025-06-18",
+      "non_json_stdout_lines": 0
+    },
+    "latency": {
+      "tool_calls": 48,
+      "initialize_ms": 1408.7,
+      "handshake_method": "initialize",
+      "median_ms": 4.3,
+      "max_ms": 846.9,
+      "slowest_tool": "dobim_query",
+      "max_response_wire_bytes": 10071
+    },
+    "server_start_sec": 1.4154,
+    "commands": {
+      "drawing.profile": {
+        "invoked": true,
+        "outcomes": [
+          "ok"
+        ],
+        "succeeded": true,
+        "all_defined": true,
+        "pass": true
+      },
+      "draft.layer.set": {
+        "invoked": true,
+        "outcomes": [
+          "ok"
+        ],
+        "succeeded": true,
+        "all_defined": true,
+        "pass": true
+      },
+      "draft.layer.list": {
+        "invoked": true,
+        "outcomes": [
+          "ok"
+        ],
+        "succeeded": true,
+        "all_defined": true,
+        "pass": true
+      },
+      "draft.layer.delete": {
+        "invoked": true,
+        "outcomes": [
+          "ok"
+        ],
+        "succeeded": true,
+        "all_defined": true,
+        "pass": true
+      },
+      "draft.create": {
+        "invoked": true,
+        "outcomes": [
+          "ok"
+        ],
+        "succeeded": true,
+        "all_defined": true,
+        "pass": true
+      },
+      "draft.set": {
+        "invoked": true,
+        "outcomes": [
+          "ok"
+        ],
+        "succeeded": true,
+        "all_defined": true,
+        "pass": true
+      },
+      "draft.list": {
+        "invoked": true,
+        "outcomes": [
+          "ok"
+        ],
+        "succeeded": true,
+        "all_defined": true,
+        "pass": true
+      },
+      "draft.group": {
+        "invoked": true,
+        "outcomes": [
+          "ok"
+        ],
+        "succeeded": true,
+        "all_defined": true,
+        "pass": true
+      },
+      "draft.move": {
+        "invoked": true,
+        "outcomes": [
+          "ok"
+        ],
+        "succeeded": true,
+        "all_defined": true,
+        "pass": true
+      },
+      "draft.copy": {
+        "invoked": true,
+        "outcomes": [
+          "ok"
+        ],
+        "succeeded": true,
+        "all_defined": true,
+        "pass": true
+      },
+      "draft.rotate": {
+        "invoked": true,
+        "outcomes": [
+          "ok"
+        ],
+        "succeeded": true,
+        "all_defined": true,
+        "pass": true
+      },
+      "draft.mirror": {
+        "invoked": true,
+        "outcomes": [
+          "ok"
+        ],
+        "succeeded": true,
+        "all_defined": true,
+        "pass": true
+      },
+      "draft.offset": {
+        "invoked": true,
+        "outcomes": [
+          "ok"
+        ],
+        "succeeded": true,
+        "all_defined": true,
+        "pass": true
+      },
+      "draft.trim": {
+        "invoked": true,
+        "outcomes": [
+          "ok"
+        ],
+        "succeeded": true,
+        "all_defined": true,
+        "pass": true
+      },
+      "draft.extend": {
+        "invoked": true,
+        "outcomes": [
+          "ok"
+        ],
+        "succeeded": true,
+        "all_defined": true,
+        "pass": true
+      },
+      "draft.delete": {
+        "invoked": true,
+        "outcomes": [
+          "ok"
+        ],
+        "succeeded": true,
+        "all_defined": true,
+        "pass": true
+      }
+    },
+    "final_text_chars": 544
+  },
+  "G14": {
+    "group": "G14",
+    "title": "시트·이미지·높이 치수",
+    "exit": 0,
+    "wall_s": 66.6,
+    "tool_calls": 30,
+    "search_calls": 16,
+    "usage": {
+      "input_tokens": 616211,
+      "cached_input_tokens": 557696,
+      "output_tokens": 1791,
+      "reasoning_output_tokens": 275
+    },
+    "post_state": {
+      "rev": 15,
+      "counts": {
+        "level": 2,
+        "wall": 3,
+        "door": 2
+      },
+      "files": {
+        "sheet-saved.svg": true,
+        "sheet-direct.svg": true,
+        "index.svg": true
+      },
+      "escape_file_outside_workspace": false
+    },
+    "other_item_types": {
+      "error": 1,
+      "agent_message": 3,
+      "mcp_tool_call": 30
+    },
+    "errors": [],
+    "tool_result_bytes": [
+      1842,
+      7508,
+      1851,
+      575,
+      1342,
+      11742,
+      6493,
+      754,
+      11210,
+      417,
+      291,
+      3140,
+      1118,
+      656,
+      796,
+      303,
+      414,
+      1851,
+      11742,
+      6493,
+      1342,
+      517,
+      518,
+      536,
+      620,
+      621,
+      553,
+      530,
+      662,
+      293
+    ],
+    "protocol": {
+      "initialize": {
+        "protocolVersion": "2025-06-18",
+        "clientInfo": {
+          "name": "codex-mcp-client",
+          "title": "Codex",
+          "version": "0.147.0"
+        },
+        "capabilities": [
+          "elicitation"
+        ]
+      },
+      "negotiated": "2025-06-18",
+      "non_json_stdout_lines": 0
+    },
+    "latency": {
+      "tool_calls": 30,
+      "initialize_ms": 1357.2,
+      "handshake_method": "initialize",
+      "median_ms": 7.3,
+      "max_ms": 1436.7,
+      "slowest_tool": "dobim_render",
+      "max_response_wire_bytes": 46252
+    },
+    "server_start_sec": 1.3575,
+    "commands": {
+      "annot.dim.heights": {
+        "invoked": true,
+        "outcomes": [
+          "ok"
+        ],
+        "succeeded": true,
+        "all_defined": true,
+        "pass": true
+      },
+      "sheet.define": {
+        "invoked": true,
+        "outcomes": [
+          "ok"
+        ],
+        "succeeded": true,
+        "all_defined": true,
+        "pass": true
+      },
+      "sheet.list": {
+        "invoked": true,
+        "outcomes": [
+          "ok"
+        ],
+        "succeeded": true,
+        "all_defined": true,
+        "pass": true
+      },
+      "sheet.render": {
+        "invoked": true,
+        "outcomes": [
+          "CONFIRM_REQUIRED",
+          "ok"
+        ],
+        "succeeded": true,
+        "all_defined": true,
+        "pass": true
+      },
+      "sheet.export": {
+        "invoked": true,
+        "outcomes": [
+          "CONFIRM_REQUIRED",
+          "ok"
+        ],
+        "succeeded": true,
+        "all_defined": true,
+        "pass": true
+      },
+      "sheet.index": {
+        "invoked": true,
+        "outcomes": [
+          "CONFIRM_REQUIRED",
+          "ok"
+        ],
+        "succeeded": true,
+        "all_defined": true,
+        "pass": true
+      },
+      "view.image": {
+        "invoked": true,
+        "outcomes": [
+          "ok"
+        ],
+        "succeeded": true,
+        "all_defined": true,
+        "pass": true
+      },
+      "sheet.image": {
+        "invoked": true,
+        "outcomes": [
+          "ok"
+        ],
+        "succeeded": true,
+        "all_defined": true,
+        "pass": true
+      },
+      "sheet.delete": {
+        "invoked": true,
+        "outcomes": [
+          "ok"
+        ],
+        "succeeded": true,
+        "all_defined": true,
+        "pass": true
+      }
+    },
+    "final_text_chars": 219
+  },
+  "_summary": {
+    "client": "codex-npm",
+    "commands_new_total": 71,
+    "commands_passed": 71,
+    "commands_with_success": 71,
+    "not_passed": [],
+    "no_success": []
+  }
+}
