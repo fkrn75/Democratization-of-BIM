@@ -756,3 +756,48 @@ L-10 은 승강기 평면에 샤프트·카 치수가 있어야 한다. 이미 �
 - 수량: 일람표 net_area 에서 두께를 다 뚫는 상자의 입면 (u, z) 합집합 넓이를 뺀다(한쪽만 파인 상자는 면 넓이를 바꾸지 않는다). `element.get` derived 에 `cut_boxes`·`cut_volume_m3`(겹친 상자는 한 번, 좌표 압축 합집합).
 - 한계: 축 정렬 상자 대상만(기운 보·원 단면 관은 거절). 상단 윤곽 벽은 IFC·수량은 맞고 단면 절단 다각형(`_vcut_top`)에는 빼기를 넣지 않았다. 문·모양 개구부와 겹친 상자는 넓이·부피에서 두 번 빠질 수 있다(실무에서 인방은 개구부 위라 겹치지 않는다). 대상이 바뀌어도 따라가지 않는다(다시 실행).
 - 시험: `tests/test_practical5_wall_cut.py`(순수 함수, 자르고 떼기·실행취소 해시, 넓은 보·반쪽 부재, 거절, 분할, IFC 불리언·부피·왕복 해시·떼기, 단면·평면 절단, 증분 도면 = 전체 계산).
+
+## 26. 실무 모델링 보강 6 (스물네 번째 작업, 24단계)
+
+실제 도면 모델링에서 드러난 기능 부족 다섯 가지(큰 창호, 복합·꺾인 창호, 창 열림 방식, 여러 층에 걸친 벽, 자동 난간 id)를 범용 기능으로 더했다. 새 키·새 패밀리를 쓰지 않은 모델은 행·IFC·도면이 이전과 같다.
+
+### 26.1 창·문 패밀리 치수 상한 확대
+- 문제: `window.framed` 폭 500~3000·높이 ≤2400, `door.sliding` 폭 ≤4000, `door.single` 폭 ≤1500 상한 때문에 큰 창호(통창, 폭 450 의 좁은 창 포함)가 개구부만 남고 IfcWindow/IfcDoor 가 없었다.
+- 결정: 레시피 version 을 2로 올리고 범위를 넓혔다. `window.framed` 폭 400~6000, 높이 400~6000, sill ≤12000(여러 층 벽의 위층 창). `door.single` 폭 500~1800, 높이 ≤3600. `door.sliding` 폭 ≤8000, 높이 ≤4000. 하한은 레시피 검증의 표본(쌍별 극단)에서 제약이 깨지지 않는 값이다(예: 틀 폭 최대 120 이면 고정창 유리 100mm 를 남기는 폭 400).
+- 6000 을 넘는 창은 한 장 유리·멀리언 두 줄로는 실무 모양이 아니라서 `window.storefront`(26.2)로 칸을 나눈다(패널 분할의 일반화).
+- `window.fixed` 는 바꾸지 않았다(기준선 모델이 쓴다: 레시피 내용이 바뀌면 타입 id 가 바뀌어 기준선 바이트가 달라진다).
+- 이미 version 1 타입이 올라온 프로젝트는 그 레시피를 계속 쓴다(`_recipe_of` 는 프로젝트 것을 먼저 본다). 새 상한을 쓰려면 `family.register` 로 라이브러리 version 2 를 올리면 높은 version 이 선택된다.
+
+### 26.2 복합 창호 `window.storefront`
+- 한 프레임 안에 고정창 칸과 선택 여닫이문(한 짝·두 짝), 선택 가로대(transom). 호스팅(벽), IfcWindow.
+- 타입: width 600~30000, height 2000~8000, frame_w, frame_d, glass_t, bay_max(고정창 한 칸 최대 폭 600~4000), transom, door_w(0 = 문 없음), door_leaves, leaf_t, u_value, is_external. 인스턴스: sill, door_pos(왼쪽 문틀 안쪽에서 문 왼쪽 끝까지), swing, open(in/out), end_l·end_r(jamb/corner).
+- 칸 나누기: 문 왼쪽 구간과 오른쪽 구간을 각각 `ceil(구간 폭 / bay_max)` 칸으로 똑같이 나눈다(멀리언 반복). 가로대는 창호 전체 폭에 걸치고 그 위는 고정 유리다. 문 위 끝은 가로대 아래(가로대가 없으면 머리 틀 아래).
+- 레시피 검증은 매개변수 극단 표본에서 제약이 깨지면 레시피를 거절한다. 그래서 표본이 닿는 조건은 오류 대신 정해진 동작으로 두었다: 문이 창호 안 폭보다 넓으면 문을 두지 않는다(인스턴스 속성 `DoBIM_WindowParams.DoorWidth` 0), 문이 오른쪽 끝을 넘으면 오른쪽 문틀에 붙인다, 가로대가 아래·위 끝에서 300mm 안이면 없는 것으로 본다(`DoBIM_StorefrontParams.Transom` 0). 표본이 닿지 않는 조건(문짝 450 미만, 문 높이 1800 미만, 문 옆 고정창 칸 100 미만)은 제약 오류다.
+- IFC: IfcWindowType PartitioningType USERDEFINED, UserDefinedPartitioningType `STOREFRONT` / `STOREFRONT_DOOR`. 창 패널 FIXEDCASEMENT, 문이 있으면 OTHEROPERATION 을 더한다. 문을 따로 IfcDoor 로 나누지 않았다(한 인스턴스 = 한 개구부·한 IfcWindow, 문은 창호의 한 부분). 상용 도구는 커튼월 + 문 패널로 나누는 경우가 많다(한계).
+- 평면: 문틀·문설주 절단, 유리 구간 선(틀 앞·뒤·유리), 문짝 선과 열림 호(양여닫이는 두 호). 멀리언은 평면 기호 반복이 없어 1:100 평면에 그리지 않는다(단면·입면·3D 에는 있다).
+
+### 26.3 꺾인 창호 `family.place_corner`
+- 문제: 90도로 꺾여 두 벽에 걸친 창호(모서리 창·문, 전개형 창호)를 한 패밀리 인스턴스로 놓을 수 없다. 호스팅 패밀리는 한 벽만 자른다.
+- 결정: 두 벽에 다리 하나씩, 두 인스턴스로 놓는 커맨드(커맨드 109 -> 110). 인자: family(모서리 끝을 지원하는 호스팅 패밀리), walls [a, b], legs [a, b](두 축선 교점에서 각 벽을 따라 차지하는 길이 = 각 다리의 width), type_values·values(공통), values_b(b 다리만), flip, ids, name.
+- 두 벽은 같은 레벨이고 축선 끝점이 1mm 안에서 맞닿아야 하며 0.5도 안에서 직각이어야 한다. 각 다리는 개구부가 모서리 축선 끝까지 오도록 offset 을 정하고, 모서리 쪽 끝 매개변수(end_l 또는 end_r, 뒤집으면 반대)를 corner 로 둔다(그 끝 문틀이 없다). 두 인스턴스에 `DoBIM_CornerUnit`(Leg a/b, Partner)을 적는다.
+- 모서리 축선 교점 너머(조인으로 늘어난 벽 끝, 두께 x 두께)는 벽으로 남아 모서리 기둥이 된다. 유리끼리 맞닿는 모서리는 표현하지 않는다(한계).
+- 실행 취소 한 번으로 두 다리가 함께 없어진다(한 커맨드).
+
+### 26.4 창 열림 방식(프로젝트창·미닫이창)과 IFC 창 패널
+- `window.framed` operation 에 `project_out`(위 경첩, 밖으로 젖힘)과 `sliding`(두 짝 미닫이창)을 더했다. 미닫이창은 두 문짝이 깊이 방향으로 어긋나 겹치고(겹침 = 문짝 틀 폭), 평면에 두 짝 선을 그린다(여닫이 호 없음). 프로젝트창 평면은 틀 밖 기준면에 젖힘 표시 선 하나. 미닫이창은 IfcWindow 로 나간다(이전 우회처럼 `door.sliding` 을 쓰면 IfcDoor 가 된다).
+- IFC4 의 창 열림 방식은 IfcWindow 속성이 아니라 타입의 `IfcWindowPanelProperties`(OperationType·PanelPosition)다. 레시피에 선택 항목 `ifc.panels`([{operation, position, when}], 최대 8, 타입 수준 값)를 더했다. 평가 결과의 `panels`, 타입 명세의 `panels` 는 있을 때만 키가 생긴다(없으면 이전과 같다). `ifcproj.project_type` 이 타입의 HasPropertySets 에 패널을 만들고(GlobalId 는 타입 id·순번에서 결정적 파생) 다시 투영할 때 걷어내고 새로 만든다. 타입을 지우면 함께 지운다. 값은 IFC4 열거값이어야 한다(아니면 E_IFC_ENUM). IfcWindow 패밀리만 쓸 수 있다(E_IFC_CLASS).
+- `window.framed` 의 패널: 고정 FIXEDCASEMENT(멀리언 수만큼 LEFT/MIDDLE/RIGHT), 프로젝트 TOPHUNG, 미닫이 SLIDINGHORIZONTAL 두 장(LEFT, RIGHT). 여닫이는 경첩 쪽이 인스턴스 값이라 타입 패널로 정할 수 없어 NOTDEFINED 다(경첩은 `DoBIM_WindowParams.Hinge`). PartitioningType 은 미닫이면 DOUBLE_PANEL_VERTICAL.
+- 가져오기: 타입 클로저는 HasPropertySets 를 보지 않는다(이전과 같다). 속성 읽기(`IfcModel.get_psets`)는 IfcPreDefinedPropertySet 를 일반 속성으로 읽지 않는다: 패널은 투영의 몫이라 가져온 프로젝트와 원래 프로젝트의 상태 해시가 같다.
+
+### 26.5 여러 층에 걸친 벽(상단 레벨 구속)
+- 문제: 두 층 높이 벽(통창 호스트, 보이드 벽)을 한 레벨 벽의 height 로만 정할 수 있었고, 위층 평면에는 그 벽이 그려지지 않았다.
+- 결정: 벽 선택 파라미터 `top_level`(상단 레벨 id)·`top_offset`(0 이 아니면). `wall.create`·`wall.set` 에 인자를 더했다(커맨드 수 그대로). 상단 = 상단 레벨 높이 + top_offset, height = 상단 - (바닥 레벨 높이 + base_offset). 레벨 높이를 바꾸는 커맨드가 없어서 계산한 height 를 행에 저장하고 그것이 형상의 정본이다(IFC·도면·수량은 기존 경로 그대로).
+- 규칙: create 에서 height 와 함께 줄 수 없다. set 에서 height 를 직접 주면 구속을 뗀다(경고). base_offset 을 바꾸면 상단이 그대로고 height 가 바뀐다. top_profile(상단 윤곽)과 함께 둘 수 없다. 상단이 바닥보다 1mm 이상 높아야 한다. 상단이 묶인 레벨은 지울 수 없다. `wall.split` 은 끝 쪽 새 벽에도 구속을 복사한다.
+- 평면: 평면 뷰가 그리는 벽 = 그 레벨 벽 + 다른 레벨에 놓였지만 절단 높이를 지나가는 벽(`drawing.spanning_walls`, 바닥 < 절단 < 윗면). 이런 벽은 절단만 더하고 투영은 더하지 않는다(아래층 벽 윗면은 그 층 평면 몫). 구속(top_level)이 있는 벽만 다른 층 평면에 더한다: height 만 크게 준 벽은 이전처럼 제 레벨 평면에만 그린다(처음에는 모든 벽에 적용했으나 기준선의 별채 지붕 평면(아래 레벨 박공 벽이 절단 높이를 지남)이 달라져 좁혔다. 기존 모델의 도면이 바이트까지 같다). 여러 층 벽은 top_level 로 만든다. 평면은 그래프 입력 `tied_walls`(구속 벽 id 목록, 구속 벽이 생기거나 바뀔 때만 바뀐다)만 훑어서, 다른 벽을 고쳐도 다른 층 평면 캐시가 낡지 않는다(영향 뷰 조회가 정밀하다).
+- IFC: 벽은 바닥 레벨에 담긴다(IfcRelContainedInSpatialStructure, 상용 도구와 같다). 구속은 의도(DoBIM_Intent)로 왕복하고 `foreign` 이 키를 받는다.
+
+### 26.6 자동 난간 id
+- `railing.from_stair`·`railing.from_slab` 에 `ids`(생성 순서대로 id 목록)를 더했다. 개수가 만들 난간 수와 같아야 하고(아니면 CONSTRAINT /ids, details.expected 에 개수), 이미 있거나 벽 분할 이력에 쓰인 id 는 거절한다(다른 생성 커맨드의 id 규칙). 비우면 이전처럼 자동이다. 같은 입력이면 같은 순서라 한 번 비우고 실행해 개수·순서를 볼 수 있다.
+
+### 26.7 시험
+`tests/test_practical6.py`(14건): 라이브러리 전체 검증 4, 상한 확대, 프로젝트·미닫이·고정 창의 IfcWindow·PartitioningType·창 패널과 가져오기 왕복 해시·재내보내기 중복 없음·타입 삭제, 미닫이 평면, 복합 창호 칸·문·평면 호·거절, 복합 창호 IFC 와 왕복, 모서리 창호(offset·끝·거절·뒤집기·실행 취소), 상단 구속(계산·거절·바닥 오프셋·분할·레벨 삭제·떼기), 두 층 벽의 위층 평면 절단과 증분 = 전체 계산, 구속 벽 IFC 왕복, 난간 ids. parity 에 `family.place_corner` 예시(기준 프로젝트의 W1·W2 모서리).

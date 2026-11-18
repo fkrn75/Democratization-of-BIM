@@ -44,6 +44,11 @@ def rel_in(g, kind, dst):
     return g.input(("rel_in", kind, dst))
 
 
+def tied_walls(g):
+    """상단 레벨로 구속된 벽 id(24단계). 다른 벽을 편집해도 바뀌지 않는 입력이라 평면이 모든 벽에 의존하지 않는다."""
+    return g.input(("tied_walls",))
+
+
 def psets(g, eid):
     return g.input(("pset", eid))
 

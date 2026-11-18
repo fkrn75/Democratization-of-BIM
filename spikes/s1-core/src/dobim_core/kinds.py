@@ -1205,6 +1205,8 @@ def _keys_el(e):
     if e[2] is None or e[3] is None:   # 생성·삭제는 버킷·개수 입력도 바꾼다
         kind = (e[3] or e[2])["kind"]
         out |= {("bucket", kind, bucket_of(e[1])), ("count", kind)}
+    if any(r is not None and r["kind"] == "wall" and "top_level" in r["params"] for r in (e[2], e[3])):
+        out.add(("tied_walls",))   # 상단 구속 벽(24단계) 목록 입력: 구속 벽이 생기거나 바뀔 때만 바뀐다(다른 벽 편집은 평면 캐시를 흔들지 않는다)
     return out
 
 

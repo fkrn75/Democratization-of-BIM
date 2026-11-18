@@ -144,14 +144,17 @@ def scope_walls(g, v):
 
 
 def spanning_walls(g, lv, cutz):
-    """다른 레벨에 놓였지만 이 평면의 절단 높이를 지나가는 벽(24단계: 여러 층에 걸친 벽). 절단만 더하고 투영은 더하지 않는다
-    (아래층 벽의 윗면이 보이는 깊이 안에 있어도 그 층 평면 몫이다). 이런 벽이 없으면 평면은 이전과 같다."""
+    """다른 레벨에 놓였지만 이 평면의 절단 높이를 지나가는 벽(24단계: 상단 레벨로 구속한 여러 층 벽). 절단만 더하고 투영은 더하지 않는다
+    (아래층 벽의 윗면이 보이는 깊이 안에 있어도 그 층 평면 몫이다). 구속(top_level)이 있는 벽만 본다: height 만 큰 벽은 이전처럼
+    제 레벨 평면에만 그린다(기존 모델의 도면이 바이트까지 같다)."""
     out = []
-    for w in g.q(all_walls):
+    for w in Q.tied_walls(g):
+        if not g.q(is_drawn_wall, w):
+            continue
+        p = Q.el(g, w)["params"]
         wl = g.q(Q.wall_level, w)
         if wl == lv:
             continue
-        p = Q.el(g, w)["params"]
         _, elev = g.q(Q.level_info, wl)
         if elev + WT.base(p) + EPS < cutz < elev + _top_rel(p) - EPS:
             out.append(w)
