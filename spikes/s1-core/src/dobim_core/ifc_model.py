@@ -35,6 +35,7 @@ import ifcopenshell.util.unit as uunit
 import ifcopenshell.validate
 
 from dobim_core import appearance as AP
+from dobim_core import wallcut as WC
 from dobim_core.errors import DobimError
 from dobim_core.kinds import FIXED_IFC_CLASS, SLAB_OPENINGS_MAX, parapet_ring, roof_geom, stair_layout
 from dobim_core.solids import OPENINGS_MAX
@@ -1113,6 +1114,10 @@ class IfcModel:
             self._set_body(e, self._vprofile_solid(spec["top"], spec["thickness"] / 2.0, spec["thickness"]))
         else:
             self._set_body(e, self._solid(spec["footprint"], spec["height"], spec.get("base", 0.0)))   # 바닥 오프셋(22단계): 배치는 레벨 그대로, 몸체만 올리고 내린다
+        if "cuts" in spec:   # 벽 잘라내기(23단계): 몸체 = IfcBooleanResult(DIFFERENCE) 사슬(상자 하나씩 뺀다), 표현 종류 CSG. 없으면 몸체는 이전과 같다
+            self._cut_body(e, spec["cuts"], spec["cut_range"])
+        elif e.Representation.Representations[0].RepresentationType == "CSG":   # 잘라내기를 뗐다: 표현 종류를 돌출로 되돌린다
+            e.Representation.Representations[0].RepresentationType = "SweptSolid"
         layers = spec.get("layers")   # 벽 층 구성: 지역 +v 방향 순서(첫 층 = -v 면), 기준선(축선)에서 -두께/2 만큼 떨어져 시작한다
         if layers:
             self._assign_layers(e, layers, "AXIS2", "POSITIVE", -sum(t for _, t in layers) / 2.0, pairs_label(layers))
@@ -1124,6 +1129,31 @@ class IfcModel:
             half = spec.get("thickness", 0.0) / 2.0 + 10.0
             self._sync_parts(eid, {f"opening:{i}": {"cls": "IfcOpeningElement", "name": f"{spec['name']}-opening{i + 1}", "rel": "void",
                                                      "solid": (lambda lp=lp: self._vprofile_solid(lp, half, 2.0 * half))} for i, lp in enumerate(ops)})
+
+    def _cut_body(self, e, cuts, rng):
+        """벽 몸체(이미 투영된 돌출 하나)에서 상자들을 뺀다(23단계). 벽 면과 같은 평면에 놓인 상자 면은 FACE_PAD 만큼 벽 밖으로 내밀어
+        같은 평면 빼기의 수치 잡음(얇은 막)을 피한다(결과 형상은 같다). 상자가 모두 범위 밖이면 몸체는 돌출 그대로(SweptSolid)."""
+        f = self.f
+        rep = e.Representation.Representations[0]
+        body = rep.Items[0]
+        u0, u1, half, zb, zt = rng
+        pad = WC.FACE_PAD
+        for b in cuts:
+            a0 = b[0] - pad if b[0] <= u0 + WC.CUT_MIN else b[0]
+            a1 = b[1] + pad if b[1] >= u1 - WC.CUT_MIN else b[1]
+            v0 = b[2] - pad if b[2] <= -half + WC.CUT_MIN else b[2]
+            v1 = b[3] + pad if b[3] >= half - WC.CUT_MIN else b[3]
+            z0 = b[4] - pad if b[4] <= zb + WC.CUT_MIN else b[4]
+            z1 = b[5] + pad if b[5] >= zt - WC.CUT_MIN else b[5]
+            box = self._solid(((a0, v0), (a1, v0), (a1, v1), (a0, v1)), z1 - z0, z0)
+            body = f.createIfcBooleanResult("DIFFERENCE", body, box)
+        if body is not rep.Items[0]:
+            for st in list(rep.Items[0].StyledByItem or ()):   # 스타일(색)은 최종 항목으로 옮긴다
+                st.Item = body
+            rep.Items = [body]
+            rep.RepresentationType = "CSG"
+        elif rep.RepresentationType != "SweptSolid":
+            rep.RepresentationType = "SweptSolid"
 
     def _vprofile_solid(self, loop, y0, depth):
         """지역 (u, z) 수직 윤곽을 지역 y = y0 에서 -y 방향으로 depth 만큼 돌출한 솔리드(축 (0,-1,0), 기준 방향 (1,0,0): 윤곽의 y 가 위쪽 z 가 된다)."""

@@ -10,6 +10,7 @@ from math import sqrt
 
 from dobim_core.family import spec as FS
 from dobim_core import solids as SO
+from dobim_core import wallcut as WC
 from dobim_core import walltop as WT
 
 JOIN_MAX_EXT = 1000.0   # 조인 지점이 벽 끝에서 이 거리 안일 때만 조인이 성립
@@ -150,6 +151,15 @@ def wall_hosted(g, w):
     return rel_out(g, "hosts", w)
 
 
+def wall_cut_boxes(g, w):
+    """벽 잘라내기(23단계) 상자를 지금 벽 형상 범위(조인 자르기 범위·두께·바닥~윗면, 레벨 기준 z)로 자른 값. 키가 없으면 ()."""
+    p = el(g, w)["params"]
+    if "cuts" not in p:
+        return ()
+    start, end = g.q(wall_extent, w)
+    return WC.clip(p["cuts"], start, end, p["thickness"] / 2.0, WT.base(p), WT.top_rel(p))
+
+
 # ---------------------------------------------------------------- 슬래브
 def slab_level(g, s):
     return rel_out(g, "on_level", s)[0]
@@ -278,6 +288,8 @@ def wall_row(g, w):
         opening += dp["width"] * dp["height"]
     for o in p.get("openings", ()):   # 모양 개구부(18단계)의 실제 윤곽 면적
         opening += abs(SO.area2(SO.opening_loop(o))) / 2.0
+    if "cuts" in p:   # 벽 잘라내기(23단계): 두께를 다 뚫는 상자의 입면 넓이를 뺀다(한쪽 면만 파인 상자는 부피에만 든다). 없으면 행은 그대로
+        opening += WC.through_area(g.q(wall_cut_boxes, w), p["thickness"] / 2.0)
     return (w, p["name"], lname, elev, length, height, p["thickness"], gross - opening, len(hosted),
             _pset_val(g, w, "Pset_WallCommon", "FireRating"),
             _pset_val(g, w, "Pset_WallCommon", "IsExternal"),
@@ -406,6 +418,9 @@ def ifc_spec(g, e):
             fp = spec["footprint"]
             spec["top"] = tuple(WT.loop(p["top_profile"], fp[0][0], fp[1][0], WT.base(p)))
             spec["thickness"] = p["thickness"]
+        if "cuts" in p:   # 벽 잘라내기(23단계): 몸체에서 뺄 상자(형상 범위로 자른 값). 없으면 명세는 이전과 같다
+            spec["cuts"] = g.q(wall_cut_boxes, e)
+            spec["cut_range"] = (spec["footprint"][0][0], spec["footprint"][1][0], p["thickness"] / 2.0, WT.base(p), WT.top_rel(p))
         return spec
     if kind == "solid":
         # 배치는 레벨 좌표계(원점·무회전)이고 형상 z 는 레벨 기준이므로 레벨 높이는 읽지 않는다. 형상은 solids.solid_mesh 가 정한다(도면과 같은 값)

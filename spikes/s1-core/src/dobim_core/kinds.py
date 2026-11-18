@@ -17,6 +17,7 @@ from math import isfinite, sqrt
 from typing import Callable, NamedTuple
 
 from dobim_core import solids as SO
+from dobim_core import wallcut as WC
 from dobim_core import walltop as WT
 
 ID_LEN = 22
@@ -138,7 +139,8 @@ def _wall_params(p):
         return (isinstance(v, list) and len(v) == 4 and all(num_ok(x) for x in v)
                 and (v[2] - v[0]) ** 2 + (v[3] - v[1]) ** 2 >= 1.0)
     err = _check_opt("wall", p, {"name": _name, "axis": axis, "thickness": _pos, "height": _pos}, {"layers": layers_ok, "openings": lambda v: isinstance(v, list), "top_profile": lambda v: isinstance(v, list),
-                                                                                                         "base_offset": lambda v: num_ok(v) and abs(v) <= WT.BASE_OFFSET_MAX})
+                                                                                                         "base_offset": lambda v: num_ok(v) and abs(v) <= WT.BASE_OFFSET_MAX,
+                                                                                                         "cuts": lambda v: WC.cuts_problem(v) is None})   # 벽 잘라내기(23단계)
     if err is None and "layers" in p and abs(layers_total(p["layers"]) - p["thickness"]) > LAYER_SUM_TOL:
         return "wall.layers 두께의 합이 벽 두께와 다르다"
     top = p.get("top_profile") if err is None else None   # 벽 상단 윤곽(21단계): 없으면 이전과 같다
