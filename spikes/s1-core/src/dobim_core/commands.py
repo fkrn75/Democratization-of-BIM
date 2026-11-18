@@ -26,6 +26,7 @@ from dobim_core import queries as Q
 from dobim_core import registry
 from dobim_core.errors import DobimError
 from dobim_core import kinds as K
+from dobim_core import wallcut as WC
 from dobim_core import walltop as WT
 from dobim_core.kinds import KIND_NAMES, READ_REL_NAMES, REL_KINDS, is_corridor, param_ref_targets, polygon_area2, polygon_problem
 from dobim_core.paths import resolve_in_workspace
@@ -269,13 +270,18 @@ def _openings_in(ops) -> list:
 def _wall_checked(p: dict) -> dict:
     why = K.row_params_error("wall", p)
     if why:
-        raise DobimError("CONSTRAINT", f"벽이 올바르지 않다: {why}", path="/openings" if "openings" in why else ("/top_profile" if "top_profile" in why else None))
+        raise DobimError("CONSTRAINT", f"벽이 올바르지 않다: {why}", path="/openings" if "openings" in why else ("/top_profile" if "top_profile" in why else ("/cuts" if "cuts" in why else None)))
     return p
 
 
 TopProfile = Annotated[list[Annotated[list[Num], Field(min_length=2, max_length=2)]], Field(max_length=WT.TOP_PTS_MAX, description=(
     "벽 상단 윤곽(21단계): 축선 따라 거리 s(축 시작점 0 ~ 축 길이)와 레벨 기준 높이 z 의 점 [[s, z], ...]. s 오름차순, 양 끝 포함, 2점 이상, z > 0. "
     "같은 s 두 점은 수직 단. wall.set 에 빈 목록을 주면 윤곽을 뗀다(상단이 height 로 수평)"))]
+
+
+Cuts = Annotated[list[Annotated[list[Num], Field(min_length=6, max_length=6)]], Field(max_length=WC.CUTS_MAX, description=(
+    "벽 잘라내기(23단계): 다른 부재가 벽에서 빼낸 상자 [[u0, u1, v0, v1, z0, z1], ...]. u = 축 시작점에서 축 방향 거리, v = 축선에서 왼쪽 거리"
+    "(벽 몸체 -두께/2 ~ +두께/2), z = 레벨 기준 높이. 형상에 쓸 때 벽 범위로 자른다"))]
 
 
 def _door_box(dp: dict) -> tuple:
@@ -368,10 +374,11 @@ class WallSet(A):
     openings: Openings | None = Field(None, description="모양 개구부 목록을 통째로 바꾼다(빈 목록 = 모두 뗀다)")
     top_profile: TopProfile | None = Field(None, description="벽 상단 윤곽을 통째로 바꾼다(빈 목록 = 뗀다)")
     base_offset: Num | None = Field(None, description="벽 바닥 오프셋(레벨 기준 mm). 0 이면 뗀다. 바닥만 움직이고 height 는 그대로다(상단도 함께 움직인다)")
+    cuts: Cuts | None = Field(None, description="벽 잘라내기 상자 목록을 통째로 바꾼다(빈 목록 = 뗀다). 보통은 wall.cut_by 가 대상 부재에서 계산한다")
 
     @model_validator(mode="after")
     def _any(self):
-        if all(v is None for v in (self.name, self.thickness, self.height, self.axis, self.openings, self.top_profile, self.base_offset)):
+        if all(v is None for v in (self.name, self.thickness, self.height, self.axis, self.openings, self.top_profile, self.base_offset, self.cuts)):
             raise ValueError("바꿀 필드가 하나도 없다")
         return self
 
@@ -413,10 +420,15 @@ def wall_set(ctx, a: WallSet):
             p["base_offset"] = float(a.base_offset)
         else:
             p.pop("base_offset", None)
+    if a.cuts is not None:   # 벽 잘라내기(23단계): 빈 목록이면 키를 뗀다
+        if a.cuts:
+            p["cuts"] = WC.norm(a.cuts)
+        else:
+            p.pop("cuts", None)
     if a.top_profile is None and "top_profile" in p and WT.profile_problem(p["top_profile"], sqrt(_axis_len2(p["axis"]))):
         raise DobimError("CONSTRAINT", "상단 윤곽이 있는 벽의 축 길이가 바뀌면 윤곽이 맞지 않는다", path="/axis",
                          hint="새 top_profile 을 함께 주거나, wall.detach_top 으로 뗀 뒤 wall.attach_top 으로 다시 붙이세요")
-    if "openings" in p or "top_profile" in p or "base_offset" in p:   # 축·높이가 바뀌어 개구부가 벽 밖으로 나가면 거절한다
+    if "openings" in p or "top_profile" in p or "base_offset" in p or "cuts" in p:   # 축·높이가 바뀌어 개구부가 벽 밖으로 나가면 거절한다
         _wall_checked(p)
     _hosted_under_top(ctx, a.id, p)
     if WT.base(p) > 0.0:   # 바닥 오프셋(22단계): 호스팅된 문의 문턱이 새 바닥 아래면 거절한다
@@ -654,10 +666,19 @@ def wall_split(ctx, a: WallSplit):
             pw["openings"] = ops_w
         else:
             pw.pop("openings")
+    cuts_n = None
+    if "cuts" in p:   # 벽 잘라내기(23단계): 상자를 분할점에서 나눠 놓인 쪽 벽으로(끝 쪽은 u 를 당긴다)
+        cuts_w, cuts_n = WC.split(p["cuts"], a.at)
+        if cuts_w:
+            pw["cuts"] = cuts_w
+        else:
+            pw.pop("cuts")
     ctx.put_el(a.id, dict(r, params=pw))
     np_ = {"name": name, "axis": ax_n, "thickness": p["thickness"], "height": p["height"]}
     if "base_offset" in p:   # 바닥 오프셋(22단계)은 끝 쪽 새 벽도 같다
         np_["base_offset"] = p["base_offset"]
+    if cuts_n:
+        np_["cuts"] = cuts_n
     if "layers" in p:   # 층 구성이 있으면 끝 쪽 새 벽도 같은 층 구성(복사)
         np_["layers"] = [dict(x) for x in p["layers"]]
     if ops_n:
@@ -2757,6 +2778,9 @@ def element_get(ctx, a: ElementGet):
             gross = WT.area(tp, start, end) - WT.base(r["params"]) * (end - start)
             out["derived"].update({"top_min": WT.zmin(tp, start, end), "top_max": WT.zmax(tp, start, end),
                                    "gross_area_m2": gross / 1e6, "volume_m3": gross * th / 1e9})
+        if "cuts" in r["params"]:   # 벽 잘라내기(23단계): 빼낸 부피(겹친 상자는 한 번만)와 상자 수. 없으면 응답은 그대로
+            boxes = ctx.g.q(Q.wall_cut_boxes, a.id)
+            out["derived"].update({"cut_boxes": len(boxes), "cut_volume_m3": WC.union_volume(boxes) / 1e9})
     elif r["kind"] == "door":
         out["derived"] = {"world": list(ctx.g.q(Q.door_world, a.id)), "status": ctx.g.q(Q.door_status, a.id)}
     elif r["kind"] == "slab":

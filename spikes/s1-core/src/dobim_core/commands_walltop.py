@@ -3,6 +3,7 @@
 
 wall.attach_top  벽 축선 위에서 대상(경사 지붕·솔리드(경사 판 등)·슬래브)의 아랫면(또는 윗면) 높이를 재서 벽 상단 윤곽(top_profile)을 채운다.
 wall.detach_top  상단 윤곽을 뗀다(상단이 height 로 수평).
+wall.cut_by      보·인방 같은 부재가 벽과 겹친 부피를 벽 잘라내기(cuts)로 적는다(23단계, 설계 메모 25.1). 붙이기와 같은 스냅숏이다.
 붙이기는 그 순간의 대상 형상을 윤곽 값으로 옮겨 적는다(스냅숏). 대상이 바뀌어도 벽은 따라가지 않는다: 다시 붙이면 새 형상을 따른다(설계 메모 23.2 의 의존 판단).
 이 모듈은 ifcopenshell 을 import 하지 않는다.
 """
@@ -14,6 +15,8 @@ from pydantic import Field
 
 from dobim_core import fixture as F
 from dobim_core import queries as Q
+from dobim_core import solids as SO
+from dobim_core import wallcut as WC
 from dobim_core import walltop as WT
 from dobim_core.commands import A, Id, _hosted_under_top, _wall_checked, command
 from dobim_core.errors import DobimError
@@ -61,6 +64,59 @@ def wall_attach_top(ctx, a: WallAttachTop):
         ctx.put_el(a.id, dict(r, params=p))
     return {"id": a.id, "changed": changed, "points": len(prof), "covered": covered,
             "top_min": WT.zmin(prof), "top_max": WT.zmax(prof)}
+
+
+CUT_TARGETS_MAX = 64
+
+
+class WallCutBy(A):
+    id: Id
+    targets: Annotated[list[Id], Field(min_length=1, max_length=CUT_TARGETS_MAX, description=(
+        "벽을 자를 부재 id 목록(솔리드: 보·인방(member)·기둥·바닥 마감 판 등). 벽 축에 나란한 직육면체여야 한다. 벽과 겹치지 않는 대상은 건너뛴다"))]
+
+
+@command("wall.cut_by", kind="mutation", risk="write", group="model.wall",
+         summary="벽에서 보·인방 같은 부재가 차지한 부피를 뺀다(형상 결합에서 구조 부재가 벽을 자르는 것): 겹친 상자를 벽 잘라내기(cuts)로 적는다(그 순간의 값, 기존 cuts 를 바꾼다)",
+         args=WallCutBy, since="0.8", examples=[{"id": F.W1, "targets": [F.SO1]}])
+def wall_cut_by(ctx, a: WallCutBy):
+    r = ctx.authored(a.id, "wall", what="잘라내기")
+    p = dict(r["params"])
+    wall_elev = ctx.g.q(Q.level_info, ctx.rels_out("on_level", a.id)[0])[1]
+    start, end = ctx.g.q(Q.wall_extent, a.id)
+    half = p["thickness"] / 2.0
+    wbox = (start, end, -half, half, WT.base(p), WT.top_rel(p))
+    boxes, used, skipped = [], [], []
+    for i, t in enumerate(dict.fromkeys(a.targets)):
+        tr = ctx.row(t)
+        if tr["kind"] != "solid":
+            raise DobimError("CONSTRAINT", f"벽을 자를 수 없는 종류다({tr['kind']}): {t}", path=f"/targets/{i}",
+                             hint="솔리드(보·인방 member, 기둥·마감 prism/plate 등)만 벽을 자른다")
+        if tr["origin"] != "authored":
+            raise DobimError("CONSTRAINT", f"저작 요소가 아니라(외래·분리됨) 형상을 읽을 수 없다: {t}", path=f"/targets/{i}")
+        dz = ctx.g.q(Q.level_info, ctx.rels_out("on_level", t)[0])[1] - wall_elev
+        verts, faces = SO.solid_mesh(tr["params"])
+        pts = WC.to_local(p["axis"], verts, dz)
+        if WC.overlap(WC.bbox(pts), wbox) is None:
+            skipped.append(t)
+            continue
+        box = WC.aligned_box(pts, faces)
+        if box is None:
+            raise DobimError("CONSTRAINT", f"대상이 벽 축에 나란한 직육면체가 아니다: {t}", path=f"/targets/{i}",
+                             hint="벽과 나란하거나 직각인 사각 단면 보·인방, 축 정렬 상자 솔리드만 벽을 자른다")
+        o = WC.overlap(box, wbox)
+        if o is None:
+            skipped.append(t)
+            continue
+        boxes.append([float(x) for x in o])
+        used.append(t)
+    if not boxes:
+        raise DobimError("CONSTRAINT", "벽과 겹치는 대상이 없다", path="/targets", hint="벽 형상(조인 범위·두께·높이)과 부피가 겹치는 부재를 주세요")
+    p["cuts"] = boxes
+    _wall_checked(p)
+    changed = p != r["params"]
+    if changed:
+        ctx.put_el(a.id, dict(r, params=p))
+    return {"id": a.id, "changed": changed, "cut": used, "skipped": skipped, "cut_volume_m3": WC.union_volume(boxes) / 1e9}
 
 
 class WallDetachTop(A):

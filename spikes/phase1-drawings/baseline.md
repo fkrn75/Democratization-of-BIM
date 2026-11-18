@@ -939,3 +939,21 @@ s10-headless 실패 2건(test_gui_scan, test_headless_ra01 IFC 기준 해시)은
 
 ### 24.2 시험
 test_practical4_wall_base, test_practical4_finish.
+
+## 25. 스물세 번째 작업: 벽 잘라내기 (2026-11-18, 브랜치 phase1/practical-modeling-5)
+
+산출은 비공개 산출 폴더(phase1-after23)에 두었다. 같은 모델에 `run_baseline.py --sheets` 를 돌렸다(새 입력 없음). 설계 메모는 elements-design.md 25절. 해시 형식 그대로(CLOSURE_FORMAT 15).
+
+### 25.0 바이트 비교 (after22 대비, work/·run.json 제외)
+**같은 파일 183개, 달라진 파일 0, 새 산출 0, 사라진 파일 0.** 새 키(cuts)를 쓰지 않은 모델은 행·IFC·도면이 이전과 같다.
+s10-headless 실패 2건(test_gui_scan, test_headless_ra01 IFC 기준 해시)은 23·24절과 같은 기존 상태다. parity: 커맨드 109 전부 예시 실행, 불일치 0.
+
+### 25.1 변경 요지
+1. 벽 선택 파라미터 `cuts`(벽 지역 축 정렬 상자, 다른 부재가 빼낸 부피)와 `wall.cut_by`(대상 솔리드에서 겹침 상자 계산, 커맨드 108 -> 109). `wall.set cuts`, `wall.split` 분배.
+2. IFC 몸체 IfcBooleanResult(DIFFERENCE) 사슬(CSG), 평면·단면 절단에서 빼기, 일람표 net_area·element.get cut_volume_m3.
+
+### 25.2 실전 사례(비공개, 저장소 밖)
+같은 사례 모델의 벽 91개에 인방 53·보 18을 잘라냈다(겹치는데 축 정렬 상자가 아닌 대상 0).
+
+### 25.3 시험
+test_practical5_wall_cut(8건).
