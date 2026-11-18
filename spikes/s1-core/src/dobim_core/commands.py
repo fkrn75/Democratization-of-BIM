@@ -4296,6 +4296,7 @@ _FORBIDDEN_SUFFIX = (".dobim", ".dobim-wal", ".dobim-shm", ".dobim-journal", ".t
 
 class IfcExport(A):
     path: str = Field(max_length=260, description="작업 폴더 안의 .ifc 경로. 기존 파일은 덮어쓰며, 덮어쓰기 전에 자동 스냅숏을 남긴다")
+    schema_: Literal["IFC4", "IFC2X3"] = Field("IFC4", alias="schema", description="IFC4(기본, 정본 투영 그대로) 또는 IFC2X3(TC1, 세움터 등 제출용: IFC4 투영을 스키마 변환하고 손실 항목을 losses 로 알린다)")
 
 
 def _target(ctx, raw: str):
@@ -4554,22 +4555,41 @@ def _export_preview(ctx, a: IfcExport):
 
 
 @command("ifc.export", kind="session", risk="destructive", group="io",
-         summary="IFC4 내보내기",
-         args=IfcExport, preview=_export_preview, examples=[{"path": "export-example.ifc"}])
+         summary="IFC4·IFC2x3 내보내기",
+         args=IfcExport, preview=_export_preview, examples=[{"path": "export-example.ifc"}, {"path": "export-example-2x3.ifc", "schema": "IFC2X3"}])
 def ifc_export(ctx, a: IfcExport):
     p = _target(ctx, a.path)
     ctx.eng.flush_ifc()   # 투영한 요소 수는 프로세스 상태(캐시 유무)에 따라 달라 결과에 넣지 않는다(패리티 C)
     snap = _snapshot_existing(p, ctx.eng.workspace)
+    losses = None
+    if a.schema_ == "IFC2X3":   # IFC4 투영을 복사해 내린다(정본 투영·IFC4 출력은 그대로)
+        from dobim_core import __version__
+        from dobim_core import ifc2x3 as X2
+        try:
+            f2, losses = X2.to_ifc2x3(ctx.eng.ifc.f, __version__, 0)   # 작성 시각 0: IFC4 출력처럼 같은 모델이면 같은 내용(시계에 기대지 않는다)
+        except Exception as ex:
+            _drop_snapshot(p, snap, ctx.eng.workspace)
+            raise DobimError("CONSTRAINT", f"IFC2x3 로 바꾸지 못했다({type(ex).__name__}: {str(ex)[:200]})", path="/schema")
+        writer = f2.write
+    else:
+        writer = ctx.eng.ifc.write
     try:
-        _replace(p, lambda tmp: ctx.eng.ifc.write(str(tmp)))
+        _replace(p, lambda tmp: writer(str(tmp)))
     except BaseException:   # DobimError 만이 아니다: ifc.write 가 라이브러리 예외로 실패해도 스냅숏이 쌓이지 않게
         _drop_snapshot(p, snap, ctx.eng.workspace)   # 쓰지 못했으면 방금 만든 스냅숏은 필요 없다(재시도마다 쌓이지 않게)
         raise
-    return {"path": p.name, "bytes": p.stat().st_size, "rev": ctx.eng.rev, "snapshot": snap}
+    out = {"path": p.name, "bytes": p.stat().st_size, "rev": ctx.eng.rev, "snapshot": snap}
+    if losses is not None:   # IFC4 응답은 이전과 같다
+        out["schema"] = "IFC2X3"
+        out["losses"] = losses[:40]
+        out["losses_total"] = len(losses)
+        if losses:
+            ctx.warn(f"IFC2x3 에 담지 못한 항목 {len(losses)}종(클래스 대체·PredefinedType 등): losses 를 보세요. 원래 분류는 ObjectType 에 남겼다")
+    return out
 
 
 class IfcImport(A):
-    source: str = Field(max_length=260, description="작업 폴더 안의 IFC4 파일(.ifc). 읽기만 한다")
+    source: str = Field(max_length=260, description="작업 폴더 안의 IFC4·IFC2x3 파일(.ifc). 읽기만 한다. IFC2x3 은 IFC4 로 올려서 가져온다")
     path: str = Field(max_length=260, description="새로 만들 프로젝트(.dobim) 경로. 이미 있으면 FILE_EXISTS")
     guid: str | None = Field(None, max_length=36, description="프로젝트 UUID. 생략하면 무작위")
 
@@ -4592,12 +4612,25 @@ def ifc_import(env, a: IfcImport):
         data = src.read_bytes()
     except OSError as ex:
         raise _io_error(src, ex) from ex
+    converted = None
+    if b"IFC2X3" in data[:4096].upper():   # IFC2x3 은 IFC4 로 올려서 가져온다(외래 기반으로는 올린 IFC4 를 보존한다)
+        from dobim_core import ifc2x3 as X2
+        from dobim_core.ifc_model import open_ifc_bytes
+        try:
+            f0 = open_ifc_bytes(data)
+        except Exception as ex:
+            raise DobimError("IMPORT_INVALID", f"IFC 를 읽을 수 없다({type(ex).__name__})", path="/source") from None
+        if f0.schema == "IFC2X3":
+            f4, conv_warn = X2.to_ifc4(f0)
+            data, converted = f4.to_string().encode("utf-8"), conv_warn
     plan = plan_import(data)
+    if converted is not None:
+        plan.warnings[:0] = ["IFC2x3 파일을 IFC4 로 올려 가져왔다(외래 기반은 올린 IFC4)"] + converted
     eng = Engine.create_imported(dst, data, plan, env.actor, guid=a.guid)
     try:
         counts = plan.counts()
         shown = [{"id": d["id"], "reasons": d["reasons"][:4]} for d in plan.detached[:20]]
-        return {"path": dst.name, "rev": eng.rev, "project_uuid": eng.project_guid_uuid, "schema": plan.schema, "bytes": len(data),
+        return {"path": dst.name, "rev": eng.rev, "project_uuid": eng.project_guid_uuid, "schema": "IFC2X3" if converted is not None else plan.schema, "bytes": len(data),
                 "elements": counts, "skeleton": plan.skeleton, "detached": shown, "detached_total": len(plan.detached),
                 "warnings": [w[:240] for w in plan.warnings[:20]], "warnings_total": len(plan.warnings)}
     finally:
