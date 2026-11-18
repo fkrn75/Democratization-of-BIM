@@ -1019,3 +1019,45 @@ s10-headless 실패 2건(test_gui_scan, test_headless_ra01 IFC 기준 해시)은
 
 ### 28.2 시험
 test_practical8(9건). s1-core 전체(test_slow 제외): 1053 통과, 38 건너뜀, 실패 0. test_practical7 의 "가로대 매개변수가 없는 패밀리" 확인은 window.framed 가 가로대를 받게 되어 window.fixed 로 바꿨다. test_slow: 7건 통과.
+
+## 29. DXF 내보내기(LN-10) (2026-11-18, 브랜치 phase1/dxf-export)
+
+1단계 산출물 목록(roadmap: 일람표·PDF·DXF) 중 코드가 없던 DXF 를 넣었다. 새 커맨드는 만들지 않고 기존 내보내기 커맨드가 확장자 `.dxf` 를 받게 했다(SVG·PDF·PNG 와 같은 관례: 확장자가 형식을 정한다). CLI·MCP 는 같은 레지스트리를 쓰므로 함께 생긴다. 기준선(`run_baseline.py --sheets`)에는 DXF 산출을 더하지 않았다(바이트 비교 대상 불변).
+
+### 29.1 사용
+- `dobim view.export --id <뷰> --path plan.dxf --overwrite` (MCP `dobim_call` 의 `view.export` 도 같다): 뷰 하나를 **모델 mm 실척**으로 낸다. 선·문자 위치는 모델 좌표(평면은 X·Y, 단면·입면은 가로·높이), 문자 높이·파선 길이는 용지 mm x 뷰 축척(1:100 이면 2.5mm 문자 -> 250).
+- `sheet.export`·`sheet.render`·`sheet.index` 에 `path: "A-101.dxf"`: 시트를 **용지 mm 1:1** 로 낸다(뷰는 자기 축척으로 이미 줄어 있고, 표제란·축척 문자에 축척이 적힌다).
+- 응답에 `dxf` 요약: version AC1027, units mm, space, 엔티티 종류별 수, 층별 수, 범위.
+
+### 29.2 형식 결정
+| 항목 | 결정 | 이유 |
+|---|---|---|
+| 판 | DXF R2013(AC1027) ASCII, UTF-8, `$INSUNITS` 4(mm), `$MEASUREMENT` 1 | R2007 이후는 문자열이 UTF-8 이라 한글이 코드 페이지와 무관하다. `$DWGCODEPAGE` 는 ANSI_949 |
+| 쓰는 법 | 라이브러리 없이 직접 쓴다(`dobim_core/dxf_export.py`) | 필요한 엔티티가 LINE·LWPOLYLINE·CIRCLE·HATCH(SOLID)·TEXT 다섯뿐이다. 핸들·헤더를 직접 정해 결정적 출력이 쉽고, 새 런타임 의존·동봉 고지(s7 THIRD-PARTY-NOTICES)가 늘지 않는다. ezdxf(MIT)는 architecture.md 후보였으나 코어에 넣지 않았다 |
+| 결정성 | 날짜(`$TDCREATE`·`$TDUPDATE`)·GUID(`$FINGERPRINTGUID`·`$VERSIONGUID`) 를 쓰지 않는다. 핸들은 0x11 부터 쓰는 순서대로, 실수는 소수 6자리 반올림 | 같은 입력 -> 같은 바이트(시험) |
+| 층 | 범주별 20개 표(`LAYERS`): A-CUT 0.50·A-CUT-NB 0.35·A-PROJ 0.18·A-SYMB 0.25·A-HATCH 0.09·A-FILL(솔리드 해치)·A-HIDDEN(파선 2.4/1.2)·A-DATUM(파선 3/1.5)·A-DIM·A-TAG·A-TEXT·A-GRID·A-MARK·A-ANNO-ERR·A-DRAFT·G-CAPTION·G-BORDER 0.70·G-TITLE·G-REV·G-TABLE·G-SHEET. 층마다 색(ACI+트루컬러)·선 굵기·선 종류를 두고, 층과 다른 요소만 개별 값(62/420·370·6)을 쓴다 | 시트 그림 요소의 그룹 id(`title-block`·`hidden-lines`·`elevation-dims` 등)와 선 굵기·색·파선에서 범주를 정한다. sheet.py·drawing*.py 를 고치지 않았다 |
+| 새 요소의 층 | 그룹 속성 `data-layer` 가 있으면 그 이름을 층으로 쓴다(DXF 금지 문자는 `_`). 그룹 id 가 `draft-` 로 시작하면 A-DRAFT | 2D 작도 요소(동시 작업 dobim-2d)와 맞춘 연결 규칙. 시트에 그리기만 하면 DXF 로 나온다 |
+| 문자 | TEXT, 스타일 DOBIM_KR(malgun.ttf)·굵게 DOBIM_KR_B(malgunbd.ttf), 높이 = 문자 높이(용지 mm), 정렬 시작/가운데/끝(72), 회전 반영. `%`->`%%%`, `^`->`^ `, 제어문자 -> 빈칸 | 맑은 고딕은 Windows 기본 한글 글꼴. CAD 에 없으면 그 CAD 의 대체 글꼴로 보인다 |
+| 치수 | **분해한 선(보조선·치수선·45도 눈금) + 문자**, DIMENSION 엔티티를 쓰지 않는다 | 시트 치수는 이미 그림 요소로 분해되어 PDF·SVG 와 같은 모양이다. DIMENSION 은 익명 블록(*D)·치수 스타일 변수 수십 개가 필요하고 CAD 가 다시 그린 모양이 PDF 와 달라질 수 있다. 대신 A-DIM 층에 모았다 |
+| 채움 | 회색 채움(절단면·표 머리)은 SOLID 해치, 채운 점은 원호 경계 솔리드 해치. 흰 채움(태그 원 바탕 가림)은 쓰지 않는다 | 흰 해치는 CAD 바탕이 어두우면 오히려 도면을 가린다 |
+| 1점쇄선 | 시트가 이미 선분으로 분해해 그린 대로(통심선·단면선) 실선 선분 | SVG·PDF 와 같은 그림 |
+
+### 29.3 검증
+- 시험 `tests/test_dxf_export.py` 13건: 시험 안 그룹 코드 읽개로 다시 읽어 섹션 순서·AC1027·mm·날짜/GUID 없음·핸들 유일·HANDSEED 미만·소유자(330/340/350/390) 참조 존재·엔티티 층이 층 표에 있음·선 종류·글꼴 스타일을 확인한다. 시트 윤곽선 좌표(10,10)-(410,287), 한글 표제(시험 주택·1층 평면도), 그림 요소 수 = 엔티티 수(LINE·TEXT·LWPOLYLINE·HATCH·CIRCLE 각각), 같은 입력 같은 바이트(시트·뷰), 뷰 DXF 모델 좌표(W2 축선 x=6000 양쪽 면, 제목 문자 높이 500), 입면 치수(A-DIM 선+문자, DIMENSION 0, 전체 폭 6000), 숨은 선 층·선 종류, 색인 시트 표(G-TABLE), 저장된 시트(sheet.render) = sheet.export 바이트, .dwg 거절, 합성 시트의 요소별 변환(층·좌표·선 굵기·트루컬러·파선·회전·이스케이프·data-layer·draft-), 모델 역변환.
+- 독립 확인(코어 밖, 저장소에 넣지 않음): 이 PC 의 별도 Python 에 있던 ezdxf 1.4.5 로 합성 모델 견본 3개(평면+입면 시트·평면 뷰·A1 색인 시트)를 엄격 읽기·audit·recover 했다. 세 파일 모두 dxfversion AC1027, $INSUNITS 4, audit 오류 0·수정 0, recover 오류 없음·수정 0, 한글 문자 정상 디코딩(예: "범례", "절단선(...)"). 상용 CAD(AutoCAD 등)로 연 확인은 하지 못했다.
+
+### 29.4 판정
+| ID | 층 | 이전 | 이후 | 근거 |
+|---|---|---|---|---|
+| LN-10 | 제도·관행 | 미충족 | 부분 | DXF(R2013, mm, 범주별 층·선 굵기·선 종류, 한글 문자)를 낸다. KS F 1540·1541·1542 원문 미열람으로 층 이름 체계가 KS 대응인지 판정할 수 없다(층 이름 대응표 `LAYERS`/`GROUP_LAYER` 만 바꾸면 된다) |
+
+제도·관행 미충족 10개 -> 9개(LN-10 이 부분으로), 부분 17개 -> 18개.
+
+### 29.5 시험·parity
+마지막 코드 변경(커밋 0e6f23c) 뒤 한 번에 다시 돌린 결과(도중 수정 없음). s1-core 전체(test_slow 제외): 1066 통과(28절 1053 + DXF 13), 38 건너뜀, 실패 0. test_slow: 7건 통과. parity: 커맨드 110 전부 예시 실행(예시 130·오류 사례 49), 불일치 0. 기준선 `run_baseline.py --sheets`: after26 과 같은 파일 183개, 달라진 파일 0, 새 산출 0, 사라진 파일 0(work/·run.json 제외). import-linter 계약에 dxf_export 를 순수 모듈(엔진·프로토콜·ifcopenshell 금지)로 더했다.
+
+### 29.6 한계
+- 상용 CAD 실기 열기 미확인(ezdxf 엄격 읽기·감사만). 글꼴은 파일 이름(malgun.ttf)으로 지정하므로 맑은 고딕이 없는 환경에서는 대체 글꼴로 보인다.
+- 문자 높이는 엔진의 "문자 높이"(글꼴 크기)를 그대로 TEXT 높이로 쓴다. CAD 의 TrueType 문자 높이 해석에 따라 PDF 보다 약간 크거나 작게 보일 수 있다.
+- 치수는 분해형이라 CAD 에서 치수 값 자동 갱신·연관성이 없다. 시트는 모형 공간 하나에 용지 mm 로 놓고 배치(Layout)·뷰포트로 나누지 않는다.
+- 흰 바탕 가림(태그 원)은 쓰지 않으므로 태그 원 안으로 지나는 선이 CAD 에서는 보인다.
