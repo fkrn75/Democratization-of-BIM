@@ -165,6 +165,31 @@ def view_prims(sh: Sheet, data, tx, ty, datums, dx0, dx1, style=None, prof=None)
             sh.line(px - 1, py + 1, px + 1, py - 1, 0.13, DX.ORPHAN_COLOR)
             sh.circle(px, py, 1.6, 0.13, DX.ORPHAN_COLOR)
             sh.text(px + 2.2, py + 0.8, 2.5, label, color=DX.ORPHAN_COLOR)
+    if data.get("drafts"):   # 2D 작도(27단계): 없으면 그림 요소는 이전과 같다
+        draft_prims(sh, data["drafts"], tx, ty, float(data["scale"]))
+
+
+def draft_prims(sh: Sheet, items, tx, ty, scale):
+    """2D 작도 그림 항목 -> 시트 그림 요소. 요소마다 그룹 "draft-<모양 종류>" 에 data-layer(층 이름, DXF 층이 된다)·data-id 를 붙인다."""
+    cur = None
+    for it in items:
+        if it[1] != cur:
+            if cur is not None:
+                sh.end()
+            cur = it[1]
+            sh.begin(f"draft-{it[0]}", **{"data-layer": it[2], "data-id": cur})
+        k = it[0]
+        if k == "line":
+            sh.line(tx(it[5]), ty(it[6]), tx(it[7]), ty(it[8]), it[3], it[4])
+        elif k == "circle":
+            sh.circle(tx(it[5]), ty(it[6]), it[7] / scale, it[3], it[4])
+        elif k == "fill":
+            sh.poly([(tx(x), ty(y)) for x, y in it[4]], fill=it[3])
+        else:
+            _, _, _, col, x, y, size, text, anchor, ang = it
+            sh.text(tx(x), ty(y), size, text, anchor, col, -ang if ang else 0.0)
+    if cur is not None:
+        sh.end()
 
 
 def build_view_page(data) -> Sheet:

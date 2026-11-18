@@ -328,5 +328,33 @@ def test_모델_역변환은_frame과_맞는다():
     assert info["extents"][0] <= 1000.0 and info["extents"][2] >= 4000.0
 
 
+def test_2D_작도_요소도_DXF로_나간다(pv):
+    """27단계 2D 작도(draft.create): 요소마다 draft-<모양> 그룹 + data-layer 로 그려지므로 DXF 에서는 사용자 층으로 나간다(합성 형상)."""
+    def mk(args):
+        r = pv.run("draft.create", {"view": F.V1, **args})
+        assert r["ok"], r
+    mk({"shape": "line", "pts": [[0, -1000], [6000, -1000]], "layer": "A-DRAFT-NOTE"})
+    mk({"shape": "circle", "pts": [[4500, -3000]], "r": 400, "layer": "A-DRAFT-NOTE"})
+    mk({"shape": "text", "pts": [[1000, 5000]], "text": "상세 참조", "size": 3.0, "align": "middle", "a0": 30})
+    mk({"shape": "region", "pts": [[3000, 500], [4000, 500], [4000, 1500]], "fill": "solid", "color": "#88aaff"})
+    mk({"shape": "dim", "pts": [[0, -2000], [6000, -2000]], "off": -800})
+    r = run_export(pv, "view.export", {"id": F.V1, "path": "d.dxf"})
+    doc = check_structure(read(pv, "d.dxf"))
+    note = by_layer(doc, "A-DRAFT-NOTE")
+    ln = [e for e in note if e[0] == (0, "LINE") and float(val(e, 20)) == -1000.0 and float(val(e, 21)) == -1000.0]
+    assert ln and float(val(ln[0], 10)) == 0.0 and float(val(ln[0], 11)) == 6000.0      # 모델 mm 실척 그대로
+    assert any(e[0] == (0, "CIRCLE") and float(val(e, 40)) == 400.0 for e in note)
+    dr = by_layer(doc, "A-DRAFT")
+    t = [e for e in dr if e[0] == (0, "TEXT") and val(e, 1) == "상세 참조"]
+    assert t and float(val(t[0], 50)) == 30.0 and val(t[0], 72) == "1"                  # 반시계 30도, 가운데 맞춤
+    assert any(e[0] == (0, "HATCH") and val(e, 420) == str(0x88AAFF) for e in dr)       # 솔리드 채움 = SOLID 해치, 색 유지
+    assert any(e[0] == (0, "TEXT") and val(e, 1) == "6000" for e in dr)                  # 작도 치수 = 분해 선+문자
+    assert not [e for e in entities(doc) if e[0][1] == "DIMENSION"]
+    assert r["dxf"]["layers"]["A-DRAFT-NOTE"] == len(note)
+    run_export(pv, "sheet.export", {"views": [F.V1], "path": "ds.dxf", **SPEC})       # 시트에서도 같은 층
+    ds = check_structure(read(pv, "ds.dxf"))
+    assert by_layer(ds, "A-DRAFT-NOTE") and "상세 참조" in [val(e, 1) for e in by_layer(ds, "A-DRAFT", "TEXT")]
+
+
 def test_선굵기_표준값():
     assert [DXF.lineweight(w) for w in (0.09, 0.13, 0.18, 0.25, 0.35, 0.5, 0.7, 0.05, 2.0)] == [9, 13, 18, 25, 35, 50, 70, 5, 200]

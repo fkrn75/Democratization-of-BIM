@@ -146,7 +146,7 @@ def _fresh_id(ctx, a, kind):
     if _in_split_history(ctx, a.id):   # 지워진 벽의 id 를 다시 쓰면 분할 이력을 따라가는 참조가 엉뚱한 새 벽을 가리킨다
         raise DobimError("CONSTRAINT", f"벽 분할 이력에 쓰인 id 라 다시 쓸 수 없다: {a.id}", path="/id",
                          hint="새 id 를 쓰거나 생략하세요")
-    if kind in ("view", "dim", "tag", "sheet", "grid") and ctx.external_def(a.id):   # 가져온 파일에 되살리지 않은 외부 정의가 이 id 로 있다
+    if kind in ("view", "dim", "tag", "sheet", "grid", "draft") and ctx.external_def(a.id):   # 가져온 파일에 되살리지 않은 외부 정의가 이 id 로 있다
         ctx.warn(f"가져온 파일에 이 id 의 {kind} 정의가 되살려지지 않은 채 남아 있다: 새 정의가 그 속성을 덮어쓴다(지우거나 되돌리면 원래 정의가 돌아온다)")
     return a.id
 
@@ -3101,7 +3101,7 @@ def _dangling_view_levels(ctx) -> list:
     out = []
     for vid in sorted(st.by_kind.get("view", ())):
         p = st.el[vid]["params"]
-        if p["type"] == "plan" and st.el.get(p["level"], {}).get("kind") != "level":
+        if p["type"] == "plan" and not Q.plan_level_ok(st.el.get(p["level"])):
             out.append((p["name"], p["level"]))
     return out
 
@@ -3234,7 +3234,8 @@ def view_create(ctx, a: ViewCreate):
     _fresh_id(ctx, a, "view")
     _view_name_free(ctx, a.name)
     if a.type == "plan":
-        ctx.row(a.level, "level")
+        if not Q.plan_level_ok(ctx.st.el.get(a.level)):   # 레벨 또는 외래 IFC 층(1단계 외래 도면 경로)
+            raise DobimError("NOT_FOUND", f"level 를 찾을 수 없다: {a.level}", path="/level")
         params = {"name": a.name, "type": "plan", "level": a.level, "cut_height": a.cut_height, "view_depth": a.view_depth, "scale": a.scale}
     elif a.type == "section":
         params = {"name": a.name, "type": "section", "p1": list(a.p1), "p2": list(a.p2), "depth": a.depth, "flip": a.flip, "scale": a.scale}
@@ -3413,7 +3414,7 @@ def _warn_omitted(ctx, omitted: dict) -> None:
     """도면이 그리지 못한 외래 요소·분리된 벽이 있으면 조용히 넘기지 않고 알린다(S2 × S3)."""
     if omitted["foreign"] or omitted["detached"]:
         ctx.warn(f"이 뷰는 외래 요소 {omitted['foreign']}개와 분리된 벽 {omitted['detached']}개를 그리지 않았다"
-                 "(외래는 형상 정보가 없고, 분리된 벽의 의도 값은 낡았다)")
+                 "(외래는 IFC 형상이 없거나 그리지 않는 종류(공간·개구부 등)이고, 분리된 벽의 의도 값은 낡았다)")
 
 
 def _render_view(ctx, vid, detail=False, hidden=False, hier=False):
@@ -3430,7 +3431,15 @@ def _render_view(ctx, vid, detail=False, hidden=False, hier=False):
         lines = lines + ctx.g.q(D.view_hidden_lines, vid)
     _warn_omitted(ctx, ctx.g.q(D.view_omitted, vid))
     return {"type": p["type"], "name": p["name"], "scale": p["scale"], "lines": lines, "fills": ctx.g.q(D.view_fills, vid),
-            "datums": levels, "annots": ctx.g.q(AN.view_annots, vid) + ctx.g.q(D.site_dims, vid) + ctx.g.q(D.view_dims, vid), "labels": ctx.g.q(D.view_labels, vid)}
+            "datums": levels, "annots": ctx.g.q(AN.view_annots, vid) + ctx.g.q(D.site_dims, vid) + ctx.g.q(D.view_dims, vid), "labels": ctx.g.q(D.view_labels, vid),
+            **_drafts_of(ctx, vid)}
+
+
+def _drafts_of(ctx, vid) -> dict:
+    """뷰의 2D 작도 그림 항목(27단계). 2D 요소가 없으면 키를 만들지 않는다(기존 도면 바이트 불변)."""
+    from dobim_core import drafting as DRF
+    items = ctx.g.q(DRF.view_drafts, vid)
+    return {"drafts": items} if items else {}
 
 
 def png_of(ctx, sh, a) -> dict:
@@ -4648,3 +4657,4 @@ def ifc_restore(ctx, a: IfcRestore):
 from dobim_core import commands_family  # noqa: E402,F401
 from dobim_core import commands_sheet  # noqa: E402,F401
 from dobim_core import commands_walltop  # noqa: E402,F401
+from dobim_core import commands_draft  # noqa: E402,F401

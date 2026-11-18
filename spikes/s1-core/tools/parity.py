@@ -45,7 +45,16 @@ _SI1 = ("site.create", {"id": F.SI1, "boundary": [[-6000, -6000], [18000, -6000]
 _SO1 = ("solid.create", {"id": F.SO1, "level": F.LV1, "category": "buttress", "form": "prism", "polygon": [[0, -900], [600, -900], [600, -100], [0, -100]], "z0": 0, "z1": 2400})   # 일반 솔리드 예시의 준비(18단계)
 _LB1 = ("solid.create", {"id": F.SO1, "level": F.LV1, "category": "beam", "form": "member", "start": [1000, 0, 2400], "end": [2000, 0, 2400], "section": {"shape": "rect", "width": 200, "depth": 300}})   # 벽 잘라내기 예시의 준비(23단계): W1 문 위 인방
 _GR1 = ("grid.create", {"id": "g" + "0" * 21, "name": "G0", "line": [-1000, -2000, -1000, 6000]})   # 통심선 예시의 준비(19단계)
-PRE = {"history.redo": [("history.undo", {})], "ifc.restore": [_EXP, _EXP], "ifc.snapshots": [_EXP, _EXP],
+# 2D 작도 예시의 준비(27단계): 가로선 DR1, 그것을 가로지르는 세로선 DR2(자르기 경계), 그 연장 끝의 세로선 DR3(연장 경계)
+_DR1 = ("draft.create", {"id": F.DR1, "view": F.V1, "shape": "line", "pts": [[0, -1500], [6000, -1500]]})
+_DR2 = ("draft.create", {"id": F.DR2, "view": F.V1, "shape": "line", "pts": [[4000, -2000], [4000, -1000]]})
+_DR3 = ("draft.create", {"id": F.DR3, "view": F.V1, "shape": "line", "pts": [[8000, -2000], [8000, -1000]]})
+_DRL = ("draft.layer.set", {"name": "A-DRAFT"})
+_DRAFT_PRE = {"draft.create": [_V1], "draft.set": [_V1, _DR1], "draft.move": [_V1, _DR1], "draft.copy": [_V1, _DR1], "draft.rotate": [_V1, _DR1],
+              "draft.mirror": [_V1, _DR1], "draft.delete": [_V1, _DR1], "draft.offset": [_V1, _DR1], "draft.trim": [_V1, _DR1, _DR2],
+              "draft.extend": [_V1, _DR1, _DR3], "draft.group": [_V1, _DR1], "draft.list": [_V1, _DR1], "draft.layer.delete": [_DRL],
+              "draft.layer.list": [_V1, _DR1, _DRL]}
+PRE = {**_DRAFT_PRE, "history.redo": [("history.undo", {})], "ifc.restore": [_EXP, _EXP], "ifc.snapshots": [_EXP, _EXP],
        "view.set": [_V1], "view.delete": [_V1], "view.list": [_V1], "view.linework": [_V1], "view.export": [_V1], "view.affected": [_V1],
        "annot.dim.create": [_V1], "annot.tag.create": [_V1], "annot.rebind": [_V1, _A1], "annot.delete": [_V1, _A1],
        "annot.list": [_V1, _A1], "annot.check": [_V1, _A1],

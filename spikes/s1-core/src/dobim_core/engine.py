@@ -28,6 +28,7 @@ import ifcopenshell.guid
 
 from dobim_core import annot as AN
 from dobim_core import drawing as D
+from dobim_core import foreign_geom as FG
 from dobim_core import queries as Q
 from dobim_core import viewdefs as VD
 from dobim_core.errors import DobimError, internal_error
@@ -172,6 +173,8 @@ class _Inputs:
             return ifc.get_psets(key[1]) if key[1] in ifc.ents else {}
         if t == "mat":
             return ifc.get_material(key[1]) if key[1] in ifc.ents else None
+        if t == "fgeom":   # 외래 요소의 IFC 형상(1단계 외래 도면 경로). 외래 형상은 바뀌지 않아 이 입력을 건드리는 효과는 없다(kinds._keys_el)
+            return FG.load(ifc, st.el.get(key[1]), key[1])
         raise KeyError(key)
 
 
