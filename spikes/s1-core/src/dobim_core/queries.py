@@ -49,6 +49,16 @@ def xcut_finsts(g):
     return g.input(("xcut_finsts",))
 
 
+def fgeom(g, e):
+    """외래 요소의 IFC 형상 입력(foreign_geom.load): ("storey", 고도) / ("mesh", 범주, 꼭짓점, 삼각형) / None."""
+    return g.input(("fgeom", e))
+
+
+def plan_level_ok(row) -> bool:
+    """평면 뷰의 레벨이 될 수 있는 요소 행인가: 레벨, 또는 외래 IFC 층(IfcBuildingStorey, 고도는 IFC 배치에서 읽는다)."""
+    return row is not None and (row["kind"] == "level" or (row["kind"] == "foreign" and row.get("ifc_class") == "IfcBuildingStorey"))
+
+
 def tied_walls(g):
     """상단 레벨로 구속된 벽 id(24단계). 다른 벽을 편집해도 바뀌지 않는 입력이라 평면이 모든 벽에 의존하지 않는다."""
     return g.input(("tied_walls",))

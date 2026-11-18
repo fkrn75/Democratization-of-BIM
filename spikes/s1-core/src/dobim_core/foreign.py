@@ -530,7 +530,8 @@ def _restore_defs(f, rows: dict, rels: set, taken: set, plan: "ImportPlan") -> N
         p = parsed[eid]["params"]
         if p["type"] == "plan":
             st = state(p["level"])
-            if st is not None and (K.ref_kind_error("view", "level", st[0]) or st[1] != "authored"):   # 레벨이 없으면 고아 뷰(저작 상태에서도 생긴다), 있는데 저작 레벨이 아니면(분리·외래·다른 종류·정의 id) 낡은 값을 쓴다
+            fl = st is not None and st[0] == "foreign" and Q.plan_level_ok(rows.get(p["level"]))   # 외래 IFC 층(1단계 외래 도면 경로): 고도를 IFC 배치에서 읽어 낡은 값이 없다
+            if st is not None and not fl and (K.ref_kind_error("view", "level", st[0]) or st[1] != "authored"):   # 레벨이 없으면 고아 뷰(저작 상태에서도 생긴다), 있는데 저작 레벨이 아니면(분리·외래·다른 종류·정의 id) 낡은 값을 쓴다
                 skip(eid, "평면 뷰가 가리키는 레벨이 저작이 아니다(분리·외래·다른 종류)")
                 continue
         ok[eid] = parsed[eid]
