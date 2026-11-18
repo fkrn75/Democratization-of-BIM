@@ -474,7 +474,7 @@ def violations(view: View) -> list[dict]:
             out.append(_v("TYPE_MISSING", (f,), "패밀리 인스턴스에 타입이 없다"))
         if f not in hosted and f not in leveled:
             out.append(_v("LEVEL_MISSING", (f,), "호스트 없는 패밀리 인스턴스에 레벨이 없다"))
-    for k in ("dim", "tag"):
+    for k in ("dim", "tag", "draft"):   # 2D 작도 요소(27단계)도 뷰에 속한다
         for a in view.ids(k):
             if a not in annotated:
                 out.append(_v("VIEW_MISSING", (a,), "주석에 뷰가 없다"))

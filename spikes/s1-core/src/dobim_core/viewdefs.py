@@ -20,8 +20,9 @@ from dobim_core import annot as AN
 from dobim_core import kinds as K
 from dobim_core.family.recipe import FamilyError, load_json_text
 
-DEF_KINDS = ("view", "dim", "tag", "sheet", "grid")                                    # 정의를 IFC 에 싣는 종류(kinds.NON_IFC_KINDS 와 같은 집합)
-FAMILY_ID = {"view": "view.basic", "dim": "annot.dim", "tag": "annot.tag", "sheet": "sheet.basic", "grid": "grid.basic"}   # 커맨드가 만드는 행의 family_id
+DEF_KINDS = ("view", "dim", "tag", "sheet", "grid", "dlayer", "draft")                  # 정의를 IFC 에 싣는 종류(kinds.NON_IFC_KINDS 와 같은 집합)
+FAMILY_ID = {"view": "view.basic", "dim": "annot.dim", "tag": "annot.tag", "sheet": "sheet.basic", "grid": "grid.basic",
+             "dlayer": "draft.layer", "draft": "draft.basic"}   # 커맨드가 만드는 행의 family_id
 DEFS_PSET = "DoBIM_Defs"                                                # IfcProject 의 예약 속성셋 이름
 MAX_DEF_CHARS = 16 * 1024                                               # 정의 하나의 텍스트 상한(정상 정의는 1KB 안팎)
 MAX_DEFS = 100_000                                                      # 한 파일에서 읽는 정의 수 상한(넘으면 나머지는 읽지 않고 경고)
@@ -145,7 +146,11 @@ def parse_def(eid: str, text) -> dict:
     try:
         if not _name_ok(params["name"]) or (kind == "sheet" and not all(_name_ok(params[k]) for k in ("project_name", "sheet_name", "sheet_number", "client", "office"))):
             raise ValueError("이름에 짝 없는 서로게이트가 있다")
-        {"view": _view_values, "dim": _dim_values, "tag": _tag_values, "sheet": _sheet_values, "grid": _grid_values}[kind](params)
+        if kind in ("draft", "dlayer"):   # 2D 작도(27단계): 값 범위는 kinds 의 파라미터 검사(_draft_params·_dlayer_params)가 이미 커맨드 범위로 본다
+            if not all(_name_ok(params[k]) for k in ("text", "layer", "group") if isinstance(params.get(k), str)):
+                raise ValueError("글에 짝 없는 서로게이트가 있다")
+        else:
+            {"view": _view_values, "dim": _dim_values, "tag": _tag_values, "sheet": _sheet_values, "grid": _grid_values}[kind](params)
     except (KeyError, TypeError, IndexError) as ex:
         raise ValueError(f"정의 값이 올바르지 않다({type(ex).__name__})") from None
     if d["check"] != check_of(eid, kind, params):

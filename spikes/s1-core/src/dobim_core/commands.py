@@ -146,7 +146,7 @@ def _fresh_id(ctx, a, kind):
     if _in_split_history(ctx, a.id):   # 지워진 벽의 id 를 다시 쓰면 분할 이력을 따라가는 참조가 엉뚱한 새 벽을 가리킨다
         raise DobimError("CONSTRAINT", f"벽 분할 이력에 쓰인 id 라 다시 쓸 수 없다: {a.id}", path="/id",
                          hint="새 id 를 쓰거나 생략하세요")
-    if kind in ("view", "dim", "tag", "sheet", "grid") and ctx.external_def(a.id):   # 가져온 파일에 되살리지 않은 외부 정의가 이 id 로 있다
+    if kind in ("view", "dim", "tag", "sheet", "grid", "draft") and ctx.external_def(a.id):   # 가져온 파일에 되살리지 않은 외부 정의가 이 id 로 있다
         ctx.warn(f"가져온 파일에 이 id 의 {kind} 정의가 되살려지지 않은 채 남아 있다: 새 정의가 그 속성을 덮어쓴다(지우거나 되돌리면 원래 정의가 돌아온다)")
     return a.id
 
@@ -3431,7 +3431,15 @@ def _render_view(ctx, vid, detail=False, hidden=False, hier=False):
         lines = lines + ctx.g.q(D.view_hidden_lines, vid)
     _warn_omitted(ctx, ctx.g.q(D.view_omitted, vid))
     return {"type": p["type"], "name": p["name"], "scale": p["scale"], "lines": lines, "fills": ctx.g.q(D.view_fills, vid),
-            "datums": levels, "annots": ctx.g.q(AN.view_annots, vid) + ctx.g.q(D.site_dims, vid) + ctx.g.q(D.view_dims, vid), "labels": ctx.g.q(D.view_labels, vid)}
+            "datums": levels, "annots": ctx.g.q(AN.view_annots, vid) + ctx.g.q(D.site_dims, vid) + ctx.g.q(D.view_dims, vid), "labels": ctx.g.q(D.view_labels, vid),
+            **_drafts_of(ctx, vid)}
+
+
+def _drafts_of(ctx, vid) -> dict:
+    """뷰의 2D 작도 그림 항목(27단계). 2D 요소가 없으면 키를 만들지 않는다(기존 도면 바이트 불변)."""
+    from dobim_core import drafting as DRF
+    items = ctx.g.q(DRF.view_drafts, vid)
+    return {"drafts": items} if items else {}
 
 
 def png_of(ctx, sh, a) -> dict:
@@ -4638,3 +4646,4 @@ def ifc_restore(ctx, a: IfcRestore):
 from dobim_core import commands_family  # noqa: E402,F401
 from dobim_core import commands_sheet  # noqa: E402,F401
 from dobim_core import commands_walltop  # noqa: E402,F401
+from dobim_core import commands_draft  # noqa: E402,F401

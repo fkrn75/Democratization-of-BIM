@@ -590,10 +590,26 @@ def _restore_defs(f, rows: dict, rels: set, taken: set, plan: "ImportPlan") -> N
                 skip(eid, "키 플랜이 평면 뷰가 아니거나 되살려지지 않았다")
             else:
                 ok[eid] = parsed[eid]
+    # 2D 작도(27단계): 층 스타일은 이름이 겹치면 어느 쪽이 원본인지 알 수 없다. 2D 요소는 속한 뷰가 되살려진 뷰여야 한다(참조는 뷰 하나뿐)
+    lnames: dict[str, list] = {}
+    for eid in sorted(e for e, d in parsed.items() if d["kind"] == "dlayer"):
+        lnames.setdefault(parsed[eid]["params"]["name"], []).append(eid)
+    for nm, ids in sorted(lnames.items()):
+        for eid in ids:
+            if len(ids) > 1:
+                skip(eid, "같은 이름의 2D 층 스타일이 더 있다")
+            else:
+                ok[eid] = parsed[eid]
+    for eid in sorted(e for e, d in parsed.items() if d["kind"] == "draft"):
+        v = ok.get(parsed[eid]["params"]["view"])
+        if v is None or v["kind"] != "view":
+            skip(eid, "2D 요소가 속한 뷰가 없거나 되살려지지 않았다")
+        else:
+            ok[eid] = parsed[eid]
     for eid, d in ok.items():
         rows[eid] = {"kind": d["kind"], "ifc_class": "", "origin": "authored", "family_id": d["family_id"], "params": d["params"],
                      "projection_hash": None}
-        if d["kind"] in ("dim", "tag"):
+        if d["kind"] in ("dim", "tag", "draft"):
             rels.add(("annot_of", eid, d["params"]["view"]))
 
 

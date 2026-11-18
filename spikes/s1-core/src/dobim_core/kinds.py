@@ -1042,6 +1042,87 @@ def _foreign_params(p):
     return _check_fields("foreign", p, {"name": lambda v: text_ok(v, 0, 255)})
 
 
+# ---------------------------------------------------------------- 2D 작도(27단계 2D 편집, 설계: docs/2d-editing.md)
+# draft  = 뷰 위의 모델과 무관한 2D 요소(선·폴리선·호·원·문자·치수·채움 영역). 좌표는 그 뷰의 2D 좌표(평면 x,y / 단면·입면 s,z, view_lines 와 같은 공간) mm.
+# dlayer = 2D 요소 층의 스타일(선굵기·선종류·색). 요소의 weight·linetype·color 가 null 이면 층 스타일을 따른다(bylayer).
+DRAFT_SHAPES = ("line", "polyline", "arc", "circle", "text", "region", "dim")
+DRAFT_WEIGHTS = ("thin", "fine", "medium", "thick")
+DRAFT_LINETYPES = ("continuous", "dashed", "hidden", "center", "dashdot", "dotted")
+DRAFT_FILLS = ("none", "solid", "hatch", "cross")
+DRAFT_ALIGNS = ("start", "middle", "end")
+DRAFT_PTS_MAX = 256                # 폴리선·영역 꼭짓점 상한(슬래브 경계와 같다)
+DRAFT_COORD_MAX = 1e7              # 뷰 좌표 상한(commands.VCoord 와 같다)
+DRAFT_TEXT_MAX = 255
+DRAFT_LAYER_BAD = set('<>/\\":;?*|=`')   # DXF 층 이름에 쓸 수 없는 글자
+
+
+def layer_name_ok(v) -> bool:
+    """2D 작도 층 이름: 1~64자, 제어 문자·DXF 금지 문자·앞뒤 공백 없음."""
+    return text_ok(v, 1, NAME_MAX) and v == v.strip() and not any(c in DRAFT_LAYER_BAD or ord(c) < 32 for c in v)
+
+
+def color_ok(v) -> bool:
+    return isinstance(v, str) and len(v) == 7 and v[0] == "#" and all(c in "0123456789abcdef" for c in v[1:])
+
+
+def _dpt(v) -> bool:
+    return _pt_ok(v) and all(abs(x) <= DRAFT_COORD_MAX for x in v)
+
+
+def draft_shape_problem(p) -> str | None:
+    """2D 요소의 모양별 검사(안 되면 이유). 커맨드와 가져오기·병합이 같은 규칙을 쓴다."""
+    s, pts = p["shape"], p["pts"]
+    need = {"line": (2, 2), "polyline": (2, DRAFT_PTS_MAX), "region": (3, DRAFT_PTS_MAX), "arc": (1, 1), "circle": (1, 1), "text": (1, 1), "dim": (2, 2)}[s]
+    if not need[0] <= len(pts) <= need[1]:
+        return f"{s} 의 점은 {need[0]}~{need[1]}개여야 한다(현재 {len(pts)}개)"
+    if p["closed"] and s != "polyline":
+        return "closed 는 폴리선에만 쓴다"
+    if s in ("line", "dim") and (pts[1][0] - pts[0][0]) ** 2 + (pts[1][1] - pts[0][1]) ** 2 < 1e-6:
+        return f"{s} 의 두 점이 같다"
+    if s == "polyline" and any(pts[i] == pts[i + 1] for i in range(len(pts) - 1)):
+        return "폴리선에 이어진 같은 점이 있다"
+    if s == "region" and (err := polygon_problem(pts)) is not None:
+        return f"영역 경계: {err}"
+    if (s in ("arc", "circle")) != (p["r"] > 0):
+        return "반지름 r 은 호·원에만 0 보다 크게 둔다"
+    if s == "arc" and (abs(p["a0"]) > 3600 or abs(p["a1"]) > 3600 or abs((p["a1"] - p["a0"]) % 360.0) < 1e-9):
+        return "호의 시작각·끝각이 같거나 범위를 벗어났다"
+    if s not in ("arc", "text") and (p["a0"] != 0 or p["a1"] != 0):
+        return "a0·a1 은 호(시작각·끝각)·문자(회전각 a0)에만 쓴다"
+    if s == "text" and (p["a1"] != 0 or abs(p["a0"]) > 3600):
+        return "문자의 회전각은 a0 하나다"
+    if s == "text" and not p["text"].strip():
+        return "문자 요소의 text 는 비울 수 없다"
+    if s not in ("text", "dim") and p["text"]:
+        return "text 는 문자·치수(값 대신 쓸 글)에만 쓴다"
+    if s != "region" and p["fill"] != "none":
+        return "fill 은 영역에만 쓴다"
+    if s != "dim" and p["off"] != 0:
+        return "off 는 치수에만 쓴다"
+    if s != "text" and p["align"] != "start":
+        return "align 은 문자에만 쓴다"
+    return None
+
+
+def _draft_params(p):
+    err = _check_fields("draft", p, {
+        "name": _name, "view": id_ok, "shape": lambda v: v in DRAFT_SHAPES,
+        "pts": lambda v: isinstance(v, list) and all(_dpt(x) for x in v),
+        "closed": lambda v: type(v) is bool, "r": lambda v: num_ok(v) and 0 <= v <= DRAFT_COORD_MAX,
+        "a0": num_ok, "a1": num_ok, "text": lambda v: text_ok(v, 0, DRAFT_TEXT_MAX),
+        "size": lambda v: num_ok(v) and 0.5 <= v <= 100, "off": lambda v: num_ok(v) and abs(v) <= 1e5,
+        "fill": lambda v: v in DRAFT_FILLS, "align": lambda v: v in DRAFT_ALIGNS,
+        "layer": layer_name_ok, "weight": lambda v: v is None or v in DRAFT_WEIGHTS,
+        "linetype": lambda v: v is None or v in DRAFT_LINETYPES, "color": lambda v: v is None or color_ok(v),
+        "group": lambda v: v is None or _name(v)})
+    return err or draft_shape_problem(p)
+
+
+def _dlayer_params(p):
+    return _check_fields("dlayer", p, {"name": layer_name_ok, "weight": lambda v: v in DRAFT_WEIGHTS,
+                                       "linetype": lambda v: v in DRAFT_LINETYPES, "color": color_ok})
+
+
 # ---------------------------------------------------------------- 요소 종류
 class ElementKind(NamedTuple):
     name: str
@@ -1084,6 +1165,9 @@ ELEMENT_KINDS: dict[str, ElementKind] = {k.name: k for k in (
     # 시트 정의(뷰 배치·표제란 인자): 뷰와 같은 비 IFC 의도 요소다. 뷰를 가리키는 참조는 목록(views)·중첩(revisions·callouts 의 view)이라 관계로 묻지 않는다
     ElementKind("sheet", False, None, False, 8, _sheet_params, refs=(("views", "ids", None), ("key_plan", "id", None)),
                 ref_kinds=(("key_plan", ("view",)),)),
+    # 2D 작도(27단계): 뷰에 속한 2D 요소(관계 annot_of 로 뷰를 지울 때 함께 지운다)와 층 스타일. 정의는 DoBIM_Defs 로 왕복한다
+    ElementKind("dlayer", False, None, False, 6, _dlayer_params),
+    ElementKind("draft", False, None, False, 7, _draft_params, refs=(("view", "id", "annot_of"),), ref_kinds=(("view", ("view",)),)),
 )}
 
 NON_IFC_KINDS = frozenset(k for k, v in ELEMENT_KINDS.items() if not v.ifc)      # 신원·속성셋·재료가 없는 의도 요소(뷰 정의, 치수·태그)
@@ -1191,7 +1275,7 @@ REL_KINDS: dict[str, RelKind] = {r.name: r for r in (
     RelKind("hosts", _fs("wall"), _fs("door", "finst"), guard=("src", "dst"), violation="HOST_DELETED",
             message="호스트 벽이 지워졌는데 문이 그 벽에 놓여 있다"),
     RelKind("succ", _fs("wall"), _fs("wall"), dangling_ok=True),
-    RelKind("annot_of", _fs("dim", "tag"), _fs("view"), violation="VIEW_DELETED", message="주석이 속한 뷰가 지워졌다"),
+    RelKind("annot_of", _fs("dim", "tag", "draft"), _fs("view"), violation="VIEW_DELETED", message="주석이 속한 뷰가 지워졌다"),
     RelKind("of_type", _fs("finst"), _fs("ftype"), violation="TYPE_DELETED", message="인스턴스의 패밀리 타입이 지워졌다"),
 )}
 REL_NAMES = tuple(REL_KINDS)
