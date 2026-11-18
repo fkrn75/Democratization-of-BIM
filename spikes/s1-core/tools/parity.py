@@ -55,6 +55,7 @@ _DRAFT_PRE = {"draft.create": [_V1], "draft.set": [_V1, _DR1], "draft.move": [_V
               "draft.extend": [_V1, _DR1, _DR3], "draft.group": [_V1, _DR1], "draft.list": [_V1, _DR1], "draft.layer.delete": [_DRL],
               "draft.layer.list": [_V1, _DR1, _DRL]}
 PRE = {**_DRAFT_PRE, "history.redo": [("history.undo", {})], "ifc.restore": [_EXP, _EXP], "ifc.snapshots": [_EXP, _EXP],
+       "rules.check": [_EXP],   # 한국 규칙 검사(④): 기준 프로젝트를 내보낸 IFC 를 검사한다
        "view.set": [_V1], "view.delete": [_V1], "view.list": [_V1], "view.linework": [_V1], "view.export": [_V1], "view.affected": [_V1],
        "annot.dim.create": [_V1], "annot.tag.create": [_V1], "annot.rebind": [_V1, _A1], "annot.delete": [_V1, _A1],
        "annot.list": [_V1, _A1], "annot.check": [_V1, _A1],

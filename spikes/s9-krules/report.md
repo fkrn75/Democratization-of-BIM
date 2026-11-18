@@ -241,3 +241,11 @@ python은 전용 venv(ifcopenshell 0.9.0.post1, ifctester 0.9.0, pytest)다. 원
 | KR-SEU-01~15 | seumteo | 세움터 전용(KR-SEU-02는 `--package`일 때만) |
 
 시험: 201개(기존 145 + 프로파일 56). 새 시험이 실제로 잡는지 확인하려고 코드를 임시로 되돌려 보았다: 면적 객체 구분 무력화, 파일명 정규식 완화, `AIS_` 탐색 무력화, 초안 경고 제거, 프로파일 이름 검증 제거, fail→warn 낮춤 제거, 기본 결과에 표식 키 추가, zip 시그니처 판정 제거, 룸 코드 형식 제거, 실 중첩에서 면적 객체 미제외, 규칙 소속 변경, 같은 종류 면적 중첩을 fail로 올리기. 모두 새 시험이 실패했고 되돌린 뒤 복원해 201개가 통과한다. 검수 반영 뒤에는 면적 객체 마커 목록 비움, 코드만으로 면적 객체 처리, 마커만으로 면적 객체 처리, `ais_value` 공백 제거 삭제, 200MB 분기 삭제, 파일명 정규식 `\Z` 되돌림, 제외 개수 노출 삭제, `--energy` 표기 되돌림도 새 시험이 잡았다.
+
+## 9. 코어 통합(1단계 ④, 2026-11-19)
+
+규칙 37개와 두 프로파일을 코어 패키지 `spikes/s1-core/src/dobim_core/krules/`로 옮기고 레지스트리 커맨드 `rules.list`·`rules.check`로 CLI·MCP에 냈다(패리티 C 대상). 이 스파이크 폴더의 실행기(`krrules/`)는 비교 기준으로 그대로 둔다.
+
+- **ifctester 는 코어 의존성에 넣지 않았다.** ifctester 자체는 LGPL-3.0 이지만 패키지 메타데이터가 bcf-client(GPLv3 분류자)를 필수 의존으로 끌고 온다(ADR-0003: GPL 금지). 코어에는 IDS 1.0 의 entity·attribute·classification·property facet 을 직접 평가하는 `dobim_core/krules/ids_eval.py`를 두었다(ifcopenshell 만 씀). partOf·material facet, XSD 전용 정규식 문법은 UNSUPPORTED 로 거절한다. 차이 1건: 분류 facet 에 system 이 없을 때 ifctester 는 늘 실패시키지만 코어는 IDS 사양대로 system 검사를 건너뛴다(기본 IDS 는 모두 system 을 주어 결과 영향 없음).
+- **같은 결과의 근거**: (1) 이 폴더의 시험 201개를 코어 import 경로로만 바꿔 `spikes/s1-core/tests/test_krules_*.py`로 옮겼고 모두 통과한다(RA-01 3종·세움터·양성 대조군 결과 JSON 을 `results/`와 바이트 단위로 대조하는 시험 포함). (2) `tools/ids_core_diff.py`(pytest 플러그인)로 이 폴더의 시험 201개를 돌리며 IDS 평가 196회를 ifctester 와 코어 평가기로 함께 돌려 대조했고 불일치 0이다.
+- 커맨드: `rules.check {path, profile, rules?, ids?, energy?, deliverable?, as_name?, package?, detail?}` 는 규칙별 상태·대상·위반 수와 위반 규칙 목록(violations)을 응답 크기 상한(6,000B) 안에서 쪽으로 나눠 준다. 위반이 있으면 CLI 종료 코드 3. `ids` 는 사용자 IDS(.ids)로 기본 IDS 를 바꿔 판정한다(OR 판정 끔, 이 폴더의 `ids_path` 와 같음). `rules.list {profile, mode?}` 는 규칙 목록.
