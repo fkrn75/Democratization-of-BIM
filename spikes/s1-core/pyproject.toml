@@ -49,7 +49,7 @@ forbidden_modules = ["tkinter", "PyQt5", "PyQt6", "PySide2", "PySide6", "wx", "b
 [[tool.importlinter.contracts]]
 name = "순수 질의는 엔진·프로토콜 계층을 모른다"
 type = "forbidden"
-source_modules = ["dobim_core.queries", "dobim_core.graph", "dobim_core.drawing", "dobim_core.drawing_export", "dobim_core.sheet", "dobim_core.pdf_font", "dobim_core.annot",
+source_modules = ["dobim_core.queries", "dobim_core.graph", "dobim_core.drawing", "dobim_core.drawing_export", "dobim_core.dxf_export", "dobim_core.sheet", "dobim_core.pdf_font", "dobim_core.annot",
                   "dobim_core.kinds", "dobim_core.family.spec", "dobim_core.family.evaluate", "dobim_core.family.restore", "dobim_core.viewdefs", "dobim_core.raster",
                   "dobim_core.drafting"]
 forbidden_modules = ["dobim_core.engine", "dobim_core.cli", "dobim_core.mcp_server", "dobim_core.dispatch", "dobim_core.ifc_model"]
@@ -75,7 +75,7 @@ type = "forbidden"
 # 나머지는 모두 감시한다: 병합(merge)·종류 레지스트리(kinds)·패밀리 평가/레시피/식/명세/라이브러리/의도 복원(restore)은 IFC 를 직접 만지지 못한다.
 source_modules = ["dobim_core.commands", "dobim_core.commands_family", "dobim_core.commands_draft", "dobim_core.drafting", "dobim_core.queries", "dobim_core.graph", "dobim_core.registry",
                   "dobim_core.dispatch", "dobim_core.cli", "dobim_core.mcp_server", "dobim_core.fixture",
-                  "dobim_core.paths", "dobim_core.errors", "dobim_core.drawing", "dobim_core.drawing_export", "dobim_core.sheet", "dobim_core.pdf_font", "dobim_core.annot",
+                  "dobim_core.paths", "dobim_core.errors", "dobim_core.drawing", "dobim_core.drawing_export", "dobim_core.dxf_export", "dobim_core.sheet", "dobim_core.pdf_font", "dobim_core.annot",
                   "dobim_core.merge", "dobim_core.kinds", "dobim_core.limits", "dobim_core.family.evaluate", "dobim_core.family.expr",
                   "dobim_core.family.recipe", "dobim_core.family.spec", "dobim_core.family.library", "dobim_core.family.restore", "dobim_core.viewdefs", "dobim_core.raster"]
 forbidden_modules = ["ifcopenshell"]
