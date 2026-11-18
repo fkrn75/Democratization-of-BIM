@@ -46,6 +46,8 @@ def _frame(data):
     for lb in data.get("labels", ()):
         half = label_width(lb[2], lb[3]) * scale / 2.0
         pts += [(lb[0] - half, lb[1]), (lb[0] + half, lb[1] + lb[3] * scale)]
+    for it in data.get("drafts", ()):   # 2D 작도(27단계): 없으면 범위는 이전과 같다
+        pts += _draft_pts(it, scale)
     if pts:
         x0, x1 = min(p[0] for p in pts), max(p[0] for p in pts)
         y0, y1 = min(p[1] for p in pts), max(p[1] for p in pts)
@@ -78,6 +80,52 @@ def _annot_pts(it):
     if t == "tag":
         return [tuple(it[2]), (it[3][0] + 1500.0, it[3][1])]
     return [(it[4], it[5]), (it[4] + 3000.0, it[5])]
+
+
+def _draft_pts(it, scale):
+    """2D 작도 그림 항목이 차지하는 대표 좌표(용지 크기 계산용). 문자는 대략 폭까지."""
+    k = it[0]
+    if k == "line":
+        return [(it[5], it[6]), (it[7], it[8])]
+    if k == "circle":
+        return [(it[5] - it[7], it[6] - it[7]), (it[5] + it[7], it[6] + it[7])]
+    if k == "fill":
+        return list(it[4])
+    w = label_width(it[7], it[6]) * scale
+    return [(it[4] - w, it[5] - w), (it[4] + w, it[5] + w)]
+
+
+def _anchor_dx(anchor, wd):
+    return {"start": 0.0, "middle": -wd / 2.0, "end": -wd}[anchor]
+
+
+def draft_svg(data, tx, ty, scale) -> list[str]:
+    """2D 작도 층(SVG). 요소마다 <g class="draft" data-id data-layer> 하나. 굵기·색은 항목 값 그대로(용지 mm)."""
+    items = data.get("drafts", ())
+    if not items:
+        return []
+    out = ['<g id="drafts" stroke-linecap="round">']
+    cur = None
+    for it in items:
+        if it[1] != cur:
+            if cur is not None:
+                out.append("</g>")
+            cur = it[1]
+            out.append(f'<g class="draft" data-id="{cur}" data-layer="{_esc(it[2])}">')
+        k = it[0]
+        if k == "line":
+            out.append(f'<line x1="{tx(it[5]):.3f}" y1="{ty(it[6]):.3f}" x2="{tx(it[7]):.3f}" y2="{ty(it[8]):.3f}" stroke="{it[4]}" stroke-width="{it[3]:g}"/>')
+        elif k == "circle":
+            out.append(f'<circle cx="{tx(it[5]):.3f}" cy="{ty(it[6]):.3f}" r="{it[7] / scale:.3f}" fill="none" stroke="{it[4]}" stroke-width="{it[3]:g}"/>')
+        elif k == "fill":
+            out.append('<polygon points="' + " ".join(f"{tx(x):.3f},{ty(y):.3f}" for x, y in it[4]) + f'" fill="{it[3]}" stroke="none"/>')
+        else:
+            _, _, _, col, x, y, size, text, anchor, ang = it
+            tr = f"translate({tx(x):.3f},{ty(y):.3f})" + (f" rotate({-ang:.2f})" if ang else "")
+            out.append(f'<text transform="{tr}" font-size="{size:g}" fill="{col}" text-anchor="{anchor}">{_esc(text)}</text>')
+    out.append("</g>")
+    out.append("</g>")
+    return out
 
 
 REASON_KO = {"target_deleted": "대상 삭제됨", "successor_deleted": "이어받은 벽 삭제됨", "bad_ref": "잘못된 참조",
@@ -173,6 +221,7 @@ def render_svg(data) -> bytes:
         for x, y, text, size, _anchor in labels:
             out.append(f'<text x="{tx(x):.3f}" y="{ty(y):.3f}" font-size="{size}">{_esc(text)}</text>')
         out.append("</g>")
+    out += draft_svg(data, tx, ty, float(data["scale"]))
     out += annot_svg(data, tx, ty)
     out.append(f'<text x="{MARGIN}" y="{h - 5:.2f}" font-size="5" fill="#000000">{_esc(title_text(data))}</text>')
     out.append("</svg>\n")
@@ -229,6 +278,8 @@ def render_pdf(data, font=None) -> tuple[bytes, bool]:
             c.append(f"{px(x0)} {py(y0)} m {px(x1)} {py(y1)} l S")
     for x, y, text, size, _anchor in data.get("labels", ()):
         c.append(f"BT /F1 {size * k:.2f} Tf {(tx(x) - label_width(text, size) / 2.0) * k:.2f} {(h - ty(y)) * k:.2f} Td {txt(text)} Tj ET")
+    if data.get("drafts"):   # 2D 작도(27단계): 없으면 PDF 바이트는 이전과 같다
+        c += draft_pdf(data["drafts"], px, py, tx, ty, h, k, float(data["scale"]), txt)
     c.append("0.1 0.3 0.63 RG 0.1 0.3 0.63 rg")
     for it in data.get("annots", ()):
         if it[0] == "dim":
@@ -267,3 +318,36 @@ def render_pdf(data, font=None) -> tuple[bytes, bool]:
         buf += f"{o:010d} 00000 n \n".encode()
     buf += f"trailer\n<< /Size {len(objs) + 1} /Root 1 0 R >>\nstartxref\n{xref}\n%%EOF\n".encode()
     return bytes(buf), dropped
+
+
+def _pdf_rgb(col: str) -> str:
+    return " ".join(f"{int(col[i:i + 2], 16) / 255:.3f}" for i in (1, 3, 5))
+
+
+def draft_pdf(items, px, py, tx, ty, h, k, scale, txt) -> list[str]:
+    """2D 작도 층(PDF 그리기 명령). 원은 베지어 4조각, 문자는 회전 행렬(Tm)."""
+    from math import cos, radians, sin
+    c = []
+    for it in items:
+        kd = it[0]
+        if kd == "line":
+            c.append(f"{it[3] * k:.3f} w {_pdf_rgb(it[4])} RG {px(it[5])} {py(it[6])} m {px(it[7])} {py(it[8])} l S")
+        elif kd == "circle":
+            cx, cy, r = tx(it[5]) * k, (h - ty(it[6])) * k, it[7] / scale * k
+            m = 0.5523 * r
+            c.append(f"{it[3] * k:.3f} w {_pdf_rgb(it[4])} RG {cx + r:.3f} {cy:.3f} m "
+                     f"{cx + r:.3f} {cy + m:.3f} {cx + m:.3f} {cy + r:.3f} {cx:.3f} {cy + r:.3f} c "
+                     f"{cx - m:.3f} {cy + r:.3f} {cx - r:.3f} {cy + m:.3f} {cx - r:.3f} {cy:.3f} c "
+                     f"{cx - r:.3f} {cy - m:.3f} {cx - m:.3f} {cy - r:.3f} {cx:.3f} {cy - r:.3f} c "
+                     f"{cx + m:.3f} {cy - r:.3f} {cx + r:.3f} {cy - m:.3f} {cx + r:.3f} {cy:.3f} c S")
+        elif kd == "fill":
+            pts = it[4]
+            c.append(f"{_pdf_rgb(it[3])} rg {px(pts[0][0])} {py(pts[0][1])} m " + " ".join(f"{px(x)} {py(y)} l" for x, y in pts[1:]) + " h f")
+        else:
+            _, _, _, col, x, y, size, text, anchor, ang = it
+            a = radians(ang)
+            dx = _anchor_dx(anchor, label_width(text, size))
+            ox, oy = (tx(x) + dx * cos(a)) * k, (h - ty(y) + dx * sin(a)) * k
+            c.append(f"{_pdf_rgb(col)} rg BT /F1 {size * k:.2f} Tf {cos(a):.4f} {sin(a):.4f} {-sin(a):.4f} {cos(a):.4f} {ox:.2f} {oy:.2f} Tm {txt(text)} Tj ET")
+    c.append("0 G 0 g")
+    return c

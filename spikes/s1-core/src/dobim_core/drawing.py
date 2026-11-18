@@ -78,17 +78,18 @@ def level_walls(g, lv):
 
 def view_omitted(g, v):
     """뷰가 그리지 않고 생략한 모델 요소 개수 {"foreign": 외래 요소, "detached": 분리된 벽}. 생략은 조용하지 않게 응답에 알린다.
+    외래 요소는 형상 기반 경로(foreign_lines)가 그리지 못한 것(형상 없음·그리지 않는 종류)만 센다. 외래 층은 레벨이라 세지 않는다.
     평면은 그 레벨에 놓인 것만, 단면·입면은 모델 전체를 센다."""
     cfg = g.q(view_cfg, v)
     if cfg is None or cfg[0] == "site":
         return {"foreign": 0, "detached": 0}
     if cfg[0] == "plan":
         ids = () if cfg[1] is None else Q.rel_in(g, "on_level", cfg[1])
-        foreign = sum(1 for e in ids if (Q.el(g, e) or {}).get("kind") == "foreign")
+        foreign = foreign_omitted(g, ids)
         detached = sum(1 for e in ids if (r := Q.el(g, e)) is not None and r["kind"] == "wall" and r["origin"] == "detached")
         return {"foreign": foreign, "detached": detached}
     detached = sum(1 for w in g.q(_raw_walls) if Q.el(g, w)["origin"] == "detached")
-    return {"foreign": Q.count(g, "foreign"), "detached": detached}
+    return {"foreign": foreign_omitted(g, g.q(_raw_foreign)) if Q.count(g, "foreign") else 0, "detached": detached}
 
 
 def view_cfg(g, v):
@@ -106,9 +107,15 @@ def view_cfg(g, v):
     if t == "plan":
         lv = p["level"]
         lrow = Q.el(g, lv)
-        if lrow is None or lrow["kind"] != "level":   # 없거나 레벨이 아닌 요소(예전 데이터의 잘못된 참조)면 고아 뷰로 그린다(터지지 않게)
+        if not Q.plan_level_ok(lrow):   # 없거나 레벨이 아닌 요소(예전 데이터의 잘못된 참조)면 고아 뷰로 그린다(터지지 않게)
             return ("plan", None, 0.0, 0.0, scale)
-        _, elev = g.q(Q.level_info, lv)
+        if lrow["kind"] == "level":
+            _, elev = g.q(Q.level_info, lv)
+        else:   # 외래 IFC 층(1단계 외래 도면 경로): 고도는 IFC 배치에서 읽는다
+            fg = Q.fgeom(g, lv)
+            if fg is None or fg[0] != "storey":
+                return ("plan", None, 0.0, 0.0, scale)
+            elev = fg[1]
         return ("plan", lv, elev + p["cut_height"], p["view_depth"], scale)
     return cfg_from_params(p)
 
@@ -4665,6 +4672,8 @@ def view_lines(g, v):
         segs.extend(g.q(roof_lines, v, rf))
     for so in g.q(scope_solids, v):   # 일반 솔리드(18단계): 없으면 선분은 이전과 같다
         segs.extend(g.q(solid_lines, v, so))
+    for fe in g.q(scope_foreign, v):   # 외래 IFC 요소(1단계 외래 도면 경로): 형상 있는 외래 요소가 없으면 선분은 이전과 같다
+        segs.extend(g.q(foreign_lines, v, fe))
     if cfg[0] == "elev":
         segs.extend(g.q(site_sign_lines, v))
     elif cfg[0] == "sec":
@@ -4713,6 +4722,8 @@ def view_lines_hier(g, v):
         segs.extend(g.q(roof_lines, v, rf))
     for so in g.q(scope_solids, v):   # 일반 솔리드(18단계): 없으면 선분은 이전과 같다
         segs.extend(g.q(solid_lines, v, so))
+    for fe in g.q(scope_foreign, v):   # 외래 IFC 요소(1단계 외래 도면 경로): 형상 있는 외래 요소가 없으면 선분은 이전과 같다
+        segs.extend(g.q(foreign_lines, v, fe))
     if cfg[0] == "elev":
         segs.extend(g.q(site_sign_lines, v))
     elif cfg[0] == "sec":
@@ -4821,3 +4832,324 @@ def forget_views(g, vids) -> int:
     if not vids:
         return 0
     return g.drop([k for k in g.nodes if k[0] in VIEW_SCOPED and k[1] in vids])
+
+
+# ================================================================ 외래 IFC 요소 (1단계 외래 도면 경로, 설계: elements-design.md 29절)
+# 의도(DoBIM_Intent)가 없는 외래 요소는 IFC 형상(foreign_geom: ifcopenshell.geom 삼각형 메시)을 잘라·투영해 그린다. 의도가 있는 저작 요소는 기존 경로 그대로다.
+#   절단선: 평면은 절단 높이 수평면, 단면은 절단면으로 메시를 자른 선. 등급은 범주(foreign_geom.CATEGORY)를 따른다: heavy=cut, medium=symbol, light=proj.
+#   투영선: 메시의 날카로운 모서리(이웃 면이 5도 넘게 꺾이거나 경계) 중 보이는 범위(평면: 절단 높이~보이는 깊이, 단면: near~far)에 든 부분.
+#   가림(외래끼리): 뷰 좌표 (a, b, d) 에서 모서리 점보다 앞(d 가 작은)에 있는 면(삼각형을 보이는 범위 앞쪽 경계로 자른 볼록 다각형)이 덮으면 숨는다.
+#     절단면에서 잘린 몸체 안(절단 영역: 단면 선분 묶음의 짝홀 규칙)도 그 뒤를 가린다(잘린 몸체 뚜껑).
+#   가림(저작 요소가 외래 선을): 단면·입면에서 기존 가림 조각(_occ_index)이 가린다. 외래 요소가 저작 요소 선을 가리지는 않는다(혼합 모델의 알려진 한계).
+#   외래 요소가 없으면 모든 함수가 빈 값이라 기존 도면은 바이트 그대로다.
+FOREIGN_CUT_CLS = {"heavy": "cut", "medium": "symbol", "light": "proj"}
+F_TOL = 1.0       # 가림 깊이 허용(mm): 같은 면에 놓인 모서리가 자기 면에 가려지지 않게
+F_BIN = 2000.0    # 가림 면 색인의 a 방향 칸 폭(mm)
+
+
+def _raw_foreign(g):
+    """외래 종류 요소 전체(형상 유무 무관)."""
+    out = []
+    for b in range(Q.NB):
+        out.extend(Q.bucket_ids(g, "foreign", b))
+    return tuple(sorted(out))
+
+
+def foreign_info(g, e):
+    """(범주, 꼭짓점(절대, mm), 면, 모서리, 면 법선, 경계 상자) 또는 None. 형상이 있고 그리는 종류인 외래 요소만(층·공간·개구부·형상 없음은 None)."""
+    row = Q.el(g, e)
+    if row is None or row["kind"] != "foreign":
+        return None
+    fg = Q.fgeom(g, e)
+    if fg is None or fg[0] != "mesh":
+        return None
+    _, cat, verts, tris = fg
+    faces = tuple((t,) for t in tris)
+    edges, nrm = SO.feature_edges(verts, faces)
+    return (cat, verts, faces, edges, nrm, SO.mesh_bbox(verts))
+
+
+def all_foreign(g):
+    return tuple(e for e in g.q(_raw_foreign) if g.q(foreign_info, e) is not None)
+
+
+def _f_range(cfg):
+    """보이는 깊이 범위 (d0, d1): 평면은 절단 높이에서 아래로 보이는 깊이, 단면은 near~far, 입면은 제한 없음."""
+    return (0.0, cfg[3]) if cfg[0] == "plan" else (cfg[7], cfg[8])
+
+
+def _f_pt(cfg, p):
+    """세계 점 -> 뷰 좌표 (a, b, d). 평면 (x, y, 절단 z - z), 단면·입면 (s, z, w). d 는 보는 사람에게서 멀수록 크다."""
+    if cfg[0] == "plan":
+        return (p[0], p[1], cfg[2] - p[2])
+    s, w = _sw(cfg, p)
+    return (s, p[2], w)
+
+
+def scope_foreign(g, v):
+    """뷰가 그리는 외래 요소. 평면은 높이 범위가 (절단 높이 - 보이는 깊이, 절단 높이) 에 걸치는 것(레벨 소속과 무관), 단면은 깊이 범위에 걸치는 것, 입면은 전부."""
+    cfg = g.q(view_cfg, v)
+    if cfg is None or cfg[0] == "site" or (cfg[0] == "plan" and cfg[1] is None):
+        return ()
+    out = []
+    d0, d1 = _f_range(cfg)
+    for e in g.q(all_foreign):
+        bb = g.q(foreign_info, e)[5]
+        if cfg[0] == "plan":
+            if bb[2] <= cfg[2] + EPS and bb[5] >= cfg[2] - cfg[3] - EPS:
+                out.append(e)
+            continue
+        ws = [_sw(cfg, (x, y))[1] for x in (bb[0], bb[3]) for y in (bb[1], bb[4])]
+        if max(ws) >= d0 - EPS and min(ws) <= d1 + EPS:
+            out.append(e)
+    return tuple(out)
+
+
+def _f_cut(g, v, e):
+    """외래 요소를 절단면으로 자른 선분 ((a0, b0, a1, b1), ...) (뷰 좌표). 입면·잘라내지 않는 뷰는 빈 값."""
+    cfg = g.q(view_cfg, v)
+    info = g.q(foreign_info, e)
+    if cfg is None or info is None or cfg[0] == "site" or (cfg[0] != "plan" and not cfg[9]):
+        return ()
+    _cat, verts, faces, _edges, nrm, _bb = info
+    if cfg[0] == "plan":
+        axis, c = (0.0, 0.0, 1.0), cfg[2]
+    else:
+        axis = (cfg[3], cfg[4], 0.0)
+        c = cfg[1] * cfg[3] + cfg[2] * cfg[4] + cfg[7]
+    out = []
+    for p, q in SO.plane_section(verts, faces, nrm, axis, c):
+        a, b = _f_pt(cfg, p), _f_pt(cfg, q)
+        if sqrt((b[0] - a[0]) ** 2 + (b[1] - a[1]) ** 2) > SEG_MIN:
+            out.append((a[0], a[1], b[0], b[1]))
+    return tuple(out)
+
+
+def _f_occ(g, v):
+    """뷰 하나의 외래 가림 자료 (면 조각들, 조각 상자들, {칸: (번호, ...)}, 절단 영역들).
+    면 조각 = (볼록 다각형((a, b), ... 반시계), (pa, pb, pc): 그 면의 깊이 d = pa*a + pb*b + pc). 상자 = (a0, a1, b0, b1, 가장 앞 d).
+    절단 영역 = (상자 (a0, a1, b0, b1), 단면 선분들): 요소 하나의 절단면 단면이다. 안쪽 점(짝홀 규칙)은 잘린 몸체 속이라 그 뒤가 보이지 않는다."""
+    cfg = g.q(view_cfg, v)
+    d0, d1 = _f_range(cfg)
+    polys, boxes, bins, regions = [], [], {}, []
+    for e in g.q(scope_foreign, v):
+        _cat, verts, faces, _edges, _nrm, _bb = g.q(foreign_info, e)
+        P = [_f_pt(cfg, p) for p in verts]
+        for (tri,) in faces:
+            t = [P[i] for i in tri]
+            ds = [q[2] for q in t]
+            if min(ds) > d1 or max(ds) < d0:
+                continue   # 보이는 범위 뒤(가릴 것이 없다) 또는 통째로 앞(평면: 절단 높이 위, 단면: 절단면 앞)
+            ux, uy, ud = t[1][0] - t[0][0], t[1][1] - t[0][1], t[1][2] - t[0][2]
+            vx, vy, vd = t[2][0] - t[0][0], t[2][1] - t[0][1], t[2][2] - t[0][2]
+            na, nb, nd = uy * vd - ud * vy, ud * vx - ux * vd, ux * vy - uy * vx
+            if abs(nd) < 1e-6:
+                continue   # 보는 방향과 나란한 면: 넓이가 없어 아무것도 가리지 않는다
+            plane = (-na / nd, -nb / nd, t[0][2] + (na * t[0][0] + nb * t[0][1]) / nd)
+            poly = t
+            if d0 > -BIG and min(ds) < d0:   # 앞쪽 경계(평면: 절단 높이, 단면: 절단면)로 잘라 앞부분을 버린다
+                out = []
+                for i in range(len(poly)):
+                    a, b = poly[i], poly[(i + 1) % len(poly)]
+                    if a[2] >= d0:
+                        out.append(a)
+                    if (a[2] >= d0) != (b[2] >= d0):
+                        k = (d0 - a[2]) / (b[2] - a[2])
+                        out.append((a[0] + k * (b[0] - a[0]), a[1] + k * (b[1] - a[1]), d0))
+                poly = out
+                if len(poly) < 3:
+                    continue
+            p2 = [(q[0], q[1]) for q in poly]
+            ar = _area2(p2)
+            if abs(ar) < 1e-6:
+                continue
+            if ar < 0:
+                p2.reverse()
+            i = len(polys)
+            polys.append((tuple(p2), plane))
+            a0, a1 = min(q[0] for q in p2), max(q[0] for q in p2)
+            boxes.append((a0, a1, min(q[1] for q in p2), max(q[1] for q in p2), min(q[2] for q in poly)))
+            for k in range(int(a0 // F_BIN), int(a1 // F_BIN) + 1):
+                bins.setdefault(k, []).append(i)
+        segs = g.q(_f_cut, v, e)
+        if segs:
+            regions.append(((min(min(s[0], s[2]) for s in segs), max(max(s[0], s[2]) for s in segs),
+                             min(min(s[1], s[3]) for s in segs), max(max(s[1], s[3]) for s in segs)), segs))
+    return (tuple(polys), tuple(boxes), {k: tuple(x) for k, x in bins.items()}, tuple(regions))
+
+
+def _f_inside(segs, pa, pb) -> bool:
+    """점 (pa, pb) 가 단면 선분 묶음 안인가(+a 방향 반직선 짝홀 규칙, 반열린 b 규칙)."""
+    n = 0
+    for a0, b0, a1, b1 in segs:
+        if (b0 > pb) != (b1 > pb):
+            x = a0 + (pb - b0) / (b1 - b0) * (a1 - a0)
+            if x > pa:
+                n += 1
+    return n % 2 == 1
+
+
+def _f_hidden(occ, A, B) -> list:
+    """뷰 좌표 선분 A-B((a, b, d) 두 점) 에서 외래 면·절단 영역에 가려지는 매개변수 구간들 [(t0, t1), ...]."""
+    polys, boxes, bins, regions = occ
+    da, db = B[0] - A[0], B[1] - A[1]
+    dd = B[2] - A[2]
+    lo_a, hi_a = min(A[0], B[0]), max(A[0], B[0])
+    lo_b, hi_b = min(A[1], B[1]), max(A[1], B[1])
+    dmax = max(A[2], B[2])
+    out = []
+    seen = set()
+    for k in range(int(lo_a // F_BIN), int(hi_a // F_BIN) + 1):
+        for i in bins.get(k, ()):
+            if i in seen:
+                continue
+            seen.add(i)
+            bx = boxes[i]
+            if bx[0] > hi_a + EPS or bx[1] < lo_a - EPS or bx[2] > hi_b + EPS or bx[3] < lo_b - EPS or bx[4] >= dmax - F_TOL:
+                continue
+            poly, (pa, pb, pc) = polys[i]
+            t0, t1 = 0.0, 1.0
+            n = len(poly)
+            for j in range(n):
+                p, q = poly[j], poly[(j + 1) % n]
+                ex, ey = q[0] - p[0], q[1] - p[1]
+                num = ex * (A[1] - p[1]) - ey * (A[0] - p[0])
+                den = ex * db - ey * da
+                if abs(den) < 1e-12:
+                    if num < 0:
+                        t0, t1 = 1.0, 0.0
+                        break
+                    continue
+                t = -num / den
+                if den > 0:
+                    t0 = max(t0, t)
+                else:
+                    t1 = min(t1, t)
+                if t1 - t0 <= 1e-9:
+                    break
+            if t1 - t0 <= 1e-9:
+                continue
+            # 모서리 깊이 - 면 깊이 - 허용: 양수면 면이 앞에 있다(선분 위에서 일차식)
+            fa = (A[2] + t0 * dd) - (pa * (A[0] + t0 * da) + pb * (A[1] + t0 * db) + pc) - F_TOL
+            fb = (A[2] + t1 * dd) - (pa * (A[0] + t1 * da) + pb * (A[1] + t1 * db) + pc) - F_TOL
+            if fa > 0 and fb > 0:
+                out.append((t0, t1))
+            elif fa > 0 or fb > 0:
+                tc = t0 + (t1 - t0) * fa / (fa - fb)
+                out.append((t0, tc) if fa > 0 else (tc, t1))
+    for (ra0, ra1, rb0, rb1), segs in regions:
+        if ra0 > hi_a + EPS or ra1 < lo_a - EPS or rb0 > hi_b + EPS or rb1 < lo_b - EPS:
+            continue
+        ts = [0.0, 1.0]
+        for a0, b0, a1, b1 in segs:   # 선분과 단면 선분의 교점
+            ex, ey = a1 - a0, b1 - b0
+            den = da * ey - db * ex
+            if abs(den) < 1e-12:
+                continue
+            t = ((a0 - A[0]) * ey - (b0 - A[1]) * ex) / den
+            u = ((a0 - A[0]) * db - (b0 - A[1]) * da) / den
+            if 0.0 < t < 1.0 and -1e-9 <= u <= 1.0 + 1e-9:
+                ts.append(t)
+        ts.sort()
+        for t0, t1 in zip(ts, ts[1:]):
+            if t1 - t0 <= 1e-9:
+                continue
+            tm = (t0 + t1) / 2.0
+            if A[2] + tm * dd > F_TOL and _f_inside(segs, A[0] + tm * da, A[1] + tm * db):
+                out.append((t0, t1))
+    return out
+
+
+def _f_visible(hidden) -> list:
+    """[0, 1] 에서 가려진 구간들을 뺀 보이는 구간들."""
+    vis = [(0.0, 1.0)]
+    for h0, h1 in sorted(hidden):
+        nxt = []
+        for a, b in vis:
+            if h1 <= a or h0 >= b:
+                nxt.append((a, b))
+                continue
+            if h0 > a:
+                nxt.append((a, h0))
+            if h1 < b:
+                nxt.append((h1, b))
+        vis = nxt
+    return vis
+
+
+def foreign_lines(g, v, e):
+    """외래 요소 하나가 뷰에 기여하는 선분: 절단선(범주 등급)과 보이는 투영선(proj)."""
+    cfg = g.q(view_cfg, v)
+    info = g.q(foreign_info, e)
+    if cfg is None or info is None or cfg[0] == "site":
+        return ()
+    cat, verts, _faces, edges, _nrm, _bb = info
+    out = [(FOREIGN_CUT_CLS[cat],) + s for s in g.q(_f_cut, v, e)]
+    d0, d1 = _f_range(cfg)
+    occ = g.q(_f_occ, v)
+    idx = g.q(_occ_index, v) if cfg[0] != "plan" else None
+    P = [_f_pt(cfg, p) for p in verts]
+    for ia, ib, _fl in edges:
+        A, B = P[ia], P[ib]
+        t0, t1 = 0.0, 1.0
+        dd = B[2] - A[2]
+        for bound, keep_ge in ((d0, True), (d1, False)):   # 보이는 깊이 범위로 자른다
+            if abs(bound) >= BIG:
+                continue
+            da_ = A[2] - bound
+            if abs(dd) < 1e-12:
+                if (da_ < -EPS) if keep_ge else (da_ > EPS):
+                    t0, t1 = 1.0, 0.0
+                continue
+            t = -da_ / dd
+            if (dd > 0) == keep_ge:
+                t0 = max(t0, t)
+            else:
+                t1 = min(t1, t)
+        if t1 - t0 <= 1e-9:
+            continue
+        A2 = (A[0] + t0 * (B[0] - A[0]), A[1] + t0 * (B[1] - A[1]), A[2] + t0 * dd)
+        B2 = (A[0] + t1 * (B[0] - A[0]), A[1] + t1 * (B[1] - A[1]), A[2] + t1 * dd)
+
+        def lerp(t, A2=A2, B2=B2):
+            return (A2[0] + t * (B2[0] - A2[0]), A2[1] + t * (B2[1] - A2[1]))
+        if sqrt((B2[0] - A2[0]) ** 2 + (B2[1] - A2[1]) ** 2) <= SEG_MIN:
+            continue   # 보는 방향과 나란한 모서리(점으로 보인다)
+        hid = _f_hidden(occ, A2, B2)
+        if idx is not None and idx[0]:   # 저작 요소의 가림 조각(단면·입면): 기존 _vis 의 보이는 구간의 여집합을 더한다
+            e0, e1 = (A2[0], A2[2], A2[1]), (B2[0], B2[2], B2[1])   # (s, w, z)
+            near = _occ_near(idx, min(e0[0], e1[0]), max(e0[0], e1[0]), min(e0[2], e1[2]), max(e0[2], e1[2]), max(e0[1], e1[1]))
+            if near:
+                hid.extend(_f_complement(_vis(e0, e1, near)))
+        for a, b in _f_visible(hid):
+            p, q = lerp(a), lerp(b)
+            if sqrt((q[0] - p[0]) ** 2 + (q[1] - p[1]) ** 2) > SEG_MIN:
+                out.append(("proj", p[0], p[1], q[0], q[1]))
+    return tuple(out)
+
+
+def _f_complement(vis) -> list:
+    """[0, 1] 에서 보이는 구간들(정렬됨)의 여집합 = 가려진 구간들."""
+    out, last = [], 0.0
+    for a, b in vis:
+        if a > last:
+            out.append((last, a))
+        last = max(last, b)
+    if last < 1.0:
+        out.append((last, 1.0))
+    return out
+
+
+def foreign_omitted(g, ids) -> int:
+    """ids 중 그리지 않은 외래 요소 수(형상이 없거나 그리지 않는 종류). 층·공간 구조·부분으로 이루어진 요소·개구부 등(foreign_geom 의 storey/spatial/aggregate/skip)은 세지 않는다."""
+    n = 0
+    for e in ids:
+        r = Q.el(g, e)
+        if r is not None and r["kind"] == "foreign" and g.q(foreign_info, e) is None:
+            fg = Q.fgeom(g, e)
+            if fg is None or fg[0] not in ("storey", "spatial", "aggregate", "skip"):
+                n += 1
+    return n
+
+
+VIEW_SCOPED = VIEW_SCOPED | frozenset({scope_foreign, _f_cut, _f_occ, foreign_lines})   # 외래 도면 경로의 뷰별 질의(forget_views 가 치운다)

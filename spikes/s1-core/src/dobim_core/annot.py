@@ -417,7 +417,8 @@ def tag_anchor(g, target):
 
 def view_annots(g, v):
     """뷰에 속한 주석들의 그림 항목(id 순). 주석이 바뀌면 이 뷰만 다시 계산된다."""
-    return tuple(it for it in (g.q(annot_draw, a) for a in sorted(Q.rel_in(g, "annot_of", v))) if it is not None)
+    return tuple(it for it in (g.q(annot_draw, a) for a in sorted(Q.rel_in(g, "annot_of", v)) if Q.el(g, a) is None or Q.el(g, a)["kind"] in ("dim", "tag"))
+                 if it is not None)   # 같은 관계로 뷰에 속한 2D 작도 요소(draft, 27단계)는 drafting.view_drafts 가 그린다
 
 
 # ================================================================ 전체 질의

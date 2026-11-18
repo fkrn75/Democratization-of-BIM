@@ -146,7 +146,7 @@ def _fresh_id(ctx, a, kind):
     if _in_split_history(ctx, a.id):   # 지워진 벽의 id 를 다시 쓰면 분할 이력을 따라가는 참조가 엉뚱한 새 벽을 가리킨다
         raise DobimError("CONSTRAINT", f"벽 분할 이력에 쓰인 id 라 다시 쓸 수 없다: {a.id}", path="/id",
                          hint="새 id 를 쓰거나 생략하세요")
-    if kind in ("view", "dim", "tag", "sheet", "grid") and ctx.external_def(a.id):   # 가져온 파일에 되살리지 않은 외부 정의가 이 id 로 있다
+    if kind in ("view", "dim", "tag", "sheet", "grid", "draft") and ctx.external_def(a.id):   # 가져온 파일에 되살리지 않은 외부 정의가 이 id 로 있다
         ctx.warn(f"가져온 파일에 이 id 의 {kind} 정의가 되살려지지 않은 채 남아 있다: 새 정의가 그 속성을 덮어쓴다(지우거나 되돌리면 원래 정의가 돌아온다)")
     return a.id
 
@@ -3101,7 +3101,7 @@ def _dangling_view_levels(ctx) -> list:
     out = []
     for vid in sorted(st.by_kind.get("view", ())):
         p = st.el[vid]["params"]
-        if p["type"] == "plan" and st.el.get(p["level"], {}).get("kind") != "level":
+        if p["type"] == "plan" and not Q.plan_level_ok(st.el.get(p["level"])):
             out.append((p["name"], p["level"]))
     return out
 
@@ -3234,7 +3234,8 @@ def view_create(ctx, a: ViewCreate):
     _fresh_id(ctx, a, "view")
     _view_name_free(ctx, a.name)
     if a.type == "plan":
-        ctx.row(a.level, "level")
+        if not Q.plan_level_ok(ctx.st.el.get(a.level)):   # 레벨 또는 외래 IFC 층(1단계 외래 도면 경로)
+            raise DobimError("NOT_FOUND", f"level 를 찾을 수 없다: {a.level}", path="/level")
         params = {"name": a.name, "type": "plan", "level": a.level, "cut_height": a.cut_height, "view_depth": a.view_depth, "scale": a.scale}
     elif a.type == "section":
         params = {"name": a.name, "type": "section", "p1": list(a.p1), "p2": list(a.p2), "depth": a.depth, "flip": a.flip, "scale": a.scale}
@@ -3403,7 +3404,7 @@ PngCrop = Annotated[list[Annotated[float, Field(ge=0.0, le=1.0, allow_inf_nan=Fa
 
 class ViewExport(A):
     id: Id
-    path: str = Field(max_length=260, description="작업 폴더 안의 .svg·.pdf·.png 경로 (확장자가 형식을 정한다). 응답에는 경로·크기·요약만 담는다. PDF 는 한글 글꼴(시스템의 Noto Sans KR·나눔고딕, OFL)을 부분집합으로 내장한다(못 찾으면 Helvetica 로 내려가 한글이 물음표가 되고 경고한다). PNG 는 순수 파이썬 래스터(같은 입력이면 같은 바이트)")
+    path: str = Field(max_length=260, description="작업 폴더 안의 .svg·.pdf·.png·.dxf 경로 (확장자가 형식을 정한다). 응답에는 경로·크기·요약만 담는다. DXF 는 모델 mm 실척(문자 높이·파선은 뷰 축척을 곱한 값), R2013 UTF-8, 범주별 층이다. PDF 는 한글 글꼴(시스템의 Noto Sans KR·나눔고딕, OFL)을 부분집합으로 내장한다(못 찾으면 Helvetica 로 내려가 한글이 물음표가 되고 경고한다). PNG 는 순수 파이썬 래스터(같은 입력이면 같은 바이트)")
     overwrite: bool = Field(False, description="거짓이면 이미 있는 파일을 덮어쓰지 않는다. 참이면 덮어쓰며 덮어쓰기 전에 자동 스냅숏을 남긴다(이 커맨드는 destructive 라 확인 토큰이 필요하다)")
     max_px: PngMaxPx = 1600
     crop: PngCrop | None = None
@@ -3413,7 +3414,7 @@ def _warn_omitted(ctx, omitted: dict) -> None:
     """도면이 그리지 못한 외래 요소·분리된 벽이 있으면 조용히 넘기지 않고 알린다(S2 × S3)."""
     if omitted["foreign"] or omitted["detached"]:
         ctx.warn(f"이 뷰는 외래 요소 {omitted['foreign']}개와 분리된 벽 {omitted['detached']}개를 그리지 않았다"
-                 "(외래는 형상 정보가 없고, 분리된 벽의 의도 값은 낡았다)")
+                 "(외래는 IFC 형상이 없거나 그리지 않는 종류(공간·개구부 등)이고, 분리된 벽의 의도 값은 낡았다)")
 
 
 def _render_view(ctx, vid, detail=False, hidden=False, hier=False):
@@ -3430,7 +3431,15 @@ def _render_view(ctx, vid, detail=False, hidden=False, hier=False):
         lines = lines + ctx.g.q(D.view_hidden_lines, vid)
     _warn_omitted(ctx, ctx.g.q(D.view_omitted, vid))
     return {"type": p["type"], "name": p["name"], "scale": p["scale"], "lines": lines, "fills": ctx.g.q(D.view_fills, vid),
-            "datums": levels, "annots": ctx.g.q(AN.view_annots, vid) + ctx.g.q(D.site_dims, vid) + ctx.g.q(D.view_dims, vid), "labels": ctx.g.q(D.view_labels, vid)}
+            "datums": levels, "annots": ctx.g.q(AN.view_annots, vid) + ctx.g.q(D.site_dims, vid) + ctx.g.q(D.view_dims, vid), "labels": ctx.g.q(D.view_labels, vid),
+            **_drafts_of(ctx, vid)}
+
+
+def _drafts_of(ctx, vid) -> dict:
+    """뷰의 2D 작도 그림 항목(27단계). 2D 요소가 없으면 키를 만들지 않는다(기존 도면 바이트 불변)."""
+    from dobim_core import drafting as DRF
+    items = ctx.g.q(DRF.view_drafts, vid)
+    return {"drafts": items} if items else {}
 
 
 def png_of(ctx, sh, a) -> dict:
@@ -3449,8 +3458,8 @@ def _view_export_target(ctx, a: ViewExport):
     """내보내기 대상 검사(미리보기와 실행이 같이 쓴다): 작업 폴더 안, .svg/.pdf, 스냅숏 폴더·폴더·대체 데이터 스트림(:) 아님, 덮어쓰기 동의."""
     p = resolve_in_workspace(ctx.eng.workspace, a.path)
     ext = p.suffix.lower()
-    if ext not in (".svg", ".pdf", ".png"):
-        raise DobimError("PATH_DENIED", f"내보내기 대상은 .svg·.pdf·.png 여야 한다: {p.name}", path="/path")
+    if ext not in (".svg", ".pdf", ".png", ".dxf"):
+        raise DobimError("PATH_DENIED", f"내보내기 대상은 .svg·.pdf·.png·.dxf 여야 한다: {p.name}", path="/path")
     if SNAP_DIR.lower() in [x.lower() for x in p.parts] or p.is_dir() or ":" in p.name:
         raise DobimError("PATH_DENIED", f"쓸 수 없는 경로다: {p.name}", path="/path")
     if p.exists() and not a.overwrite:
@@ -3469,15 +3478,19 @@ def _view_export_preview(ctx, a: ViewExport):
 # ifc.export 와 같은 절차를 탄다: 1회차 미리보기·확인 토큰, 덮어쓰기 전 .dobim-snapshots/<이름>.<번호> 스냅숏(ifc.snapshots 로 목록).
 # 새 파일 내보내기도 같은 절차를 탄다: 확인 없이 쓰는 길을 두지 않는다(overwrite 인자는 토큰이 묶는 인자에 들어간다).
 @command("view.export", kind="session", risk="destructive", group="view",
-         summary="SVG·PDF 내보내기",   # commands.search 가 응답 상한 안에 들도록 짧게(destructive 는 risk 에 나온다)
+         summary="SVG·PDF·PNG·DXF 내보내기",   # commands.search 가 응답 상한 안에 들도록 짧게(destructive 는 risk 에 나온다)
          args=ViewExport, since="0.1", preview=_view_export_preview,
          examples=[{"id": F.V1, "path": "view-example.svg", "overwrite": True}])
 def view_export(ctx, a: ViewExport):
     p, ext = _view_export_target(ctx, a)
     data = _render_view(ctx, a.id)
-    dropped, font_name, px = False, None, None
+    dropped, font_name, px, dxf = False, None, None, None
     if ext == ".svg":
         blob = DX.render_svg(data)
+    elif ext == ".dxf":
+        from dobim_core import dxf_export as DXF
+        from dobim_core import sheet as SH
+        blob, dxf = DXF.render_dxf(SH.build_view_page(data), model=DXF.view_model_xform(data), captions=(DX.title_text(data),))
     elif ext == ".png":
         from dobim_core import sheet as SH
         rr = png_of(ctx, SH.build_view_page(data), a)
@@ -3502,6 +3515,8 @@ def view_export(ctx, a: ViewExport):
            "font_embedded": font_name, "non_ascii_dropped": dropped, "digest": D.view_summary(data["lines"])["digest"], "rev": ctx.eng.rev, "snapshot": snap}
     if px is not None:
         out["pixels"] = px
+    if dxf is not None:
+        out["dxf"] = dxf
     return out
 
 
@@ -3564,7 +3579,7 @@ def site_north(ctx) -> float:
 
 class SheetExport(SheetFrame):
     views: list[Id] = Field(min_length=1, max_length=12, description="시트에 놓을 뷰 id 목록(앞에서부터 왼쪽 위 -> 오른쪽 -> 아래 순). 뷰는 자기 축척 그대로 놓인다")
-    path: str = Field(max_length=260, description="작업 폴더 안의 .svg·.pdf·.png 경로. PDF 는 한글 글꼴(시스템의 Noto Sans KR·나눔고딕, OFL)을 부분집합으로 내장한다. PNG 는 max_px·crop 을 쓴다")
+    path: str = Field(max_length=260, description="작업 폴더 안의 .svg·.pdf·.png·.dxf 경로. PDF 는 한글 글꼴(시스템의 Noto Sans KR·나눔고딕, OFL)을 부분집합으로 내장한다. PNG 는 max_px·crop 을 쓴다. DXF 는 R2013(AC1027, UTF-8) 이며 단위 mm, 층은 범주별(A-CUT 절단선·A-DIM 치수 등), 한글 문자는 글꼴 스타일 DOBIM_KR(malgun.ttf), 치수는 분해한 선과 문자다(용지 mm 1:1, 뷰는 자기 축척)")
     paper: Literal["A1", "A3"] = Field("A3", description="용지(가로 방향)")
     project_name: Text = Field("", description="표제란 프로젝트명(비우면 '(프로젝트명 없음)')")
     sheet_name: Text = Field("", description="표제란 도면명(비우면 첫 뷰 이름)")
@@ -3620,7 +3635,7 @@ def build_sheet_for(ctx, a):
 
 
 @command("sheet.export", kind="session", risk="destructive", group="view",
-         summary="시트(표제란)로 SVG·PDF 내보내기",
+         summary="시트(표제란)로 SVG·PDF·PNG·DXF 내보내기",
          args=SheetExport, since="0.2", preview=_sheet_preview,
          examples=[{"views": [F.V1], "path": "sheet-example.svg", "paper": "A3", "project_name": "예시 프로젝트", "sheet_number": "A-101", "overwrite": True}])
 def sheet_export(ctx, a: SheetExport):
@@ -3630,9 +3645,12 @@ def sheet_export(ctx, a: SheetExport):
     from dobim_core import sheet_extras as SE
     p, ext = _view_export_target(ctx, a)
     sh, spec = build_sheet_for(ctx, a)
-    dropped, font_name, px = False, None, None
+    dropped, font_name, px, dxf = False, None, None, None
     if ext == ".svg":
         blob = SH.render_sheet_svg(sh, spec)
+    elif ext == ".dxf":
+        from dobim_core import dxf_export as DXF
+        blob, dxf = DXF.render_dxf(sh, style=SH._style(spec))
     elif ext == ".png":
         rr = png_of(ctx, sh, a)
         blob, px, font_name = rr["png"], [rr["width"], rr["height"]], rr["font"]
@@ -3655,6 +3673,8 @@ def sheet_export(ctx, a: SheetExport):
            "font_embedded": font_name, "non_ascii_dropped": dropped, "rev": ctx.eng.rev, "snapshot": snap}
     if px is not None:
         out["pixels"] = px
+    if dxf is not None:
+        out["dxf"] = dxf
     return out
 
 
@@ -4670,3 +4690,5 @@ def ifc_restore(ctx, a: IfcRestore):
 from dobim_core import commands_family  # noqa: E402,F401
 from dobim_core import commands_sheet  # noqa: E402,F401
 from dobim_core import commands_walltop  # noqa: E402,F401
+from dobim_core import commands_draft  # noqa: E402,F401
+from dobim_core import commands_schedule  # noqa: E402,F401
