@@ -24,6 +24,7 @@ from math import sqrt
 from dobim_core import kinds as K
 from dobim_core import queries as Q
 from dobim_core import solids as SO
+from dobim_core import wallcut as WC
 from dobim_core import walltop as WT
 from dobim_core.family import spec as FS
 from dobim_core.graph import CLEAN
@@ -335,6 +336,35 @@ def wall_top_steps(g, w):
     return tuple(out)
 
 
+# ---- 벽 잘라내기(23단계, 설계: elements-design.md 25.1). cuts 가 없는 벽은 이 함수들을 거치지 않는다(도면 바이트 그대로)
+def wall_cut_solids(g, w):
+    """잘라내기가 있는 벽(상단 윤곽 없음)의 속이 찬 상자들 ((u0, u1, v0, v1, z0, z1), ...): 띠(개구부를 뺀 구간) x 두께에서 잘라낸 상자를 뺀다.
+    절단(평면 절단 조각·단면 절단 사각형)만 이 값을 쓴다. 가림(vpieces)은 띠 그대로다: 빼낸 자리는 자른 부재가 채우고 있다(근사, 설계 메모)."""
+    sol = g.q(wall_solid, w)
+    _, elev = g.q(Q.level_info, g.q(Q.wall_level, w))
+    voids = WC.shift_z(g.q(Q.wall_cut_boxes, w), elev)
+    h = sol[4]
+    solids = [(a, b, -h, h, z0, z1) for z0, z1, ivs in sol[10] for a, b in ivs]
+    return WC.subtract(solids, voids)
+
+
+def _has_cuts(g, w) -> bool:
+    return bool(g.q(Q.wall_cut_boxes, w)) and g.q(wall_solid, w)[11] is None
+
+
+def _cut_at(g, w, cutz):
+    """잘라내기 벽을 높이 cutz 에서 자른 속이 찬 (u0, u1, v0, v1) 사각형들. 잘라낸 상자가 그 높이를 품지 않으면 () (띠 그대로 쓴다)."""
+    _, elev = g.q(Q.level_info, g.q(Q.wall_level, w))
+    if not any(b[4] + elev < cutz - EPS and cutz + EPS < b[5] + elev for b in g.q(Q.wall_cut_boxes, w)):
+        return ()
+    # 아래 끝 포함·위 끝 제외(경계 높이에서 위아래 두 조각을 함께 세지 않는다)
+    return tuple(sorted((q[0], q[1], q[2], q[3]) for q in g.q(wall_cut_solids, w) if q[4] <= cutz + EPS < q[5]))
+
+
+def _quad_v(sol, a, b, v0, v1):
+    return (_world(sol, a, v0), _world(sol, b, v0), _world(sol, b, v1), _world(sol, a, v1))   # 반시계
+
+
 def _wall_bands(g, w, sol):
     """띠 목록: 상단 윤곽 벽은 계단 근사 띠, 아니면 wall_solid 의 띠 그대로."""
     return sol[10] if sol[11] is None else g.q(wall_top_steps, w)
@@ -561,6 +591,8 @@ def plan_pieces(g, v, w):
             if z0 - EPS <= cutz <= z1 + EPS:
                 cut = [_quad(sol, a, b) for a, b in ivs]
                 break
+        if g.q(_has_cuts, w) and g.q(_cut_at, w, cutz):   # 벽 잘라내기(23단계): 절단 높이를 품는 상자를 뺀 (u, v) 조각
+            cut = [_quad_v(sol, q[0], q[1], q[2], q[3]) for q in g.q(_cut_at, w, cutz)]
     elif zt < cutz - EPS and zt >= cutz - depth:
         proj = [_quad(sol, sol[5], sol[6])]
     return (tuple(cut), tuple(proj))
@@ -2980,6 +3012,16 @@ def vcut_rects(g, v, w):
         return g.q(_vcut_top, v, w)
     near = cfg[7]
     rects = []
+    if g.q(_has_cuts, w):   # 벽 잘라내기(23단계): 잘라낸 상자를 뺀 상자마다 절단면 위 s 범위
+        sol = g.q(wall_solid, w)
+        for u0, u1, v0, v1, z0, z1 in g.q(wall_cut_solids, w):
+            poly = _clip_w([_sw(cfg, p) for p in _quad_v(sol, u0, u1, v0, v1)], cfg[7], cfg[8])
+            if len(poly) < 3 or _area2(poly) <= 2 * EPS:
+                continue
+            ss = [p[0] for p in poly if abs(p[1] - near) <= EPS]
+            if len(ss) >= 2 and max(ss) - min(ss) > EPS:
+                rects.append(((min(ss), z0), (max(ss), z0), (max(ss), z1), (min(ss), z1)))
+        return tuple(rects)
     for z0, z1, poly in g.q(vpieces, v, w):
         ss = [p[0] for p in poly if abs(p[1] - near) <= EPS]
         if len(ss) < 2:
