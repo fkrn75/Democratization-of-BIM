@@ -169,3 +169,120 @@ def test_외래_요소가_없으면_새_질의는_빈_값이다(base):
     g = base.eng.g
     assert g.q(D.scope_foreign, F.V1) == () and g.q(D._f_occ, F.V1) == ((), (), {}, ())
     assert g.q(D.view_omitted, F.V1) == {"foreign": 0, "detached": 0}
+
+
+# ---------------------------------------------------------------- 2차(elements-design.md 30절): 절단면 채움·외래 비내력벽·공간 실명·외래 층 기준선
+def _views(eng):
+    return {eng.st.el[v]["params"]["name"]: v for v in eng.st.by_kind["view"]}
+
+
+def _even_odd_area(segs):
+    """절단 선분 고리들의 짝홀 넓이(바깥 - 구멍)."""
+    loops = D._f_loops(segs)
+    areas = [abs(D._area2(lp)) for lp in loops]
+    depth = [sum(1 for j in range(len(loops)) if j != i and areas[j] > areas[i] and D._f_pip(loops[i][0], loops[j])) for i in range(len(loops))]
+    return sum(a if d % 2 == 0 else -a for a, d in zip(areas, depth)) / 2.0
+
+
+def _sq(x0, y0, x1, y1):
+    return [(x0, y0, x1, y0), (x1, y0, x1, y1), (x1, y1, x0, y1), (x0, y1, x0, y0)]
+
+
+def test_채움_다리는_구멍을_빼고_맞닿은_몸체는_합친다():
+    # 구멍 있는 사각형: 다각형 하나, 넓이 = 바깥 - 구멍
+    polys = D._f_fill_polys(_sq(0, 0, 100, 100) + _sq(20, 20, 40, 40))
+    assert len(polys) == 1 and abs(D._area2(polys[0]) / 2 - (10000 - 400)) < 1e-6
+    # 층 구성처럼 맞닿은 두 몸체(맞닿은 변은 두 번, 한쪽 변은 T 꼭짓점으로 나뉨): 합집합 하나
+    a = _sq(0, 0, 10, 100)
+    b = [(10, 0, 30, 0), (30, 0, 30, 100), (30, 100, 10, 100), (10, 100, 10, 50), (10, 50, 10, 0)]
+    polys = D._f_fill_polys(a + b)
+    assert len(polys) == 1 and abs(D._area2(polys[0]) / 2 - 3000) < 1e-6
+    # 떨어진 두 고리는 두 다각형, 닫히지 않는 사슬은 버린다
+    assert len(D._f_fill_polys(_sq(0, 0, 1, 1) + _sq(5, 5, 6, 6))) == 2
+    assert D._f_fill_polys([(0, 0, 1, 0), (1, 0, 1, 1)]) == ()
+
+
+def test_외래_heavy_요소는_절단면이_채워진다(ba):
+    eng = ba.engine(FC.PROJECT)
+    g = eng.g
+    vs = _views(eng)
+    for name in ("plan-0", "sec-x", "sec-y"):
+        v = vs[name]
+        assert g.q(D.view_fills, v), name
+        for e in g.q(D.scope_foreign, v):
+            fills = g.q(D.foreign_fills, v, e)
+            cat = g.q(D.foreign_info, e)[0]
+            segs = g.q(D._f_cut, v, e)
+            if cat != "heavy" or not segs:
+                assert fills == (), (name, e)
+                continue
+            assert abs(sum(D._area2(p) for p in fills) / 2.0 - _even_odd_area(segs)) < 1.0, (name, e)
+    assert all(g.q(D.view_fills, vs[f"elev-{d}"]) == () for d in "NESW")
+
+
+def test_외래_벽의_LoadBearing_거짓은_선_굵기_위계에서_cutn(ba):
+    eng = ba.engine(FC.PROJECT)
+    g = eng.g
+    plan = _views(eng)["plan-0"]
+    lines, hier = g.q(D.view_lines, plan), g.q(D.view_lines_hier, plan)
+    assert not any(ln[0] == "cutn" for ln in hier)
+    wall = next(e for e in g.q(D.scope_foreign, plan) if eng.st.el[e]["ifc_class"] in D.F_WALLS and g.q(D._f_cut, plan, e))
+    r = dispatch.run(ba, "pset.set", {"id": wall, "pset": "Pset_WallCommon", "prop": "LoadBearing", "value": False}, project=FC.PROJECT)
+    assert r["ok"], r
+    assert g.q(D.foreign_nonbearing) == (wall,)
+    hier2 = g.q(D.view_lines_hier, plan)
+    assert g.q(D.view_lines, plan) == lines                       # 기본 선분은 그대로(위계 옵션일 때만 나뉜다)
+    assert any(ln[0] == "cutn" for ln in hier2)
+    assert hier2 == RefGraph(_Inputs(eng)).q(D.view_lines_hier, plan)
+    r = dispatch.run(ba, "pset.set", {"id": wall, "pset": "Pset_WallCommon", "prop": "LoadBearing", "value": True}, project=FC.PROJECT)
+    assert r["ok"], r
+    assert g.q(D.view_lines_hier, plan) == hier
+
+
+def test_외래_공간은_실명과_면적을_평면에_쓴다(ba):
+    eng = ba.engine(FC.PROJECT)
+    g = eng.g
+    spaces = sorted(e for e in eng.st.by_kind["foreign"] if eng.st.el[e]["ifc_class"] == "IfcSpace")
+    assert spaces
+    vals = [g.q(Q.fgeom, e) for e in spaces]
+    assert all(fg[0] in ("space", "spatial") for fg in vals) and any(fg[0] == "space" for fg in vals)
+    plan = _views(eng)["plan-0"]
+    labels = g.q(D.view_labels, plan)
+    want = []
+    for e, fg in zip(spaces, vals):
+        if fg[0] == "space" and e in g.q(D.scope_foreign_spaces, plan):
+            ent = eng.ifc.ents[e]
+            want.append((ent.LongName or ent.Name).strip())
+    assert want and [t[2] for t in labels if t[3] == D.LABEL_NAME_H] == want
+    assert all(t[2].endswith("㎡") for t in labels if t[3] == D.LABEL_SUB_H)
+    assert all(g.q(D.view_labels, _views(eng)[f"elev-{d}"]) == () for d in "NESW")
+    assert D.foreign_omitted(g, tuple(spaces)) == 0
+
+
+def test_외래_층은_단면_입면의_레벨_기준선이다(ba):
+    eng = ba.engine(FC.PROJECT)
+    g = eng.g
+    storey = next(e for e in eng.st.by_kind["foreign"] if eng.st.el[e]["ifc_class"] == "IfcBuildingStorey")
+    assert g.q(D.foreign_datums) == ((eng.st.el[storey]["params"]["name"], 0.0),)
+    vs = _views(eng)
+    for name, has in (("elev-S", True), ("sec-x", True), ("plan-0", False)):
+        FC._destructive(ba, "view.export", {"id": vs[name], "path": f"d-{name}.svg"})
+        svg = (ba.workspace / f"d-{name}.svg").read_text(encoding="utf-8")
+        assert ('<g id="datums"' in svg) == has, name
+
+
+def test_2차_질의도_증분_그래프와_전체_계산이_같다(ba):
+    eng = ba.engine(FC.PROJECT)
+    ref = RefGraph(_Inputs(eng))
+    for v in sorted(eng.st.by_kind["view"]):
+        for fn in (D.view_fills, D.view_labels, D.view_lines_hier):
+            assert eng.g.q(fn, v) == ref.q(fn, v), (fn.__name__, v)
+    assert eng.g.q(D.foreign_datums) == ref.q(D.foreign_datums)
+
+
+def test_외래_요소가_없으면_2차_질의도_빈_값이다(base):
+    from dobim_core import fixture as F
+    assert base.run("view.create", {"id": F.V1, "name": "1F", "type": "plan", "level": F.LV1})["ok"]
+    g = base.eng.g
+    assert g.q(D.foreign_nonbearing) == () and g.q(D.foreign_datums) == ()
+    assert g.q(D.scope_foreign_spaces, F.V1) == ()

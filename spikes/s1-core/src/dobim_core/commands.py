@@ -3422,8 +3422,8 @@ def _render_view(ctx, vid, detail=False, hidden=False, hier=False):
     hier 이면 비내력벽(LoadBearing 거짓)의 절단선을 "cutn" 등급으로 나눈다(LN-04, 선 굵기 위계)."""
     r = ctx.row(vid, "view")
     p = r["params"]
-    levels = sorted(((ctx.st.el[l]["params"]["name"], ctx.st.el[l]["params"]["elevation"]) for l in ctx.st.by_kind.get("level", ())),
-                    key=lambda t: (t[1], t[0]))
+    levels = sorted([(ctx.st.el[l]["params"]["name"], ctx.st.el[l]["params"]["elevation"]) for l in ctx.st.by_kind.get("level", ())]
+                    + list(ctx.g.q(D.foreign_datums)), key=lambda t: (t[1], t[0]))   # 외래 IFC 층의 기준선(외래 도면 2차): 없으면 이전과 같다
     lines = ctx.g.q(D.view_lines_hier if hier else D.view_lines, vid)
     if detail:
         lines = lines + ctx.g.q(D.view_detail_lines, vid)
