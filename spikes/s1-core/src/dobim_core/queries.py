@@ -180,8 +180,54 @@ def wall_xcuts(g, w):
         ox, oy, oc, os_, _ = g.q(wall_frame, w)
         us = [((hx + u * hc) - ox) * oc + ((hy + u * hs) - oy) * os_ for u in (spec["offset"] + cut["x"][0], spec["offset"] + cut["x"][1])]
         dz = g.q(level_info, g.q(wall_level, h))[1] - g.q(level_info, g.q(wall_level, w))[1]
-        out.append((f, (min(us), max(us), dz + spec["elevation"] + cut["z"][0], dz + spec["elevation"] + cut["z"][1])))
+        box = (min(us), max(us), dz + spec["elevation"] + cut["z"][0], dz + spec["elevation"] + cut["z"][1])
+        # 26단계: 창 끝이 이 벽 끝에 맞닿기만 하는 경우(also_cuts 허용 오차 안)는 이 벽에서 비울 것이 없다.
+        # 벽 형상 범위와 겹치는 폭·높이가 XCUT_MIN 이하인 상자는 빼서 도면·IFC 에 빈(0 폭) 개구부가 생기지 않게 한다.
+        # 25단계 규칙(겹침 > 0.5mm 만 받음)으로 놓인 상자는 늘 남으므로 이전 결과는 그대로다
+        if _overlap(box, g.q(wall_extent, w), _wall_zrange(el(g, w)["params"])) is None:
+            continue
+        out.append((f, box))
     return tuple(out)
+
+
+XCUT_MIN = 0.5   # mm: 함께 자르는 개구부가 벽과 이보다 적게 겹치면(맞닿기만 하면) 그 벽에는 개구부가 없다(commands_family.FIT_TOL 과 같다)
+
+
+def _wall_zrange(p) -> tuple:
+    """벽 몸체의 레벨 기준 높이 범위(바닥 오프셋 ~ 윗면). 일람표 면적 빼기와 함께 자르기 판정에 쓴다."""
+    return (WT.base(p), WT.top_rel(p))
+
+
+def _overlap(box, urange, zrange):
+    """개구부 상자 (u0, u1, z0, z1) 를 벽 범위로 자른 (폭, 높이). 어느 쪽이든 XCUT_MIN 이하이면 None."""
+    du = min(box[1], urange[1]) - max(box[0], urange[0])
+    dz = min(box[3], zrange[1]) - max(box[2], zrange[0])
+    if du <= XCUT_MIN or dz <= XCUT_MIN:
+        return None
+    return (du, dz)
+
+
+def finst_box(g, f):
+    """호스팅 패밀리 인스턴스 개구부의 호스트 지역 상자 (u0, u1, z0, z1), z 는 호스트 레벨 기준. 개구부가 없으면 None."""
+    spec = g.q(ifc_spec, f)
+    cut = spec.get("cut")
+    if not cut:
+        return None
+    return (spec["offset"] + cut["x"][0], spec["offset"] + cut["x"][1], spec["elevation"] + cut["z"][0], spec["elevation"] + cut["z"][1])
+
+
+def wall_xcut_area(g, w):
+    """26단계: also_cuts 로 생긴 이 벽의 개구부 넓이(입면, mm²). (다른 벽의 창이 이 벽을 자르는 넓이, 개수).
+    상자는 이 벽의 논리 범위(wall_trim 시작~끝, 바닥~윗면)로 잘라 잰다. 맞닿기만 하는 벽은 넓이 0 이다."""
+    p = el(g, w)["params"]
+    start, end, _ = g.q(wall_trim, w)
+    area, n = 0.0, 0
+    for _f, box in g.q(wall_xcuts, w):
+        ov = _overlap(box, (start, end), _wall_zrange(p))
+        if ov is not None:
+            area += ov[0] * ov[1]
+            n += 1
+    return (area, n)
 
 
 def wall_cut_boxes(g, w):
@@ -318,11 +364,18 @@ def wall_row(g, w):
     hosted = g.q(wall_hosted, w)
     for d in hosted:
         dp = el(g, d)["params"]
+        if dp.get("also_cuts"):   # 26단계: 함께 자르는 창은 넘친 부분이 이웃 벽 몫이라 호스트 범위로 자른 넓이만 뺀다(없으면 이전과 같다)
+            start, end, _ = g.q(wall_trim, w)
+            box = g.q(finst_box, d)
+            ov = _overlap(box, (start, end), _wall_zrange(p)) if box is not None else None
+            opening += ov[0] * ov[1] if ov is not None else 0.0
+            continue
         opening += dp["width"] * dp["height"]
     for o in p.get("openings", ()):   # 모양 개구부(18단계)의 실제 윤곽 면적
         opening += abs(SO.area2(SO.opening_loop(o))) / 2.0
     if "cuts" in p:   # 벽 잘라내기(23단계): 두께를 다 뚫는 상자의 입면 넓이를 뺀다(한쪽 면만 파인 상자는 부피에만 든다). 없으면 행은 그대로
         opening += WC.through_area(g.q(wall_cut_boxes, w), p["thickness"] / 2.0)
+    opening += g.q(wall_xcut_area, w)[0]   # 26단계: 다른 벽의 창이 함께 자르는 개구부(also_cuts). 없으면 0 이라 행은 그대로
     return (w, p["name"], lname, elev, length, height, p["thickness"], gross - opening, len(hosted),
             _pset_val(g, w, "Pset_WallCommon", "FireRating"),
             _pset_val(g, w, "Pset_WallCommon", "IsExternal"),

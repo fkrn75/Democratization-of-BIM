@@ -1,16 +1,16 @@
 {
   "schema": "dobim.family/1",
   "id": "window.framed",
-  "version": 3,
+  "version": 4,
   "name": "창틀 창(리빌 표현)",
-  "description": "벽에 호스팅되는 창. 깊이 있는 창틀·유리·(열리는 창이면 문짝 틀)·선택 창대/문선. 열림 방식: 고정·여닫이(안/밖)·프로젝트(위 경첩 밖 젖힘)·미닫이(두 짝). 틀의 벽 안 위치(inset = 기준면에서 틀 바깥면까지)로 리빌이 보인다. 기준면 = 호스트 지역 -v 면, 180 뒤집으면 +v 면. 25단계: 멀리언으로 나눈 칸마다 열림 방식(bay1~bay3 = same/fixed/project_out)을 줄 수 있다(고정 + 프로젝트 혼합).",
+  "description": "벽에 호스팅되는 창. 창틀·유리·창짝·선택 창대/문선. 열림: 고정·여닫이·프로젝트(위 경첩 project_out, 옆 경첩 project_left/right)·미닫이. inset 으로 리빌이 보인다(기준면 = 지역 -v 면, 180 뒤집으면 +v). 멀리언(칸)·가로대(transom, transom2 = 단)로 나눈 단x칸마다 열림 방식(bay1~3 = 아래 단, bay1_2~3_2 = 2단, bay1_3~3_3 = 3단)을 줄 수 있다.",
   "ifc": {
     "class": "IfcWindow",
     "type_class": "IfcWindowType",
     "predefined": "WINDOW",
     "type_attrs": {
       "PartitioningType": {
-        "expr": "'DOUBLE_PANEL_VERTICAL' if sl else ('SINGLE_PANEL' if mullions == 0 else ('DOUBLE_PANEL_VERTICAL' if mullions == 1 else 'TRIPLE_PANEL_VERTICAL'))"
+        "expr": "'DOUBLE_PANEL_VERTICAL' if sl else (('SINGLE_PANEL' if mullions == 0 else ('DOUBLE_PANEL_VERTICAL' if mullions == 1 else 'TRIPLE_PANEL_VERTICAL')) if n_tr == 0 else ('USERDEFINED' if mullions > 0 else ('DOUBLE_PANEL_HORIZONTAL' if n_tr == 1 else 'TRIPLE_PANEL_HORIZONTAL')))"
       },
       "ParameterTakesPrecedence": false
     },
@@ -25,15 +25,15 @@
     "panels": [
       {
         "operation": {
-          "expr": "'FIXEDCASEMENT' if e1 == 'fixed' else ('TOPHUNG' if e1 == 'project_out' else ('SLIDINGHORIZONTAL' if sl else 'NOTDEFINED'))"
+          "expr": "'FIXEDCASEMENT' if e1 == 'fixed' else ('TOPHUNG' if e1 == 'project_out' else ('SIDEHUNGLEFTHAND' if e1 == 'project_left' else ('SIDEHUNGRIGHTHAND' if e1 == 'project_right' else ('SLIDINGHORIZONTAL' if sl else 'NOTDEFINED'))))"
         },
         "position": {
-          "expr": "'LEFT' if sl or mullions > 0 else 'MIDDLE'"
+          "expr": "('LEFT' if sl or mullions > 0 else 'MIDDLE') if n_tr == 0 else ('LEFT' if mullions > 0 else 'BOTTOM')"
         }
       },
       {
         "operation": {
-          "expr": "'FIXEDCASEMENT' if e2 == 'fixed' else ('TOPHUNG' if e2 == 'project_out' else ('SLIDINGHORIZONTAL' if sl else 'NOTDEFINED'))"
+          "expr": "'FIXEDCASEMENT' if e2 == 'fixed' else ('TOPHUNG' if e2 == 'project_out' else ('SIDEHUNGLEFTHAND' if e2 == 'project_left' else ('SIDEHUNGRIGHTHAND' if e2 == 'project_right' else ('SLIDINGHORIZONTAL' if sl else 'NOTDEFINED'))))"
         },
         "position": {
           "expr": "'RIGHT' if sl or mullions == 1 else 'MIDDLE'"
@@ -42,10 +42,60 @@
       },
       {
         "operation": {
-          "expr": "'FIXEDCASEMENT' if e3 == 'fixed' else ('TOPHUNG' if e3 == 'project_out' else ('SLIDINGHORIZONTAL' if sl else 'NOTDEFINED'))"
+          "expr": "'FIXEDCASEMENT' if e3 == 'fixed' else ('TOPHUNG' if e3 == 'project_out' else ('SIDEHUNGLEFTHAND' if e3 == 'project_left' else ('SIDEHUNGRIGHTHAND' if e3 == 'project_right' else ('SLIDINGHORIZONTAL' if sl else 'NOTDEFINED'))))"
         },
         "position": "RIGHT",
         "when": "mullions == 2"
+      },
+      {
+        "operation": {
+          "expr": "'FIXEDCASEMENT' if e12 == 'fixed' else ('TOPHUNG' if e12 == 'project_out' else ('SIDEHUNGLEFTHAND' if e12 == 'project_left' else ('SIDEHUNGRIGHTHAND' if e12 == 'project_right' else ('SLIDINGHORIZONTAL' if sl else 'NOTDEFINED'))))"
+        },
+        "position": {
+          "expr": "'LEFT' if mullions > 0 else ('MIDDLE' if n_tr == 2 else 'TOP')"
+        },
+        "when": "n_tr >= 1"
+      },
+      {
+        "operation": {
+          "expr": "'FIXEDCASEMENT' if e22 == 'fixed' else ('TOPHUNG' if e22 == 'project_out' else ('SIDEHUNGLEFTHAND' if e22 == 'project_left' else ('SIDEHUNGRIGHTHAND' if e22 == 'project_right' else ('SLIDINGHORIZONTAL' if sl else 'NOTDEFINED'))))"
+        },
+        "position": {
+          "expr": "'RIGHT' if mullions == 1 else 'MIDDLE'"
+        },
+        "when": "n_tr >= 1 and mullions > 0"
+      },
+      {
+        "operation": {
+          "expr": "'FIXEDCASEMENT' if e32 == 'fixed' else ('TOPHUNG' if e32 == 'project_out' else ('SIDEHUNGLEFTHAND' if e32 == 'project_left' else ('SIDEHUNGRIGHTHAND' if e32 == 'project_right' else ('SLIDINGHORIZONTAL' if sl else 'NOTDEFINED'))))"
+        },
+        "position": "RIGHT",
+        "when": "n_tr >= 1 and mullions == 2"
+      },
+      {
+        "operation": {
+          "expr": "'FIXEDCASEMENT' if e13 == 'fixed' else ('TOPHUNG' if e13 == 'project_out' else ('SIDEHUNGLEFTHAND' if e13 == 'project_left' else ('SIDEHUNGRIGHTHAND' if e13 == 'project_right' else ('SLIDINGHORIZONTAL' if sl else 'NOTDEFINED'))))"
+        },
+        "position": {
+          "expr": "'LEFT' if mullions > 0 else 'TOP'"
+        },
+        "when": "n_tr >= 2"
+      },
+      {
+        "operation": {
+          "expr": "'FIXEDCASEMENT' if e23 == 'fixed' else ('TOPHUNG' if e23 == 'project_out' else ('SIDEHUNGLEFTHAND' if e23 == 'project_left' else ('SIDEHUNGRIGHTHAND' if e23 == 'project_right' else ('SLIDINGHORIZONTAL' if sl else 'NOTDEFINED'))))"
+        },
+        "position": {
+          "expr": "'RIGHT' if mullions == 1 else 'MIDDLE'"
+        },
+        "when": "n_tr >= 2 and mullions > 0"
+      },
+      {
+        "operation": {
+          "expr": "'FIXEDCASEMENT' if e33 == 'fixed' else ('TOPHUNG' if e33 == 'project_out' else ('SIDEHUNGLEFTHAND' if e33 == 'project_left' else ('SIDEHUNGRIGHTHAND' if e33 == 'project_right' else ('SLIDINGHORIZONTAL' if sl else 'NOTDEFINED'))))"
+        },
+        "position": "RIGHT",
+        "when": "n_tr >= 2 and mullions == 2"
       }
     ]
   },
@@ -90,9 +140,11 @@
         "casement_in",
         "casement_out",
         "project_out",
-        "sliding"
+        "sliding",
+        "project_left",
+        "project_right"
       ],
-      "description": "fixed=고정창, casement_in/out=여닫이(안/밖), project_out=프로젝트창(위 경첩, 밖으로 젖힘), sliding=미닫이창(두 짝)"
+      "description": "fixed=고정창, casement_in/out=여닫이(안/밖), project_out=프로젝트창(위 경첩, 밖으로 젖힘), sliding=미닫이창(두 짝), project_left/project_right=옆 경첩 프로젝트창(밖으로 젖힘, 경첩이 바깥(-v 쪽)에서 볼 때 왼쪽 = 지역 -x / 오른쪽)"
     },
     "frame_w": {
       "kind": "type",
@@ -123,7 +175,7 @@
       "default": 0,
       "type": "int",
       "unit": "none",
-      "description": "세로 멀리언 개수(고정창만)",
+      "description": "세로 멀리언 개수(고정창·프로젝트창만)",
       "min": 0,
       "max": 2
     },
@@ -134,9 +186,11 @@
       "values": [
         "same",
         "fixed",
-        "project_out"
+        "project_out",
+        "project_left",
+        "project_right"
       ],
-      "description": "1번째 칸(지역 -x 부터)의 열림 방식. same 이면 operation 을 따른다. 멀리언으로 칸을 나눈 fixed/project_out 창에서만 쓰고, 그 밖(칸이 없거나 여닫이·미닫이)에서는 무시한다"
+      "description": "아래 단 1번째 칸(지역 -x 부터)의 열림 방식. same 이면 operation 을 따른다. 멀리언·가로대로 칸을 나눈 고정창·프로젝트창에서만 쓰고, 그 밖(칸이 없거나 여닫이·미닫이)에서는 무시한다"
     },
     "bay2": {
       "kind": "type",
@@ -145,9 +199,11 @@
       "values": [
         "same",
         "fixed",
-        "project_out"
+        "project_out",
+        "project_left",
+        "project_right"
       ],
-      "description": "2번째 칸(지역 -x 부터)의 열림 방식. same 이면 operation 을 따른다. 멀리언으로 칸을 나눈 fixed/project_out 창에서만 쓰고, 그 밖(칸이 없거나 여닫이·미닫이)에서는 무시한다"
+      "description": "아래 단 2번째 칸(지역 -x 부터)의 열림 방식. same 이면 operation 을 따른다. 멀리언·가로대로 칸을 나눈 고정창·프로젝트창에서만 쓰고, 그 밖(칸이 없거나 여닫이·미닫이)에서는 무시한다"
     },
     "bay3": {
       "kind": "type",
@@ -156,9 +212,105 @@
       "values": [
         "same",
         "fixed",
-        "project_out"
+        "project_out",
+        "project_left",
+        "project_right"
       ],
-      "description": "3번째 칸(지역 -x 부터)의 열림 방식. same 이면 operation 을 따른다. 멀리언으로 칸을 나눈 fixed/project_out 창에서만 쓰고, 그 밖(칸이 없거나 여닫이·미닫이)에서는 무시한다"
+      "description": "아래 단 3번째 칸(지역 -x 부터)의 열림 방식. same 이면 operation 을 따른다. 멀리언·가로대로 칸을 나눈 고정창·프로젝트창에서만 쓰고, 그 밖(칸이 없거나 여닫이·미닫이)에서는 무시한다"
+    },
+    "transom": {
+      "kind": "type",
+      "default": 0,
+      "unit": "mm",
+      "min": 0,
+      "max": 6000,
+      "description": "가로대 높이(창 아래에서 가로대 윗면까지, 26단계). 0 이면 없다. 창 아래·위 끝에서 300mm 이상 떨어져야 쓰인다(아니면 없는 것으로 본다). 고정창·프로젝트창만"
+    },
+    "transom2": {
+      "kind": "type",
+      "default": 0,
+      "unit": "mm",
+      "min": 0,
+      "max": 6000,
+      "description": "2번째 가로대 높이(창 아래에서). 0 이면 없음. 앞 가로대보다 300mm 이상 위, 창 위 끝보다 300mm 이상 아래일 때만 가로대가 된다(transoms 목록으로 주면 그렇지 않을 때 거절한다)"
+    },
+    "bay1_2": {
+      "kind": "type",
+      "default": "same",
+      "type": "enum",
+      "values": [
+        "same",
+        "fixed",
+        "project_out",
+        "project_left",
+        "project_right"
+      ],
+      "description": "2단(아래에서 2번째 단, 가로대 위) 1번째 칸의 열림 방식. same 이면 operation 을 따른다. 그 단·칸이 없으면 무시한다"
+    },
+    "bay2_2": {
+      "kind": "type",
+      "default": "same",
+      "type": "enum",
+      "values": [
+        "same",
+        "fixed",
+        "project_out",
+        "project_left",
+        "project_right"
+      ],
+      "description": "2단(아래에서 2번째 단, 가로대 위) 2번째 칸의 열림 방식. same 이면 operation 을 따른다. 그 단·칸이 없으면 무시한다"
+    },
+    "bay3_2": {
+      "kind": "type",
+      "default": "same",
+      "type": "enum",
+      "values": [
+        "same",
+        "fixed",
+        "project_out",
+        "project_left",
+        "project_right"
+      ],
+      "description": "2단(아래에서 2번째 단, 가로대 위) 3번째 칸의 열림 방식. same 이면 operation 을 따른다. 그 단·칸이 없으면 무시한다"
+    },
+    "bay1_3": {
+      "kind": "type",
+      "default": "same",
+      "type": "enum",
+      "values": [
+        "same",
+        "fixed",
+        "project_out",
+        "project_left",
+        "project_right"
+      ],
+      "description": "3단(아래에서 3번째 단, 가로대 위) 1번째 칸의 열림 방식. same 이면 operation 을 따른다. 그 단·칸이 없으면 무시한다"
+    },
+    "bay2_3": {
+      "kind": "type",
+      "default": "same",
+      "type": "enum",
+      "values": [
+        "same",
+        "fixed",
+        "project_out",
+        "project_left",
+        "project_right"
+      ],
+      "description": "3단(아래에서 3번째 단, 가로대 위) 2번째 칸의 열림 방식. same 이면 operation 을 따른다. 그 단·칸이 없으면 무시한다"
+    },
+    "bay3_3": {
+      "kind": "type",
+      "default": "same",
+      "type": "enum",
+      "values": [
+        "same",
+        "fixed",
+        "project_out",
+        "project_left",
+        "project_right"
+      ],
+      "description": "3단(아래에서 3번째 단, 가로대 위) 3번째 칸의 열림 방식. same 이면 operation 을 따른다. 그 단·칸이 없으면 무시한다"
     },
     "stool_t": {
       "kind": "type",
@@ -256,22 +408,45 @@
     "casement": "operation == 'casement_in' or operation == 'casement_out'",
     "sl_d": "(fd - 10)/2",
     "sl_w": "(width - 2*frame_w + sash_w)/2",
-    "e1": "bay1 if bay1 != 'same' and mullions > 0 and (operation == 'fixed' or operation == 'project_out') else operation",
-    "e2": "bay2 if bay2 != 'same' and mullions > 0 and (operation == 'fixed' or operation == 'project_out') else operation",
-    "e3": "bay3 if bay3 != 'same' and mullions >= 2 and (operation == 'fixed' or operation == 'project_out') else operation",
-    "bay_mixed": "mullions > 0 and (e1 == 'project_out' or e2 == 'project_out' or (mullions >= 2 and e3 == 'project_out'))",
+    "opok": "operation == 'fixed' or operation == 'project_out' or operation == 'project_left' or operation == 'project_right'",
+    "tz": "z0 + transom",
+    "has_tr": "transom >= 300 and transom <= height - 300",
+    "tz2": "z0 + transom2",
+    "has_tr2": "has_tr and transom2 >= transom + 300 and transom2 <= height - 300",
+    "n_tr": "(1 if has_tr else 0) + (1 if has_tr2 else 0)",
+    "e1": "bay1 if bay1 != 'same' and (mullions > 0 or n_tr > 0) and opok else operation",
+    "e2": "bay2 if bay2 != 'same' and mullions > 0 and opok else operation",
+    "e3": "bay3 if bay3 != 'same' and mullions >= 2 and opok else operation",
+    "e12": "bay1_2 if bay1_2 != 'same' and n_tr >= 1 and opok else operation",
+    "e22": "bay2_2 if bay2_2 != 'same' and n_tr >= 1 and mullions > 0 and opok else operation",
+    "e32": "bay3_2 if bay3_2 != 'same' and n_tr >= 1 and mullions >= 2 and opok else operation",
+    "e13": "bay1_3 if bay1_3 != 'same' and n_tr >= 2 and opok else operation",
+    "e23": "bay2_3 if bay2_3 != 'same' and n_tr >= 2 and mullions > 0 and opok else operation",
+    "e33": "bay3_3 if bay3_3 != 'same' and n_tr >= 2 and mullions >= 2 and opok else operation",
+    "qr1": "e1 != 'fixed' or (mullions >= 1 and e2 != 'fixed') or (mullions >= 2 and e3 != 'fixed')",
+    "qr2": "n_tr >= 1 and (e12 != 'fixed' or (mullions >= 1 and e22 != 'fixed') or (mullions >= 2 and e32 != 'fixed'))",
+    "qr3": "n_tr >= 2 and (e13 != 'fixed' or (mullions >= 1 and e23 != 'fixed') or (mullions >= 2 and e33 != 'fixed'))",
+    "bay_mixed": "(mullions > 0 or n_tr > 0) and opok and (qr1 or qr2 or qr3)",
     "b1a": "left + frame_w",
-    "b1b": "left + frame_w + (width - 2*frame_w)/(mullions + 1) - frame_w/4",
+    "b1b": "(left + frame_w + (width - 2*frame_w)/(mullions + 1) - frame_w/4) if mullions > 0 else (right - frame_w)",
     "b2a": "left + frame_w + (width - 2*frame_w)/(mullions + 1) + frame_w/4",
     "b2b": "(left + frame_w + 2*(width - 2*frame_w)/(mullions + 1) - frame_w/4) if mullions >= 2 else (right - frame_w)",
     "b3a": "left + frame_w + 2*(width - 2*frame_w)/(mullions + 1) + frame_w/4",
     "b3b": "right - frame_w",
-    "p1": "bay_mixed and e1 == 'project_out'",
-    "p2": "bay_mixed and e2 == 'project_out'",
-    "p3": "bay_mixed and mullions >= 2 and e3 == 'project_out'",
+    "p1": "bay_mixed and e1 != 'fixed'",
+    "p2": "bay_mixed and mullions >= 1 and e2 != 'fixed'",
+    "p3": "bay_mixed and mullions >= 2 and e3 != 'fixed'",
+    "p12": "bay_mixed and n_tr >= 1 and e12 != 'fixed'",
+    "p22": "bay_mixed and n_tr >= 1 and mullions >= 1 and e22 != 'fixed'",
+    "p32": "bay_mixed and n_tr >= 1 and mullions >= 2 and e32 != 'fixed'",
+    "p13": "bay_mixed and n_tr >= 2 and e13 != 'fixed'",
+    "p23": "bay_mixed and n_tr >= 2 and mullions >= 1 and e23 != 'fixed'",
+    "p33": "bay_mixed and n_tr >= 2 and mullions >= 2 and e33 != 'fixed'",
     "g1": "sash_w if p1 else 0",
     "g2": "sash_w if p2 else 0",
-    "g3": "sash_w if p3 else 0"
+    "g3": "sash_w if p3 else 0",
+    "r1b": "(tz - frame_w/2) if has_tr else (z1 - frame_w)",
+    "r2b": "(tz2 - frame_w/2) if has_tr2 else (z1 - frame_w)"
   },
   "refs": {
     "left": {
@@ -293,8 +468,8 @@
       "message": "유리가 틀 깊이보다 10mm 이상 얇아야 한다(frame_d 를 키우거나 glass_t 를 줄이세요)"
     },
     {
-      "expr": "operation == 'fixed' or operation == 'project_out' or mullions == 0",
-      "message": "멀리언은 고정창·프로젝트창에만 둘 수 있다(여닫이·미닫이는 mullions 를 0 으로)"
+      "expr": "opok or mullions == 0",
+      "message": "멀리언은 고정창·프로젝트창(위·옆 경첩)에만 둘 수 있다(여닫이·미닫이는 mullions 를 0 으로)"
     },
     {
       "expr": "operation != 'sliding' or glass_t <= sl_d - 4",
@@ -305,8 +480,20 @@
       "message": "미닫이 문짝의 유리 폭이 100mm 미만이다(width 를 키우세요)"
     },
     {
-      "expr": "not bay_mixed or (b1b - b1a - 2*sash_w >= 100 and b2b - b2a - 2*sash_w >= 100)",
+      "expr": "not bay_mixed or (b1b - b1a - 2*sash_w >= 100 and (mullions == 0 or b2b - b2a - 2*sash_w >= 100))",
       "message": "프로젝트 칸의 유리 폭이 100mm 미만이다(width 를 키우거나 멀리언을 줄이세요)"
+    },
+    {
+      "expr": "n_tr == 0 or opok",
+      "message": "가로대는 고정창·프로젝트창에만 둘 수 있다(여닫이·미닫이는 transom 을 0 으로)"
+    },
+    {
+      "expr": "n_tr == 0 or (r1b - z0 - frame_w - (2*sash_w if bay_mixed and qr1 else 0) >= 100 and r2b - tz - (2*sash_w if bay_mixed and qr2 else 0) >= 100)",
+      "message": "가로대로 나눈 단의 유리 높이가 100mm 미만이다(가로대를 옮기거나 height 를 키우세요)"
+    },
+    {
+      "expr": "n_tr < 2 or z1 - frame_w - tz2 - (2*sash_w if bay_mixed and qr3 else 0) >= 100",
+      "message": "가로대로 나눈 맨 위 단의 유리 높이가 100mm 미만이다(가로대를 옮기거나 height 를 키우세요)"
     }
   ],
   "solids": [
@@ -358,7 +545,7 @@
       "id": "sash",
       "op": "extrude",
       "plane": "xz",
-      "when": "operation != 'fixed' and not sl and mullions == 0",
+      "when": "operation != 'fixed' and not sl and mullions == 0 and n_tr == 0",
       "profile": {
         "shape": "rect",
         "u": [
@@ -383,7 +570,7 @@
       "cuts": [
         "sash"
       ],
-      "when": "operation != 'fixed' and not sl and mullions == 0",
+      "when": "operation != 'fixed' and not sl and mullions == 0 and n_tr == 0",
       "profile": {
         "shape": "rect",
         "u": [
@@ -434,7 +621,7 @@
         ],
         "v": [
           "z0 + frame_w",
-          "z1 - frame_w"
+          "r1b"
         ]
       },
       "range": [
@@ -459,7 +646,7 @@
         ],
         "v": [
           "z0 + frame_w + sash_w",
-          "z1 - frame_w - sash_w"
+          "r1b - sash_w"
         ]
       },
       "range": [
@@ -480,7 +667,7 @@
         ],
         "v": [
           "z0 + frame_w + g1",
-          "z1 - frame_w - g1"
+          "r1b - g1"
         ]
       },
       "range": [
@@ -501,7 +688,7 @@
         ],
         "v": [
           "z0 + frame_w",
-          "z1 - frame_w"
+          "r1b"
         ]
       },
       "range": [
@@ -526,7 +713,7 @@
         ],
         "v": [
           "z0 + frame_w + sash_w",
-          "z1 - frame_w - sash_w"
+          "r1b - sash_w"
         ]
       },
       "range": [
@@ -538,7 +725,7 @@
       "id": "bay_glass2",
       "op": "extrude",
       "plane": "xz",
-      "when": "bay_mixed",
+      "when": "bay_mixed and mullions >= 1",
       "profile": {
         "shape": "rect",
         "u": [
@@ -547,7 +734,7 @@
         ],
         "v": [
           "z0 + frame_w + g2",
-          "z1 - frame_w - g2"
+          "r1b - g2"
         ]
       },
       "range": [
@@ -568,7 +755,7 @@
         ],
         "v": [
           "z0 + frame_w",
-          "z1 - frame_w"
+          "r1b"
         ]
       },
       "range": [
@@ -593,7 +780,7 @@
         ],
         "v": [
           "z0 + frame_w + sash_w",
-          "z1 - frame_w - sash_w"
+          "r1b - sash_w"
         ]
       },
       "range": [
@@ -614,12 +801,456 @@
         ],
         "v": [
           "z0 + frame_w + g3",
-          "z1 - frame_w - g3"
+          "r1b - g3"
         ]
       },
       "range": [
         "gy - glass_t/2",
         "gy + glass_t/2"
+      ]
+    },
+    {
+      "id": "bay_sash1_2",
+      "op": "extrude",
+      "plane": "xz",
+      "when": "p12",
+      "profile": {
+        "shape": "rect",
+        "u": [
+          "b1a",
+          "b1b"
+        ],
+        "v": [
+          "tz",
+          "r2b"
+        ]
+      },
+      "range": [
+        "gy - sash_d/2",
+        "gy + sash_d/2"
+      ]
+    },
+    {
+      "id": "bay_sash_hole1_2",
+      "op": "extrude",
+      "plane": "xz",
+      "role": "void",
+      "cuts": [
+        "bay_sash1_2"
+      ],
+      "when": "p12",
+      "profile": {
+        "shape": "rect",
+        "u": [
+          "b1a + sash_w",
+          "b1b - sash_w"
+        ],
+        "v": [
+          "tz + sash_w",
+          "r2b - sash_w"
+        ]
+      },
+      "range": [
+        "gy - sash_d",
+        "gy + sash_d"
+      ]
+    },
+    {
+      "id": "bay_glass1_2",
+      "op": "extrude",
+      "plane": "xz",
+      "when": "bay_mixed and n_tr >= 1",
+      "profile": {
+        "shape": "rect",
+        "u": [
+          "b1a + (sash_w if p12 else 0)",
+          "b1b - (sash_w if p12 else 0)"
+        ],
+        "v": [
+          "tz + (sash_w if p12 else 0)",
+          "r2b - (sash_w if p12 else 0)"
+        ]
+      },
+      "range": [
+        "gy - glass_t/2",
+        "gy + glass_t/2"
+      ]
+    },
+    {
+      "id": "bay_sash2_2",
+      "op": "extrude",
+      "plane": "xz",
+      "when": "p22",
+      "profile": {
+        "shape": "rect",
+        "u": [
+          "b2a",
+          "b2b"
+        ],
+        "v": [
+          "tz",
+          "r2b"
+        ]
+      },
+      "range": [
+        "gy - sash_d/2",
+        "gy + sash_d/2"
+      ]
+    },
+    {
+      "id": "bay_sash_hole2_2",
+      "op": "extrude",
+      "plane": "xz",
+      "role": "void",
+      "cuts": [
+        "bay_sash2_2"
+      ],
+      "when": "p22",
+      "profile": {
+        "shape": "rect",
+        "u": [
+          "b2a + sash_w",
+          "b2b - sash_w"
+        ],
+        "v": [
+          "tz + sash_w",
+          "r2b - sash_w"
+        ]
+      },
+      "range": [
+        "gy - sash_d",
+        "gy + sash_d"
+      ]
+    },
+    {
+      "id": "bay_glass2_2",
+      "op": "extrude",
+      "plane": "xz",
+      "when": "bay_mixed and n_tr >= 1 and mullions >= 1",
+      "profile": {
+        "shape": "rect",
+        "u": [
+          "b2a + (sash_w if p22 else 0)",
+          "b2b - (sash_w if p22 else 0)"
+        ],
+        "v": [
+          "tz + (sash_w if p22 else 0)",
+          "r2b - (sash_w if p22 else 0)"
+        ]
+      },
+      "range": [
+        "gy - glass_t/2",
+        "gy + glass_t/2"
+      ]
+    },
+    {
+      "id": "bay_sash3_2",
+      "op": "extrude",
+      "plane": "xz",
+      "when": "p32",
+      "profile": {
+        "shape": "rect",
+        "u": [
+          "b3a",
+          "b3b"
+        ],
+        "v": [
+          "tz",
+          "r2b"
+        ]
+      },
+      "range": [
+        "gy - sash_d/2",
+        "gy + sash_d/2"
+      ]
+    },
+    {
+      "id": "bay_sash_hole3_2",
+      "op": "extrude",
+      "plane": "xz",
+      "role": "void",
+      "cuts": [
+        "bay_sash3_2"
+      ],
+      "when": "p32",
+      "profile": {
+        "shape": "rect",
+        "u": [
+          "b3a + sash_w",
+          "b3b - sash_w"
+        ],
+        "v": [
+          "tz + sash_w",
+          "r2b - sash_w"
+        ]
+      },
+      "range": [
+        "gy - sash_d",
+        "gy + sash_d"
+      ]
+    },
+    {
+      "id": "bay_glass3_2",
+      "op": "extrude",
+      "plane": "xz",
+      "when": "bay_mixed and n_tr >= 1 and mullions >= 2",
+      "profile": {
+        "shape": "rect",
+        "u": [
+          "b3a + (sash_w if p32 else 0)",
+          "b3b - (sash_w if p32 else 0)"
+        ],
+        "v": [
+          "tz + (sash_w if p32 else 0)",
+          "r2b - (sash_w if p32 else 0)"
+        ]
+      },
+      "range": [
+        "gy - glass_t/2",
+        "gy + glass_t/2"
+      ]
+    },
+    {
+      "id": "bay_sash1_3",
+      "op": "extrude",
+      "plane": "xz",
+      "when": "p13",
+      "profile": {
+        "shape": "rect",
+        "u": [
+          "b1a",
+          "b1b"
+        ],
+        "v": [
+          "tz2",
+          "z1 - frame_w"
+        ]
+      },
+      "range": [
+        "gy - sash_d/2",
+        "gy + sash_d/2"
+      ]
+    },
+    {
+      "id": "bay_sash_hole1_3",
+      "op": "extrude",
+      "plane": "xz",
+      "role": "void",
+      "cuts": [
+        "bay_sash1_3"
+      ],
+      "when": "p13",
+      "profile": {
+        "shape": "rect",
+        "u": [
+          "b1a + sash_w",
+          "b1b - sash_w"
+        ],
+        "v": [
+          "tz2 + sash_w",
+          "z1 - frame_w - sash_w"
+        ]
+      },
+      "range": [
+        "gy - sash_d",
+        "gy + sash_d"
+      ]
+    },
+    {
+      "id": "bay_glass1_3",
+      "op": "extrude",
+      "plane": "xz",
+      "when": "bay_mixed and n_tr >= 2",
+      "profile": {
+        "shape": "rect",
+        "u": [
+          "b1a + (sash_w if p13 else 0)",
+          "b1b - (sash_w if p13 else 0)"
+        ],
+        "v": [
+          "tz2 + (sash_w if p13 else 0)",
+          "z1 - frame_w - (sash_w if p13 else 0)"
+        ]
+      },
+      "range": [
+        "gy - glass_t/2",
+        "gy + glass_t/2"
+      ]
+    },
+    {
+      "id": "bay_sash2_3",
+      "op": "extrude",
+      "plane": "xz",
+      "when": "p23",
+      "profile": {
+        "shape": "rect",
+        "u": [
+          "b2a",
+          "b2b"
+        ],
+        "v": [
+          "tz2",
+          "z1 - frame_w"
+        ]
+      },
+      "range": [
+        "gy - sash_d/2",
+        "gy + sash_d/2"
+      ]
+    },
+    {
+      "id": "bay_sash_hole2_3",
+      "op": "extrude",
+      "plane": "xz",
+      "role": "void",
+      "cuts": [
+        "bay_sash2_3"
+      ],
+      "when": "p23",
+      "profile": {
+        "shape": "rect",
+        "u": [
+          "b2a + sash_w",
+          "b2b - sash_w"
+        ],
+        "v": [
+          "tz2 + sash_w",
+          "z1 - frame_w - sash_w"
+        ]
+      },
+      "range": [
+        "gy - sash_d",
+        "gy + sash_d"
+      ]
+    },
+    {
+      "id": "bay_glass2_3",
+      "op": "extrude",
+      "plane": "xz",
+      "when": "bay_mixed and n_tr >= 2 and mullions >= 1",
+      "profile": {
+        "shape": "rect",
+        "u": [
+          "b2a + (sash_w if p23 else 0)",
+          "b2b - (sash_w if p23 else 0)"
+        ],
+        "v": [
+          "tz2 + (sash_w if p23 else 0)",
+          "z1 - frame_w - (sash_w if p23 else 0)"
+        ]
+      },
+      "range": [
+        "gy - glass_t/2",
+        "gy + glass_t/2"
+      ]
+    },
+    {
+      "id": "bay_sash3_3",
+      "op": "extrude",
+      "plane": "xz",
+      "when": "p33",
+      "profile": {
+        "shape": "rect",
+        "u": [
+          "b3a",
+          "b3b"
+        ],
+        "v": [
+          "tz2",
+          "z1 - frame_w"
+        ]
+      },
+      "range": [
+        "gy - sash_d/2",
+        "gy + sash_d/2"
+      ]
+    },
+    {
+      "id": "bay_sash_hole3_3",
+      "op": "extrude",
+      "plane": "xz",
+      "role": "void",
+      "cuts": [
+        "bay_sash3_3"
+      ],
+      "when": "p33",
+      "profile": {
+        "shape": "rect",
+        "u": [
+          "b3a + sash_w",
+          "b3b - sash_w"
+        ],
+        "v": [
+          "tz2 + sash_w",
+          "z1 - frame_w - sash_w"
+        ]
+      },
+      "range": [
+        "gy - sash_d",
+        "gy + sash_d"
+      ]
+    },
+    {
+      "id": "bay_glass3_3",
+      "op": "extrude",
+      "plane": "xz",
+      "when": "bay_mixed and n_tr >= 2 and mullions >= 2",
+      "profile": {
+        "shape": "rect",
+        "u": [
+          "b3a + (sash_w if p33 else 0)",
+          "b3b - (sash_w if p33 else 0)"
+        ],
+        "v": [
+          "tz2 + (sash_w if p33 else 0)",
+          "z1 - frame_w - (sash_w if p33 else 0)"
+        ]
+      },
+      "range": [
+        "gy - glass_t/2",
+        "gy + glass_t/2"
+      ]
+    },
+    {
+      "id": "tbar",
+      "op": "extrude",
+      "plane": "xz",
+      "when": "has_tr",
+      "profile": {
+        "shape": "rect",
+        "u": [
+          "left + frame_w",
+          "right - frame_w"
+        ],
+        "v": [
+          "tz - frame_w/2",
+          "tz"
+        ]
+      },
+      "range": [
+        "fy0",
+        "fy1"
+      ]
+    },
+    {
+      "id": "tbar2",
+      "op": "extrude",
+      "plane": "xz",
+      "when": "has_tr2",
+      "profile": {
+        "shape": "rect",
+        "u": [
+          "left + frame_w",
+          "right - frame_w"
+        ],
+        "v": [
+          "tz2 - frame_w/2",
+          "tz2"
+        ]
+      },
+      "range": [
+        "fy0",
+        "fy1"
       ]
     },
     {
@@ -931,7 +1562,7 @@
       },
       {
         "type": "line",
-        "when": "operation == 'project_out' and mullions == 0",
+        "when": "operation == 'project_out' and mullions == 0 and n_tr == 0",
         "from": [
           "left + frame_w",
           "fy0"
@@ -943,7 +1574,7 @@
       },
       {
         "type": "line",
-        "when": "p1",
+        "when": "bay_mixed and (e1 == 'project_out' or (n_tr >= 1 and e12 == 'project_out') or (n_tr >= 2 and e13 == 'project_out'))",
         "from": [
           "b1a",
           "fy0"
@@ -955,7 +1586,7 @@
       },
       {
         "type": "line",
-        "when": "p2",
+        "when": "bay_mixed and mullions >= 1 and (e2 == 'project_out' or (n_tr >= 1 and e22 == 'project_out') or (n_tr >= 2 and e23 == 'project_out'))",
         "from": [
           "b2a",
           "fy0"
@@ -967,7 +1598,7 @@
       },
       {
         "type": "line",
-        "when": "p3",
+        "when": "bay_mixed and mullions >= 2 and (e3 == 'project_out' or (n_tr >= 1 and e32 == 'project_out') or (n_tr >= 2 and e33 == 'project_out'))",
         "from": [
           "b3a",
           "fy0"
@@ -975,6 +1606,102 @@
         "to": [
           "b3b",
           "fy0 - 60"
+        ]
+      },
+      {
+        "type": "line",
+        "when": "operation == 'project_left' and mullions == 0 and n_tr == 0",
+        "from": [
+          "left + frame_w",
+          "fy0"
+        ],
+        "to": [
+          "right - frame_w",
+          "fy0 - leaf_w/4"
+        ]
+      },
+      {
+        "type": "line",
+        "when": "operation == 'project_right' and mullions == 0 and n_tr == 0",
+        "from": [
+          "right - frame_w",
+          "fy0"
+        ],
+        "to": [
+          "left + frame_w",
+          "fy0 - leaf_w/4"
+        ]
+      },
+      {
+        "type": "line",
+        "when": "bay_mixed and (e1 == 'project_left' or (n_tr >= 1 and e12 == 'project_left') or (n_tr >= 2 and e13 == 'project_left'))",
+        "from": [
+          "b1a",
+          "fy0"
+        ],
+        "to": [
+          "b1b",
+          "fy0 - (b1b - b1a)/4"
+        ]
+      },
+      {
+        "type": "line",
+        "when": "bay_mixed and (e1 == 'project_right' or (n_tr >= 1 and e12 == 'project_right') or (n_tr >= 2 and e13 == 'project_right'))",
+        "from": [
+          "b1b",
+          "fy0"
+        ],
+        "to": [
+          "b1a",
+          "fy0 - (b1b - b1a)/4"
+        ]
+      },
+      {
+        "type": "line",
+        "when": "bay_mixed and mullions >= 1 and (e2 == 'project_left' or (n_tr >= 1 and e22 == 'project_left') or (n_tr >= 2 and e23 == 'project_left'))",
+        "from": [
+          "b2a",
+          "fy0"
+        ],
+        "to": [
+          "b2b",
+          "fy0 - (b2b - b2a)/4"
+        ]
+      },
+      {
+        "type": "line",
+        "when": "bay_mixed and mullions >= 1 and (e2 == 'project_right' or (n_tr >= 1 and e22 == 'project_right') or (n_tr >= 2 and e23 == 'project_right'))",
+        "from": [
+          "b2b",
+          "fy0"
+        ],
+        "to": [
+          "b2a",
+          "fy0 - (b2b - b2a)/4"
+        ]
+      },
+      {
+        "type": "line",
+        "when": "bay_mixed and mullions >= 2 and (e3 == 'project_left' or (n_tr >= 1 and e32 == 'project_left') or (n_tr >= 2 and e33 == 'project_left'))",
+        "from": [
+          "b3a",
+          "fy0"
+        ],
+        "to": [
+          "b3b",
+          "fy0 - (b3b - b3a)/4"
+        ]
+      },
+      {
+        "type": "line",
+        "when": "bay_mixed and mullions >= 2 and (e3 == 'project_right' or (n_tr >= 1 and e32 == 'project_right') or (n_tr >= 2 and e33 == 'project_right'))",
+        "from": [
+          "b3b",
+          "fy0"
+        ],
+        "to": [
+          "b3a",
+          "fy0 - (b3b - b3a)/4"
         ]
       }
     ],
@@ -1019,6 +1746,9 @@
         },
         "FrameDepth": {
           "expr": "frame_d"
+        },
+        "TransomCount": {
+          "expr": "n_tr"
         }
       }
     },

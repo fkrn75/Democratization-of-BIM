@@ -198,7 +198,7 @@ class IfcSpec(M):
     predefined: StrictStr = "NOTDEFINED"
     type_attrs: dict[str, Value] = Field(default_factory=dict)
     attrs: dict[str, Value] = Field(default_factory=dict)
-    panels: list[PanelSpec] = Field(default_factory=list, max_length=8)
+    panels: list[PanelSpec] = Field(default_factory=list, max_length=16)   # 26단계: 단×칸(3x3)·스토어프런트 칸별 열림을 담으려고 8 → 16
 
 
 class PsetSpec(M):
