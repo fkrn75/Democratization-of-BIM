@@ -1,0 +1,2 @@
+*.ifc -text
+*.json text eol=lf

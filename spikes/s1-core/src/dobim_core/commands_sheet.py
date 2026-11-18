@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: MPL-2.0
 """도면 색인 시트(sheet.index)와 도면 작성기준 프로파일(drawing.profile).
 
-sheet.index  : 뷰 없이 도면목록표·범례·주기·레벨 노트·창호 일람표·벽체 일람표·재료표를 한 장에 놓는 시트를 SVG·PDF 로 내보낸다.
+sheet.index  : 뷰 없이 도면목록표·범례·주기·레벨 노트·창호 일람표·벽체 일람표·재료표를 한 장에 놓는 시트를 SVG·PDF·PNG·DXF 로 내보낸다.
 drawing.profile : 이 엔진이 실제로 쓰는 도면 작성 기준(용지·배치·방위·레벨·표제란·축척·선 굵기·선 겹침·해치·문자·치수·기호)을 값으로 돌려준다.
                   BIM 수행계획서에 그대로 옮겨 적을 수 있는 기준표다(엔진 상수에서 읽으므로 코드와 어긋나지 않는다).
 이 모듈은 ifcopenshell 을 import 하지 않는다.
@@ -30,7 +30,7 @@ class IndexDrawing(A):
 
 
 class SheetIndex(C.SheetFrame):
-    path: str = Field(max_length=260, description="작업 폴더 안의 .svg·.pdf·.png 경로")
+    path: str = Field(max_length=260, description="작업 폴더 안의 .svg·.pdf·.png·.dxf 경로(DXF 는 R2013 UTF-8, 용지 mm 1:1, 범주별 층)")
     paper: Literal["A1", "A3"] = Field("A1", description="용지(가로 방향). 표가 많으면 A1")
     project_name: Text = Field("", description="표제란 프로젝트명")
     sheet_name: Text = Field("", description="표제란 도면명(비우면 '도면목록·범례·일람표')")
@@ -94,9 +94,12 @@ def sheet_index(ctx, a: SheetIndex):
         sh = SH.build_index_sheet(spec, tables)
     except SH.SheetError as ex:
         raise DobimError("CONSTRAINT", str(ex), path="/tables")
-    dropped, font_name, px = False, None, None
+    dropped, font_name, px, dxf = False, None, None, None
     if ext == ".svg":
         blob = SH.render_sheet_svg(sh, spec)
+    elif ext == ".dxf":
+        from dobim_core import dxf_export as DXF
+        blob, dxf = DXF.render_dxf(sh, style=SH._style(spec))
     elif ext == ".png":
         rr = C.png_of(ctx, sh, a)
         blob, px, font_name = rr["png"], [rr["width"], rr["height"]], rr["font"]
@@ -119,6 +122,8 @@ def sheet_index(ctx, a: SheetIndex):
            "font_embedded": font_name, "non_ascii_dropped": dropped, "rev": ctx.eng.rev, "snapshot": snap}
     if px is not None:
         out["pixels"] = px
+    if dxf is not None:
+        out["dxf"] = dxf
     return out
 
 
@@ -303,7 +308,7 @@ def sheet_list(ctx, a: SheetList):
 
 class SheetRender(A):
     id: Id = Field(description="저장된 시트 정의의 id")
-    path: str = Field(max_length=260, description="작업 폴더 안의 .svg·.pdf·.png 경로")
+    path: str = Field(max_length=260, description="작업 폴더 안의 .svg·.pdf·.png·.dxf 경로(DXF 는 R2013 UTF-8, 용지 mm 1:1, 범주별 층)")
     overwrite: bool = Field(False, description="거짓이면 이미 있는 파일을 덮어쓰지 않는다. 참이면 덮어쓰며 덮어쓰기 전에 자동 스냅숏을 남긴다(확인 토큰 필요)")
     max_px: C.PngMaxPx = 1600
     crop: C.PngCrop | None = None
@@ -323,7 +328,7 @@ def _render_preview(ctx, a: SheetRender):
 
 
 @command("sheet.render", kind="session", risk="destructive", group="view",
-         summary="저장된 시트 정의로 SVG·PDF 내보내기",
+         summary="저장된 시트 정의로 SVG·PDF·PNG·DXF 내보내기",
          args=SheetRender, since="0.4", preview=_render_preview,
          examples=[{"id": F.SH1, "path": "sheet-saved-example.svg", "overwrite": True}])
 def sheet_render(ctx, a: SheetRender):
