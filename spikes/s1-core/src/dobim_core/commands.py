@@ -2882,6 +2882,13 @@ def element_get(ctx, a: ElementGet):
         if "cuts" in r["params"]:   # 벽 잘라내기(23단계): 빼낸 부피(겹친 상자는 한 번만)와 상자 수. 없으면 응답은 그대로
             boxes = ctx.g.q(Q.wall_cut_boxes, a.id)
             out["derived"].update({"cut_boxes": len(boxes), "cut_volume_m3": WC.union_volume(boxes) / 1e9})
+        xarea, xn = ctx.g.q(Q.wall_xcut_area, a.id)
+        hosts_x = any(ctx.st.el[d]["params"].get("also_cuts") for d in ctx.rels_out("hosts", a.id) if d in ctx.st.el)
+        if xn or hosts_x:   # 26단계: also_cuts 로 함께 잘린 벽(또는 그런 창의 호스트)만 순 면적·부피를 더한다. 없으면 응답은 그대로
+            net = ctx.g.q(Q.wall_row, a.id)[7]
+            th = r["params"]["thickness"]
+            out["derived"].update({"xcut_openings": xn, "xcut_area_m2": xarea / 1e6, "xcut_volume_m3": xarea * th / 1e9,
+                                   "net_area_m2": net / 1e6, "net_volume_m3": net * th / 1e9})
     elif r["kind"] == "door":
         out["derived"] = {"world": list(ctx.g.q(Q.door_world, a.id)), "status": ctx.g.q(Q.door_status, a.id)}
     elif r["kind"] == "slab":

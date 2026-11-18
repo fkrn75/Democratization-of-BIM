@@ -1,9 +1,9 @@
 {
   "schema": "dobim.family/1",
   "id": "window.storefront",
-  "version": 2,
+  "version": 3,
   "name": "복합 창호",
-  "description": "벽에 호스팅되는 큰 창호(스토어프런트). 한 프레임 안에 고정창 칸(bay_max 이하로 자동 분할)과 선택 여닫이문(한 짝·두 짝), 선택 가로대(transom, 25단계부터 transom2~4 로 여러 개). 끝(end_l/end_r)을 corner 로 두면 그 끝의 문틀이 없어져 90도 모서리에서 다른 벽의 창호와 이어진다(family.place_corner).",
+  "description": "벽에 호스팅되는 큰 창호(스토어프런트). 고정창 칸(bay_max 이하 등분 또는 col1~8 폭 목록)과 선택 여닫이문, 가로대(transom~transom4). 한 단(bay_row)의 칸마다 열림 방식(bay1~8: 고정·위 경첩·옆 경첩 프로젝트). 끝(end_l/end_r)을 corner 로 두면 모서리에서 다른 벽의 창호와 이어진다(family.place_corner).",
   "ifc": {
     "class": "IfcWindow",
     "type_class": "IfcWindowType",
@@ -32,6 +32,62 @@
         "operation": "OTHEROPERATION",
         "position": "MIDDLE",
         "when": "door_w > 0"
+      },
+      {
+        "operation": {
+          "expr": "'TOPHUNG' if bay1 == 'project_out' else ('SIDEHUNGLEFTHAND' if bay1 == 'project_left' else ('SIDEHUNGRIGHTHAND' if bay1 == 'project_right' else 'FIXEDCASEMENT'))"
+        },
+        "position": "MIDDLE",
+        "when": "bay_row <= n_tr + 1 and bay1 != 'fixed'"
+      },
+      {
+        "operation": {
+          "expr": "'TOPHUNG' if bay2 == 'project_out' else ('SIDEHUNGLEFTHAND' if bay2 == 'project_left' else ('SIDEHUNGRIGHTHAND' if bay2 == 'project_right' else 'FIXEDCASEMENT'))"
+        },
+        "position": "MIDDLE",
+        "when": "bay_row <= n_tr + 1 and bay2 != 'fixed'"
+      },
+      {
+        "operation": {
+          "expr": "'TOPHUNG' if bay3 == 'project_out' else ('SIDEHUNGLEFTHAND' if bay3 == 'project_left' else ('SIDEHUNGRIGHTHAND' if bay3 == 'project_right' else 'FIXEDCASEMENT'))"
+        },
+        "position": "MIDDLE",
+        "when": "bay_row <= n_tr + 1 and bay3 != 'fixed'"
+      },
+      {
+        "operation": {
+          "expr": "'TOPHUNG' if bay4 == 'project_out' else ('SIDEHUNGLEFTHAND' if bay4 == 'project_left' else ('SIDEHUNGRIGHTHAND' if bay4 == 'project_right' else 'FIXEDCASEMENT'))"
+        },
+        "position": "MIDDLE",
+        "when": "bay_row <= n_tr + 1 and bay4 != 'fixed'"
+      },
+      {
+        "operation": {
+          "expr": "'TOPHUNG' if bay5 == 'project_out' else ('SIDEHUNGLEFTHAND' if bay5 == 'project_left' else ('SIDEHUNGRIGHTHAND' if bay5 == 'project_right' else 'FIXEDCASEMENT'))"
+        },
+        "position": "MIDDLE",
+        "when": "bay_row <= n_tr + 1 and bay5 != 'fixed'"
+      },
+      {
+        "operation": {
+          "expr": "'TOPHUNG' if bay6 == 'project_out' else ('SIDEHUNGLEFTHAND' if bay6 == 'project_left' else ('SIDEHUNGRIGHTHAND' if bay6 == 'project_right' else 'FIXEDCASEMENT'))"
+        },
+        "position": "MIDDLE",
+        "when": "bay_row <= n_tr + 1 and bay6 != 'fixed'"
+      },
+      {
+        "operation": {
+          "expr": "'TOPHUNG' if bay7 == 'project_out' else ('SIDEHUNGLEFTHAND' if bay7 == 'project_left' else ('SIDEHUNGRIGHTHAND' if bay7 == 'project_right' else 'FIXEDCASEMENT'))"
+        },
+        "position": "MIDDLE",
+        "when": "bay_row <= n_tr + 1 and bay7 != 'fixed'"
+      },
+      {
+        "operation": {
+          "expr": "'TOPHUNG' if bay8 == 'project_out' else ('SIDEHUNGLEFTHAND' if bay8 == 'project_left' else ('SIDEHUNGRIGHTHAND' if bay8 == 'project_right' else 'FIXEDCASEMENT'))"
+        },
+        "position": "MIDDLE",
+        "when": "bay_row <= n_tr + 1 and bay8 != 'fixed'"
       }
     ]
   },
@@ -63,8 +119,8 @@
       "kind": "type",
       "default": 3000,
       "unit": "mm",
-      "description": "창호 전체 높이(틀 바깥)",
-      "min": 2000,
+      "description": "창호 전체 높이(틀 바깥). 하한 400(틀 2개 + 유리 100). 문(door_w > 0)은 높이 2000 이상에서만 둘 수 있다",
+      "min": 400,
       "max": 8000
     },
     "frame_w": {
@@ -156,6 +212,175 @@
       "min": 30,
       "max": 80
     },
+    "bay1": {
+      "kind": "type",
+      "default": "fixed",
+      "type": "enum",
+      "values": [
+        "fixed",
+        "project_out",
+        "project_left",
+        "project_right"
+      ],
+      "description": "bay_row 단의 1번째 칸(왼쪽 구간부터 문 오른쪽 구간까지 이어 센다) 열림 방식. project_out = 위 경첩, project_left/right = 옆 경첩(바깥 -v 쪽에서 볼 때 왼쪽/오른쪽)"
+    },
+    "bay2": {
+      "kind": "type",
+      "default": "fixed",
+      "type": "enum",
+      "values": [
+        "fixed",
+        "project_out",
+        "project_left",
+        "project_right"
+      ],
+      "description": "bay_row 단의 2번째 칸(왼쪽 구간부터 문 오른쪽 구간까지 이어 센다) 열림 방식. project_out = 위 경첩, project_left/right = 옆 경첩(바깥 -v 쪽에서 볼 때 왼쪽/오른쪽)"
+    },
+    "bay3": {
+      "kind": "type",
+      "default": "fixed",
+      "type": "enum",
+      "values": [
+        "fixed",
+        "project_out",
+        "project_left",
+        "project_right"
+      ],
+      "description": "bay_row 단의 3번째 칸(왼쪽 구간부터 문 오른쪽 구간까지 이어 센다) 열림 방식. project_out = 위 경첩, project_left/right = 옆 경첩(바깥 -v 쪽에서 볼 때 왼쪽/오른쪽)"
+    },
+    "bay4": {
+      "kind": "type",
+      "default": "fixed",
+      "type": "enum",
+      "values": [
+        "fixed",
+        "project_out",
+        "project_left",
+        "project_right"
+      ],
+      "description": "bay_row 단의 4번째 칸(왼쪽 구간부터 문 오른쪽 구간까지 이어 센다) 열림 방식. project_out = 위 경첩, project_left/right = 옆 경첩(바깥 -v 쪽에서 볼 때 왼쪽/오른쪽)"
+    },
+    "bay5": {
+      "kind": "type",
+      "default": "fixed",
+      "type": "enum",
+      "values": [
+        "fixed",
+        "project_out",
+        "project_left",
+        "project_right"
+      ],
+      "description": "bay_row 단의 5번째 칸(왼쪽 구간부터 문 오른쪽 구간까지 이어 센다) 열림 방식. project_out = 위 경첩, project_left/right = 옆 경첩(바깥 -v 쪽에서 볼 때 왼쪽/오른쪽)"
+    },
+    "bay6": {
+      "kind": "type",
+      "default": "fixed",
+      "type": "enum",
+      "values": [
+        "fixed",
+        "project_out",
+        "project_left",
+        "project_right"
+      ],
+      "description": "bay_row 단의 6번째 칸(왼쪽 구간부터 문 오른쪽 구간까지 이어 센다) 열림 방식. project_out = 위 경첩, project_left/right = 옆 경첩(바깥 -v 쪽에서 볼 때 왼쪽/오른쪽)"
+    },
+    "bay7": {
+      "kind": "type",
+      "default": "fixed",
+      "type": "enum",
+      "values": [
+        "fixed",
+        "project_out",
+        "project_left",
+        "project_right"
+      ],
+      "description": "bay_row 단의 7번째 칸(왼쪽 구간부터 문 오른쪽 구간까지 이어 센다) 열림 방식. project_out = 위 경첩, project_left/right = 옆 경첩(바깥 -v 쪽에서 볼 때 왼쪽/오른쪽)"
+    },
+    "bay8": {
+      "kind": "type",
+      "default": "fixed",
+      "type": "enum",
+      "values": [
+        "fixed",
+        "project_out",
+        "project_left",
+        "project_right"
+      ],
+      "description": "bay_row 단의 8번째 칸(왼쪽 구간부터 문 오른쪽 구간까지 이어 센다) 열림 방식. project_out = 위 경첩, project_left/right = 옆 경첩(바깥 -v 쪽에서 볼 때 왼쪽/오른쪽)"
+    },
+    "bay_row": {
+      "kind": "type",
+      "default": 1,
+      "type": "int",
+      "unit": "none",
+      "min": 1,
+      "max": 5,
+      "description": "칸별 열림 방식(bay1~8)을 적용할 단(아래에서, 가로대로 나뉜 단). 문이 있으면 1(아래 단)만. 그 단이 없으면 무시한다(커맨드는 거절)"
+    },
+    "col1": {
+      "kind": "type",
+      "default": 0,
+      "unit": "mm",
+      "min": 0,
+      "max": 30000,
+      "description": "1번째 칸 폭(세로대 중심 간격, 끝 칸은 틀 안쪽 면부터). 0 이면 없음(앞에서부터 이어진 값만 쓴다). 합이 구간 폭보다 작으면 남은 폭이 마지막 칸이 된다. 맞지 않으면 등분으로 본다(커맨드는 거절)"
+    },
+    "col2": {
+      "kind": "type",
+      "default": 0,
+      "unit": "mm",
+      "min": 0,
+      "max": 30000,
+      "description": "2번째 칸 폭(세로대 중심 간격, 끝 칸은 틀 안쪽 면부터). 0 이면 없음(앞에서부터 이어진 값만 쓴다). 합이 구간 폭보다 작으면 남은 폭이 마지막 칸이 된다. 맞지 않으면 등분으로 본다(커맨드는 거절)"
+    },
+    "col3": {
+      "kind": "type",
+      "default": 0,
+      "unit": "mm",
+      "min": 0,
+      "max": 30000,
+      "description": "3번째 칸 폭(세로대 중심 간격, 끝 칸은 틀 안쪽 면부터). 0 이면 없음(앞에서부터 이어진 값만 쓴다). 합이 구간 폭보다 작으면 남은 폭이 마지막 칸이 된다. 맞지 않으면 등분으로 본다(커맨드는 거절)"
+    },
+    "col4": {
+      "kind": "type",
+      "default": 0,
+      "unit": "mm",
+      "min": 0,
+      "max": 30000,
+      "description": "4번째 칸 폭(세로대 중심 간격, 끝 칸은 틀 안쪽 면부터). 0 이면 없음(앞에서부터 이어진 값만 쓴다). 합이 구간 폭보다 작으면 남은 폭이 마지막 칸이 된다. 맞지 않으면 등분으로 본다(커맨드는 거절)"
+    },
+    "col5": {
+      "kind": "type",
+      "default": 0,
+      "unit": "mm",
+      "min": 0,
+      "max": 30000,
+      "description": "5번째 칸 폭(세로대 중심 간격, 끝 칸은 틀 안쪽 면부터). 0 이면 없음(앞에서부터 이어진 값만 쓴다). 합이 구간 폭보다 작으면 남은 폭이 마지막 칸이 된다. 맞지 않으면 등분으로 본다(커맨드는 거절)"
+    },
+    "col6": {
+      "kind": "type",
+      "default": 0,
+      "unit": "mm",
+      "min": 0,
+      "max": 30000,
+      "description": "6번째 칸 폭(세로대 중심 간격, 끝 칸은 틀 안쪽 면부터). 0 이면 없음(앞에서부터 이어진 값만 쓴다). 합이 구간 폭보다 작으면 남은 폭이 마지막 칸이 된다. 맞지 않으면 등분으로 본다(커맨드는 거절)"
+    },
+    "col7": {
+      "kind": "type",
+      "default": 0,
+      "unit": "mm",
+      "min": 0,
+      "max": 30000,
+      "description": "7번째 칸 폭(세로대 중심 간격, 끝 칸은 틀 안쪽 면부터). 0 이면 없음(앞에서부터 이어진 값만 쓴다). 합이 구간 폭보다 작으면 남은 폭이 마지막 칸이 된다. 맞지 않으면 등분으로 본다(커맨드는 거절)"
+    },
+    "col8": {
+      "kind": "type",
+      "default": 0,
+      "unit": "mm",
+      "min": 0,
+      "max": 30000,
+      "description": "8번째 칸 폭(세로대 중심 간격, 끝 칸은 틀 안쪽 면부터). 0 이면 없음(앞에서부터 이어진 값만 쓴다). 합이 구간 폭보다 작으면 남은 폭이 마지막 칸이 된다. 맞지 않으면 등분으로 본다(커맨드는 거절)"
+    },
     "u_value": {
       "kind": "type",
       "default": 2.0,
@@ -237,7 +462,7 @@
     "jr": "frame_w if end_r == 'jamb' else 0",
     "xa": "left + jl",
     "xe": "right - jr",
-    "has_door": "door_w > 0 and door_w <= xe - xa",
+    "has_door": "door_w > 0 and door_w <= xe - xa and height >= 2000",
     "dpos": "min(door_pos, xe - xa - door_w) if has_door else 0",
     "dl": "xa + dpos",
     "dr": "xa + dpos + door_w",
@@ -247,7 +472,22 @@
     "seg2_a": "dr + frame_w",
     "seg1": "seg1_b - xa > 1",
     "seg2": "has_door and xe - seg2_a > 1",
-    "n1": "max(1, ceil((seg1_b - xa)/bay_max)) if seg1 else 0",
+    "s1": "col1",
+    "s2": "s1 + col2",
+    "s3": "s2 + col3",
+    "s4": "s3 + col4",
+    "s5": "s4 + col5",
+    "s6": "s5 + col6",
+    "s7": "s6 + col7",
+    "s8": "s7 + col8",
+    "ncol": "(1 if col1 > 0 else 0) + (1 if col2 > 0 else 0) + (1 if col3 > 0 else 0) + (1 if col4 > 0 else 0) + (1 if col5 > 0 else 0) + (1 if col6 > 0 else 0) + (1 if col7 > 0 else 0) + (1 if col8 > 0 else 0)",
+    "cmin": "frame_w + 100",
+    "cwok": "(col1 == 0 or col1 >= cmin) and (col2 == 0 or col2 >= cmin) and (col3 == 0 or col3 >= cmin) and (col4 == 0 or col4 >= cmin) and (col5 == 0 or col5 >= cmin) and (col6 == 0 or col6 >= cmin) and (col7 == 0 or col7 >= cmin) and (col8 == 0 or col8 >= cmin)",
+    "ccont": "(col2 == 0 or col1 > 0) and (col3 == 0 or col2 > 0) and (col4 == 0 or col3 > 0) and (col5 == 0 or col4 > 0) and (col6 == 0 or col5 > 0) and (col7 == 0 or col6 > 0) and (col8 == 0 or col7 > 0)",
+    "crem": "seg1_b - xa - s8",
+    "cols_ok": "seg1 and ncol > 0 and cwok and ccont and crem >= -1 and (crem <= 1 or crem >= cmin)",
+    "n_cm": "(ncol - (1 if crem <= 1 else 0)) if cols_ok else 0",
+    "n1": "(n_cm + 1) if cols_ok else (max(1, ceil((seg1_b - xa)/bay_max)) if seg1 else 0)",
     "n2": "max(1, ceil((xe - seg2_a)/bay_max)) if seg2 else 0",
     "b1": "(seg1_b - xa)/n1 if seg1 else 0",
     "b2": "(xe - seg2_a)/n2 if seg2 else 0",
@@ -266,7 +506,13 @@
     "lg": "min(100, leaf_w/4)",
     "open_sign": "1 if open == 'in' else -1",
     "hinge_x": "dl if swing == 'L' else dr",
-    "arc0": "(0 if swing == 'L' else 90) if open == 'in' else (270 if swing == 'L' else 180)"
+    "arc0": "(0 if swing == 'L' else 90) if open == 'in' else (270 if swing == 'L' else 180)",
+    "bayon": "bay_row <= n_tr + 1 and (bay_row == 1 or not has_door)",
+    "ra": "(z0 + frame_w) if bay_row == 1 else (tz if bay_row == 2 else (tz2 if bay_row == 3 else (tz3 if bay_row == 4 else tz4)))",
+    "rb": "glass_top if bay_row == 1 else ((tz2 - frame_w) if bay_row == 2 and has_tr2 else ((tz3 - frame_w) if bay_row == 3 and has_tr3 else ((tz4 - frame_w) if bay_row == 4 and has_tr4 else (z1 - frame_w))))",
+    "sw": "frame_w*0.8",
+    "sd": "fd - 10",
+    "any_op": "bay1 != 'fixed' or bay2 != 'fixed' or bay3 != 'fixed' or bay4 != 'fixed' or bay5 != 'fixed' or bay6 != 'fixed' or bay7 != 'fixed' or bay8 != 'fixed'"
   },
   "refs": {
     "left": {
@@ -302,6 +548,10 @@
     {
       "expr": "door_w == 0 or leaf_t <= fd",
       "message": "문짝이 틀 깊이보다 두껍다"
+    },
+    {
+      "expr": "not (bayon and any_op) or rb - ra - 2*sw >= 100",
+      "message": "열리는 칸이 있는 단의 유리 높이가 100mm 미만이다(가로대·height 를 바꾸세요)"
     }
   ],
   "solids": [
@@ -441,8 +691,8 @@
       "profile": {
         "shape": "rect",
         "u": [
-          "xa + (i + 1)*b1 - frame_w/2",
-          "xa + (i + 1)*b1 + frame_w/2"
+          "xa + ((s1 if i == 0 else (s2 if i == 1 else (s3 if i == 2 else (s4 if i == 3 else (s5 if i == 4 else (s6 if i == 5 else (s7 if i == 6 else s8))))))) if cols_ok else (i + 1)*b1) - frame_w/2",
+          "xa + ((s1 if i == 0 else (s2 if i == 1 else (s3 if i == 2 else (s4 if i == 3 else (s5 if i == 4 else (s6 if i == 5 else (s7 if i == 6 else s8))))))) if cols_ok else (i + 1)*b1) + frame_w/2"
         ],
         "v": [
           "z0 + frame_w",
@@ -476,6 +726,114 @@
       "range": [
         "fy0",
         "fy1"
+      ]
+    },
+    {
+      "id": "psash1",
+      "op": "extrude",
+      "plane": "xz",
+      "repeat": {
+        "var": "i",
+        "count": "n1"
+      },
+      "when": "bayon and (bay1 if i == 0 else (bay2 if i == 1 else (bay3 if i == 2 else (bay4 if i == 3 else (bay5 if i == 4 else (bay6 if i == 5 else (bay7 if i == 6 else (bay8 if i == 7 else ('fixed'))))))))) != 'fixed'",
+      "profile": {
+        "shape": "rect",
+        "u": [
+          "xa if i == 0 else (xa + ((s1 if i == 1 else (s2 if i == 2 else (s3 if i == 3 else (s4 if i == 4 else (s5 if i == 5 else (s6 if i == 6 else (s7 if i == 7 else s8))))))) if cols_ok else i*b1) + frame_w/2)",
+          "seg1_b if i == n1 - 1 else (xa + ((s1 if i == 0 else (s2 if i == 1 else (s3 if i == 2 else (s4 if i == 3 else (s5 if i == 4 else (s6 if i == 5 else (s7 if i == 6 else s8))))))) if cols_ok else (i + 1)*b1) - frame_w/2)"
+        ],
+        "v": [
+          "ra",
+          "rb"
+        ]
+      },
+      "range": [
+        "gy - sd/2",
+        "gy + sd/2"
+      ]
+    },
+    {
+      "id": "psash_hole1",
+      "op": "extrude",
+      "plane": "xz",
+      "role": "void",
+      "cuts": [
+        "psash1"
+      ],
+      "repeat": {
+        "var": "i",
+        "count": "n1"
+      },
+      "when": "bayon and (bay1 if i == 0 else (bay2 if i == 1 else (bay3 if i == 2 else (bay4 if i == 3 else (bay5 if i == 4 else (bay6 if i == 5 else (bay7 if i == 6 else (bay8 if i == 7 else ('fixed'))))))))) != 'fixed'",
+      "profile": {
+        "shape": "rect",
+        "u": [
+          "(xa if i == 0 else (xa + ((s1 if i == 1 else (s2 if i == 2 else (s3 if i == 3 else (s4 if i == 4 else (s5 if i == 5 else (s6 if i == 6 else (s7 if i == 7 else s8))))))) if cols_ok else i*b1) + frame_w/2)) + sw",
+          "(seg1_b if i == n1 - 1 else (xa + ((s1 if i == 0 else (s2 if i == 1 else (s3 if i == 2 else (s4 if i == 3 else (s5 if i == 4 else (s6 if i == 5 else (s7 if i == 6 else s8))))))) if cols_ok else (i + 1)*b1) - frame_w/2)) - sw"
+        ],
+        "v": [
+          "ra + sw",
+          "rb - sw"
+        ]
+      },
+      "range": [
+        "gy - sd",
+        "gy + sd"
+      ]
+    },
+    {
+      "id": "psash2",
+      "op": "extrude",
+      "plane": "xz",
+      "repeat": {
+        "var": "i",
+        "count": "n2"
+      },
+      "when": "bayon and (bay1 if n1 + i == 0 else (bay2 if n1 + i == 1 else (bay3 if n1 + i == 2 else (bay4 if n1 + i == 3 else (bay5 if n1 + i == 4 else (bay6 if n1 + i == 5 else (bay7 if n1 + i == 6 else (bay8 if n1 + i == 7 else ('fixed'))))))))) != 'fixed'",
+      "profile": {
+        "shape": "rect",
+        "u": [
+          "seg2_a if i == 0 else (seg2_a + i*b2 + frame_w/2)",
+          "xe if i == n2 - 1 else (seg2_a + (i + 1)*b2 - frame_w/2)"
+        ],
+        "v": [
+          "ra",
+          "rb"
+        ]
+      },
+      "range": [
+        "gy - sd/2",
+        "gy + sd/2"
+      ]
+    },
+    {
+      "id": "psash_hole2",
+      "op": "extrude",
+      "plane": "xz",
+      "role": "void",
+      "cuts": [
+        "psash2"
+      ],
+      "repeat": {
+        "var": "i",
+        "count": "n2"
+      },
+      "when": "bayon and (bay1 if n1 + i == 0 else (bay2 if n1 + i == 1 else (bay3 if n1 + i == 2 else (bay4 if n1 + i == 3 else (bay5 if n1 + i == 4 else (bay6 if n1 + i == 5 else (bay7 if n1 + i == 6 else (bay8 if n1 + i == 7 else ('fixed'))))))))) != 'fixed'",
+      "profile": {
+        "shape": "rect",
+        "u": [
+          "(seg2_a if i == 0 else (seg2_a + i*b2 + frame_w/2)) + sw",
+          "(xe if i == n2 - 1 else (seg2_a + (i + 1)*b2 - frame_w/2)) - sw"
+        ],
+        "v": [
+          "ra + sw",
+          "rb - sw"
+        ]
+      },
+      "range": [
+        "gy - sd",
+        "gy + sd"
       ]
     },
     {
@@ -1055,6 +1413,9 @@
         },
         "Bays": {
           "expr": "n1 + n2"
+        },
+        "Columns": {
+          "expr": "n1 if cols_ok else 0"
         }
       }
     }

@@ -997,3 +997,25 @@ s10-headless 실패 2건(test_gui_scan, test_headless_ra01 IFC 기준 해시)은
 
 ### 27.2 시험
 test_practical7(15건). s1-core 전체(test_slow 제외): 1044 통과, 38 건너뜀, 실패 0.
+
+## 28. 스물여섯 번째 작업: also_cuts 맞닿음·함께 자른 개구부 수량·창 가로대와 단x칸별 열림·옆 경첩 프로젝트·낮은 복합 창호·세로대 폭 목록·평행 단차 전개 (2026-11-18, 브랜치 phase1/practical-modeling-8)
+
+산출은 비공개 산출 폴더(phase1-after26)에 두었다. 같은 모델에 `run_baseline.py --sheets` 를 돌렸다(새 입력 없음). 설계 메모는 elements-design.md 28절. 해시 형식 그대로(CLOSURE_FORMAT 15).
+
+### 28.0 바이트 비교 (after25 대비, work/·run.json 제외)
+**같은 파일 183개, 달라진 파일 0, 새 산출 0, 사라진 파일 0.** 기준선은 바꾼 패밀리(window.framed version 4·window.storefront version 3)·새 인자(bays·cols)·also_cuts 를 쓰지 않는다. 일람표 벽 순 면적은 also_cuts 가 없으면 이전과 같은 식이고(함께 자른 넓이 0 을 더한다), wall_xcuts 의 맞닿음 걸러내기는 also_cuts 가 없으면 돌지 않는다.
+옛 매개변수로 새 레시피를 평가한 값(형상·평면·개구부·IFC 속성·패널)은 window.framed 4320 조합, window.storefront 2048 조합에서 이전 레시피와 같다. 다른 점은 새 타입 속성 `DoBIM_WindowFrame.TransomCount`(framed)·인스턴스 속성 `DoBIM_WindowParams.Columns`(storefront)가 IFC 속성셋에 더해지는 것뿐이다(새로 놓는 창. 이미 올라온 옛 version 타입은 그 레시피를 쓴다).
+s10-headless 실패 2건(test_gui_scan, test_headless_ra01 IFC 기준 해시)은 23~27절과 같은 기존 상태다. parity: 커맨드 110 전부 예시 실행(예시 130·오류 사례 49), 불일치 0.
+
+### 28.1 변경 요지
+1. also_cuts: 넘친 끝에 정확히 맞닿은(±0.5mm) 같은 선 이웃 벽도 받는다. 맞닿은 벽에는 0 폭 개구부를 만들지 않는다.
+2. 벽 수량: also_cuts 창의 호스트는 자기 범위만, 함께 잘린 벽은 잘린 넓이를 순 면적에서 뺀다. element.get derived 에 xcut_*·net_area_m2·net_volume_m3.
+3. `window.framed` version 4: transom·transom2, 단x칸 열림(bay1~3, bay1_2~bay3_3), 셀별 IFC 패널, TransomCount. 커맨드 인자 `bays`.
+4. 옆 경첩 프로젝트 project_left/project_right(IFC SIDEHUNGLEFTHAND/RIGHTHAND).
+5. `window.storefront` version 3: 높이 하한 400(문은 2000 이상), 한 단의 칸별 열림(bay1~8, bay_row).
+6. 세로대 폭 목록 col1~col8, 커맨드 인자 `cols`.
+7. `family.place_corner`: 평행하게 어긋난(600mm 이하) 다음 구간을 단차로 잇는다. 응답 joints.
+레시피 스키마 panels 상한 8 → 16.
+
+### 28.2 시험
+test_practical8(9건). s1-core 전체(test_slow 제외): 1053 통과, 38 건너뜀, 실패 0. test_practical7 의 "가로대 매개변수가 없는 패밀리" 확인은 window.framed 가 가로대를 받게 되어 window.fixed 로 바꿨다. test_slow: 7건 통과.

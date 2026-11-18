@@ -138,7 +138,7 @@ def test_가로대_목록은_transom_값으로_풀리고_검사된다(base):
         bad = base.run("family.place", {"family": "window.storefront", "type_values": {"width": 1200, "height": 3300, **tv}, "transoms": tr,
                                         "host": F.W2, "offset": 2000})
         assert not bad["ok"] and bad["error"]["path"] == "/transoms", (tr, bad)
-    bad = base.run("family.place", {"family": "window.framed", "transoms": [1000], "host": F.W2, "offset": 2000})
+    bad = base.run("family.place", {"family": "window.fixed", "transoms": [1000], "host": F.W2, "offset": 2000})   # 26단계: window.framed 는 가로대를 받는다
     assert not bad["ok"] and bad["error"]["details"]["max"] == 0                    # 가로대 매개변수가 없는 패밀리
 
 
