@@ -1,16 +1,16 @@
 {
   "schema": "dobim.family/1",
   "id": "window.framed",
-  "version": 1,
+  "version": 2,
   "name": "창틀 창(리빌 표현)",
-  "description": "벽에 호스팅되는 창. 깊이 있는 창틀·유리·(여닫이면 문짝 틀)·선택 창대/문선. 틀의 벽 안 위치(inset = 기준면에서 틀 바깥면까지)로 리빌이 보인다. 기준면 = 호스트 지역 -v 면(층 구성 벽의 첫 층 쪽), 180 뒤집으면 +v 면.",
+  "description": "벽에 호스팅되는 창. 깊이 있는 창틀·유리·(열리는 창이면 문짝 틀)·선택 창대/문선. 열림 방식: 고정·여닫이(안/밖)·프로젝트(위 경첩 밖 젖힘)·미닫이(두 짝). 틀의 벽 안 위치(inset = 기준면에서 틀 바깥면까지)로 리빌이 보인다. 기준면 = 호스트 지역 -v 면, 180 뒤집으면 +v 면.",
   "ifc": {
     "class": "IfcWindow",
     "type_class": "IfcWindowType",
     "predefined": "WINDOW",
     "type_attrs": {
       "PartitioningType": {
-        "expr": "'SINGLE_PANEL' if mullions == 0 else ('DOUBLE_PANEL_VERTICAL' if mullions == 1 else 'TRIPLE_PANEL_VERTICAL')"
+        "expr": "'DOUBLE_PANEL_VERTICAL' if sl else ('SINGLE_PANEL' if mullions == 0 else ('DOUBLE_PANEL_VERTICAL' if mullions == 1 else 'TRIPLE_PANEL_VERTICAL'))"
       },
       "ParameterTakesPrecedence": false
     },
@@ -21,7 +21,31 @@
       "OverallHeight": {
         "expr": "height"
       }
-    }
+    },
+    "panels": [
+      {
+        "operation": {
+          "expr": "'FIXEDCASEMENT' if operation == 'fixed' else ('TOPHUNG' if operation == 'project_out' else ('SLIDINGHORIZONTAL' if sl else 'NOTDEFINED'))"
+        },
+        "position": {
+          "expr": "'LEFT' if sl or mullions > 0 else 'MIDDLE'"
+        }
+      },
+      {
+        "operation": {
+          "expr": "'FIXEDCASEMENT' if operation == 'fixed' else ('TOPHUNG' if operation == 'project_out' else ('SLIDINGHORIZONTAL' if sl else 'NOTDEFINED'))"
+        },
+        "position": {
+          "expr": "'RIGHT' if sl or mullions == 1 else 'MIDDLE'"
+        },
+        "when": "sl or mullions > 0"
+      },
+      {
+        "operation": "FIXEDCASEMENT",
+        "position": "RIGHT",
+        "when": "mullions == 2"
+      }
+    ]
   },
   "host": {
     "kinds": [
@@ -44,8 +68,8 @@
       "default": 1200,
       "unit": "mm",
       "description": "개구부 폭(틀 바깥)",
-      "min": 500,
-      "max": 3000
+      "min": 400,
+      "max": 6000
     },
     "height": {
       "kind": "type",
@@ -53,7 +77,7 @@
       "unit": "mm",
       "description": "개구부 높이(틀 바깥)",
       "min": 400,
-      "max": 2400
+      "max": 6000
     },
     "operation": {
       "kind": "type",
@@ -62,9 +86,11 @@
       "values": [
         "fixed",
         "casement_in",
-        "casement_out"
+        "casement_out",
+        "project_out",
+        "sliding"
       ],
-      "description": "fixed=고정창, casement_in=안여닫이(실내로 열림), casement_out=밖여닫이"
+      "description": "fixed=고정창, casement_in/out=여닫이(안/밖), project_out=프로젝트창(위 경첩, 밖으로 젖힘), sliding=미닫이창(두 짝)"
     },
     "frame_w": {
       "kind": "type",
@@ -150,7 +176,7 @@
       "unit": "mm",
       "description": "바닥에서 창 하단까지",
       "min": 0,
-      "max": 1500
+      "max": 12000
     },
     "inset": {
       "kind": "instance",
@@ -190,7 +216,11 @@
     "arc0": "(0 if hinge == 'L' else 90) if operation == 'casement_in' else (270 if hinge == 'L' else 180)",
     "st_y1": "host_thickness/2 + stool_proj",
     "stool_on": "stool_t > 0 and st_y1 > fy1",
-    "glass_ratio": "inner_w*inner_h/(width*height)"
+    "glass_ratio": "inner_w*inner_h/(width*height)",
+    "sl": "operation == 'sliding'",
+    "casement": "operation == 'casement_in' or operation == 'casement_out'",
+    "sl_d": "(fd - 10)/2",
+    "sl_w": "(width - 2*frame_w + sash_w)/2"
   },
   "refs": {
     "left": {
@@ -214,6 +244,14 @@
     {
       "expr": "operation == 'fixed' or mullions == 0",
       "message": "여닫이 창에는 멀리언을 둘 수 없다(mullions 를 0 으로)"
+    },
+    {
+      "expr": "operation != 'sliding' or glass_t <= sl_d - 4",
+      "message": "미닫이창은 유리가 문짝 두께(틀 깊이의 절반 안팎)보다 4mm 이상 얇아야 한다(frame_d 를 키우거나 glass_t 를 줄이세요)"
+    },
+    {
+      "expr": "operation != 'sliding' or sl_w - 2*sash_w >= 100",
+      "message": "미닫이 문짝의 유리 폭이 100mm 미만이다(width 를 키우세요)"
     }
   ],
   "solids": [
@@ -265,7 +303,7 @@
       "id": "sash",
       "op": "extrude",
       "plane": "xz",
-      "when": "operation != 'fixed'",
+      "when": "operation != 'fixed' and not sl",
       "profile": {
         "shape": "rect",
         "u": [
@@ -290,7 +328,7 @@
       "cuts": [
         "sash"
       ],
-      "when": "operation != 'fixed'",
+      "when": "operation != 'fixed' and not sl",
       "profile": {
         "shape": "rect",
         "u": [
@@ -325,6 +363,86 @@
       "range": [
         "gy - glass_t/2",
         "gy + glass_t/2"
+      ],
+      "when": "not sl"
+    },
+    {
+      "id": "sl_sash",
+      "op": "extrude",
+      "plane": "xz",
+      "when": "sl",
+      "repeat": {
+        "var": "i",
+        "count": 2
+      },
+      "profile": {
+        "shape": "rect",
+        "u": [
+          "left + frame_w + i*(width - 2*frame_w - sl_w)",
+          "left + frame_w + i*(width - 2*frame_w - sl_w) + sl_w"
+        ],
+        "v": [
+          "z0 + frame_w",
+          "z1 - frame_w"
+        ]
+      },
+      "range": [
+        "gy - sl_d + i*sl_d",
+        "gy + i*sl_d"
+      ]
+    },
+    {
+      "id": "sl_hole",
+      "op": "extrude",
+      "plane": "xz",
+      "role": "void",
+      "cuts": [
+        "sl_sash"
+      ],
+      "when": "sl",
+      "repeat": {
+        "var": "i",
+        "count": 2
+      },
+      "profile": {
+        "shape": "rect",
+        "u": [
+          "left + frame_w + i*(width - 2*frame_w - sl_w) + sash_w",
+          "left + frame_w + i*(width - 2*frame_w - sl_w) + sl_w - sash_w"
+        ],
+        "v": [
+          "z0 + gm",
+          "z1 - gm"
+        ]
+      },
+      "range": [
+        "gy - 2*sl_d",
+        "gy + 2*sl_d"
+      ]
+    },
+    {
+      "id": "sl_glass",
+      "op": "extrude",
+      "plane": "xz",
+      "when": "sl",
+      "repeat": {
+        "var": "i",
+        "count": 2
+      },
+      "profile": {
+        "shape": "rect",
+        "u": [
+          "left + frame_w + i*(width - 2*frame_w - sl_w) + sash_w",
+          "left + frame_w + i*(width - 2*frame_w - sl_w) + sl_w - sash_w"
+        ],
+        "v": [
+          "z0 + gm",
+          "z1 - gm"
+        ]
+      },
+      "range": [
+        "gy - sl_d/2 + i*sl_d - glass_t/2",
+        "gy - sl_d/2 + i*sl_d + glass_t/2"
       ]
     },
     {
@@ -493,7 +611,8 @@
         "to": [
           "right - frame_w",
           "gy"
-        ]
+        ],
+        "when": "not sl"
       },
       {
         "type": "line",
@@ -505,7 +624,7 @@
           "hinge_x",
           "gy + open_sign*leaf_w"
         ],
-        "when": "operation != 'fixed'"
+        "when": "casement"
       },
       {
         "type": "arc",
@@ -516,7 +635,7 @@
         "radius": "leaf_w",
         "start": "arc0",
         "end": "arc0 + 90",
-        "when": "operation != 'fixed'"
+        "when": "casement"
       },
       {
         "type": "rect",
@@ -529,6 +648,42 @@
           "st_y1"
         ],
         "when": "stool_on"
+      },
+      {
+        "type": "line",
+        "when": "sl",
+        "from": [
+          "left + frame_w",
+          "gy - sl_d/2"
+        ],
+        "to": [
+          "left + frame_w + sl_w",
+          "gy - sl_d/2"
+        ]
+      },
+      {
+        "type": "line",
+        "when": "sl",
+        "from": [
+          "right - frame_w - sl_w",
+          "gy + sl_d/2"
+        ],
+        "to": [
+          "right - frame_w",
+          "gy + sl_d/2"
+        ]
+      },
+      {
+        "type": "line",
+        "when": "operation == 'project_out'",
+        "from": [
+          "left + frame_w",
+          "fy0"
+        ],
+        "to": [
+          "right - frame_w",
+          "fy0 - 60"
+        ]
       }
     ],
     "1:200": [

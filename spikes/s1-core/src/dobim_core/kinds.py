@@ -138,7 +138,12 @@ def _wall_params(p):
         return (isinstance(v, list) and len(v) == 4 and all(num_ok(x) for x in v)
                 and (v[2] - v[0]) ** 2 + (v[3] - v[1]) ** 2 >= 1.0)
     err = _check_opt("wall", p, {"name": _name, "axis": axis, "thickness": _pos, "height": _pos}, {"layers": layers_ok, "openings": lambda v: isinstance(v, list), "top_profile": lambda v: isinstance(v, list),
-                                                                                                         "base_offset": lambda v: num_ok(v) and abs(v) <= WT.BASE_OFFSET_MAX})
+                                                                                                         "base_offset": lambda v: num_ok(v) and abs(v) <= WT.BASE_OFFSET_MAX,
+                                                                                                         "top_level": id_ok, "top_offset": lambda v: num_ok(v) and v != 0})
+    if err is None and "top_offset" in p and "top_level" not in p:   # 상단 구속(24단계): 오프셋은 상단 레벨과 함께만
+        return "wall.top_offset 은 top_level 과 함께만 둔다"
+    if err is None and "top_level" in p and "top_profile" in p:
+        return "wall.top_level 과 top_profile 은 함께 둘 수 없다"
     if err is None and "layers" in p and abs(layers_total(p["layers"]) - p["thickness"]) > LAYER_SUM_TOL:
         return "wall.layers 두께의 합이 벽 두께와 다르다"
     top = p.get("top_profile") if err is None else None   # 벽 상단 윤곽(21단계): 없으면 이전과 같다

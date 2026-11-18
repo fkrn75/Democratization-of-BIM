@@ -303,6 +303,25 @@ def _door_under_top(ctx, host, dp: dict) -> None:
         raise DobimError("CONSTRAINT", "문이 호스트 벽의 상단 윤곽 위로 나간다", path="/height")
 
 
+def _apply_top_level(ctx, p: dict, base_level: str) -> None:
+    """상단 구속(24단계, 상용 도구의 Top Constraint): p 에 top_level 이 있으면 height 를 (상단 레벨 높이 + top_offset) - (바닥 레벨 높이 + base_offset) 로 맞춘다.
+    여러 층에 걸친 벽을 상단 레벨로 정한다. 레벨 높이는 만든 뒤 바뀌지 않으므로(레벨 고치기 커맨드 없음) 값으로 저장한 height 가 정본이다."""
+    tl = p.get("top_level")
+    if tl is None:
+        return
+    lrow = ctx.st.el.get(tl)
+    if lrow is None or lrow["kind"] != "level":
+        raise DobimError("NOT_FOUND", f"상단 레벨이 없다: {tl}", path="/top_level")
+    if "top_profile" in p:
+        raise DobimError("CONSTRAINT", "상단 윤곽(top_profile)이 있는 벽은 상단 레벨로 구속할 수 없다", path="/top_level",
+                         hint="wall.detach_top 으로 윤곽을 뗀 뒤 구속하세요")
+    top = lrow["params"]["elevation"] + float(p.get("top_offset", 0.0))
+    bottom = ctx.st.el[base_level]["params"]["elevation"] + WT.base(p)
+    if top - bottom < 1.0:
+        raise DobimError("CONSTRAINT", f"상단({top:g})이 벽 바닥({bottom:g})보다 1mm 이상 높아야 한다", path="/top_level")
+    p["height"] = float(top - bottom)
+
+
 class WallCreate(A):
     id: Id | None = None
     level: Id
@@ -314,6 +333,17 @@ class WallCreate(A):
     top_profile: TopProfile | None = Field(None, description="벽 상단 윤곽(경사·박공 벽): 생략하면 상단은 height 로 수평")
     base_offset: Num | None = Field(None, description="벽 바닥 오프셋(레벨 기준 mm, 상용 도구의 Base Offset). 음수면 레벨 아래에서 시작한다. height 는 바닥에서 잰다. "
                                                      "생략·0 이면 레벨에서 시작(키 없음)")
+    top_level: Id | None = Field(None, description="상단 레벨(24단계, 상용 도구의 Top Constraint). 주면 height 를 상단 레벨 + top_offset 까지로 계산한다(height 와 함께 줄 수 없다). "
+                                                    "여러 층에 걸친 벽의 평면 절단은 지나가는 각 층 평면에 그린다")
+    top_offset: Num | None = Field(None, description="상단 레벨 기준 상단 오프셋 mm(top_level 과 함께). 생략·0 이면 키 없음")
+
+    @model_validator(mode="after")
+    def _top(self):
+        if self.top_level is not None and "height" in self.model_fields_set:
+            raise ValueError("height 와 top_level 은 함께 줄 수 없다(top_level 이면 높이를 계산한다)")
+        if self.top_offset and self.top_level is None:
+            raise ValueError("top_offset 은 top_level 과 함께 준다")
+        return self
 
 
 @command("wall.create", kind="mutation", risk="write", group="model.wall", summary="벽 생성",
@@ -335,6 +365,11 @@ def wall_create(ctx, a: WallCreate):
         p["top_profile"] = WT.norm(a.top_profile)
     if a.base_offset:   # 바닥 오프셋(22단계): 0 이면 키가 없다(행·해시 이전과 같다)
         p["base_offset"] = float(a.base_offset)
+    if a.top_level is not None:   # 상단 구속(24단계): 없으면 행은 이전과 같다
+        p["top_level"] = a.top_level
+        if a.top_offset:
+            p["top_offset"] = float(a.top_offset)
+        _apply_top_level(ctx, p, a.level)
     if a.openings or a.top_profile or a.base_offset:
         _wall_checked(p)
     ctx.put_el(a.id, row("wall", "IfcWall", "wall.basic", p))
@@ -367,12 +402,18 @@ class WallSet(A):
     axis: Annotated[list[Num], Field(min_length=4, max_length=4)] | None = None
     openings: Openings | None = Field(None, description="모양 개구부 목록을 통째로 바꾼다(빈 목록 = 모두 뗀다)")
     top_profile: TopProfile | None = Field(None, description="벽 상단 윤곽을 통째로 바꾼다(빈 목록 = 뗀다)")
-    base_offset: Num | None = Field(None, description="벽 바닥 오프셋(레벨 기준 mm). 0 이면 뗀다. 바닥만 움직이고 height 는 그대로다(상단도 함께 움직인다)")
+    base_offset: Num | None = Field(None, description="벽 바닥 오프셋(레벨 기준 mm). 0 이면 뗀다. 바닥만 움직이고 height 는 그대로다(상단도 함께 움직인다). "
+                                                     "상단 레벨로 구속된 벽이면 상단은 그대로고 height 가 바뀐다")
+    top_level: Id | None = Field(None, description="상단 레벨로 구속한다(24단계). height 를 주면 구속을 뗀다")
+    top_offset: Num | None = Field(None, description="상단 레벨 기준 상단 오프셋 mm(구속된 벽 또는 top_level 과 함께). 0 이면 키를 뗀다")
 
     @model_validator(mode="after")
     def _any(self):
-        if all(v is None for v in (self.name, self.thickness, self.height, self.axis, self.openings, self.top_profile, self.base_offset)):
+        if all(v is None for v in (self.name, self.thickness, self.height, self.axis, self.openings, self.top_profile, self.base_offset,
+                                   self.top_level, self.top_offset)):
             raise ValueError("바꿀 필드가 하나도 없다")
+        if self.height is not None and (self.top_level is not None or self.top_offset is not None):
+            raise ValueError("height 와 top_level·top_offset 은 함께 줄 수 없다")
         return self
 
 
@@ -413,6 +454,20 @@ def wall_set(ctx, a: WallSet):
             p["base_offset"] = float(a.base_offset)
         else:
             p.pop("base_offset", None)
+    if a.height is not None and "top_level" in p:   # 상단 구속(24단계): 높이를 직접 주면 구속을 뗀다(상용 도구의 Unconnected Height)
+        p.pop("top_level")
+        p.pop("top_offset", None)
+        ctx.warn("height 를 직접 주어 상단 레벨 구속(top_level)을 뗐다")
+    if a.top_level is not None:
+        p["top_level"] = a.top_level
+    if a.top_offset is not None:
+        if "top_level" not in p:
+            raise DobimError("CONSTRAINT", "상단 레벨로 구속되지 않은 벽이다(top_level 을 함께 주세요)", path="/top_offset")
+        if a.top_offset:
+            p["top_offset"] = float(a.top_offset)
+        else:
+            p.pop("top_offset", None)
+    _apply_top_level(ctx, p, ctx.rels_out("on_level", a.id)[0])   # 구속된 벽은 바닥 오프셋·상단이 바뀌면 높이를 다시 계산한다
     if a.top_profile is None and "top_profile" in p and WT.profile_problem(p["top_profile"], sqrt(_axis_len2(p["axis"]))):
         raise DobimError("CONSTRAINT", "상단 윤곽이 있는 벽의 축 길이가 바뀌면 윤곽이 맞지 않는다", path="/axis",
                          hint="새 top_profile 을 함께 주거나, wall.detach_top 으로 뗀 뒤 wall.attach_top 으로 다시 붙이세요")
@@ -658,6 +713,9 @@ def wall_split(ctx, a: WallSplit):
     np_ = {"name": name, "axis": ax_n, "thickness": p["thickness"], "height": p["height"]}
     if "base_offset" in p:   # 바닥 오프셋(22단계)은 끝 쪽 새 벽도 같다
         np_["base_offset"] = p["base_offset"]
+    for k in ("top_level", "top_offset"):   # 상단 구속(24단계)도 끝 쪽 새 벽이 같다
+        if k in p:
+            np_[k] = p[k]
     if "layers" in p:   # 층 구성이 있으면 끝 쪽 새 벽도 같은 층 구성(복사)
         np_["layers"] = [dict(x) for x in p["layers"]]
     if ops_n:
@@ -795,6 +853,10 @@ def element_delete(ctx, a: IdArg):
     if r["kind"] == "level":
         if ctx.rels_in("on_level", a.id):
             raise DobimError("CONSTRAINT", "벽이 있는 레벨은 지울 수 없다", path="/id")
+        tied = [w for w in sorted(ctx.st.by_kind.get("wall", ())) if ctx.st.el[w]["params"].get("top_level") == a.id]
+        if tied:   # 상단 구속(24단계): 이 레벨에 상단이 묶인 벽이 있다
+            raise DobimError("CONSTRAINT", f"벽 {len(tied)}개의 상단이 이 레벨에 묶여 있어 지울 수 없다", path="/id",
+                             hint="wall.set 으로 height 를 주어 구속을 떼세요", details={"walls": tied[:20]})
     elif r["kind"] == "ftype":
         if ctx.rels_in("of_type", a.id):
             raise DobimError("CONSTRAINT", "인스턴스가 있는 패밀리 타입은 지울 수 없다", path="/id", hint="인스턴스를 먼저 지우세요")
@@ -1380,8 +1442,8 @@ def railing_delete(ctx, a: IdArg):
     return {"deleted": [a.id]}
 
 
-def _new_railing(ctx, level, name_stem, path, height, base_offset, rise, src=None) -> str:
-    rid = ctx.new_id("railing")
+def _new_railing(ctx, level, name_stem, path, height, base_offset, rise, src=None, rid: str | None = None) -> str:
+    rid = rid or ctx.new_id("railing")
     ctx.put_el(rid, row("railing", "IfcRailing", "railing.basic", _railing_row(f"{name_stem}-{rid[-6:]}", path, height, base_offset, rise, src)))
     ctx.rel("on_level", rid, level, True)
     return rid
@@ -1571,8 +1633,30 @@ def _release_railings(ctx, src_id: str) -> list:
     return out
 
 
+def _rail_ids(ctx, ids, n: int) -> list:
+    """자동 생성 난간의 id(24단계). ids 를 주면 생성 순서대로 그 id 를 쓴다(개수가 같아야 한다, 다른 생성 커맨드의 id 와 같은 규칙).
+    비우면 [None]*n(엔진이 새 id 를 만든다)."""
+    if ids is None:
+        return [None] * n
+    if len(ids) != n:
+        raise DobimError("CONSTRAINT", f"ids 가 {len(ids)}개인데 만들 난간은 {n}개다", path="/ids",
+                         hint="ids 를 비우고 한 번 실행해 개수·순서를 본 뒤(같은 입력이면 같은 순서) 그 개수만큼 주세요", details={"expected": n})
+    if len(set(ids)) != n:
+        raise DobimError("CONSTRAINT", "ids 에 같은 id 가 두 번 있다", path="/ids")
+    for i, rid in enumerate(ids):
+        if rid in ctx.st.el:
+            raise DobimError("CONSTRAINT", f"이미 있는 id 다: {rid}", path=f"/ids/{i}")
+        if _in_split_history(ctx, rid):
+            raise DobimError("CONSTRAINT", f"벽 분할 이력에 쓰인 id 라 다시 쓸 수 없다: {rid}", path=f"/ids/{i}")
+    return list(ids)
+
+
+RailIds = Field(None, max_length=64, description="만들 난간의 id 목록(생성 순서대로, 개수가 같아야 한다). 비우면 자동")
+
+
 class RailingFromStair(A):
     stair: Id
+    ids: list[Id] | None = RailIds
     side: Literal["both", "left", "right"] = Field("both", description="어느 쪽에 둘지(단 묶음 걸음 방향의 왼쪽·오른쪽·양쪽)")
     inset: Num = Field(50.0, ge=0, description="계단 옆면에서 안쪽으로 들이는 거리 mm")
     height: Pos = K.RAILING_HEIGHT_DEFAULT
@@ -1586,13 +1670,15 @@ def railing_from_stair(ctx, a: RailingFromStair):
     r = ctx.authored(a.stair, "stair", what="난간을 붙이는 것")
     level = ctx.rels_out("on_level", a.stair)[0]
     out = []
-    for s in _stair_rail_specs(r["params"], a.side, a.inset, a.landing):
-        out.append(_new_railing(ctx, level, "RL", s["path"], a.height, s["base_offset"], s["rise"], {"src": a.stair, "src_tag": s["tag"], "src_inset": float(a.inset)}))
+    specs = _stair_rail_specs(r["params"], a.side, a.inset, a.landing)
+    for s, rid in zip(specs, _rail_ids(ctx, a.ids, len(specs))):
+        out.append(_new_railing(ctx, level, "RL", s["path"], a.height, s["base_offset"], s["rise"], {"src": a.stair, "src_tag": s["tag"], "src_inset": float(a.inset)}, rid))
     return {"created": out}
 
 
 class RailingFromSlab(A):
     slab: Id
+    ids: list[Id] | None = RailIds
     opening: int | None = Field(None, ge=0, le=31, description="구멍 번호(0부터). 비우면 슬래브 바깥 경계")
     edges: list[Annotated[int, Field(ge=0, le=255)]] | None = Field(None, max_length=256, description="난간을 둘 변 번호(꼭짓점 i 와 i+1 사이가 변 i). 비우면 모든 변(닫힌 한 줄)")
     height: Pos = K.RAILING_HEIGHT_DEFAULT
@@ -1618,8 +1704,9 @@ def railing_from_slab(ctx, a: RailingFromSlab):
     if not chosen:
         raise DobimError("CONSTRAINT", "변이 하나도 없다", path="/edges")
     top = p["top_offset"]
-    out = [_new_railing(ctx, level, "RL", pts, a.height, top, 0.0, {"src": a.slab, "src_tag": _slab_tag(a.opening, tag)})
-           for tag, pts in _slab_rail_runs(ring, chosen if len(chosen) < n else None)]
+    runs = _slab_rail_runs(ring, chosen if len(chosen) < n else None)
+    out = [_new_railing(ctx, level, "RL", pts, a.height, top, 0.0, {"src": a.slab, "src_tag": _slab_tag(a.opening, tag)}, rid)
+           for (tag, pts), rid in zip(runs, _rail_ids(ctx, a.ids, len(runs)))]
     return {"created": out}
 
 

@@ -57,8 +57,11 @@ def ftype_eval(tp: dict) -> dict:
 def ftype_spec(tp: dict) -> dict:
     e = ftype_eval(tp)
     r, _ = ev.load_recipe(tp["recipe"])
-    return {"kind": "ftype", "name": tp["name"], "predefined": r.ifc.predefined, "attrs": e["type_attrs"],
-            "body": e["body"], "plan": e["plan"]["default"]}
+    out = {"kind": "ftype", "name": tp["name"], "predefined": r.ifc.predefined, "attrs": e["type_attrs"],
+           "body": e["body"], "plan": e["plan"]["default"]}
+    if e.get("panels"):   # 창 패널(24단계): 없으면 명세는 이전과 같다
+        out["panels"] = e["panels"]
+    return out
 
 
 def finst_eval(tp: dict, ip: dict, host: dict | None) -> dict:
