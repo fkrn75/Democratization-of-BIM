@@ -1154,7 +1154,8 @@ test_foreign_drawings 25건(2차 7건 추가: 채움 다리·맞닿은 몸체 �
 - 전체 평면을 다 받으면 약 240만 추정 토큰(645쪽)이다. GUI 는 타일(`bbox`)·바뀐 요소(`ids`)로 받고, 에이전트는 요약(`summary`)·`view.pick`·타일을 쓴다. 사이드카 전용 큰 쪽(같은 데이터, 응답 상한만 다르게)은 B2 에서 필요하면 정한다.
 
 ### 32.4 시험·parity(마지막 코드 커밋 fbb884a 뒤 한 번에 다시 돌린 결과, 도중 수정 없음)
-s1-core 전체(test_slow 제외): 1137 통과, 40 건너뜀, 실패 0(새 시험 35건 포함). test_slow: 7건 통과. parity: 커맨드 128 전부 예시 실행, 불일치 0. parity_g: 통과. s10-headless: 기존 실패 2건(test_gui_scan, test_headless_ra01)만. 기준선 `run_baseline.py --sheets`: after26 과 183 파일 바이트 같음. import-linter 계약에 scene(순수 질의)·commands_gui 를 더했다.
+s1-core 전체(test_slow 제외): 1137 통과, 40 건너뜀, 실패 0(새 시험 35건 포함). test_slow: 7건 통과. parity: 커맨드 128 전부 예시 실행, 불일치 0. parity_g: 통과.
+main(일람표 #43·IFC2x3 #44·외래 2차 #49) 병합 커밋 1f4dc8d 뒤 다시 한 번에(도중 수정 없음): s1-core 전체 1167 통과·40 건너뜀·실패 0(외래 장면 시험 2건 추가), test_slow 7 통과, parity 커맨드 132 불일치 0, parity_g 통과. s10-headless: 기존 실패 2건(test_gui_scan, test_headless_ra01)만. 기준선 `run_baseline.py --sheets`: after26 과 183 파일 바이트 같음. import-linter 계약에 scene(순수 질의)·commands_gui 를 더했다.
 
 ### 32.5 한계
 - 요소 사이 같은 등급의 맞닿은 선분은 잇지 않는다(요소별로 그려야 선택 강조가 된다). 단면·입면의 문·창 개구부 선은 벽의 것으로 남는다(평면 기호만 요소로 돌린다).
