@@ -1,0 +1,81 @@
+{
+  "summary": {
+    "client": "codex-npm",
+    "tasks": 2,
+    "success": 2,
+    "failed": []
+  },
+  "rows": [
+    {
+      "task": "I1",
+      "state_correct": true,
+      "render_calls": 1,
+      "render_ok": 1,
+      "render_args": [
+        {
+          "project": "p1",
+          "target": "view",
+          "id": "4000000000000000000001",
+          "max_px": 2400
+        }
+      ],
+      "image_blocks_in_transcript": 1,
+      "forbidden_calls": [],
+      "success": true,
+      "exit": 0,
+      "wall_s": 35.0,
+      "tool_calls": 12,
+      "commands_used": [
+        "commands.describe",
+        "commands.search",
+        "project.info",
+        "pset.set",
+        "view.image",
+        "view.list"
+      ],
+      "usage": {
+        "input_tokens": 290388,
+        "cached_input_tokens": 252032,
+        "output_tokens": 739,
+        "reasoning_output_tokens": 99
+      },
+      "error_responses": [],
+      "result_max_bytes": 1390
+    },
+    {
+      "task": "I2",
+      "state_correct": true,
+      "render_calls": 1,
+      "render_ok": 1,
+      "render_args": [
+        {
+          "project": "p1",
+          "target": "sheet",
+          "id": "9000000000000000000001",
+          "max_px": 2400
+        }
+      ],
+      "image_blocks_in_transcript": 1,
+      "forbidden_calls": [],
+      "success": true,
+      "exit": 0,
+      "wall_s": 41.1,
+      "tool_calls": 9,
+      "commands_used": [
+        "commands.describe",
+        "commands.search",
+        "project.info",
+        "pset.set",
+        "sheet.image"
+      ],
+      "usage": {
+        "input_tokens": 256983,
+        "cached_input_tokens": 240128,
+        "output_tokens": 700,
+        "reasoning_output_tokens": 92
+      },
+      "error_responses": [],
+      "result_max_bytes": 1390
+    }
+  ]
+}

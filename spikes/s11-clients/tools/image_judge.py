@@ -24,7 +24,7 @@ import common as C
 from dobim_core import fixture as F
 from explore_tasks import ex, pset, q
 
-PREAMBLE = ("작업 폴더에 건축 모델 프로젝트 파일 p.dobim 이 있다. 벽 W-000001 이 있다. 연결된 BIM 도구(dobim MCP 서버)만 사용해서 아래 과제를 끝내라. "
+PREAMBLE = ("작업 폴더에 건축 모델 프로젝트 파일 p.dobim 이 있다. 벽 W-000001(id 1000000000000000000001)이 있다. 연결된 BIM 도구(dobim MCP 서버)만 사용해서 아래 과제를 끝내라. "
             "답은 반드시 도구로 돌려받은 이미지를 눈으로 보고 정하라. 요소·시트·일람표를 조회하는 커맨드(element.*, schedule.*, model.*, sheet.list 등)로 답을 구하는 것은 금지다"
             "(뷰 목록 조회, 도구·커맨드 검색은 허용). 값을 모델에 적는 데는 속성 쓰기 커맨드를 쓴다. 과제를 끝내면 한 줄로만 보고하라.\n\n과제: ")
 
