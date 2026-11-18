@@ -2444,6 +2444,8 @@ def view_labels(g, v):
     out = []
     for s in g.q(scope_spaces, v):
         out.extend(g.q(plan_space_labels, v, s))
+    for s in g.q(scope_foreign_spaces, v):   # 외래 공간(IfcSpace)의 실명·면적(2차): 외래 공간이 없으면 문자는 이전과 같다
+        out.extend(g.q(foreign_space_labels, v, s))
     if cfg[0] == "plan":
         for sl in g.q(scope_slabs, v):
             out.extend(g.q(plan_roof_marks, v, sl)[1])   # 지붕 슬래브의 물매 문자(지붕이 아니면 없다)
@@ -4696,8 +4698,9 @@ def view_lines_hier(g, v):
     비내력벽이 없으면 view_lines 와 같은 값이다. 평면·단면의 벽 절단선만 나눈다(입면에는 절단선이 없다)."""
     cfg = g.q(view_cfg, v)
     walls = g.q(scope_walls, v)
-    if cfg is None or cfg[0] in ("site", "elev") or not any(g.q(is_nonbearing, w) for w in walls):
+    if cfg is None or cfg[0] in ("site", "elev") or not (any(g.q(is_nonbearing, w) for w in walls) or g.q(foreign_nonbearing)):
         return g.q(view_lines, v)
+    fnb = g.q(foreign_nonbearing)   # 외래 비내력벽(2차): 없으면 빈 값
     fn = plan_wall_lines if cfg[0] == "plan" else vwall_lines
     segs = []
     for w in walls:
@@ -4722,8 +4725,11 @@ def view_lines_hier(g, v):
         segs.extend(g.q(roof_lines, v, rf))
     for so in g.q(scope_solids, v):   # 일반 솔리드(18단계): 없으면 선분은 이전과 같다
         segs.extend(g.q(solid_lines, v, so))
-    for fe in g.q(scope_foreign, v):   # 외래 IFC 요소(1단계 외래 도면 경로): 형상 있는 외래 요소가 없으면 선분은 이전과 같다
-        segs.extend(g.q(foreign_lines, v, fe))
+    for fe in g.q(scope_foreign, v):   # 외래 IFC 요소: 외래 벽(IfcWall)의 LoadBearing 이 거짓이면 절단선을 cutn 으로(2차)
+        fl = g.q(foreign_lines, v, fe)
+        if fe in fnb:
+            fl = tuple(("cutn",) + ln[1:] if ln[0] == "cut" else ln for ln in fl)
+        segs.extend(fl)
     if cfg[0] == "elev":
         segs.extend(g.q(site_sign_lines, v))
     elif cfg[0] == "sec":
@@ -4759,6 +4765,8 @@ def view_fills(g, v):
     if cfg[0] != "plan":
         for rf in g.q(scope_roofs, v):
             out.extend(g.q(roof_cut_rects, v, rf))
+    for fe in g.q(scope_foreign, v):   # 외래 IFC 요소의 절단면 채움(2차): heavy 범주만. 외래 요소가 없으면 채움은 이전과 같다
+        out.extend(g.q(foreign_fills, v, fe))
     res = tuple(tuple((round(p[0], 3), round(p[1], 3)) for p in poly) for poly in out)
     crop = g.q(view_opts, v).get("crop")
     return res if crop is None else _crop_polys(res, crop)
@@ -5147,9 +5155,184 @@ def foreign_omitted(g, ids) -> int:
         r = Q.el(g, e)
         if r is not None and r["kind"] == "foreign" and g.q(foreign_info, e) is None:
             fg = Q.fgeom(g, e)
-            if fg is None or fg[0] not in ("storey", "spatial", "aggregate", "skip"):
+            if fg is None or fg[0] not in ("storey", "spatial", "space", "aggregate", "skip"):
                 n += 1
     return n
 
 
-VIEW_SCOPED = VIEW_SCOPED | frozenset({scope_foreign, _f_cut, _f_occ, foreign_lines})   # 외래 도면 경로의 뷰별 질의(forget_views 가 치운다)
+# ---------------------------------------------------------------- 외래 도면 2차 (설계: elements-design.md 30절)
+#   (1) 절단면 채움: heavy 범주의 절단 선분을 고리로 이어(끝점 0.01mm 반올림 기준) 짝홀 포함 관계로 바깥·구멍을 나누고,
+#       구멍은 폭 0 다리(keyhole)로 바깥 고리에 이어 다각형 하나로 만든다(채움은 구멍 없는 다각형 목록이다).
+#   (2) 비내력벽: 외래 벽(IfcWall 계열)의 Pset_WallCommon.LoadBearing 이 거짓이면 선 굵기 위계에서 절단선이 cutn 이다(저작 벽과 같은 규칙).
+#   (3) 공간 실명: 외래 IfcSpace 의 실명(LongName, 없으면 Name)·실번호·바닥 면적을 바닥 무게중심에 쓴다(절단 높이가 공간 높이 범위 안인 평면만).
+#   (4) 레벨 기준선: 외래 층(IfcBuildingStorey)의 이름·고도를 단면·입면 기준선에 더한다(commands._render_view).
+F_WALLS = frozenset({"IfcWall", "IfcWallStandardCase", "IfcWallElementedCase"})
+F_NOFILL_PLAN = frozenset({"IfcStair", "IfcStairFlight", "IfcRamp", "IfcRampFlight", "IfcRoof"})   # 저작 요소와 같이 평면에서는 채우지 않는다
+
+
+def foreign_nonbearing(g):
+    """LoadBearing 이 거짓인 외래 벽 id 들(형상 있는 것만). 없으면 빈 값."""
+    return tuple(e for e in g.q(all_foreign) if Q.el(g, e).get("ifc_class") in F_WALLS and g.q(is_nonbearing, e))
+
+
+def _f_pip(pt, poly) -> bool:
+    """점이 다각형 안인가(짝홀, 반열린 규칙)."""
+    x, y = pt
+    n, inside = len(poly), False
+    for i in range(n):
+        (x0, y0), (x1, y1) = poly[i], poly[(i + 1) % n]
+        if (y0 > y) != (y1 > y) and x0 + (y - y0) / (y1 - y0) * (x1 - x0) > x:
+            inside = not inside
+    return inside
+
+
+def _f_loops(segs) -> list:
+    """절단 선분들을 닫힌 고리들로 잇는다(끝점 0.01mm 반올림 기준). 닫히지 않는 사슬은 버린다.
+    여러 몸체가 맞닿은 메시(층 구성 벽 등)는 맞닿은 면이 같은 선분을 두 번 만든다: 다른 선분의 끝점(T 꼭짓점)에서 선분을 쪼갠 뒤
+    같은 선분이 짝수 번 나오면 지우고 홀수 번이면 하나 남긴다(경계의 mod 2 합 = 맞닿은 몸체 합집합의 경계)."""
+    raw = [((round(a0, 2), round(b0, 2)), (round(a1, 2), round(b1, 2))) for a0, b0, a1, b1 in segs]
+    raw = [e for e in raw if e[0] != e[1]]
+    bins: dict = {}
+    for p in sorted({p for e in raw for p in e}):
+        bins.setdefault((int(p[0] // F_BIN), int(p[1] // F_BIN)), []).append(p)
+    count: dict = {}
+    for p, q in raw:
+        dx, dy = q[0] - p[0], q[1] - p[1]
+        ll = dx * dx + dy * dy
+        ln = sqrt(ll)
+        ts = []
+        for i in range(int(min(p[0], q[0]) // F_BIN), int(max(p[0], q[0]) // F_BIN) + 1):
+            for j in range(int(min(p[1], q[1]) // F_BIN), int(max(p[1], q[1]) // F_BIN) + 1):
+                for r in bins.get((i, j), ()):
+                    t = ((r[0] - p[0]) * dx + (r[1] - p[1]) * dy) / ll
+                    if 1e-9 < t < 1.0 - 1e-9 and abs(dx * (r[1] - p[1]) - dy * (r[0] - p[0])) / ln <= 0.02:
+                        ts.append((t, r))
+        pts = [p] + [r for _t, r in sorted(ts)] + [q]
+        for a, b in zip(pts, pts[1:]):
+            if a != b:
+                k = (a, b) if a < b else (b, a)
+                count[k] = count.get(k, 0) + 1
+    edges = sorted(k for k, n in count.items() if n % 2)
+    adj: dict = {}
+    for i, (p, q) in enumerate(edges):
+        adj.setdefault(p, []).append(i)
+        adj.setdefault(q, []).append(i)
+    used = [False] * len(edges)
+    loops = []
+    for i, (start, cur) in enumerate(edges):
+        if used[i]:
+            continue
+        used[i] = True
+        loop = [start]
+        while cur != start:
+            loop.append(cur)
+            nxt = next((j for j in adj[cur] if not used[j]), None)
+            if nxt is None:
+                break
+            used[nxt] = True
+            p, q = edges[nxt]
+            cur = q if p == cur else p
+        if cur == start and len(loop) >= 3 and abs(_area2(loop)) > 1e-6:
+            loops.append(loop)
+    return loops
+
+
+def _f_bridge(outer, hole):
+    """구멍(시계 방향)을 바깥 고리(반시계)에 폭 0 다리로 잇는다: 구멍의 가장 오른쪽 점에서 +a 방향 반직선이 처음 만나는 변에 다리를 놓는다."""
+    h = max(range(len(hole)), key=lambda i: (hole[i][0], hole[i][1], -i))
+    hx, hy = hole[h]
+    best = None
+    n = len(outer)
+    for k in range(n):
+        (x0, y0), (x1, y1) = outer[k], outer[(k + 1) % n]
+        if (y0 > hy) != (y1 > hy):
+            x = x0 + (hy - y0) / (y1 - y0) * (x1 - x0)
+            if x >= hx and (best is None or x < best[0]):
+                best = (x, k)
+    if best is None:
+        return None
+    x, k = best
+    ip = (x, hy)
+    ring = hole[h:] + hole[:h]
+    return outer[:k + 1] + [ip] + ring + [hole[h], ip] + outer[k + 1:]
+
+
+def _f_fill_polys(segs) -> tuple:
+    """절단 선분 묶음 -> 채움 다각형들(구멍은 다리로 이은 다각형 하나)."""
+    loops = _f_loops(segs)
+    if not loops:
+        return ()
+    areas = [abs(_area2(lp)) for lp in loops]
+    inside = [[j for j in range(len(loops)) if j != i and areas[j] > areas[i] and _f_pip(loops[i][0], loops[j])] for i in range(len(loops))]
+    depth = [len(x) for x in inside]
+    out = []
+    for i, lp in enumerate(loops):
+        if depth[i] % 2:
+            continue
+        poly = lp if _area2(lp) > 0 else lp[::-1]
+        holes = [j for j in range(len(loops)) if depth[j] == depth[i] + 1 and i in inside[j]]
+        holes.sort(key=lambda j: (-max(p[0] for p in loops[j]), j))
+        for j in holes:
+            hl = loops[j] if _area2(loops[j]) < 0 else loops[j][::-1]
+            merged = _f_bridge(poly, hl)
+            if merged is not None:
+                poly = merged
+        out.append(tuple(poly))
+    return tuple(out)
+
+
+def foreign_fills(g, v, e):
+    """외래 요소 하나의 절단면 채움 다각형(heavy 범주만, 평면에서는 계단·경사로·지붕 제외)."""
+    cfg = g.q(view_cfg, v)
+    info = g.q(foreign_info, e)
+    if cfg is None or info is None or info[0] != "heavy":
+        return ()
+    if cfg[0] == "plan" and Q.el(g, e).get("ifc_class") in F_NOFILL_PLAN:
+        return ()
+    return _f_fill_polys(g.q(_f_cut, v, e))
+
+
+def _raw_foreign_spaces(g):
+    """실명 문자를 놓을 수 있는 외래 공간(foreign_geom 값이 "space")."""
+    return tuple(e for e in g.q(_raw_foreign) if (Q.fgeom(g, e) or ("",))[0] == "space")
+
+
+def scope_foreign_spaces(g, v):
+    """평면 뷰가 실명을 쓰는 외래 공간: 절단 높이가 공간의 높이 범위 안인 것."""
+    cfg = g.q(view_cfg, v)
+    if cfg is None or cfg[0] != "plan" or cfg[1] is None:
+        return ()
+    out = []
+    for e in g.q(_raw_foreign_spaces):
+        z0, z1 = Q.fgeom(g, e)[5]
+        if z0 - EPS <= cfg[2] <= z1 + EPS:
+            out.append(e)
+    return tuple(out)
+
+
+def foreign_space_labels(g, v, e):
+    """외래 공간 하나: 실명(위)과 "실번호 면적"(아래) 문자."""
+    cfg = g.q(view_cfg, v)
+    fg = Q.fgeom(g, e)
+    if cfg is None or cfg[0] != "plan" or fg is None or fg[0] != "space":
+        return ()
+    _, title, number, (cx, cy), area, _z = fg
+    sc = cfg[4]
+    sub = f"{area / 1.0e6:.2f}㎡" if number is None else f"{number}  {area / 1.0e6:.2f}㎡"
+    return ((round(cx, 3), round(cy + 0.9 * sc, 3), title, LABEL_NAME_H, "middle"),
+            (round(cx, 3), round(cy - 2.0 * sc, 3), sub, LABEL_SUB_H, "middle"))
+
+
+def foreign_datums(g):
+    """외래 층(IfcBuildingStorey)의 기준선 ((이름, 고도 mm), ...). 고도는 IFC 배치(foreign_geom "storey"). 없으면 빈 값."""
+    out = []
+    for e in g.q(_raw_foreign):
+        row = Q.el(g, e)
+        fg = Q.fgeom(g, e)
+        if row.get("ifc_class") == "IfcBuildingStorey" and fg is not None and fg[0] == "storey":
+            out.append((str(row["params"].get("name") or e), fg[1]))
+    return tuple(sorted(out, key=lambda t: (t[1], t[0])))
+
+
+VIEW_SCOPED = VIEW_SCOPED | frozenset({scope_foreign, _f_cut, _f_occ, foreign_lines,
+                                       foreign_fills, scope_foreign_spaces, foreign_space_labels})   # 외래 도면 경로의 뷰별 질의(forget_views 가 치운다)

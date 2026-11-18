@@ -115,7 +115,10 @@ def render_project(env, out_dir: Path | None = None) -> dict:
             (out_dir / svg_name).write_bytes(svg)
         summ = D.view_summary(lines)
         res[spec["name"]] = {"lines_sha256": _sha(json.dumps(lines, separators=(",", ":")).encode("ascii")), "svg_sha256": _sha(svg),
-                             "segments": summ["segments"], "by_class": summ["by_class"], "omitted": eng.g.q(D.view_omitted, vid)}
+                             "segments": summ["segments"], "by_class": summ["by_class"], "omitted": eng.g.q(D.view_omitted, vid),
+                             # 2차: 절단면 채움 수, 문자 수(외래 공간 실명 포함), 비내력 절단선 수(선 굵기 위계), 외래 층 기준선 수
+                             "fills": len(eng.g.q(D.view_fills, vid)), "labels": len(eng.g.q(D.view_labels, vid)),
+                             "cutn": sum(1 for ln in eng.g.q(D.view_lines_hier, vid) if ln[0] == "cutn"), "datums": len(eng.g.q(D.foreign_datums))}
     return res
 
 

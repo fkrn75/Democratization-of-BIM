@@ -122,7 +122,9 @@ IfcOpenShell은 API 리스너(`add_pre_listener`, `add_post_listener`)와 파일
 
 ### 4.1 외래 IFC 가져오기와 분류 (S2 구현 사실)
 
-`ifc.import {source, path}`는 작업 폴더 안의 IFC4 파일을 **새 프로젝트**(`project.new`와 같다. 기존 프로젝트에 합치지 않는다)로 가져온다. IFC2x3·IFC4X3은 `UNSUPPORTED_SCHEMA`, 읽을 수 없거나 GlobalId가 22자 형식이 아니거나 겹치면 `IMPORT_INVALID`, 실패하면 반쯤 만든 프로젝트 파일을 남기지 않는다. 원본 바이트는 SQLite의 `foreign_base`에 압축해 **외래 기반**으로 보존한다. 가져오기는 로그 항목이 아니라 프로젝트의 시작 상태(rev 0)이고, 이후 편집이 로그에 쌓인다. 프로젝트를 열 때마다 외래 기반을 열고(작업 사본) 로그를 그 위에 재생한다.
+`ifc.import {source, path}`는 작업 폴더 안의 IFC4 파일을 **새 프로젝트**(`project.new`와 같다. 기존 프로젝트에 합치지 않는다)로 가져온다. IFC2x3 은 IFC4 로 올린 뒤 가져온다(외래 기반은 올린 IFC4, 경고에 적는다). IFC4X3은 `UNSUPPORTED_SCHEMA`, 읽을 수 없거나 GlobalId가 22자 형식이 아니거나 겹치면 `IMPORT_INVALID`, 실패하면 반쯤 만든 프로젝트 파일을 남기지 않는다. 원본 바이트는 SQLite의 `foreign_base`에 압축해 **외래 기반**으로 보존한다. 가져오기는 로그 항목이 아니라 프로젝트의 시작 상태(rev 0)이고, 이후 편집이 로그에 쌓인다. 프로젝트를 열 때마다 외래 기반을 열고(작업 사본) 로그를 그 위에 재생한다.
+
+IFC2x3 내보내기(W1, IO-03): `ifc.export {path, schema: "IFC2X3"}`. 정본은 IFC4 투영이고 IFC2x3 은 그 복사본을 ifcopenshell 스키마 이전기로 내린다(IFC4 출력 바이트·응답은 그대로). IFC2x3 에 없는 클래스는 가까운 클래스로 바꾸고(위생기구·조명·소화 단말 → IfcFlowTerminal, 감지기·조작반 → IfcDistributionControlElement, 지형 → IfcBuildingElementProxy, IfcFurniture → IfcFurnishingElement, 문·창 타입 → IfcDoorStyle·IfcWindowStyle 등) 원래 클래스·PredefinedType 을 ObjectType 에 남긴다. 필수 IfcOwnerHistory 는 하나 만들어 모든 IfcRoot 에 붙인다(작성 시각 0, 사용자 신원 없음). 담지 못한 속성·PredefinedType·클래스 대체는 응답 `losses` 와 경고로 알린다. 검증: 스키마·EXPRESS 규칙 검증과 다시 읽은 제품 GlobalId 집합 일치(시험).
 
 분류 단위는 코어 뼈대(`IfcProject "dobim"` > `IfcSite "Site"` > `IfcBuilding "Building"`. 코어가 만든 파일의 뼈대는 요소가 아니라 투영 소유 구조)를 뺀 모든 `IfcProduct`다. 외래 파일의 사이트·건물은 외래 요소다. 뼈대는 **구조·이름·형상 없음·항등 배치**로 알아본다. 위경도·주소·설명 같은 **비형상 속성은 보지 않으므로** 외부 도구가 사이트에 위경도만 적어도 뼈대는 뼈대다(요소 분류에 영향 없음, 내보낼 때 그대로 남는다). 뼈대의 배치·표현이 바뀌었으면 보수적으로 뼈대로 보지 않고(사이트·건물은 외래 요소, 레벨은 분리) 경고한다. GlobalId는 프로젝트 UUID에서 파생돼 파일마다 달라 인식 기준이 될 수 없다.
 

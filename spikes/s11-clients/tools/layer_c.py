@@ -163,7 +163,11 @@ def invocations(calls: list[dict]) -> list[dict]:
                     out.append({"command": it.get("command") or it.get("name"), "tool": t + ":batch", "outcome": outcome(c)})
             elif a.get("command"):
                 out.append({"command": a["command"], "tool": t, "outcome": outcome(c), "dry_run": bool(a.get("dry_run"))})
-        elif t in ("dobim_job", "dobim_render"):
+        elif t == "dobim_render":
+            # 16단계부터 구현됨: 뷰는 view.image, 시트는 sheet.image 호출로 센다(인자 없이 오류 나면 도구 이름 그대로)
+            cmd = {"view": "view.image", "sheet": "sheet.image"}.get(a.get("target", "view"), t)
+            out.append({"command": cmd, "tool": t, "outcome": outcome(c)})
+        elif t == "dobim_job":
             out.append({"command": t, "tool": t, "outcome": outcome(c)})
     return out
 
@@ -192,7 +196,7 @@ def judge_g4(calls: list[dict]) -> dict:
         "f_dry_run_ok": lambda i: i["command"] == "wall.move" and i.get("dry_run") and i["outcome"] == "ok",
         "g_not_found": lambda i: i["command"] == "wall.move" and i["outcome"] in ("NOT_FOUND", "CONSTRAINT"),
         "h_job": lambda i: i["command"] == "dobim_job" and i["outcome"] == "NOT_FOUND",
-        "i_render": lambda i: i["command"] == "dobim_render" and i["outcome"] == "UNSUPPORTED",
+        "i_render": lambda i: i["tool"] == "dobim_render" and i["outcome"] in ("UNSUPPORTED", "SCHEMA_INVALID"),   # 16단계 이후 렌더는 구현됨: id 없이 부르면 SCHEMA_INVALID
     }
     return {k: any(f(i) for i in inv) for k, f in want.items()}
 

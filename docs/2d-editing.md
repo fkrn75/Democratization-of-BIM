@@ -1,7 +1,7 @@
 # 2D 편집 설계 — 2D 작도 커맨드(A)와 평면 GUI 편집기(B)
 
 - 일자: 2026-11-18
-- 상태: A 는 구현(브랜치 `phase1/drafting-2d`, 27단계), B 는 설계·분할안(코드 없음). B 의 기술 결정은 [ADR-0016 초안](adr/0016-plan-editor-gui.md)
+- 상태: A 는 구현(브랜치 `phase1/drafting-2d`, 27단계). B 는 B0(패리티 G 검사기·조작 기록 재생기)·B1(코어 조회 `view.scene`·`view.pick`·`geom.snap`) 구현(브랜치 `phase1/gui-b0-b1`, 2.8절), B2 이후 미착수. B 의 기술 결정은 [ADR-0016](adr/0016-plan-editor-gui.md)
 - 관련: ADR-0004(플랫폼·스택), ADR-0011(모든 기능은 커맨드, 패리티 G·C·A, 헤드리스), ADR-0015(뷰·주석 정의 왕복), 로드맵 2a·2b, `spikes/s6-viewer/report.md`
 
 사용자 요청은 "도빔에 2D 편집 기능도 넣어줘"이고 범위는 둘 다다. (A) 도면·뷰 위의 CAD식 2D 작도를 CLI·MCP 커맨드로 먼저 만들고, (B) 그 위에 평면에서 벽·문·창을 그리고 옮기면 모델이 바뀌는 GUI 편집기를 둔다(로드맵 2b 의 "2D 평면 편집"을 앞당김).
@@ -156,3 +156,24 @@ ADR-0015 의 그릇을 그대로 쓴다(`viewdefs.DEF_KINDS` 에 `dlayer`·`draf
 | B5(선택) | 시트 편집 화면, 3D 뷰(ifc-lite) | 같음 | 로드맵 2b |
 
 B0·B1 은 GUI 없이 코어만 바꾸므로 지금의 시험 체계로 끝까지 검증된다. B2 부터 Node·Rust 빌드 체인이 들어온다.
+
+### 2.8 B0·B1 구현 메모(2026-11-19, 브랜치 `phase1/gui-b0-b1`)
+
+**파일**
+
+| 파일 | 내용 |
+|---|---|
+| `spikes/s12-gui/gui/actions.json` | 형식 `dobim.gui.actions/1`. 동작마다 `command`(하나)·`commands`(여럿)·`exempt: true` 중 정확히 하나. `client_files` = 사이드카를 불러도 되는 커맨드 클라이언트 파일. 지금은 2.4절 MVP 동작 35개(커맨드 29, 제외 6) |
+| `spikes/s12-gui/gui_exempt.yaml` | 제외 6개(2.5절 초안 그대로) + 선택 `queries`(그 동작이 부르는 조회). YAML 의존을 들이지 않으려고 작은 부분집합만 받는다(목록 안 `key: value`, 값은 문자열·`[a, b]`) |
+| `spikes/s1-core/tools/parity_g.py` | 정적 검사. 실패 코드 `E_FORMAT`·`E_UNKNOWN_COMMAND`(없는 커맨드)·`E_EXEMPT_MISSING`(매핑 누락)·`E_NO_REASON`·`E_EXEMPT_WRITES`(제외 항목의 `queries` 가 조회가 아니거나 제외 id 가 쓰기 커맨드 이름)·`E_BYPASS`(`--src` 소스에서 클라이언트 밖 `invoke(`·`gui-serve`·`dispatch.run`·`sidecar(` 호출). 통과 0 / 실패 1 |
+| `spikes/s1-core/tools/replay.py` | 조작 기록 `dobim.gui.record/1`(project.guid, steps, final = model.hash 4개)을 새 프로젝트에 **CLI 서브프로세스**로 재생해 rev·state·derived·ifc 를 비교한다. 단계 = `command`+`args` / `batch`(원자 묶음) / `exempt`(+`query`). 이어진 단계는 `dobim script` 한 번으로, 묶음은 `script --atomic`, 파괴적 커맨드는 확인 토큰 2단계로. 제외 단계의 조회는 앞뒤 해시가 같아야 한다(제외 동작 무해성, `R_EXEMPT`). `--actions` 를 주면 단계의 동작 ↔ 커맨드 매핑도 본다(`R_ACTION`). `Recorder` 는 같은 기록을 만드는 기록기(GUI 커맨드 클라이언트가 할 일을 dispatch 경로로 흉내) |
+| `src/dobim_core/scene.py`, `commands_gui.py` | B1 조회 |
+
+자동 id 는 프로젝트 UUID 와 로그 순번에서 결정적으로 나오므로(`engine.new_id`) 기록에 id 가 없어도 같은 guid 로 만든 새 프로젝트에서 같은 id 가 나온다. 실패한 커맨드는 상태를 바꾸지 않으므로 기록하지 않는다.
+
+**`view.scene`** — `view_lines` 가 쓰는 요소별 질의(`plan_wall_lines`·`fam_lines`·`slab_lines` …)를 요소마다 따로 모아 요소 id 를 붙인다. 화면과 도면이 같은 원천이 되도록 요소 안은 `merge_lines` 로 정규화하고, 요소 사이에는 어느 요소의 절단선이 덮는 다른 요소의 낮은 등급 선을 지운다(`view_lines` 의 병합 규칙). 잘라내기(crop)도 같은 함수다. 그래서 등급·직선별로 덮는 구간이 `view_lines` 와 같다(시험: 평면·단면·입면·잘라낸 상세 평면, 끝점 차 0.05mm 이하). 다른 점은 요소 사이 같은 등급의 맞닿은 선을 잇지 않는다는 것뿐이다. 문·창(호스팅 패밀리)의 평면 기호는 벽 선분에서 빼서 그 요소의 것으로 돌린다(같은 함수로 다시 만든 선분과 정확히 같은 것만 뺀다). 단면·입면의 개구부 선은 벽의 것으로 남는다. 2D 작도(`draft`)·주석(`dim`·`tag`)은 그림 항목 그대로, 뷰가 계산해 붙이는 것(대지 뷰 전체·표지판·지반선·계단/승강기 치수)은 종류 `view`, id = 뷰 id 로 담는다.
+응답 행 = `{id, kind, bb, lines?, fills?, texts?, items?, part?}`(행 하나 약 1.5KB, 선분이 많은 요소는 `part: [i, n]` 로 나눈다). 거르기: `bbox`(타일, 경계 상자가 겹치는 요소 통째로)·`ids`(바뀐 요소만)·`kinds`, `decimals`(기본 1). `summary` 는 거르기 전 전체 장면의 요소·선분 수·경계 상자·digest(쪽들이 같은 장면인지 맞춰 보기). 장면·행·요약은 그래프 노드라 바뀐 요소만 다시 계산된다(증분 = 전체 시험), 뷰를 지우면 `forget_views` 가 치운다.
+
+**`view.pick`** — 점에서 허용 거리(기본 용지 3mm = 3 x 축척) 안의 요소를 가까운 순으로(같으면 절단선 > 채움 안 > 나머지 > 문자). 채움 다각형 안이면 거리 0. **`geom.snap`** — 끝점·중점·교점(근처 선분 200개 안에서)·벽 축선 끝·중점(평면)·수선의 발(`from` 필요)·직교(`from` 을 지나는 가로·세로) 후보를 가까운 순으로, `best` 는 첫 후보.
+
+**측정**(합성 격자 평면, `tools/bench_gui_scene.py`) 결과는 `spikes/phase1-drawings/baseline.md` 32절.
