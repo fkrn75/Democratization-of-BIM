@@ -4693,3 +4693,4 @@ from dobim_core import commands_walltop  # noqa: E402,F401
 from dobim_core import commands_draft  # noqa: E402,F401
 from dobim_core import commands_schedule  # noqa: E402,F401
 from dobim_core import commands_gui  # noqa: E402,F401
+from dobim_core import commands_rules  # noqa: E402,F401
