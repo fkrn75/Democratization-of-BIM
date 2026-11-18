@@ -1084,7 +1084,7 @@ test_foreign_drawings(18건, 로컬 표본 없으면 2건 건너뜀. 로컬 표�
 제도·관행 미충족 10개 -> 9개(LN-10 이 부분으로), 부분 17개 -> 18개.
 
 ### 30.5 시험·parity
-마지막 코드 변경(커밋 0e6f23c) 뒤 한 번에 다시 돌린 결과(도중 수정 없음). s1-core 전체(test_slow 제외): 1066 통과(병합 전 결과), 38 건너뜀, 실패 0. test_slow: 7건 통과. parity: 커맨드 110 전부 예시 실행(예시 130·오류 사례 49), 불일치 0. 기준선 `run_baseline.py --sheets`: after26 과 같은 파일 183개, 달라진 파일 0, 새 산출 0, 사라진 파일 0(work/·run.json 제외). import-linter 계약에 dxf_export 를 순수 모듈(엔진·프로토콜·ifcopenshell 금지)로 더했다.
+origin/main(29절 외래 IFC 도면·2D 작도) 병합 뒤 한 번에 다시 돌린 결과(도중 수정 없음). s1-core 전체(test_slow 제외): 1102 통과, 40 건너뜀, 실패 0(DXF 14건 포함). test_slow: 7건 통과. parity: 커맨드 125 전부 예시 실행(예시 148·오류 사례 49), 불일치 0. 병합 전(DXF 단독, 커맨드 110) 기준선 `run_baseline.py --sheets` 는 after26 과 183 파일 바이트가 같았다(DXF 는 기준선 산출에 더하지 않음). import-linter 계약에 dxf_export 를 순수 모듈(엔진·프로토콜·ifcopenshell 금지)로 더했다.
 
 ### 30.6 한계
 - 상용 CAD 실기 열기 미확인(ezdxf 엄격 읽기·감사만). 글꼴은 파일 이름(malgun.ttf)으로 지정하므로 맑은 고딕이 없는 환경에서는 대체 글꼴로 보인다.
