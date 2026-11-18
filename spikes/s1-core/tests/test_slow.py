@@ -38,3 +38,13 @@ def test_변이를_심으면_시험이_잡아낸다(mutant, tmp_path):
     with fn():
         res = run_mutants.run_checks(tmp_path, [101, 102, 103, 104], 120, [201, 202], 100, 60)
     assert res["detected"], f"{name} 을 놓쳤다"
+
+
+def test_C4_회귀_코퍼스_전체가_main_기준값과_같다():
+    """C-4: S1 퍼즈 10k 두 시드·실행 취소 20시드·T0 벤치, S10 시험 전체, S11 응답 크기·분기 금지를 main 기준값(results/c4_baseline.json)과 대조한다."""
+    import json
+    import c4_corpus
+    got = c4_corpus.measure(quick=False)
+    want = json.loads(c4_corpus.BASELINE.read_text(encoding="utf-8"))["full"]
+    bad = c4_corpus.compare(got, want)
+    assert not bad, bad[:5]

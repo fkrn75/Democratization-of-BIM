@@ -1,0 +1,164 @@
+{
+  "history": [
+    {
+      "date": "2026-11-19",
+      "mode": "quick",
+      "commit": "eb869f5",
+      "reason": "C-4 최초 고정: main(eb869f5) 기준 재측정(축소판)"
+    },
+    {
+      "date": "2026-11-19",
+      "mode": "full",
+      "commit": "eb869f5",
+      "reason": "C-4 최초 고정: main(eb869f5) 기준 재측정(전체판: 퍼즈 10k 두 시드, 실행 취소 20시드, T0 벤치, S10 전체, S11 크기·분기 금지)"
+    },
+    {
+      "date": "2026-11-19",
+      "mode": "full",
+      "commit": "eb869f5",
+      "reason": "S10 시험 수 집계 수정(addopts -q 와 겹쳐 요약 줄이 없던 것) 뒤 S10 항목만 다시 잼"
+    }
+  ],
+  "quick": {
+    "fuzz": [
+      {
+        "seed": 20261107,
+        "n_items": 300,
+        "ok": true,
+        "diffs": [],
+        "hashes": {
+          "state": "7db4cb05f4e3e6da1cb8337307c949117a2d403b2e6890351cfbf4df828b7101",
+          "derived": "095b336b060d3d291d16a6140134e1b87237e01c1f8848e3ead51cfb7c2bd902",
+          "ifc": "7e8f16434800f097814ad2a75f9378fe34896f8e1cad52ec9a706139494eba15"
+        },
+        "log_entries": 268,
+        "items_succeeded": 247,
+        "items_failed": 53,
+        "final_counts": {
+          "level": 3,
+          "wall": 44,
+          "door": 8
+        },
+        "_elapsed_sec": 4.9
+      }
+    ],
+    "undo": {
+      "seeds": [
+        1,
+        2
+      ],
+      "items_per_seed": 60,
+      "violations": [],
+      "total_hash_verified_steps": 310,
+      "total_branch_checks": 160,
+      "total_txns": 89
+    }
+  },
+  "full": {
+    "fuzz": [
+      {
+        "seed": 20261107,
+        "n_items": 10000,
+        "ok": true,
+        "diffs": [],
+        "hashes": {
+          "state": "c09c2e0e5c3db5c59a67f6f2414482a48d80b0c1cc340a1777fd52f0e1474e59",
+          "derived": "3b87337673c5e6526eed528bd38eae7c40143685061a30fcd28e32795b398e26",
+          "ifc": "281793eefb3fa580a6b489623c3697bfb2671e47a7264e8d8c12dd9ce8c2b6e2"
+        },
+        "log_entries": 9277,
+        "items_succeeded": 8544,
+        "items_failed": 1456,
+        "final_counts": {
+          "level": 129,
+          "wall": 1631,
+          "door": 445
+        },
+        "_elapsed_sec": 93.2
+      },
+      {
+        "seed": 424242,
+        "n_items": 10000,
+        "ok": true,
+        "diffs": [],
+        "hashes": {
+          "state": "49130c2849e7d8d3eecfd5d2489f2d2b17731d1a8dc79ddf4055268254e18be1",
+          "derived": "95fd6659f17573274647783ce0cdf0e36c3f7d701864647bdee6160e4147b4d9",
+          "ifc": "d6896613fbef5cd3d46e566d90f6affd70d431321614914c20f38e088e733cd2"
+        },
+        "log_entries": 9269,
+        "items_succeeded": 8606,
+        "items_failed": 1394,
+        "final_counts": {
+          "level": 126,
+          "wall": 1637,
+          "door": 474
+        },
+        "_elapsed_sec": 96.5
+      }
+    ],
+    "undo": {
+      "seeds": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+        16,
+        17,
+        18,
+        19,
+        20
+      ],
+      "items_per_seed": 200,
+      "violations": [],
+      "total_hash_verified_steps": 7934,
+      "total_branch_checks": 1600,
+      "total_txns": 3164
+    },
+    "bench_t0": {
+      "exit": 0,
+      "elements": {
+        "level": 10,
+        "wall": 3000,
+        "door": 1990
+      },
+      "_p95_ms": 2.233,
+      "_p50_ms": 1.496,
+      "_max_ms": 16.839,
+      "pass_p95_50ms": true
+    },
+    "s10": {
+      "exit": 0,
+      "counts": {
+        "passed": 35,
+        "skipped": 3
+      },
+      "failed": []
+    },
+    "s11": {
+      "lint_exit": 0,
+      "lint_pass": true,
+      "size_exit": 0,
+      "over_8000_by_tiktoken": [
+        "commands.describe solid.create",
+        "commands.describe sheet.export",
+        "commands.describe sheet.image",
+        "commands.describe solid.create"
+      ],
+      "_max_est_tokens": 8824,
+      "_max_tiktoken_o200k": 8714,
+      "_slowest_ms": 10207.4
+    }
+  }
+}
