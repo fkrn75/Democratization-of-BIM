@@ -1,0 +1,211 @@
+{
+  "steps": 11,
+  "ra01_commands_in_batch": 76,
+  "prompt_chars": 10713,
+  "baseline_cli": {
+    "ok_per_step": [
+      true,
+      true,
+      true,
+      true,
+      false,
+      true,
+      false,
+      true,
+      true,
+      true,
+      true
+    ],
+    "state": {
+      "hash": {
+        "rev": 76,
+        "state": "3f315184fc601b9a2d08fd011cd0cf9c8fe0dc08d79781a98a32684ed189fee1",
+        "derived": "a3b4ab8a0ceb07675b179dafac5ec63971be8c7e6461d636f6b352365f4b9051",
+        "ifc": "8bbb8169081bb754e3008c2affaeba96189295c97dd6954e82413e43a9b9154d"
+      },
+      "rev": 76,
+      "counts": {
+        "level": 2,
+        "wall": 14,
+        "door": 5
+      }
+    }
+  },
+  "client": {
+    "exit": 0,
+    "wall_s": 37.2,
+    "tool_calls": 11,
+    "usage": {
+      "usage": {
+        "input_tokens": 8,
+        "cache_creation_input_tokens": 10663,
+        "cache_read_input_tokens": 51956,
+        "output_tokens": 5892,
+        "output_tokens_details": {
+          "thinking_tokens": 48
+        },
+        "server_tool_use": {
+          "web_search_requests": 0,
+          "web_fetch_requests": 0
+        },
+        "service_tier": "standard",
+        "cache_creation": {
+          "ephemeral_1h_input_tokens": 10663,
+          "ephemeral_5m_input_tokens": 0
+        },
+        "inference_geo": "global",
+        "iterations": [
+          {
+            "input_tokens": 2,
+            "output_tokens": 281,
+            "cache_read_input_tokens": 19053,
+            "cache_creation_input_tokens": 2676,
+            "cache_creation": {
+              "ephemeral_5m_input_tokens": 0,
+              "ephemeral_1h_input_tokens": 2676
+            },
+            "type": "message"
+          }
+        ],
+        "speed": "standard",
+        "fallback_credit": null
+      },
+      "total_cost_usd": 0.10678359999999998,
+      "modelUsage": {
+        "claude-sonnet-5-5": {
+          "inputTokens": 8,
+          "outputTokens": 5892,
+          "cacheReadInputTokens": 51956,
+          "cacheCreationInputTokens": 10663,
+          "webSearchRequests": 0,
+          "costUSD": 0.10678359999999998,
+          "contextWindow": 1000000,
+          "maxOutputTokens": 128000,
+          "thinkingTokens": 48,
+          "cacheCreationEphemeral5mInputTokens": 0,
+          "cacheCreationEphemeral1hInputTokens": 10663,
+          "canonicalModel": "claude-sonnet-5-5",
+          "provider": "firstParty",
+          "costBasis": "list"
+        }
+      },
+      "num_turns": 12,
+      "duration_ms": 33785,
+      "is_error": false,
+      "subtype": "success"
+    },
+    "other_item_types": null,
+    "call_sequence_equals_script": false,
+    "extra_or_missing_calls": 0,
+    "state": {
+      "hash": {
+        "rev": 76,
+        "state": "3f315184fc601b9a2d08fd011cd0cf9c8fe0dc08d79781a98a32684ed189fee1",
+        "derived": "a3b4ab8a0ceb07675b179dafac5ec63971be8c7e6461d636f6b352365f4b9051",
+        "ifc": "8bbb8169081bb754e3008c2affaeba96189295c97dd6954e82413e43a9b9154d"
+      },
+      "rev": 76,
+      "counts": {
+        "level": 2,
+        "wall": 14,
+        "door": 5
+      }
+    },
+    "hash_equal_to_cli": true,
+    "escape_file_created_outside": false,
+    "final_text_chars": 417,
+    "first_divergence_index": 5,
+    "sequence_actual": [
+      [
+        "dobim_project",
+        true,
+        null
+      ],
+      [
+        "dobim_execute",
+        true,
+        null
+      ],
+      [
+        "dobim_query",
+        true,
+        null
+      ],
+      [
+        "dobim_query",
+        true,
+        null
+      ],
+      [
+        "dobim_execute_destructive",
+        false,
+        "CONFIRM_REQUIRED"
+      ],
+      [
+        "dobim_execute_destructive",
+        false,
+        "PATH_DENIED"
+      ],
+      [
+        "dobim_execute_destructive",
+        true,
+        null
+      ],
+      [
+        "dobim_query",
+        true,
+        null
+      ],
+      [
+        "dobim_query",
+        true,
+        null
+      ],
+      [
+        "dobim_query",
+        true,
+        null
+      ],
+      [
+        "dobim_query",
+        true,
+        null
+      ]
+    ],
+    "batch_args_identical": true,
+    "final_ifc_semantic": {
+      "identical": true,
+      "differing_parts": [],
+      "elements": 28
+    },
+    "protocol": {
+      "initialize": {
+        "protocolVersion": "2026-07-28",
+        "clientInfo": {
+          "name": "claude-code",
+          "title": "Claude Code",
+          "version": "2.1.325",
+          "description": "Anthropic's agentic coding tool",
+          "websiteUrl": "https://claude.com/claude-code"
+        },
+        "capabilities": [
+          "elicitation",
+          "extensions",
+          "roots"
+        ]
+      },
+      "negotiated": "2026-07-28",
+      "non_json_stdout_lines": 0
+    },
+    "latency": {
+      "tool_calls": 11,
+      "initialize_ms": 1411.5,
+      "handshake_method": "server/discover",
+      "median_ms": 4.2,
+      "max_ms": 3504.4,
+      "slowest_tool": "dobim_query",
+      "max_response_wire_bytes": 9735
+    }
+  },
+  "pass": false
+}

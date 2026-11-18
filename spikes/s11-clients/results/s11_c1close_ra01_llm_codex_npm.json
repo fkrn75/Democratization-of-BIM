@@ -1,0 +1,100 @@
+{
+  "steps": 11,
+  "ra01_commands_in_batch": 76,
+  "prompt_chars": 10713,
+  "baseline_cli": {
+    "ok_per_step": [
+      true,
+      true,
+      true,
+      true,
+      false,
+      true,
+      false,
+      true,
+      true,
+      true,
+      true
+    ],
+    "state": {
+      "hash": {
+        "rev": 76,
+        "state": "3f315184fc601b9a2d08fd011cd0cf9c8fe0dc08d79781a98a32684ed189fee1",
+        "derived": "a3b4ab8a0ceb07675b179dafac5ec63971be8c7e6461d636f6b352365f4b9051",
+        "ifc": "8bbb8169081bb754e3008c2affaeba96189295c97dd6954e82413e43a9b9154d"
+      },
+      "rev": 76,
+      "counts": {
+        "level": 2,
+        "wall": 14,
+        "door": 5
+      }
+    }
+  },
+  "client": {
+    "exit": 0,
+    "wall_s": 87.9,
+    "tool_calls": 11,
+    "usage": {
+      "input_tokens": 136855,
+      "cached_input_tokens": 101760,
+      "output_tokens": 4117,
+      "reasoning_output_tokens": 196
+    },
+    "other_item_types": {
+      "error": 1,
+      "agent_message": 2,
+      "mcp_tool_call": 11
+    },
+    "call_sequence_equals_script": true,
+    "extra_or_missing_calls": 0,
+    "state": {
+      "hash": {
+        "rev": 76,
+        "state": "3f315184fc601b9a2d08fd011cd0cf9c8fe0dc08d79781a98a32684ed189fee1",
+        "derived": "a3b4ab8a0ceb07675b179dafac5ec63971be8c7e6461d636f6b352365f4b9051",
+        "ifc": "8bbb8169081bb754e3008c2affaeba96189295c97dd6954e82413e43a9b9154d"
+      },
+      "rev": 76,
+      "counts": {
+        "level": 2,
+        "wall": 14,
+        "door": 5
+      }
+    },
+    "hash_equal_to_cli": true,
+    "escape_file_created_outside": false,
+    "final_text_chars": 90,
+    "batch_args_identical": true,
+    "final_ifc_semantic": {
+      "identical": true,
+      "differing_parts": [],
+      "elements": 28
+    },
+    "protocol": {
+      "initialize": {
+        "protocolVersion": "2025-06-18",
+        "clientInfo": {
+          "name": "codex-mcp-client",
+          "title": "Codex",
+          "version": "0.147.0"
+        },
+        "capabilities": [
+          "elicitation"
+        ]
+      },
+      "negotiated": "2025-06-18",
+      "non_json_stdout_lines": 0
+    },
+    "latency": {
+      "tool_calls": 11,
+      "initialize_ms": 1406.6,
+      "handshake_method": "initialize",
+      "median_ms": 4.6,
+      "max_ms": 3721.8,
+      "slowest_tool": "dobim_query",
+      "max_response_wire_bytes": 9634
+    }
+  },
+  "pass": true
+}

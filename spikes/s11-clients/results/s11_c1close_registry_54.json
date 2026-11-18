@@ -1,0 +1,272 @@
+{
+ "annot.check": {
+  "kind": "query",
+  "risk": "read",
+  "group": "annot"
+ },
+ "annot.delete": {
+  "kind": "mutation",
+  "risk": "write",
+  "group": "annot"
+ },
+ "annot.dim.create": {
+  "kind": "mutation",
+  "risk": "write",
+  "group": "annot"
+ },
+ "annot.list": {
+  "kind": "query",
+  "risk": "read",
+  "group": "annot"
+ },
+ "annot.rebind": {
+  "kind": "mutation",
+  "risk": "write",
+  "group": "annot"
+ },
+ "annot.tag.create": {
+  "kind": "mutation",
+  "risk": "write",
+  "group": "annot"
+ },
+ "commands.describe": {
+  "kind": "query",
+  "risk": "read",
+  "group": "system"
+ },
+ "commands.search": {
+  "kind": "query",
+  "risk": "read",
+  "group": "system"
+ },
+ "door.place": {
+  "kind": "mutation",
+  "risk": "write",
+  "group": "model.door"
+ },
+ "door.set": {
+  "kind": "mutation",
+  "risk": "write",
+  "group": "model.door"
+ },
+ "element.delete": {
+  "kind": "mutation",
+  "risk": "write",
+  "group": "model"
+ },
+ "element.get": {
+  "kind": "query",
+  "risk": "read",
+  "group": "query"
+ },
+ "element.query": {
+  "kind": "query",
+  "risk": "read",
+  "group": "query"
+ },
+ "family.list": {
+  "kind": "query",
+  "risk": "read",
+  "group": "family"
+ },
+ "family.place": {
+  "kind": "mutation",
+  "risk": "write",
+  "group": "family"
+ },
+ "family.preview": {
+  "kind": "query",
+  "risk": "read",
+  "group": "family"
+ },
+ "family.register": {
+  "kind": "mutation",
+  "risk": "write",
+  "group": "family"
+ },
+ "family.set": {
+  "kind": "mutation",
+  "risk": "write",
+  "group": "family"
+ },
+ "family.validate": {
+  "kind": "query",
+  "risk": "read",
+  "group": "family"
+ },
+ "history.affected": {
+  "kind": "query",
+  "risk": "read",
+  "group": "history"
+ },
+ "history.list": {
+  "kind": "query",
+  "risk": "read",
+  "group": "history"
+ },
+ "history.redo": {
+  "kind": "mutation",
+  "risk": "write",
+  "group": "history"
+ },
+ "history.undo": {
+  "kind": "mutation",
+  "risk": "write",
+  "group": "history"
+ },
+ "ifc.export": {
+  "kind": "session",
+  "risk": "destructive",
+  "group": "io"
+ },
+ "ifc.import": {
+  "kind": "session",
+  "risk": "write",
+  "group": "io"
+ },
+ "ifc.restore": {
+  "kind": "session",
+  "risk": "destructive",
+  "group": "io"
+ },
+ "ifc.snapshots": {
+  "kind": "query",
+  "risk": "read",
+  "group": "io"
+ },
+ "join.clear": {
+  "kind": "mutation",
+  "risk": "write",
+  "group": "model.join"
+ },
+ "join.set": {
+  "kind": "mutation",
+  "risk": "write",
+  "group": "model.join"
+ },
+ "level.create": {
+  "kind": "mutation",
+  "risk": "write",
+  "group": "model.level"
+ },
+ "material.set": {
+  "kind": "mutation",
+  "risk": "write",
+  "group": "model.pset"
+ },
+ "merge.apply": {
+  "kind": "mutation",
+  "risk": "write",
+  "group": "merge"
+ },
+ "merge.preview": {
+  "kind": "query",
+  "risk": "read",
+  "group": "merge"
+ },
+ "model.hash": {
+  "kind": "query",
+  "risk": "read",
+  "group": "query"
+ },
+ "model.stats": {
+  "kind": "query",
+  "risk": "read",
+  "group": "query"
+ },
+ "model.validate": {
+  "kind": "query",
+  "risk": "read",
+  "group": "check"
+ },
+ "project.info": {
+  "kind": "query",
+  "risk": "read",
+  "group": "project"
+ },
+ "project.new": {
+  "kind": "session",
+  "risk": "write",
+  "group": "project"
+ },
+ "pset.delete": {
+  "kind": "mutation",
+  "risk": "write",
+  "group": "model.pset"
+ },
+ "pset.set": {
+  "kind": "mutation",
+  "risk": "write",
+  "group": "model.pset"
+ },
+ "relation.list": {
+  "kind": "query",
+  "risk": "read",
+  "group": "query"
+ },
+ "schedule.rows": {
+  "kind": "query",
+  "risk": "read",
+  "group": "schedule"
+ },
+ "schedule.summary": {
+  "kind": "query",
+  "risk": "read",
+  "group": "schedule"
+ },
+ "view.affected": {
+  "kind": "query",
+  "risk": "read",
+  "group": "view"
+ },
+ "view.create": {
+  "kind": "mutation",
+  "risk": "write",
+  "group": "view"
+ },
+ "view.delete": {
+  "kind": "mutation",
+  "risk": "write",
+  "group": "view"
+ },
+ "view.export": {
+  "kind": "session",
+  "risk": "destructive",
+  "group": "view"
+ },
+ "view.linework": {
+  "kind": "query",
+  "risk": "read",
+  "group": "view"
+ },
+ "view.list": {
+  "kind": "query",
+  "risk": "read",
+  "group": "view"
+ },
+ "view.set": {
+  "kind": "mutation",
+  "risk": "write",
+  "group": "view"
+ },
+ "wall.create": {
+  "kind": "mutation",
+  "risk": "write",
+  "group": "model.wall"
+ },
+ "wall.move": {
+  "kind": "mutation",
+  "risk": "write",
+  "group": "model.wall"
+ },
+ "wall.set": {
+  "kind": "mutation",
+  "risk": "write",
+  "group": "model.wall"
+ },
+ "wall.split": {
+  "kind": "mutation",
+  "risk": "write",
+  "group": "model.wall"
+ }
+}
