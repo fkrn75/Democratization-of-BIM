@@ -1,0 +1,99 @@
+{
+  "summary": {
+    "client": "claude",
+    "tasks": 1,
+    "success": 1,
+    "failed": []
+  },
+  "rows": [
+    {
+      "task": "I1",
+      "state_correct": true,
+      "render_calls": 1,
+      "render_ok": 1,
+      "render_args": [
+        {
+          "id": "4000000000000000000001",
+          "project": "p1"
+        }
+      ],
+      "image_blocks_in_transcript": 2,
+      "forbidden_calls": [],
+      "success": true,
+      "exit": 0,
+      "wall_s": 17.1,
+      "tool_calls": 10,
+      "commands_used": [
+        "commands.describe",
+        "commands.search",
+        "project.info",
+        "pset.set",
+        "view.image",
+        "view.list"
+      ],
+      "usage": {
+        "usage": {
+          "input_tokens": 16,
+          "cache_creation_input_tokens": 10390,
+          "cache_read_input_tokens": 77713,
+          "output_tokens": 879,
+          "output_tokens_details": {
+            "thinking_tokens": 0
+          },
+          "server_tool_use": {
+            "web_search_requests": 0,
+            "web_fetch_requests": 0
+          },
+          "service_tier": "standard",
+          "cache_creation": {
+            "ephemeral_1h_input_tokens": 10390,
+            "ephemeral_5m_input_tokens": 0
+          },
+          "inference_geo": "global",
+          "iterations": [
+            {
+              "input_tokens": 2,
+              "output_tokens": 82,
+              "cache_read_input_tokens": 14234,
+              "cache_creation_input_tokens": 264,
+              "cache_creation": {
+                "ephemeral_5m_input_tokens": 0,
+                "ephemeral_1h_input_tokens": 264
+              },
+              "type": "message"
+            }
+          ],
+          "speed": "standard",
+          "fallback_credit": null
+        },
+        "total_cost_usd": 0.0581533,
+        "modelUsage": {
+          "claude-sonnet-5-5": {
+            "inputTokens": 16,
+            "outputTokens": 879,
+            "cacheReadInputTokens": 77713,
+            "cacheCreationInputTokens": 10390,
+            "webSearchRequests": 0,
+            "costUSD": 0.0581533,
+            "contextWindow": 1000000,
+            "maxOutputTokens": 128000,
+            "thinkingTokens": 0,
+            "cacheCreationEphemeral5mInputTokens": 0,
+            "cacheCreationEphemeral1hInputTokens": 10390,
+            "canonicalModel": "claude-sonnet-5-5",
+            "provider": "firstParty",
+            "costBasis": "list"
+          }
+        },
+        "num_turns": 11,
+        "duration_ms": 13815,
+        "is_error": false,
+        "subtype": "success"
+      },
+      "error_responses": [
+        "UNKNOWN_COMMAND"
+      ],
+      "result_max_bytes": 2906
+    }
+  ]
+}

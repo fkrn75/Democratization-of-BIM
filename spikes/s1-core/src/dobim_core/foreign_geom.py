@@ -7,7 +7,9 @@
 값(불변 튜플):
 - 층(IfcBuildingStorey): ("storey", 고도 mm). 평면 뷰가 외래 층을 레벨로 쓸 때 절단 높이의 기준.
 - 그리는 요소(IfcElement 중 개구부·가상 요소 제외): ("mesh", 범주, 꼭짓점((x,y,z) mm, 0.01mm 반올림, 용접), 삼각형((i,j,k), ...)).
-- 공간 구조(IfcSpatialElement: 대지·건물·공간 등): ("spatial",). 자기 형상 없이 부분으로 이루어진 요소: ("aggregate",). 개구부 등 형상 특징·가상 요소: ("skip",). 셋 다 그리지 않고 생략으로 세지 않는다.
+- 공간(IfcSpace, 2차): ("space", 실명, 실번호, 바닥 무게중심 (x, y) mm, 바닥 면적 mm², (최저 z, 최고 z) mm). 평면 뷰가 실명·면적 문자를 놓는 데 쓴다.
+  실명은 LongName(없으면 Name), 실번호는 LongName 이 있을 때의 Name. 바닥은 아래를 보는 삼각형(법선 z < 0)을 수평면에 투영한 것이다. 형상이 없거나 이름이 없으면 ("spatial",).
+- 그 밖의 공간 구조(IfcSpatialElement: 대지·건물 등): ("spatial",). 자기 형상 없이 부분으로 이루어진 요소: ("aggregate",). 개구부 등 형상 특징·가상 요소: ("skip",). 셋 다 그리지 않고 생략으로 세지 않는다.
 - 그 밖(형상 없음·그리지 않는 종류·형상 계산 실패·상한 초과): None. 도면은 이 요소를 생략하고 개수를 알린다.
 
 결정성: 같은 파일·같은 ifcopenshell 판이면 같은 메시다(단일 스레드 create_shape). 좌표는 0.01mm 로 반올림하고 같은 좌표를 한 꼭짓점으로 합친다.
@@ -98,6 +100,37 @@ def _mesh(model, ent, cat):
     return ("mesh", cat, tuple(verts), tuple(sorted(tris)))
 
 
+def _text(v) -> str | None:
+    """IFC 문자열 속성을 문자로(앞뒤 공백 제거, 앞 40자). 비었거나 문자열이 아니면 None."""
+    return v.strip()[:40] if isinstance(v, str) and v.strip() else None
+
+
+def _space(model, ent):
+    """IfcSpace 의 ("space", 실명, 실번호, (cx, cy), 면적 mm², (z0, z1)). 형상·이름이 없으면 ("spatial",)."""
+    long_name, name = _text(getattr(ent, "LongName", None)), _text(getattr(ent, "Name", None))
+    title, number = (long_name, name) if long_name else (name, None)
+    if title is None:
+        return ("spatial",)
+    m = _mesh(model, ent, "space")
+    if m is None:
+        return ("spatial",)
+    _, _, verts, tris = m
+    area = sx = sy = 0.0
+    for i, j, k in tris:   # 아래를 보는 삼각형(바닥)의 수평 투영: 넓이와 넓이 가중 무게중심
+        a, b, c = verts[i], verts[j], verts[k]
+        cr = (b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0])   # 2 x 투영 넓이(부호 = 법선 z 의 부호)
+        if cr >= 0:
+            continue
+        w = -cr / 2.0
+        area += w
+        sx += w * (a[0] + b[0] + c[0]) / 3.0
+        sy += w * (a[1] + b[1] + c[1]) / 3.0
+    if area < 1.0:
+        return ("spatial",)
+    zs = [p[2] for p in verts]
+    return ("space", title, number, (round(sx / area, ROUND), round(sy / area, ROUND)), round(area, ROUND), (min(zs), max(zs)))
+
+
 def load(model, row, eid):
     """그래프 입력 ("fgeom", eid) 의 값. row 는 요소 행(없으면 None)."""
     if row is None or row["kind"] != "foreign" or eid not in model.ents:
@@ -112,6 +145,8 @@ def load(model, row, eid):
     if ent.is_a("IfcBuildingStorey"):
         z = _storey_z(model, ent)
         val = None if z is None else ("storey", z)
+    elif ent.is_a("IfcSpace"):
+        val = _space(model, ent)   # 공간: 실명 문자를 놓을 바닥 위치(생략으로 세지 않는다)
     elif ent.is_a("IfcSpatialElement"):
         val = ("spatial",)   # 대지·건물·공간·구역: 선으로 그리는 요소가 아니다(생략으로 세지 않는다)
     else:

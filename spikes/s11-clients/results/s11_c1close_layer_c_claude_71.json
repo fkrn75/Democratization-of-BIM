@@ -1,0 +1,1509 @@
+{
+  "G9": {
+    "group": "G9",
+    "title": "조인·공간·슬래브·벽 층",
+    "exit": 0,
+    "wall_s": 31.8,
+    "tool_calls": 33,
+    "search_calls": 16,
+    "usage": {
+      "usage": {
+        "input_tokens": 24,
+        "cache_creation_input_tokens": 22954,
+        "cache_read_input_tokens": 238993,
+        "output_tokens": 3937,
+        "output_tokens_details": {
+          "thinking_tokens": 38
+        },
+        "server_tool_use": {
+          "web_search_requests": 0,
+          "web_fetch_requests": 0
+        },
+        "service_tier": "standard",
+        "cache_creation": {
+          "ephemeral_1h_input_tokens": 22954,
+          "ephemeral_5m_input_tokens": 0
+        },
+        "inference_geo": "global",
+        "iterations": [
+          {
+            "input_tokens": 2,
+            "output_tokens": 604,
+            "cache_read_input_tokens": 26766,
+            "cache_creation_input_tokens": 296,
+            "cache_creation": {
+              "ephemeral_5m_input_tokens": 0,
+              "ephemeral_1h_input_tokens": 296
+            },
+            "type": "message"
+          }
+        ],
+        "speed": "standard",
+        "fallback_credit": null
+      },
+      "total_cost_usd": 0.15513329999999997,
+      "modelUsage": {
+        "claude-sonnet-5-5": {
+          "inputTokens": 24,
+          "outputTokens": 3937,
+          "cacheReadInputTokens": 238993,
+          "cacheCreationInputTokens": 22954,
+          "webSearchRequests": 0,
+          "costUSD": 0.15513329999999997,
+          "contextWindow": 1000000,
+          "maxOutputTokens": 128000,
+          "thinkingTokens": 38,
+          "cacheCreationEphemeral5mInputTokens": 0,
+          "cacheCreationEphemeral1hInputTokens": 22954,
+          "canonicalModel": "claude-sonnet-5-5",
+          "provider": "firstParty",
+          "costBasis": "list"
+        }
+      },
+      "num_turns": 34,
+      "duration_ms": 27751,
+      "is_error": false,
+      "subtype": "success"
+    },
+    "post_state": {
+      "rev": 23,
+      "counts": {
+        "level": 2,
+        "wall": 4,
+        "door": 2,
+        "space": 1
+      },
+      "escape_file_outside_workspace": false
+    },
+    "other_item_types": null,
+    "errors": null,
+    "tool_result_bytes": [
+      370,
+      1092,
+      2266,
+      2820,
+      2674,
+      789,
+      660,
+      4866,
+      4849,
+      1692,
+      790,
+      661,
+      1726,
+      1182,
+      360,
+      769,
+      387,
+      387,
+      1674,
+      374,
+      512,
+      478,
+      312,
+      280,
+      280,
+      287,
+      256,
+      256,
+      311,
+      287,
+      309,
+      287,
+      287
+    ],
+    "protocol": {
+      "initialize": {
+        "protocolVersion": "2026-07-28",
+        "clientInfo": {
+          "name": "claude-code",
+          "title": "Claude Code",
+          "version": "2.1.325",
+          "description": "Anthropic's agentic coding tool",
+          "websiteUrl": "https://claude.com/claude-code"
+        },
+        "capabilities": [
+          "elicitation",
+          "extensions",
+          "roots"
+        ]
+      },
+      "negotiated": "2026-07-28",
+      "non_json_stdout_lines": 0
+    },
+    "latency": {
+      "tool_calls": 33,
+      "initialize_ms": 1733.7,
+      "handshake_method": "server/discover",
+      "median_ms": 3.8,
+      "max_ms": 1316.4,
+      "slowest_tool": "dobim_project",
+      "max_response_wire_bytes": 10896
+    },
+    "server_start_sec": 1.7425,
+    "commands": {
+      "join.auto": {
+        "invoked": true,
+        "outcomes": [
+          "ok"
+        ],
+        "succeeded": true,
+        "all_defined": true,
+        "pass": true
+      },
+      "space.from_walls": {
+        "invoked": true,
+        "outcomes": [
+          "ok"
+        ],
+        "succeeded": true,
+        "all_defined": true,
+        "pass": true
+      },
+      "space.create": {
+        "invoked": true,
+        "outcomes": [
+          "ok"
+        ],
+        "succeeded": true,
+        "all_defined": true,
+        "pass": true
+      },
+      "space.set": {
+        "invoked": true,
+        "outcomes": [
+          "ok"
+        ],
+        "succeeded": true,
+        "all_defined": true,
+        "pass": true
+      },
+      "space.move": {
+        "invoked": true,
+        "outcomes": [
+          "ok"
+        ],
+        "succeeded": true,
+        "all_defined": true,
+        "pass": true
+      },
+      "space.delete": {
+        "invoked": true,
+        "outcomes": [
+          "ok"
+        ],
+        "succeeded": true,
+        "all_defined": true,
+        "pass": true
+      },
+      "slab.create": {
+        "invoked": true,
+        "outcomes": [
+          "ok"
+        ],
+        "succeeded": true,
+        "all_defined": true,
+        "pass": true
+      },
+      "slab.set": {
+        "invoked": true,
+        "outcomes": [
+          "ok"
+        ],
+        "succeeded": true,
+        "all_defined": true,
+        "pass": true
+      },
+      "slab.layers": {
+        "invoked": true,
+        "outcomes": [
+          "ok"
+        ],
+        "succeeded": true,
+        "all_defined": true,
+        "pass": true
+      },
+      "slab.move": {
+        "invoked": true,
+        "outcomes": [
+          "ok"
+        ],
+        "succeeded": true,
+        "all_defined": true,
+        "pass": true
+      },
+      "slab.delete": {
+        "invoked": true,
+        "outcomes": [
+          "ok"
+        ],
+        "succeeded": true,
+        "all_defined": true,
+        "pass": true
+      },
+      "wall.layers": {
+        "invoked": true,
+        "outcomes": [
+          "ok"
+        ],
+        "succeeded": true,
+        "all_defined": true,
+        "pass": true
+      }
+    },
+    "final_text_chars": 735
+  },
+  "G10": {
+    "group": "G10",
+    "title": "계단·난간·승강기",
+    "exit": 0,
+    "wall_s": 33.9,
+    "tool_calls": 35,
+    "search_calls": 18,
+    "usage": {
+      "usage": {
+        "input_tokens": 32,
+        "cache_creation_input_tokens": 25689,
+        "cache_read_input_tokens": 347325,
+        "output_tokens": 4133,
+        "output_tokens_details": {
+          "thinking_tokens": 0
+        },
+        "server_tool_use": {
+          "web_search_requests": 0,
+          "web_fetch_requests": 0
+        },
+        "service_tier": "standard",
+        "cache_creation": {
+          "ephemeral_1h_input_tokens": 25689,
+          "ephemeral_5m_input_tokens": 0
+        },
+        "inference_geo": "global",
+        "iterations": [
+          {
+            "input_tokens": 2,
+            "output_tokens": 750,
+            "cache_read_input_tokens": 29503,
+            "cache_creation_input_tokens": 294,
+            "cache_creation": {
+              "ephemeral_5m_input_tokens": 0,
+              "ephemeral_1h_input_tokens": 294
+            },
+            "type": "message"
+          }
+        ],
+        "speed": "standard",
+        "fallback_credit": null
+      },
+      "total_cost_usd": 0.1788825,
+      "modelUsage": {
+        "claude-sonnet-5-5": {
+          "inputTokens": 32,
+          "outputTokens": 4133,
+          "cacheReadInputTokens": 347325,
+          "cacheCreationInputTokens": 25689,
+          "webSearchRequests": 0,
+          "costUSD": 0.1788825,
+          "contextWindow": 1000000,
+          "maxOutputTokens": 128000,
+          "thinkingTokens": 0,
+          "cacheCreationEphemeral5mInputTokens": 0,
+          "cacheCreationEphemeral1hInputTokens": 25689,
+          "canonicalModel": "claude-sonnet-5-5",
+          "provider": "firstParty",
+          "costBasis": "list"
+        }
+      },
+      "num_turns": 36,
+      "duration_ms": 30088,
+      "is_error": false,
+      "subtype": "success"
+    },
+    "post_state": {
+      "rev": 26,
+      "counts": {
+        "level": 2,
+        "wall": 3,
+        "door": 2,
+        "slab": 1,
+        "railing": 3
+      },
+      "escape_file_outside_workspace": false
+    },
+    "other_item_types": null,
+    "errors": null,
+    "tool_result_bytes": [
+      379,
+      3668,
+      3472,
+      660,
+      789,
+      1677,
+      360,
+      2370,
+      3733,
+      758,
+      2000,
+      1793,
+      793,
+      1674,
+      664,
+      4316,
+      3617,
+      1291,
+      951,
+      700,
+      280,
+      256,
+      284,
+      337,
+      409,
+      280,
+      256,
+      282,
+      287,
+      287,
+      292,
+      256,
+      310,
+      365,
+      287
+    ],
+    "protocol": {
+      "initialize": {
+        "protocolVersion": "2026-07-28",
+        "clientInfo": {
+          "name": "claude-code",
+          "title": "Claude Code",
+          "version": "2.1.325",
+          "description": "Anthropic's agentic coding tool",
+          "websiteUrl": "https://claude.com/claude-code"
+        },
+        "capabilities": [
+          "elicitation",
+          "extensions",
+          "roots"
+        ]
+      },
+      "negotiated": "2026-07-28",
+      "non_json_stdout_lines": 0
+    },
+    "latency": {
+      "tool_calls": 35,
+      "initialize_ms": 1593.1,
+      "handshake_method": "server/discover",
+      "median_ms": 3.6,
+      "max_ms": 1273.2,
+      "slowest_tool": "dobim_project",
+      "max_response_wire_bytes": 9675
+    },
+    "server_start_sec": 1.6032,
+    "commands": {
+      "stair.create": {
+        "invoked": true,
+        "outcomes": [
+          "ok"
+        ],
+        "succeeded": true,
+        "all_defined": true,
+        "pass": true
+      },
+      "stair.set": {
+        "invoked": true,
+        "outcomes": [
+          "ok"
+        ],
+        "succeeded": true,
+        "all_defined": true,
+        "pass": true
+      },
+      "stair.move": {
+        "invoked": true,
+        "outcomes": [
+          "ok"
+        ],
+        "succeeded": true,
+        "all_defined": true,
+        "pass": true
+      },
+      "stair.delete": {
+        "invoked": true,
+        "outcomes": [
+          "ok"
+        ],
+        "succeeded": true,
+        "all_defined": true,
+        "pass": true
+      },
+      "railing.create": {
+        "invoked": true,
+        "outcomes": [
+          "ok"
+        ],
+        "succeeded": true,
+        "all_defined": true,
+        "pass": true
+      },
+      "railing.set": {
+        "invoked": true,
+        "outcomes": [
+          "ok"
+        ],
+        "succeeded": true,
+        "all_defined": true,
+        "pass": true
+      },
+      "railing.move": {
+        "invoked": true,
+        "outcomes": [
+          "ok"
+        ],
+        "succeeded": true,
+        "all_defined": true,
+        "pass": true
+      },
+      "railing.delete": {
+        "invoked": true,
+        "outcomes": [
+          "ok"
+        ],
+        "succeeded": true,
+        "all_defined": true,
+        "pass": true
+      },
+      "railing.from_slab": {
+        "invoked": true,
+        "outcomes": [
+          "ok"
+        ],
+        "succeeded": true,
+        "all_defined": true,
+        "pass": true
+      },
+      "railing.from_stair": {
+        "invoked": true,
+        "outcomes": [
+          "ok"
+        ],
+        "succeeded": true,
+        "all_defined": true,
+        "pass": true
+      },
+      "elevator.create": {
+        "invoked": true,
+        "outcomes": [
+          "ok"
+        ],
+        "succeeded": true,
+        "all_defined": true,
+        "pass": true
+      },
+      "elevator.set": {
+        "invoked": true,
+        "outcomes": [
+          "ok"
+        ],
+        "succeeded": true,
+        "all_defined": true,
+        "pass": true
+      },
+      "elevator.move": {
+        "invoked": true,
+        "outcomes": [
+          "ok"
+        ],
+        "succeeded": true,
+        "all_defined": true,
+        "pass": true
+      },
+      "elevator.cut_slabs": {
+        "invoked": true,
+        "outcomes": [
+          "ok"
+        ],
+        "succeeded": true,
+        "all_defined": true,
+        "pass": true
+      },
+      "elevator.delete": {
+        "invoked": true,
+        "outcomes": [
+          "ok"
+        ],
+        "succeeded": true,
+        "all_defined": true,
+        "pass": true
+      }
+    },
+    "final_text_chars": 939
+  },
+  "G11": {
+    "group": "G11",
+    "title": "지붕·솔리드·벽 상단/잘라내기",
+    "exit": 0,
+    "wall_s": 26.7,
+    "tool_calls": 26,
+    "search_calls": 13,
+    "usage": {
+      "usage": {
+        "input_tokens": 26,
+        "cache_creation_input_tokens": 24697,
+        "cache_read_input_tokens": 298973,
+        "output_tokens": 2955,
+        "output_tokens_details": {
+          "thinking_tokens": 25
+        },
+        "server_tool_use": {
+          "web_search_requests": 0,
+          "web_fetch_requests": 0
+        },
+        "service_tier": "standard",
+        "cache_creation": {
+          "ephemeral_1h_input_tokens": 24697,
+          "ephemeral_5m_input_tokens": 0
+        },
+        "inference_geo": "global",
+        "iterations": [
+          {
+            "input_tokens": 2,
+            "output_tokens": 314,
+            "cache_read_input_tokens": 28489,
+            "cache_creation_input_tokens": 316,
+            "cache_creation": {
+              "ephemeral_5m_input_tokens": 0,
+              "ephemeral_1h_input_tokens": 316
+            },
+            "type": "message"
+          }
+        ],
+        "speed": "standard",
+        "fallback_credit": null
+      },
+      "total_cost_usd": 0.15828730000000002,
+      "modelUsage": {
+        "claude-sonnet-5-5": {
+          "inputTokens": 26,
+          "outputTokens": 2955,
+          "cacheReadInputTokens": 298973,
+          "cacheCreationInputTokens": 24697,
+          "webSearchRequests": 0,
+          "costUSD": 0.15828730000000002,
+          "contextWindow": 1000000,
+          "maxOutputTokens": 128000,
+          "thinkingTokens": 25,
+          "cacheCreationEphemeral5mInputTokens": 0,
+          "cacheCreationEphemeral1hInputTokens": 24697,
+          "canonicalModel": "claude-sonnet-5-5",
+          "provider": "firstParty",
+          "costBasis": "list"
+        }
+      },
+      "num_turns": 27,
+      "duration_ms": 22675,
+      "is_error": false,
+      "subtype": "success"
+    },
+    "post_state": {
+      "rev": 22,
+      "counts": {
+        "level": 2,
+        "wall": 3,
+        "door": 2,
+        "solid": 1
+      },
+      "escape_file_outside_workspace": false
+    },
+    "other_item_types": null,
+    "errors": null,
+    "tool_result_bytes": [
+      380,
+      2881,
+      1360,
+      754,
+      1293,
+      2204,
+      794,
+      665,
+      12299,
+      9994,
+      853,
+      663,
+      1182,
+      769,
+      760,
+      280,
+      337,
+      271,
+      338,
+      256,
+      309,
+      287,
+      280,
+      256,
+      256,
+      287
+    ],
+    "protocol": {
+      "initialize": {
+        "protocolVersion": "2026-07-28",
+        "clientInfo": {
+          "name": "claude-code",
+          "title": "Claude Code",
+          "version": "2.1.325",
+          "description": "Anthropic's agentic coding tool",
+          "websiteUrl": "https://claude.com/claude-code"
+        },
+        "capabilities": [
+          "elicitation",
+          "extensions",
+          "roots"
+        ]
+      },
+      "negotiated": "2026-07-28",
+      "non_json_stdout_lines": 0
+    },
+    "latency": {
+      "tool_calls": 26,
+      "initialize_ms": 1657.8,
+      "handshake_method": "server/discover",
+      "median_ms": 3.8,
+      "max_ms": 1315.5,
+      "slowest_tool": "dobim_project",
+      "max_response_wire_bytes": 27249
+    },
+    "server_start_sec": 1.6669,
+    "commands": {
+      "roof.create": {
+        "invoked": true,
+        "outcomes": [
+          "ok"
+        ],
+        "succeeded": true,
+        "all_defined": true,
+        "pass": true
+      },
+      "roof.set": {
+        "invoked": true,
+        "outcomes": [
+          "ok"
+        ],
+        "succeeded": true,
+        "all_defined": true,
+        "pass": true
+      },
+      "roof.move": {
+        "invoked": true,
+        "outcomes": [
+          "ok"
+        ],
+        "succeeded": true,
+        "all_defined": true,
+        "pass": true
+      },
+      "roof.delete": {
+        "invoked": true,
+        "outcomes": [
+          "ok"
+        ],
+        "succeeded": true,
+        "all_defined": true,
+        "pass": true
+      },
+      "solid.create": {
+        "invoked": true,
+        "outcomes": [
+          "ok"
+        ],
+        "succeeded": true,
+        "all_defined": true,
+        "pass": true
+      },
+      "solid.set": {
+        "invoked": true,
+        "outcomes": [
+          "ok"
+        ],
+        "succeeded": true,
+        "all_defined": true,
+        "pass": true
+      },
+      "solid.move": {
+        "invoked": true,
+        "outcomes": [
+          "ok"
+        ],
+        "succeeded": true,
+        "all_defined": true,
+        "pass": true
+      },
+      "solid.delete": {
+        "invoked": true,
+        "outcomes": [
+          "ok"
+        ],
+        "succeeded": true,
+        "all_defined": true,
+        "pass": true
+      },
+      "wall.attach_top": {
+        "invoked": true,
+        "outcomes": [
+          "ok"
+        ],
+        "succeeded": true,
+        "all_defined": true,
+        "pass": true
+      },
+      "wall.detach_top": {
+        "invoked": true,
+        "outcomes": [
+          "ok"
+        ],
+        "succeeded": true,
+        "all_defined": true,
+        "pass": true
+      },
+      "wall.cut_by": {
+        "invoked": true,
+        "outcomes": [
+          "ok"
+        ],
+        "succeeded": true,
+        "all_defined": true,
+        "pass": true
+      }
+    },
+    "final_text_chars": 458
+  },
+  "G12": {
+    "group": "G12",
+    "title": "대지·통심선·전개 창호",
+    "exit": 0,
+    "wall_s": 20.4,
+    "tool_calls": 21,
+    "search_calls": 11,
+    "usage": {
+      "usage": {
+        "input_tokens": 14,
+        "cache_creation_input_tokens": 19451,
+        "cache_read_input_tokens": 115038,
+        "output_tokens": 2450,
+        "output_tokens_details": {
+          "thinking_tokens": 44
+        },
+        "server_tool_use": {
+          "web_search_requests": 0,
+          "web_fetch_requests": 0
+        },
+        "service_tier": "standard",
+        "cache_creation": {
+          "ephemeral_1h_input_tokens": 19451,
+          "ephemeral_5m_input_tokens": 0
+        },
+        "inference_geo": "global",
+        "iterations": [
+          {
+            "input_tokens": 2,
+            "output_tokens": 386,
+            "cache_read_input_tokens": 22361,
+            "cache_creation_input_tokens": 1198,
+            "cache_creation": {
+              "ephemeral_5m_input_tokens": 0,
+              "ephemeral_1h_input_tokens": 1198
+            },
+            "type": "message"
+          }
+        ],
+        "speed": "standard",
+        "fallback_credit": null
+      },
+      "total_cost_usd": 0.1138358,
+      "modelUsage": {
+        "claude-sonnet-5-5": {
+          "inputTokens": 14,
+          "outputTokens": 2450,
+          "cacheReadInputTokens": 115038,
+          "cacheCreationInputTokens": 19451,
+          "webSearchRequests": 0,
+          "costUSD": 0.1138358,
+          "contextWindow": 1000000,
+          "maxOutputTokens": 128000,
+          "thinkingTokens": 44,
+          "cacheCreationEphemeral5mInputTokens": 0,
+          "cacheCreationEphemeral1hInputTokens": 19451,
+          "canonicalModel": "claude-sonnet-5-5",
+          "provider": "firstParty",
+          "costBasis": "list"
+        }
+      },
+      "num_turns": 22,
+      "duration_ms": 16619,
+      "is_error": false,
+      "subtype": "success"
+    },
+    "post_state": {
+      "rev": 18,
+      "counts": {
+        "level": 2,
+        "wall": 3,
+        "door": 2
+      },
+      "escape_file_outside_workspace": false
+    },
+    "other_item_types": null,
+    "errors": null,
+    "tool_result_bytes": [
+      370,
+      7805,
+      8474,
+      658,
+      1309,
+      1123,
+      791,
+      661,
+      4672,
+      256,
+      256,
+      256,
+      256,
+      256,
+      1182,
+      256,
+      769,
+      448,
+      527,
+      263,
+      263
+    ],
+    "protocol": {
+      "initialize": {
+        "protocolVersion": "2026-07-28",
+        "clientInfo": {
+          "name": "claude-code",
+          "title": "Claude Code",
+          "version": "2.1.325",
+          "description": "Anthropic's agentic coding tool",
+          "websiteUrl": "https://claude.com/claude-code"
+        },
+        "capabilities": [
+          "elicitation",
+          "extensions",
+          "roots"
+        ]
+      },
+      "negotiated": "2026-07-28",
+      "non_json_stdout_lines": 0
+    },
+    "latency": {
+      "tool_calls": 21,
+      "initialize_ms": 1684.5,
+      "handshake_method": "server/discover",
+      "median_ms": 3.4,
+      "max_ms": 1316.4,
+      "slowest_tool": "dobim_project",
+      "max_response_wire_bytes": 19163
+    },
+    "server_start_sec": 1.6944,
+    "commands": {
+      "site.create": {
+        "invoked": true,
+        "outcomes": [
+          "ok"
+        ],
+        "succeeded": true,
+        "all_defined": true,
+        "pass": true
+      },
+      "site.set": {
+        "invoked": true,
+        "outcomes": [
+          "ok"
+        ],
+        "succeeded": true,
+        "all_defined": true,
+        "pass": true
+      },
+      "site.delete": {
+        "invoked": true,
+        "outcomes": [
+          "ok"
+        ],
+        "succeeded": true,
+        "all_defined": true,
+        "pass": true
+      },
+      "grid.create": {
+        "invoked": true,
+        "outcomes": [
+          "ok"
+        ],
+        "succeeded": true,
+        "all_defined": true,
+        "pass": true
+      },
+      "grid.set": {
+        "invoked": true,
+        "outcomes": [
+          "ok"
+        ],
+        "succeeded": true,
+        "all_defined": true,
+        "pass": true
+      },
+      "grid.move": {
+        "invoked": true,
+        "outcomes": [
+          "ok"
+        ],
+        "succeeded": true,
+        "all_defined": true,
+        "pass": true
+      },
+      "grid.delete": {
+        "invoked": true,
+        "outcomes": [
+          "ok"
+        ],
+        "succeeded": true,
+        "all_defined": true,
+        "pass": true
+      },
+      "family.place_corner": {
+        "invoked": true,
+        "outcomes": [
+          "ok"
+        ],
+        "succeeded": true,
+        "all_defined": true,
+        "pass": true
+      }
+    },
+    "final_text_chars": 514
+  },
+  "G13": {
+    "group": "G13",
+    "title": "2D 작도",
+    "exit": 0,
+    "wall_s": 33.0,
+    "tool_calls": 37,
+    "search_calls": 17,
+    "usage": {
+      "usage": {
+        "input_tokens": 24,
+        "cache_creation_input_tokens": 25861,
+        "cache_read_input_tokens": 266936,
+        "output_tokens": 4580,
+        "output_tokens_details": {
+          "thinking_tokens": 24
+        },
+        "server_tool_use": {
+          "web_search_requests": 0,
+          "web_fetch_requests": 0
+        },
+        "service_tier": "standard",
+        "cache_creation": {
+          "ephemeral_1h_input_tokens": 25861,
+          "ephemeral_5m_input_tokens": 0
+        },
+        "inference_geo": "global",
+        "iterations": [
+          {
+            "input_tokens": 2,
+            "output_tokens": 863,
+            "cache_read_input_tokens": 29261,
+            "cache_creation_input_tokens": 708,
+            "cache_creation": {
+              "ephemeral_5m_input_tokens": 0,
+              "ephemeral_1h_input_tokens": 708
+            },
+            "type": "message"
+          }
+        ],
+        "speed": "standard",
+        "fallback_credit": null
+      },
+      "total_cost_usd": 0.1759856,
+      "modelUsage": {
+        "claude-sonnet-5-5": {
+          "inputTokens": 24,
+          "outputTokens": 4580,
+          "cacheReadInputTokens": 266936,
+          "cacheCreationInputTokens": 25861,
+          "webSearchRequests": 0,
+          "costUSD": 0.1759856,
+          "contextWindow": 1000000,
+          "maxOutputTokens": 128000,
+          "thinkingTokens": 24,
+          "cacheCreationEphemeral5mInputTokens": 0,
+          "cacheCreationEphemeral1hInputTokens": 25861,
+          "canonicalModel": "claude-sonnet-5-5",
+          "provider": "firstParty",
+          "costBasis": "list"
+        }
+      },
+      "num_turns": 38,
+      "duration_ms": 29833,
+      "is_error": false,
+      "subtype": "success"
+    },
+    "post_state": {
+      "rev": 26,
+      "counts": {
+        "level": 2,
+        "wall": 3,
+        "door": 2
+      },
+      "escape_file_outside_workspace": false
+    },
+    "other_item_types": null,
+    "errors": null,
+    "tool_result_bytes": [
+      370,
+      3152,
+      1353,
+      544,
+      4457,
+      1079,
+      1081,
+      2947,
+      1329,
+      1109,
+      1402,
+      2013,
+      1596,
+      1736,
+      1110,
+      1211,
+      701,
+      360,
+      4393,
+      415,
+      271,
+      413,
+      280,
+      280,
+      280,
+      281,
+      281,
+      256,
+      711,
+      328,
+      309,
+      333,
+      259,
+      283,
+      280,
+      287,
+      376
+    ],
+    "protocol": {
+      "initialize": {
+        "protocolVersion": "2026-07-28",
+        "clientInfo": {
+          "name": "claude-code",
+          "title": "Claude Code",
+          "version": "2.1.325",
+          "description": "Anthropic's agentic coding tool",
+          "websiteUrl": "https://claude.com/claude-code"
+        },
+        "capabilities": [
+          "elicitation",
+          "extensions",
+          "roots"
+        ]
+      },
+      "negotiated": "2026-07-28",
+      "non_json_stdout_lines": 0
+    },
+    "latency": {
+      "tool_calls": 37,
+      "initialize_ms": 1331.2,
+      "handshake_method": "server/discover",
+      "median_ms": 3.1,
+      "max_ms": 1065.4,
+      "slowest_tool": "dobim_project",
+      "max_response_wire_bytes": 10172
+    },
+    "server_start_sec": 1.3395,
+    "commands": {
+      "drawing.profile": {
+        "invoked": true,
+        "outcomes": [
+          "ok"
+        ],
+        "succeeded": true,
+        "all_defined": true,
+        "pass": true
+      },
+      "draft.layer.set": {
+        "invoked": true,
+        "outcomes": [
+          "ok"
+        ],
+        "succeeded": true,
+        "all_defined": true,
+        "pass": true
+      },
+      "draft.layer.list": {
+        "invoked": true,
+        "outcomes": [
+          "ok"
+        ],
+        "succeeded": true,
+        "all_defined": true,
+        "pass": true
+      },
+      "draft.layer.delete": {
+        "invoked": true,
+        "outcomes": [
+          "ok"
+        ],
+        "succeeded": true,
+        "all_defined": true,
+        "pass": true
+      },
+      "draft.create": {
+        "invoked": true,
+        "outcomes": [
+          "ok"
+        ],
+        "succeeded": true,
+        "all_defined": true,
+        "pass": true
+      },
+      "draft.set": {
+        "invoked": true,
+        "outcomes": [
+          "ok"
+        ],
+        "succeeded": true,
+        "all_defined": true,
+        "pass": true
+      },
+      "draft.list": {
+        "invoked": true,
+        "outcomes": [
+          "ok"
+        ],
+        "succeeded": true,
+        "all_defined": true,
+        "pass": true
+      },
+      "draft.group": {
+        "invoked": true,
+        "outcomes": [
+          "ok"
+        ],
+        "succeeded": true,
+        "all_defined": true,
+        "pass": true
+      },
+      "draft.move": {
+        "invoked": true,
+        "outcomes": [
+          "ok"
+        ],
+        "succeeded": true,
+        "all_defined": true,
+        "pass": true
+      },
+      "draft.copy": {
+        "invoked": true,
+        "outcomes": [
+          "ok"
+        ],
+        "succeeded": true,
+        "all_defined": true,
+        "pass": true
+      },
+      "draft.rotate": {
+        "invoked": true,
+        "outcomes": [
+          "ok"
+        ],
+        "succeeded": true,
+        "all_defined": true,
+        "pass": true
+      },
+      "draft.mirror": {
+        "invoked": true,
+        "outcomes": [
+          "ok"
+        ],
+        "succeeded": true,
+        "all_defined": true,
+        "pass": true
+      },
+      "draft.offset": {
+        "invoked": true,
+        "outcomes": [
+          "ok"
+        ],
+        "succeeded": true,
+        "all_defined": true,
+        "pass": true
+      },
+      "draft.trim": {
+        "invoked": true,
+        "outcomes": [
+          "ok"
+        ],
+        "succeeded": true,
+        "all_defined": true,
+        "pass": true
+      },
+      "draft.extend": {
+        "invoked": true,
+        "outcomes": [
+          "ok"
+        ],
+        "succeeded": true,
+        "all_defined": true,
+        "pass": true
+      },
+      "draft.delete": {
+        "invoked": true,
+        "outcomes": [
+          "ok"
+        ],
+        "succeeded": true,
+        "all_defined": true,
+        "pass": true
+      }
+    },
+    "final_text_chars": 1120
+  },
+  "G14": {
+    "group": "G14",
+    "title": "시트·이미지·높이 치수",
+    "exit": 0,
+    "wall_s": 26.1,
+    "tool_calls": 24,
+    "search_calls": 10,
+    "usage": {
+      "usage": {
+        "input_tokens": 16,
+        "cache_creation_input_tokens": 33612,
+        "cache_read_input_tokens": 190937,
+        "output_tokens": 3232,
+        "output_tokens_details": {
+          "thinking_tokens": 0
+        },
+        "server_tool_use": {
+          "web_search_requests": 0,
+          "web_fetch_requests": 0
+        },
+        "service_tier": "standard",
+        "cache_creation": {
+          "ephemeral_1h_input_tokens": 33612,
+          "ephemeral_5m_input_tokens": 0
+        },
+        "inference_geo": "global",
+        "iterations": [
+          {
+            "input_tokens": 2,
+            "output_tokens": 656,
+            "cache_read_input_tokens": 37432,
+            "cache_creation_input_tokens": 288,
+            "cache_creation": {
+              "ephemeral_5m_input_tokens": 0,
+              "ephemeral_1h_input_tokens": 288
+            },
+            "type": "message"
+          }
+        ],
+        "speed": "standard",
+        "fallback_credit": null
+      },
+      "total_cost_usd": 0.1858937,
+      "modelUsage": {
+        "claude-sonnet-5-5": {
+          "inputTokens": 16,
+          "outputTokens": 3232,
+          "cacheReadInputTokens": 190937,
+          "cacheCreationInputTokens": 33612,
+          "webSearchRequests": 0,
+          "costUSD": 0.1858937,
+          "contextWindow": 1000000,
+          "maxOutputTokens": 128000,
+          "thinkingTokens": 0,
+          "cacheCreationEphemeral5mInputTokens": 0,
+          "cacheCreationEphemeral1hInputTokens": 33612,
+          "canonicalModel": "claude-sonnet-5-5",
+          "provider": "firstParty",
+          "costBasis": "list"
+        }
+      },
+      "num_turns": 25,
+      "duration_ms": 22667,
+      "is_error": false,
+      "subtype": "success"
+    },
+    "post_state": {
+      "rev": 15,
+      "counts": {
+        "level": 2,
+        "wall": 3,
+        "door": 2
+      },
+      "files": {
+        "sheet-saved.svg": true,
+        "sheet-direct.svg": true,
+        "index.svg": true
+      },
+      "escape_file_outside_workspace": false
+    },
+    "other_item_types": null,
+    "errors": null,
+    "tool_result_bytes": [
+      370,
+      1718,
+      6977,
+      516,
+      1718,
+      11021,
+      6021,
+      1230,
+      10491,
+      684,
+      360,
+      572,
+      731,
+      271,
+      371,
+      517,
+      518,
+      589,
+      471,
+      584,
+      548,
+      549,
+      568,
+      263
+    ],
+    "protocol": {
+      "initialize": {
+        "protocolVersion": "2026-07-28",
+        "clientInfo": {
+          "name": "claude-code",
+          "title": "Claude Code",
+          "version": "2.1.325",
+          "description": "Anthropic's agentic coding tool",
+          "websiteUrl": "https://claude.com/claude-code"
+        },
+        "capabilities": [
+          "elicitation",
+          "extensions",
+          "roots"
+        ]
+      },
+      "negotiated": "2026-07-28",
+      "non_json_stdout_lines": 0
+    },
+    "latency": {
+      "tool_calls": 24,
+      "initialize_ms": 1486.9,
+      "handshake_method": "server/discover",
+      "median_ms": 6.4,
+      "max_ms": 1082.5,
+      "slowest_tool": "dobim_project",
+      "max_response_wire_bytes": 46353
+    },
+    "server_start_sec": 1.4951,
+    "commands": {
+      "annot.dim.heights": {
+        "invoked": true,
+        "outcomes": [
+          "ok"
+        ],
+        "succeeded": true,
+        "all_defined": true,
+        "pass": true
+      },
+      "sheet.define": {
+        "invoked": true,
+        "outcomes": [
+          "ok"
+        ],
+        "succeeded": true,
+        "all_defined": true,
+        "pass": true
+      },
+      "sheet.list": {
+        "invoked": true,
+        "outcomes": [
+          "ok"
+        ],
+        "succeeded": true,
+        "all_defined": true,
+        "pass": true
+      },
+      "sheet.render": {
+        "invoked": true,
+        "outcomes": [
+          "CONFIRM_REQUIRED",
+          "ok"
+        ],
+        "succeeded": true,
+        "all_defined": true,
+        "pass": true
+      },
+      "sheet.export": {
+        "invoked": true,
+        "outcomes": [
+          "CONFIRM_REQUIRED",
+          "ok"
+        ],
+        "succeeded": true,
+        "all_defined": true,
+        "pass": true
+      },
+      "sheet.index": {
+        "invoked": true,
+        "outcomes": [
+          "CONFIRM_REQUIRED",
+          "ok"
+        ],
+        "succeeded": true,
+        "all_defined": true,
+        "pass": true
+      },
+      "view.image": {
+        "invoked": true,
+        "outcomes": [
+          "ok"
+        ],
+        "succeeded": true,
+        "all_defined": true,
+        "pass": true
+      },
+      "sheet.image": {
+        "invoked": true,
+        "outcomes": [
+          "ok"
+        ],
+        "succeeded": true,
+        "all_defined": true,
+        "pass": true
+      },
+      "sheet.delete": {
+        "invoked": true,
+        "outcomes": [
+          "ok"
+        ],
+        "succeeded": true,
+        "all_defined": true,
+        "pass": true
+      }
+    },
+    "final_text_chars": 781
+  },
+  "_summary": {
+    "client": "claude",
+    "commands_new_total": 71,
+    "commands_passed": 71,
+    "commands_with_success": 71,
+    "not_passed": [],
+    "no_success": []
+  }
+}
