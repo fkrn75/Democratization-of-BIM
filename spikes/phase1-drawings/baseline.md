@@ -1019,3 +1019,33 @@ s10-headless 실패 2건(test_gui_scan, test_headless_ra01 IFC 기준 해시)은
 
 ### 28.2 시험
 test_practical8(9건). s1-core 전체(test_slow 제외): 1053 통과, 38 건너뜀, 실패 0. test_practical7 의 "가로대 매개변수가 없는 패밀리" 확인은 window.framed 가 가로대를 받게 되어 window.fixed 로 바꿨다. test_slow: 7건 통과.
+
+## 29. 외래 IFC 도면 경로와 표본 5건 재생성 차등 시험 (2026-11-18, 브랜치 phase1/foreign-ifc-drawings)
+
+1절의 한계("RA-01.ifc 자체를 가져오면 의도가 없는 요소는 모두 외래라 도면에 그려지지 않는다")를 푼 작업이다. 설계 메모는 elements-design.md 29절. 해시 형식 그대로(CLOSURE_FORMAT 15).
+
+### 29.0 바이트 비교 (after26 대비, work/·run.json 제외)
+**같은 파일 183개, 달라진 파일 0, 새 산출 0, 사라진 파일 0.** 기준선 모델은 외래 요소가 없어 새 질의(scope_foreign 등)가 모두 빈 값이고, view_omitted 는 외래 요소가 없으면 이전처럼 0 이다.
+
+### 29.1 변경 요지
+1. 새 그래프 입력 `("fgeom", id)`: 외래 요소의 IFC 형상(ifcopenshell.geom 삼각형 메시, mm, 0.01mm 반올림) 또는 외래 층 고도. 새 모듈 `foreign_geom.py`.
+2. drawing.py 외래 경로: `foreign_info`·`scope_foreign`·`_f_cut`·`_f_occ`·`foreign_lines`. 절단선은 범주(heavy/medium/light → cut/symbol/proj), 투영선은 날카로운 모서리, 가림은 외래 면 + 절단 영역 + (단면·입면) 저작 가림 조각.
+3. 외래 IfcBuildingStorey 를 평면 뷰 레벨로 허용(view.create·view_cfg·고아 뷰 검사·mm 파일 왕복의 뷰 정의 복원).
+4. 생략 개수는 그리지 못한 외래 요소만 센다(공간 구조·집합체·개구부는 세지 않는다). 경고 문구를 바꿨다.
+
+### 29.2 표본 5건 (출처표 corpus/SOURCES.md)
+
+| 표본 | 외래 요소 | 뷰 | 선분 합 | 생략(최대) | 왕복 a=b | 저장소 |
+|---|---|---|---|---|---|---|
+| BA (buildingSMART, CC-BY-4.0) | 20 | 7 | 487 | 1 (굴뚝: 형상 커널이 형상을 만들지 못함) | 같음 | 예 |
+| BS (buildingSMART, CC-BY-4.0) | 21 | 7 | 579 | 0 | 같음 | 예 |
+| RA01 (ifcopenshell.api) | 74 | 8 | 393 | 0 | 같음 | 예 |
+| RA01-bonsai (Bonsai 0.9.0) | 74 | 8 | 393 | 0 | 같음 | 예 |
+| RA01-revit (Revit 2025 IFC4RV) | 74 | 8 | 406 | 0 | 같음 | 아니오(로컬 전용) |
+
+- 차등: 저장소 표본 4건은 corpus/baseline.json(뷰별 선분·SVG sha256)과 같다. 로컬 표본은 두 번 생성 결과가 같고, 저장소 밖 로컬 기준선과 같다. 다른 프로세스(CLI 실행) 결과도 같다(BA).
+- 왕복: 5건 모두 내보내기 a·b 바이트, 모델 해시(state·derived·ifc), 도면 해시가 같다. mm 단위 표본(BA)은 외래 층 평면 뷰 정의가 왕복에서 되살아난다.
+- 로컬 참고 측정(수치만, 파일은 저장소 밖): 다른 Revit 내보내기 실무 표본(외래 846개, 층 8)에서 형상 4.3초, 평면 1장 0.2~0.4초, 단면 1.6~5.1초, 입면 1장 약 7초. 대형 모델 가림 성능은 남은 일(elements-design.md 29.7).
+
+### 29.3 시험
+test_foreign_drawings(18건, 로컬 표본 없으면 2건 건너뜀. 로컬 표본을 주면 18건 모두 통과). s1-core 전체(test_slow 제외): 1069 통과, 40 건너뜀, 실패 0. test_slow: 7건 통과. parity: 커맨드 110 전부 예시 실행(예시 130·오류 사례 49), 불일치 0. s10-headless: 실패 2건(test_gui_scan, test_headless_ra01)은 23~28절과 같은 기존 상태.
