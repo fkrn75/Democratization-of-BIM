@@ -140,7 +140,12 @@ def _wall_params(p):
                 and (v[2] - v[0]) ** 2 + (v[3] - v[1]) ** 2 >= 1.0)
     err = _check_opt("wall", p, {"name": _name, "axis": axis, "thickness": _pos, "height": _pos}, {"layers": layers_ok, "openings": lambda v: isinstance(v, list), "top_profile": lambda v: isinstance(v, list),
                                                                                                          "base_offset": lambda v: num_ok(v) and abs(v) <= WT.BASE_OFFSET_MAX,
-                                                                                                         "cuts": lambda v: WC.cuts_problem(v) is None})   # 벽 잘라내기(23단계)
+                                                                                                         "cuts": lambda v: WC.cuts_problem(v) is None,   # 벽 잘라내기(23단계)
+                                                                                                         "top_level": id_ok, "top_offset": lambda v: num_ok(v) and v != 0})
+    if err is None and "top_offset" in p and "top_level" not in p:   # 상단 구속(24단계): 오프셋은 상단 레벨과 함께만
+        return "wall.top_offset 은 top_level 과 함께만 둔다"
+    if err is None and "top_level" in p and "top_profile" in p:
+        return "wall.top_level 과 top_profile 은 함께 둘 수 없다"
     if err is None and "layers" in p and abs(layers_total(p["layers"]) - p["thickness"]) > LAYER_SUM_TOL:
         return "wall.layers 두께의 합이 벽 두께와 다르다"
     top = p.get("top_profile") if err is None else None   # 벽 상단 윤곽(21단계): 없으면 이전과 같다
@@ -1200,6 +1205,8 @@ def _keys_el(e):
     if e[2] is None or e[3] is None:   # 생성·삭제는 버킷·개수 입력도 바꾼다
         kind = (e[3] or e[2])["kind"]
         out |= {("bucket", kind, bucket_of(e[1])), ("count", kind)}
+    if any(r is not None and r["kind"] == "wall" and "top_level" in r["params"] for r in (e[2], e[3])):
+        out.add(("tied_walls",))   # 상단 구속 벽(24단계) 목록 입력: 구속 벽이 생기거나 바뀔 때만 바뀐다(다른 벽 편집은 평면 캐시를 흔들지 않는다)
     return out
 
 

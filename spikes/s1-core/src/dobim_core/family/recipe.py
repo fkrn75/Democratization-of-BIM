@@ -184,12 +184,21 @@ class Host(M):
     cut: Cut | None = None
 
 
+class PanelSpec(M):
+    """창 패널 하나(24단계): IFC4 IfcWindowPanelProperties(타입의 HasPropertySets). 열림 방식(OperationType)과 위치(PanelPosition).
+    타입 수준 값(타입 매개변수만 쓸 수 있다). when 이 거짓이면 그 패널은 없다."""
+    operation: Value
+    position: Value = "MIDDLE"
+    when: When = None
+
+
 class IfcSpec(M):
     class_: StrictStr = Field(alias="class", pattern=r"^Ifc[A-Za-z0-9]+$")
     type_class: StrictStr | None = Field(None, pattern=r"^Ifc[A-Za-z0-9]+Type$")
     predefined: StrictStr = "NOTDEFINED"
     type_attrs: dict[str, Value] = Field(default_factory=dict)
     attrs: dict[str, Value] = Field(default_factory=dict)
+    panels: list[PanelSpec] = Field(default_factory=list, max_length=8)
 
 
 class PsetSpec(M):

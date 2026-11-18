@@ -81,7 +81,7 @@ def test_미닫이문은_한_짝_방향과_두_짝을_갖고_벽보다_넓으면
     assert g["ifc_class"] == "IfcDoor" and g["params"]["width"] == 2200.0
     syms = _plan_syms(base, F.W3)[0][6]
     assert sum(1 for it in syms if it[0] == "line") == 2      # 화살표(몸통 + 머리)
-    assert not base.run("family.place", {"family": "door.sliding", "type_values": {"width": 5000}, "host": F.W3, "offset": 2600})["ok"]
+    assert not base.run("family.place", {"family": "door.sliding", "type_values": {"width": 9000}, "host": F.W3, "offset": 2600})["ok"]   # 상한 8000(24단계 version 2)
 
 
 def test_기존_요소_편집은_id를_유지한다_슬래브_경계와_구멍_솔리드_형상_교체(base):

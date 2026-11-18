@@ -1,7 +1,7 @@
 {
   "schema": "dobim.family/1",
   "id": "door.sliding",
-  "version": 1,
+  "version": 2,
   "name": "미닫이문",
   "description": "벽에 호스팅되는 미닫이문(한 짝 또는 두 짝). 문틀(스윕)과 문짝(압출, 닫힌 상태), 평면에 문짝 선과 미는 방향 화살표.",
   "ifc": {
@@ -48,7 +48,7 @@
       "unit": "mm",
       "description": "개구부 폭(문틀 바깥)",
       "min": 700,
-      "max": 4000
+      "max": 8000
     },
     "height": {
       "kind": "type",
@@ -56,7 +56,7 @@
       "unit": "mm",
       "description": "개구부 높이",
       "min": 1800,
-      "max": 2700
+      "max": 4000
     },
     "panels": {
       "kind": "type",

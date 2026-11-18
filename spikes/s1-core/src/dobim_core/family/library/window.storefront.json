@@ -1,0 +1,902 @@
+{
+  "schema": "dobim.family/1",
+  "id": "window.storefront",
+  "version": 1,
+  "name": "복합 창호",
+  "description": "벽에 호스팅되는 큰 창호(스토어프런트). 한 프레임 안에 고정창 칸(bay_max 이하로 자동 분할)과 선택 여닫이문(한 짝·두 짝), 선택 가로대(transom). 끝(end_l/end_r)을 corner 로 두면 그 끝의 문틀이 없어져 90도 모서리에서 다른 벽의 창호와 이어진다(family.place_corner).",
+  "ifc": {
+    "class": "IfcWindow",
+    "type_class": "IfcWindowType",
+    "predefined": "WINDOW",
+    "type_attrs": {
+      "PartitioningType": "USERDEFINED",
+      "UserDefinedPartitioningType": {
+        "expr": "'STOREFRONT_DOOR' if door_w > 0 else 'STOREFRONT'"
+      },
+      "ParameterTakesPrecedence": false
+    },
+    "attrs": {
+      "OverallWidth": {
+        "expr": "width"
+      },
+      "OverallHeight": {
+        "expr": "height"
+      }
+    },
+    "panels": [
+      {
+        "operation": "FIXEDCASEMENT",
+        "position": "MIDDLE"
+      },
+      {
+        "operation": "OTHEROPERATION",
+        "position": "MIDDLE",
+        "when": "door_w > 0"
+      }
+    ]
+  },
+  "host": {
+    "kinds": [
+      "wall"
+    ],
+    "cut": {
+      "x": [
+        "left",
+        "right"
+      ],
+      "z": [
+        "z0",
+        "z1"
+      ]
+    }
+  },
+  "params": {
+    "width": {
+      "kind": "type",
+      "default": 4000,
+      "unit": "mm",
+      "description": "창호 전체 폭(틀 바깥)",
+      "min": 600,
+      "max": 30000
+    },
+    "height": {
+      "kind": "type",
+      "default": 3000,
+      "unit": "mm",
+      "description": "창호 전체 높이(틀 바깥)",
+      "min": 2000,
+      "max": 8000
+    },
+    "frame_w": {
+      "kind": "type",
+      "default": 50,
+      "unit": "mm",
+      "description": "틀·멀리언 단면 폭",
+      "min": 30,
+      "max": 150
+    },
+    "frame_d": {
+      "kind": "type",
+      "default": 100,
+      "unit": "mm",
+      "description": "틀 깊이",
+      "min": 50,
+      "max": 250
+    },
+    "glass_t": {
+      "kind": "type",
+      "default": 24,
+      "unit": "mm",
+      "description": "유리 두께",
+      "min": 6,
+      "max": 40
+    },
+    "bay_max": {
+      "kind": "type",
+      "default": 1500,
+      "unit": "mm",
+      "description": "고정창 한 칸의 최대 폭(구간을 이 폭 이하로 똑같이 나눈다)",
+      "min": 600,
+      "max": 4000
+    },
+    "transom": {
+      "kind": "type",
+      "default": 0,
+      "unit": "mm",
+      "description": "가로대 높이(창호 아래에서 가로대 윗면까지). 0 이면 없다. 창호 아래·위 끝에서 300mm 이상 떨어져야 쓰인다(아니면 없는 것으로 본다). 문이 있으면 문 위 끝이 가로대 아래다",
+      "min": 0,
+      "max": 7000
+    },
+    "door_w": {
+      "kind": "type",
+      "default": 0,
+      "unit": "mm",
+      "description": "문 개구 폭(문설주 사이). 0 이면 문이 없다. 창호 안 폭보다 넓으면 문을 두지 않는다(DoBIM_WindowParams.DoorWidth 가 0)",
+      "min": 0,
+      "max": 3600
+    },
+    "door_leaves": {
+      "kind": "type",
+      "default": 1,
+      "type": "int",
+      "unit": "none",
+      "description": "문짝 수(1 = 외여닫이, 2 = 양여닫이)",
+      "min": 1,
+      "max": 2
+    },
+    "leaf_t": {
+      "kind": "type",
+      "default": 50,
+      "unit": "mm",
+      "description": "문짝 두께",
+      "min": 30,
+      "max": 80
+    },
+    "u_value": {
+      "kind": "type",
+      "default": 2.0,
+      "unit": "none",
+      "description": "열관류율 W/m2K",
+      "min": 0.5,
+      "max": 6.0
+    },
+    "is_external": {
+      "kind": "type",
+      "default": true,
+      "type": "bool"
+    },
+    "sill": {
+      "kind": "instance",
+      "default": 0,
+      "unit": "mm",
+      "description": "바닥에서 창호 아래 끝까지",
+      "min": 0,
+      "max": 12000
+    },
+    "door_pos": {
+      "kind": "instance",
+      "default": 0,
+      "unit": "mm",
+      "description": "왼쪽 문틀 안쪽에서 문 개구 왼쪽 끝까지(0 이면 왼쪽 문틀에 붙는다). 문이 오른쪽 끝을 넘으면 오른쪽 문틀에 붙인다",
+      "min": 0,
+      "max": 30000
+    },
+    "swing": {
+      "kind": "instance",
+      "default": "L",
+      "type": "enum",
+      "values": [
+        "L",
+        "R"
+      ],
+      "description": "외여닫이 경첩 쪽(L = 지역 -x)"
+    },
+    "open": {
+      "kind": "instance",
+      "default": "in",
+      "type": "enum",
+      "values": [
+        "in",
+        "out"
+      ],
+      "description": "문 열림 쪽(in = 지역 +v 쪽, out = -v 쪽)"
+    },
+    "end_l": {
+      "kind": "instance",
+      "default": "jamb",
+      "type": "enum",
+      "values": [
+        "jamb",
+        "corner"
+      ],
+      "description": "왼쪽 끝: jamb = 문틀, corner = 문틀 없이 모서리에서 다른 창호와 이어짐"
+    },
+    "end_r": {
+      "kind": "instance",
+      "default": "jamb",
+      "type": "enum",
+      "values": [
+        "jamb",
+        "corner"
+      ],
+      "description": "오른쪽 끝: jamb = 문틀, corner = 문틀 없이 모서리에서 다른 창호와 이어짐"
+    }
+  },
+  "derived": {
+    "z0": "sill",
+    "z1": "sill + height",
+    "fd": "min(frame_d, host_thickness)",
+    "fy0": "-fd/2",
+    "fy1": "fd/2",
+    "gy": "0",
+    "jl": "frame_w if end_l == 'jamb' else 0",
+    "jr": "frame_w if end_r == 'jamb' else 0",
+    "xa": "left + jl",
+    "xe": "right - jr",
+    "has_door": "door_w > 0 and door_w <= xe - xa",
+    "dpos": "min(door_pos, xe - xa - door_w) if has_door else 0",
+    "dl": "xa + dpos",
+    "dr": "xa + dpos + door_w",
+    "post_l": "has_door and dpos > 0",
+    "post_r": "has_door and dr < xe",
+    "seg1_b": "(dl - frame_w if post_l else dl) if has_door else xe",
+    "seg2_a": "dr + frame_w",
+    "seg1": "seg1_b - xa > 1",
+    "seg2": "has_door and xe - seg2_a > 1",
+    "n1": "max(1, ceil((seg1_b - xa)/bay_max)) if seg1 else 0",
+    "n2": "max(1, ceil((xe - seg2_a)/bay_max)) if seg2 else 0",
+    "b1": "(seg1_b - xa)/n1 if seg1 else 0",
+    "b2": "(xe - seg2_a)/n2 if seg2 else 0",
+    "tz": "z0 + transom",
+    "has_tr": "transom >= 300 and transom <= height - 300",
+    "glass_top": "(tz - frame_w) if has_tr else (z1 - frame_w)",
+    "door_top": "(tz - frame_w) if has_tr else (z1 - frame_w)",
+    "leaf_w": "door_w / door_leaves",
+    "lg": "min(100, leaf_w/4)",
+    "open_sign": "1 if open == 'in' else -1",
+    "hinge_x": "dl if swing == 'L' else dr",
+    "arc0": "(0 if swing == 'L' else 90) if open == 'in' else (270 if swing == 'L' else 180)"
+  },
+  "refs": {
+    "left": {
+      "axis": "x",
+      "at": "-width/2"
+    },
+    "right": {
+      "axis": "x",
+      "at": "width/2"
+    }
+  },
+  "constraints": [
+    {
+      "expr": "not has_door or dpos == 0 or dpos >= frame_w + 100",
+      "message": "문 왼쪽 고정창 칸이 100mm 미만이다(door_pos 를 0 또는 frame_w + 100 이상으로)"
+    },
+    {
+      "expr": "not has_door or dr >= xe or xe - dr >= frame_w + 100",
+      "message": "문 오른쪽 고정창 칸이 100mm 미만이다(문을 오른쪽 문틀에 붙이거나 띄우세요)"
+    },
+    {
+      "expr": "not has_door or leaf_w >= 450",
+      "message": "문짝 폭이 450mm 미만이다"
+    },
+    {
+      "expr": "not has_door or door_top - z0 >= 1800",
+      "message": "문 높이가 1800mm 미만이다(transom 이나 height 를 키우세요)"
+    },
+    {
+      "expr": "glass_t <= fd - 10",
+      "message": "유리가 틀 깊이보다 10mm 이상 얇아야 한다"
+    },
+    {
+      "expr": "door_w == 0 or leaf_t <= fd",
+      "message": "문짝이 틀 깊이보다 두껍다"
+    }
+  ],
+  "solids": [
+    {
+      "id": "head",
+      "op": "extrude",
+      "plane": "xz",
+      "profile": {
+        "shape": "rect",
+        "u": [
+          "left",
+          "right"
+        ],
+        "v": [
+          "z1 - frame_w",
+          "z1"
+        ]
+      },
+      "range": [
+        "fy0",
+        "fy1"
+      ]
+    },
+    {
+      "id": "bottom1",
+      "op": "extrude",
+      "plane": "xz",
+      "when": "seg1",
+      "profile": {
+        "shape": "rect",
+        "u": [
+          "left",
+          "seg1_b"
+        ],
+        "v": [
+          "z0",
+          "z0 + frame_w"
+        ]
+      },
+      "range": [
+        "fy0",
+        "fy1"
+      ]
+    },
+    {
+      "id": "bottom2",
+      "op": "extrude",
+      "plane": "xz",
+      "when": "seg2",
+      "profile": {
+        "shape": "rect",
+        "u": [
+          "seg2_a",
+          "right"
+        ],
+        "v": [
+          "z0",
+          "z0 + frame_w"
+        ]
+      },
+      "range": [
+        "fy0",
+        "fy1"
+      ]
+    },
+    {
+      "id": "jamb_l",
+      "op": "extrude",
+      "plane": "xz",
+      "when": "end_l == 'jamb'",
+      "profile": {
+        "shape": "rect",
+        "u": [
+          "left",
+          "left + frame_w"
+        ],
+        "v": [
+          "z0",
+          "z1 - frame_w"
+        ]
+      },
+      "range": [
+        "fy0",
+        "fy1"
+      ]
+    },
+    {
+      "id": "jamb_r",
+      "op": "extrude",
+      "plane": "xz",
+      "when": "end_r == 'jamb'",
+      "profile": {
+        "shape": "rect",
+        "u": [
+          "right - frame_w",
+          "right"
+        ],
+        "v": [
+          "z0",
+          "z1 - frame_w"
+        ]
+      },
+      "range": [
+        "fy0",
+        "fy1"
+      ]
+    },
+    {
+      "id": "transom_bar",
+      "op": "extrude",
+      "plane": "xz",
+      "when": "has_tr",
+      "profile": {
+        "shape": "rect",
+        "u": [
+          "xa",
+          "xe"
+        ],
+        "v": [
+          "tz - frame_w",
+          "tz"
+        ]
+      },
+      "range": [
+        "fy0",
+        "fy1"
+      ]
+    },
+    {
+      "id": "mull1",
+      "op": "extrude",
+      "plane": "xz",
+      "repeat": {
+        "var": "i",
+        "count": "max(0, n1 - 1)"
+      },
+      "profile": {
+        "shape": "rect",
+        "u": [
+          "xa + (i + 1)*b1 - frame_w/2",
+          "xa + (i + 1)*b1 + frame_w/2"
+        ],
+        "v": [
+          "z0 + frame_w",
+          "z1 - frame_w"
+        ]
+      },
+      "range": [
+        "fy0",
+        "fy1"
+      ]
+    },
+    {
+      "id": "mull2",
+      "op": "extrude",
+      "plane": "xz",
+      "repeat": {
+        "var": "i",
+        "count": "max(0, n2 - 1)"
+      },
+      "profile": {
+        "shape": "rect",
+        "u": [
+          "seg2_a + (i + 1)*b2 - frame_w/2",
+          "seg2_a + (i + 1)*b2 + frame_w/2"
+        ],
+        "v": [
+          "z0 + frame_w",
+          "z1 - frame_w"
+        ]
+      },
+      "range": [
+        "fy0",
+        "fy1"
+      ]
+    },
+    {
+      "id": "post_dl",
+      "op": "extrude",
+      "plane": "xz",
+      "when": "post_l",
+      "profile": {
+        "shape": "rect",
+        "u": [
+          "dl - frame_w",
+          "dl"
+        ],
+        "v": [
+          "z0",
+          "z1 - frame_w"
+        ]
+      },
+      "range": [
+        "fy0",
+        "fy1"
+      ]
+    },
+    {
+      "id": "post_dr",
+      "op": "extrude",
+      "plane": "xz",
+      "when": "post_r",
+      "profile": {
+        "shape": "rect",
+        "u": [
+          "dr",
+          "dr + frame_w"
+        ],
+        "v": [
+          "z0",
+          "z1 - frame_w"
+        ]
+      },
+      "range": [
+        "fy0",
+        "fy1"
+      ]
+    },
+    {
+      "id": "glass1",
+      "op": "extrude",
+      "plane": "xz",
+      "when": "seg1",
+      "profile": {
+        "shape": "rect",
+        "u": [
+          "xa",
+          "seg1_b"
+        ],
+        "v": [
+          "z0 + frame_w",
+          "glass_top"
+        ]
+      },
+      "range": [
+        "gy - glass_t/2",
+        "gy + glass_t/2"
+      ]
+    },
+    {
+      "id": "glass2",
+      "op": "extrude",
+      "plane": "xz",
+      "when": "seg2",
+      "profile": {
+        "shape": "rect",
+        "u": [
+          "seg2_a",
+          "xe"
+        ],
+        "v": [
+          "z0 + frame_w",
+          "glass_top"
+        ]
+      },
+      "range": [
+        "gy - glass_t/2",
+        "gy + glass_t/2"
+      ]
+    },
+    {
+      "id": "glass_top_lite",
+      "op": "extrude",
+      "plane": "xz",
+      "when": "has_tr",
+      "profile": {
+        "shape": "rect",
+        "u": [
+          "xa",
+          "xe"
+        ],
+        "v": [
+          "tz",
+          "z1 - frame_w"
+        ]
+      },
+      "range": [
+        "gy - glass_t/2",
+        "gy + glass_t/2"
+      ]
+    },
+    {
+      "id": "leaf",
+      "op": "extrude",
+      "plane": "xz",
+      "when": "has_door",
+      "repeat": {
+        "var": "i",
+        "count": "door_leaves"
+      },
+      "profile": {
+        "shape": "rect",
+        "u": [
+          "dl + i*leaf_w",
+          "dl + (i + 1)*leaf_w"
+        ],
+        "v": [
+          "z0",
+          "door_top"
+        ]
+      },
+      "range": [
+        "gy - leaf_t/2",
+        "gy + leaf_t/2"
+      ]
+    },
+    {
+      "id": "leaf_hole",
+      "op": "extrude",
+      "plane": "xz",
+      "role": "void",
+      "cuts": [
+        "leaf"
+      ],
+      "when": "has_door",
+      "repeat": {
+        "var": "i",
+        "count": "door_leaves"
+      },
+      "profile": {
+        "shape": "rect",
+        "u": [
+          "dl + i*leaf_w + lg",
+          "dl + (i + 1)*leaf_w - lg"
+        ],
+        "v": [
+          "z0 + 2*lg",
+          "door_top - lg"
+        ]
+      },
+      "range": [
+        "gy - leaf_t",
+        "gy + leaf_t"
+      ]
+    },
+    {
+      "id": "leaf_glass",
+      "op": "extrude",
+      "plane": "xz",
+      "when": "has_door",
+      "repeat": {
+        "var": "i",
+        "count": "door_leaves"
+      },
+      "profile": {
+        "shape": "rect",
+        "u": [
+          "dl + i*leaf_w + lg",
+          "dl + (i + 1)*leaf_w - lg"
+        ],
+        "v": [
+          "z0 + 2*lg",
+          "door_top - lg"
+        ]
+      },
+      "range": [
+        "gy - glass_t/2",
+        "gy + glass_t/2"
+      ]
+    }
+  ],
+  "plan_symbol": {
+    "default": [
+      {
+        "type": "rect",
+        "when": "end_l == 'jamb'",
+        "u": [
+          "left",
+          "left + frame_w"
+        ],
+        "v": [
+          "fy0",
+          "fy1"
+        ],
+        "style": "cut"
+      },
+      {
+        "type": "rect",
+        "when": "end_r == 'jamb'",
+        "u": [
+          "right - frame_w",
+          "right"
+        ],
+        "v": [
+          "fy0",
+          "fy1"
+        ],
+        "style": "cut"
+      },
+      {
+        "type": "rect",
+        "when": "post_l",
+        "u": [
+          "dl - frame_w",
+          "dl"
+        ],
+        "v": [
+          "fy0",
+          "fy1"
+        ],
+        "style": "cut"
+      },
+      {
+        "type": "rect",
+        "when": "post_r",
+        "u": [
+          "dr",
+          "dr + frame_w"
+        ],
+        "v": [
+          "fy0",
+          "fy1"
+        ],
+        "style": "cut"
+      },
+      {
+        "type": "line",
+        "when": "seg1",
+        "from": [
+          "xa",
+          "fy0"
+        ],
+        "to": [
+          "seg1_b",
+          "fy0"
+        ]
+      },
+      {
+        "type": "line",
+        "when": "seg1",
+        "from": [
+          "xa",
+          "fy1"
+        ],
+        "to": [
+          "seg1_b",
+          "fy1"
+        ]
+      },
+      {
+        "type": "line",
+        "when": "seg1",
+        "from": [
+          "xa",
+          "gy"
+        ],
+        "to": [
+          "seg1_b",
+          "gy"
+        ]
+      },
+      {
+        "type": "line",
+        "when": "seg2",
+        "from": [
+          "seg2_a",
+          "fy0"
+        ],
+        "to": [
+          "xe",
+          "fy0"
+        ]
+      },
+      {
+        "type": "line",
+        "when": "seg2",
+        "from": [
+          "seg2_a",
+          "fy1"
+        ],
+        "to": [
+          "xe",
+          "fy1"
+        ]
+      },
+      {
+        "type": "line",
+        "when": "seg2",
+        "from": [
+          "seg2_a",
+          "gy"
+        ],
+        "to": [
+          "xe",
+          "gy"
+        ]
+      },
+      {
+        "type": "line",
+        "when": "has_door and door_leaves == 1",
+        "from": [
+          "hinge_x",
+          "gy"
+        ],
+        "to": [
+          "hinge_x",
+          "gy + open_sign*door_w"
+        ]
+      },
+      {
+        "type": "arc",
+        "when": "has_door and door_leaves == 1",
+        "center": [
+          "hinge_x",
+          "gy"
+        ],
+        "radius": "door_w",
+        "start": "arc0",
+        "end": "arc0 + 90"
+      },
+      {
+        "type": "line",
+        "when": "has_door and door_leaves == 2",
+        "from": [
+          "dl",
+          "gy"
+        ],
+        "to": [
+          "dl",
+          "gy + open_sign*leaf_w"
+        ]
+      },
+      {
+        "type": "line",
+        "when": "has_door and door_leaves == 2",
+        "from": [
+          "dr",
+          "gy"
+        ],
+        "to": [
+          "dr",
+          "gy + open_sign*leaf_w"
+        ]
+      },
+      {
+        "type": "arc",
+        "when": "has_door and door_leaves == 2",
+        "center": [
+          "dl",
+          "gy"
+        ],
+        "radius": "leaf_w",
+        "start": "0 if open == 'in' else 270",
+        "end": "90 if open == 'in' else 360"
+      },
+      {
+        "type": "arc",
+        "when": "has_door and door_leaves == 2",
+        "center": [
+          "dr",
+          "gy"
+        ],
+        "radius": "leaf_w",
+        "start": "90 if open == 'in' else 180",
+        "end": "180 if open == 'in' else 270"
+      }
+    ],
+    "1:200": [
+      {
+        "type": "rect",
+        "u": [
+          "left",
+          "right"
+        ],
+        "v": [
+          "fy0",
+          "fy1"
+        ],
+        "style": "cut"
+      }
+    ]
+  },
+  "psets": {
+    "Pset_WindowCommon": {
+      "on": "type",
+      "props": {
+        "IsExternal": {
+          "expr": "is_external"
+        },
+        "ThermalTransmittance": {
+          "expr": "u_value"
+        }
+      }
+    },
+    "DoBIM_StorefrontParams": {
+      "on": "type",
+      "props": {
+        "BayMax": {
+          "expr": "bay_max"
+        },
+        "Transom": {
+          "expr": "transom if has_tr else 0"
+        },
+        "DoorLeaves": {
+          "expr": "door_leaves"
+        }
+      }
+    },
+    "DoBIM_WindowParams": {
+      "on": "instance",
+      "props": {
+        "SillHeight": {
+          "expr": "sill"
+        },
+        "DoorWidth": {
+          "expr": "door_w if has_door else 0"
+        },
+        "DoorPosition": {
+          "expr": "dpos"
+        },
+        "Swing": {
+          "expr": "swing"
+        },
+        "DoorOpen": {
+          "expr": "open"
+        },
+        "EndLeft": {
+          "expr": "end_l"
+        },
+        "EndRight": {
+          "expr": "end_r"
+        },
+        "Bays": {
+          "expr": "n1 + n2"
+        }
+      }
+    }
+  }
+}

@@ -957,3 +957,23 @@ s10-headless 실패 2건(test_gui_scan, test_headless_ra01 IFC 기준 해시)은
 
 ### 25.3 시험
 test_practical5_wall_cut(8건).
+
+## 26. 스물네 번째 작업: 큰 창호·복합/모서리 창호·창 열림 방식·여러 층 벽·자동 난간 id (2026-11-18, 브랜치 phase1/practical-modeling-6)
+
+산출은 비공개 산출 폴더(phase1-after24)에 두었다. 같은 모델에 `run_baseline.py --sheets` 를 돌렸다(새 입력 없음). 설계 메모는 elements-design.md 26절. 해시 형식 그대로(CLOSURE_FORMAT 15).
+
+### 26.0 바이트 비교 (after23 대비, work/·run.json 제외)
+**같은 파일 183개, 달라진 파일 0, 새 산출 0, 사라진 파일 0.** 새 키(top_level·top_offset)·새 패밀리·새 레시피 항목(ifc.panels)을 쓰지 않은 모델은 행·IFC·도면이 이전과 같다(기준선은 window.fixed 를 쓰고, 바꾼 패밀리 window.framed·door.single·door.sliding 은 쓰지 않는다).
+처음에는 다른 레벨 벽이 평면 절단 높이를 지나가면 모두 그 평면에 더했는데, 별채 지붕 평면(A-020·annex-roof)에 아래 레벨 박공 벽이 새로 절단되어 5개 파일이 달라졌다. 상단 레벨로 구속한 벽만 더하도록 좁혀 0 으로 돌렸다.
+s10-headless 실패 2건(test_gui_scan, test_headless_ra01 IFC 기준 해시)은 23~25절과 같은 기존 상태다. parity: 커맨드 110 전부 예시 실행, 불일치 0.
+
+### 26.1 변경 요지
+1. 창·문 패밀리 상한 확대(version 2): window.framed 폭 400~6000·높이 400~6000·sill ≤12000, door.single 폭 500~1800·높이 ≤3600, door.sliding 폭 ≤8000·높이 ≤4000.
+2. 복합 창호 `window.storefront`(고정창 칸 자동 분할·여닫이문 한/두 짝·가로대·모서리 끝, IfcWindow USERDEFINED STOREFRONT/STOREFRONT_DOOR)와 꺾인 창호 커맨드 `family.place_corner`(커맨드 109 -> 110).
+3. window.framed 열림 방식 project_out(프로젝트창)·sliding(미닫이창, IfcWindow). 레시피 `ifc.panels` -> 타입의 IfcWindowPanelProperties(OperationType·PanelPosition).
+4. 벽 상단 레벨 구속 `top_level`·`top_offset`(wall.create·wall.set 인자), 구속 벽은 지나가는 다른 층 평면에도 절단.
+5. railing.from_stair·railing.from_slab 의 `ids`.
+
+### 26.2 시험
+test_practical6(14건).
+

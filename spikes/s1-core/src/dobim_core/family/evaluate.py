@@ -82,6 +82,11 @@ def _sites(r: Recipe) -> list[ExprSite]:
         add(ptr("ifc", "type_attrs", k), v, "any", type_only=True, value=True)
     for k, v in r.ifc.attrs.items():
         add(ptr("ifc", "attrs", k), v, "any", value=True)
+    for i, pn in enumerate(r.ifc.panels):   # 창 패널(24단계): 타입 수준 값
+        add(ptr("ifc", "panels", i, "operation"), pn.operation, "any", type_only=True, value=True)
+        add(ptr("ifc", "panels", i, "position"), pn.position, "any", type_only=True, value=True)
+        if isinstance(pn.when, str):
+            add(ptr("ifc", "panels", i, "when"), pn.when, "bool", type_only=True)
     for pn, ps in r.psets.items():
         for k, v in ps.props.items():
             add(ptr("psets", pn, "props", k), v, "any", type_only=(ps.on == "type"), value=True)
@@ -651,9 +656,35 @@ def _evaluate(r: Recipe, plan: Plan, tv: dict, iv: dict, host: dict | None) -> d
     psets: dict[str, dict] = {"type": {}, "instance": {}}
     for pn, ps in r.psets.items():
         psets[ps.on][pn] = {k: _value(v, env, ptr("psets", pn, "props", k)) for k, v in ps.props.items()}
-    return {"type_values": tv, "values": iv, "body": body, "void_ids": void_ids, "cut": cut, "plan": plan_sym,
-            "type_attrs": type_attrs, "attrs": attrs, "psets": psets,
-            "body_hash": digest(body), "plan_hash": digest(plan_sym.get("default", []))}
+    out = {"type_values": tv, "values": iv, "body": body, "void_ids": void_ids, "cut": cut, "plan": plan_sym,
+           "type_attrs": type_attrs, "attrs": attrs, "psets": psets,
+           "body_hash": digest(body), "plan_hash": digest(plan_sym.get("default", []))}
+    if r.ifc.panels:   # 창 패널(24단계): 없으면 결과는 이전과 같다
+        out["panels"] = resolve_panels(r, env)
+    return out
+
+
+PANEL_OPERATIONS = frozenset({"SIDEHUNGRIGHTHAND", "SIDEHUNGLEFTHAND", "TILTANDTURNRIGHTHAND", "TILTANDTURNLEFTHAND", "TOPHUNG", "BOTTOMHUNG",
+                              "PIVOTHORIZONTAL", "PIVOTVERTICAL", "SLIDINGHORIZONTAL", "SLIDINGVERTICAL", "REMOVABLECASEMENT", "FIXEDCASEMENT",
+                              "OTHEROPERATION", "NOTDEFINED"})   # IFC4 IfcWindowPanelOperationEnum
+PANEL_POSITIONS = frozenset({"LEFT", "MIDDLE", "RIGHT", "BOTTOM", "TOP", "NOTDEFINED"})   # IFC4 IfcWindowPanelPositionEnum
+
+
+def resolve_panels(r: Recipe, env: dict) -> list:
+    """창 패널 [[열림 방식, 위치], ...](24단계). 값은 IFC4 열거값이어야 한다."""
+    out = []
+    for i, pn in enumerate(r.ifc.panels):
+        base = ptr("ifc", "panels", i)
+        if pn.when is not None and not (_ev(pn.when, env, base + "/when", "bool") if isinstance(pn.when, str) else pn.when):
+            continue
+        op = _value(pn.operation, env, base + "/operation")
+        pos = _value(pn.position, env, base + "/position")
+        if op not in PANEL_OPERATIONS:
+            raise _bad("E_IFC_ENUM", base + "/operation", f"IfcWindowPanelOperationEnum 값이 아니다: {op!r}")
+        if pos not in PANEL_POSITIONS:
+            raise _bad("E_IFC_ENUM", base + "/position", f"IfcWindowPanelPositionEnum 값이 아니다: {pos!r}")
+        out.append([op, pos])
+    return out
 
 
 def sample_points(r: Recipe) -> list[tuple[dict, dict, dict]]:

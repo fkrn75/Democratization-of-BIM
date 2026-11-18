@@ -163,6 +163,8 @@ class _Inputs:
             return tuple(st.out.get((key[1], key[2]), ()))
         if t == "rel_in":
             return tuple(st.inn.get((key[1], key[2]), ()))
+        if t == "tied_walls":   # 상단 구속 벽(24단계): 이 입력이 바뀌는 경우는 kinds._keys_el 이 정한다
+            return tuple(sorted(w for w in st.by_kind.get("wall", ()) if "top_level" in st.el[w]["params"]))
         ifc = self.eng.ifc
         if t == "pset":
             return ifc.get_psets(key[1]) if key[1] in ifc.ents else {}

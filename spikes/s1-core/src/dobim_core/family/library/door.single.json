@@ -1,7 +1,7 @@
 {
   "schema": "dobim.family/1",
   "id": "door.single",
-  "version": 1,
+  "version": 2,
   "name": "외여닫이문",
   "description": "벽에 호스팅되는 외여닫이문. 문틀(스윕)과 문짝(압출), 열림 방향(L/R)에 따라 뒤집히는 평면 기호.",
   "ifc": {
@@ -45,8 +45,8 @@
       "default": 900,
       "unit": "mm",
       "description": "개구부 폭(문틀 바깥)",
-      "min": 600,
-      "max": 1500
+      "min": 500,
+      "max": 1800
     },
     "height": {
       "kind": "type",
@@ -54,7 +54,7 @@
       "unit": "mm",
       "description": "개구부 높이",
       "min": 1800,
-      "max": 2700
+      "max": 3600
     },
     "frame_w": {
       "kind": "type",

@@ -29,8 +29,9 @@ LY3 = [{"material": "치장벽돌", "thickness": 20}, {"material": "콘크리트
 # 기존 라이브러리 레시피의 해시(= 기존 타입 id 의 바탕). 이 값이 바뀌면 기존 프로젝트의 타입 id 가 달라진다(설계 메모 22.5)
 PINNED = {
     "column.section": "57cb3b1aa8773aabea6f9a0bffd5e9fa1d6565d07229a04f6b4e05b01e238b4e",
-    "door.single": "9433372f6973f8922e555a82c622433554bdec7eb3b24aaf23c8cc2264dcd2cc",
-    "door.sliding": "cc3e5df6882307674fe99de62089ac906ab99e32964ed1a4355253a0a3902746",
+    # 24단계: 치수 상한을 넓혀 version 2 로 올렸다(기준선 모델은 이 둘을 쓰지 않는다. 이미 올라온 version 1 타입은 프로젝트에 그대로 남는다)
+    "door.single": "104722691ad5329da4b68acb1960377cd928bd39c2432dd5276e48b0a930ce2e",
+    "door.sliding": "b8a5b324c0b647eb36aab46d38ef47f32743b748a5d9da9d0f3f8a12f8a577fd",
     "wardrobe.builtin": "5deebbb7a1ec04844bb929d4a096e19611c0ca05f0578d311bfd0186d04eb2e1",
     "window.fixed": "cc975765205e2550822586d5bd97f3552e460f29a77a0c7f17b7e3ee12cfa40f",
 }
@@ -80,7 +81,7 @@ def _place(sess, eid, host, offset, type_values=None, values=None, rotation=0):
 # ---------------------------------------------------------------- 라이브러리
 def test_기본_라이브러리에_창틀_창이_더해졌고_기존_레시피는_그대로다():
     ids = library.ids()
-    assert set(ids) == set(PINNED) | {"window.framed"}
+    assert set(ids) == set(PINNED) | {"window.framed", "window.storefront"}   # 24단계: 복합 창호
     for fid, h in PINNED.items():
         assert FS.recipe_hash_of(library.load(fid)) == h, f"{fid} 레시피가 바뀌었다(기존 타입 id 가 달라진다)"
     res = validate_recipe(library.load("window.framed"), "full")
@@ -142,7 +143,7 @@ def test_여닫이는_문짝_틀을_더하고_멀리언은_고정창만_둘_수_
     ok(_place(bw, WB, WH, 6000, type_values={"mullions": 2, "width": 1800}))
     assert len([x for x in _spec(bw, WB)["body"] if x["id"].startswith("mullion")]) == 2
     assert not _place(bw, WC, WH, 1500, type_values={"operation": "casement_in", "width": 500, "frame_w": 120})["ok"]   # 유리 개구 < 100
-    assert not _place(bw, WC, WH, 1500, type_values={"operation": "sliding"})["ok"]
+    assert not _place(bw, WC, WH, 1500, type_values={"operation": "pivot"})["ok"]   # 24단계에 sliding·project_out 이 생겼다
 
 
 # ---------------------------------------------------------------- 평면 기호

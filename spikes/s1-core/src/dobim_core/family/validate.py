@@ -317,6 +317,9 @@ def check_ifc_schema(r: Recipe, good: list) -> list[Issue]:
         if "ObjectType" not in r.ifc.attrs and _attr(sch, cls, "ObjectType") is not None:
             out.append(Issue("E_IFC_USERDEFINED", "/ifc/attrs", "USERDEFINED 인 인스턴스는 ObjectType 이 필요하다",
                              'attrs 에 "ObjectType": "이름" 을 넣으세요'))
+    if r.ifc.panels and r.ifc.class_ != "IfcWindow":   # 창 패널(24단계): IfcWindowPanelProperties 는 창 타입에만 붙인다
+        out.append(Issue("E_IFC_CLASS", "/ifc/panels", "ifc.panels(IfcWindowPanelProperties)는 IfcWindow 패밀리에만 쓸 수 있다",
+                         "panels 를 지우거나 class 를 IfcWindow 로 두세요"))
     return out
 
 

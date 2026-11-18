@@ -466,6 +466,93 @@ def family_set(ctx, a: FamilySet):
     return {"id": a.id}
 
 
+# ---------------------------------------------------------------- family.place_corner (24단계: 90도로 꺾인 모서리 창호)
+CORNER_TOL = 1.0          # 두 벽 축선 끝점이 이 거리(mm) 안이면 같은 모서리로 본다
+CORNER_COS_TOL = 0.0087   # 직각에서 0.5도 안
+
+
+class FamilyPlaceCorner(A):
+    ids: Annotated[list[Id], Field(min_length=2, max_length=2)] | None = Field(None, description="두 인스턴스 id [벽 a 쪽, 벽 b 쪽]. 비우면 자동")
+    family: FamilyId = Field(description="모서리 끝(end_l/end_r 의 corner)을 지원하는 호스팅 패밀리(예: window.storefront)")
+    walls: Annotated[list[Id], Field(min_length=2, max_length=2)] = Field(description="모서리에서 직각으로 만나는 두 벽 [a, b](축선 끝점이 맞닿아야 한다)")
+    legs: Annotated[list[Annotated[Num, Field(gt=0)]], Field(min_length=2, max_length=2)] = Field(description="모서리(두 축선의 교점)에서 각 벽을 따라 창호가 차지하는 길이 mm [a, b]. 각 다리의 width 가 된다")
+    type_values: Values = Field(default_factory=dict, description="두 다리 공통 타입 값(width 는 legs 로 정한다)")
+    values: Values = Field(default_factory=dict, description="두 다리 공통 인스턴스 값(모서리 쪽 end_l/end_r 는 corner 로 정한다)")
+    values_b: Values = Field(default_factory=dict, description="벽 b 쪽 다리에만 덮어쓸 인스턴스 값(예: 문 위치)")
+    flip: Annotated[list[bool], Field(min_length=2, max_length=2)] = Field([False, False], description="다리별 뒤집기(rotation 180) [a, b]")
+    name: Name | None = None
+
+
+def _corner_end(axis, corner) -> str | None:
+    """축선의 어느 끝이 모서리인가: 'end'(p2) / 'start'(p1) / None."""
+    x1, y1, x2, y2 = axis
+    if C.sqrt((x2 - corner[0]) ** 2 + (y2 - corner[1]) ** 2) <= CORNER_TOL:
+        return "end"
+    if C.sqrt((x1 - corner[0]) ** 2 + (y1 - corner[1]) ** 2) <= CORNER_TOL:
+        return "start"
+    return None
+
+
+@command("family.place_corner", kind="mutation", risk="write", group="family",
+         summary="직각으로 만나는 두 벽의 모서리에 꺾인 창호(두 다리)를 놓는다. 각 다리는 모서리 쪽 끝이 corner(문틀 없음)인 호스팅 인스턴스다",
+         args=FamilyPlaceCorner, since="0.4",
+         examples=[{"family": "window.storefront", "walls": [C.F.W1, C.F.W2], "legs": [2500, 2000], "type_values": {"height": 2400, "bay_max": 1200}}])
+def family_place_corner(ctx, a: FamilyPlaceCorner):
+    if a.walls[0] == a.walls[1]:
+        raise DobimError("CONSTRAINT", "두 벽이 같다", path="/walls")
+    if "width" in a.type_values:
+        raise DobimError("CONSTRAINT", "width 는 legs 로 정한다", path="/type_values/width")
+    rows = [ctx.authored(w, "wall", what="패밀리 인스턴스 호스팅") for w in a.walls]
+    recipe = _recipe_of(ctx, a.family)
+    try:
+        r, _ = FE.load_recipe(recipe)
+    except FamilyError as ex:
+        raise _fam_error(ex) from None
+    for k in ("end_l", "end_r", "width"):
+        prm = r.params.get(k)
+        if prm is None or (k != "width" and "corner" not in (prm.values or ())):
+            raise DobimError("CONSTRAINT", f"{r.id} 는 모서리 창호를 지원하지 않는다(매개변수 {k} 가 없거나 corner 값이 없다)", path="/family",
+                             hint="window.storefront 처럼 end_l/end_r 에 corner 가 있는 호스팅 패밀리를 쓰세요")
+    if ctx.rels_out("on_level", a.walls[0]) != ctx.rels_out("on_level", a.walls[1]):
+        raise DobimError("CONSTRAINT", "두 벽이 다른 레벨에 있다", path="/walls")
+    axes = [rw["params"]["axis"] for rw in rows]
+    corner = None
+    for pa in ((axes[0][0], axes[0][1]), (axes[0][2], axes[0][3])):
+        if _corner_end(axes[1], pa) is not None:
+            corner = pa
+            break
+    if corner is None:
+        raise DobimError("CONSTRAINT", "두 벽의 축선 끝점이 맞닿지 않는다(모서리가 없다)", path="/walls",
+                         hint="두 벽의 축선이 한 점에서 끝나게 하세요(join 으로 모서리를 잇는 L 형 벽)")
+    dirs = []
+    for ax in axes:   # 모서리에서 벽을 따라 멀어지는 방향
+        x1, y1, x2, y2 = ax
+        ln = C.sqrt((x2 - x1) ** 2 + (y2 - y1) ** 2)
+        s = 1.0 if _corner_end(ax, corner) == "start" else -1.0
+        dirs.append(((x2 - x1) / ln * s, (y2 - y1) / ln * s))
+    if abs(dirs[0][0] * dirs[1][0] + dirs[0][1] * dirs[1][1]) > CORNER_COS_TOL:
+        raise DobimError("CONSTRAINT", "두 벽이 직각으로 만나지 않는다", path="/walls")
+    ids = list(a.ids) if a.ids else [None, None]
+    if a.ids and a.ids[0] == a.ids[1]:
+        raise DobimError("CONSTRAINT", "두 id 가 같다", path="/ids")
+    out = []
+    for i, (w, ax, leg) in enumerate(zip(a.walls, axes, a.legs)):
+        length = C.sqrt(C._axis_len2(ax))
+        at_end = _corner_end(ax, corner) == "end"
+        offset = length - leg / 2.0 if at_end else leg / 2.0
+        flipped = bool(a.flip[i])
+        key = ("end_r" if at_end else "end_l") if not flipped else ("end_l" if at_end else "end_r")   # 뒤집으면 지역 x 가 반대다
+        vals = {**a.values, **(a.values_b if i == 1 else {}), key: "corner"}
+        nm = f"{a.name}-{'ab'[i]}" if a.name else None
+        res = family_place(ctx, FamilyPlace(id=ids[i], family=a.family, type_values={**a.type_values, "width": leg}, values=vals,
+                                            host=w, offset=offset, rotation=180.0 if flipped else 0.0, name=nm))
+        out.append(res)
+    for i, res in enumerate(out):   # 두 다리를 한 모서리 창호로 묶는 표식(속성)
+        ctx.set_prop(res["id"], "DoBIM_CornerUnit", "Leg", "ab"[i])
+        ctx.set_prop(res["id"], "DoBIM_CornerUnit", "Partner", out[1 - i]["id"])
+    return {"ids": [x["id"] for x in out], "types": [x["type"] for x in out], "corner": [float(corner[0]), float(corner[1])]}
+
+
 # ---------------------------------------------------------------- family.preview
 class FamilyPreview(A):
     type: Id | None = None

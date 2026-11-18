@@ -221,7 +221,23 @@ def project_type(model, eid: str, spec: dict) -> None:
             maps.append(f.createIfcRepresentationMap(origin, rep))
     t.RepresentationMaps = maps or None
     model.type_maps[eid] = True
+    _project_panels(model, eid, t, spec.get("panels") or ())
     gc_plan_context(model)
+
+
+def _project_panels(model, eid: str, t, panels) -> None:
+    """창 패널(24단계): 타입의 HasPropertySets 에 IfcWindowPanelProperties(열림 방식·위치)를 둔다. 투영이 소유하므로 매번 걷어내고 다시 만든다.
+    GlobalId 는 타입 id 와 순번에서 결정적으로 파생한다. 패널이 없는 타입은 HasPropertySets 를 건드리지 않는다(이전과 같다)."""
+    f = model.f
+    old = [x for x in (t.HasPropertySets or ()) if x.is_a("IfcWindowPanelProperties")]
+    if not old and not panels:
+        return
+    keep = [x for x in (t.HasPropertySets or ()) if not x.is_a("IfcWindowPanelProperties")]
+    for x in old:
+        f.remove(x)
+    new = [f.createIfcWindowPanelProperties(model.derived_guid_for(f"winpanel:{eid}:{i}"), None, f"Panel{i + 1}", None, op, pos)
+           for i, (op, pos) in enumerate(panels)]
+    t.HasPropertySets = (keep + new) or None
 
 
 def _clear_type_maps(model, t) -> None:
@@ -239,6 +255,7 @@ def unproject_type(model, eid: str) -> None:
         return
     model.type_maps.pop(eid, None)
     _clear_type_maps(model, t)
+    _project_panels(model, eid, t, ())
     model.typerels.pop(eid, None)   # 관계의 GlobalId(_typerel_gid)는 남겨 둔다: 지운 타입을 되돌리면 같은 값으로 다시 만든다
     gc_plan_context(model)
 

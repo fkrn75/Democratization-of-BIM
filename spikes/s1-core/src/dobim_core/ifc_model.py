@@ -920,6 +920,8 @@ class IfcModel:
         for name, props in ue.get_psets(self.ents[eid], psets_only=True, should_inherit=False).items():
             if name == INTENT_PSET:
                 continue
+            if self.f.by_id(props["id"]).is_a("IfcPreDefinedPropertySet"):   # 창 패널(24단계) 같은 정의 속성셋은 투영(의도)의 몫이다: 일반 속성으로 읽지 않는다
+                continue
             out[name] = {k: plain(v) for k, v in props.items() if k != "id"}
         return out
 
