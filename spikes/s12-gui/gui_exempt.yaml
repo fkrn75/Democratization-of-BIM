@@ -1,0 +1,19 @@
+# 패리티 G 제외 목록(ADR-0011·ADR-0016, docs/2d-editing.md 2.5절). 이 파일 하나뿐이다.
+# 순수 화면 조작만 넣는다. 항목마다 reason(이유)이 필수다.
+# queries: 이 동작이 부를 수 있는 조회 커맨드(선택). 조회(query·read)가 아니면 검사기(parity_g.py)가 실패시킨다(제외 동작은 저장소를 건드리지 않는다).
+# 형식: 이 저장소의 작은 YAML 부분집합(목록 안의 key: value, 값은 문자열 또는 [a, b] 목록). parity_g.py 가 읽는다.
+- id: canvas.pan
+  reason: 화면 이동. 저장·출력 무관(아키텍처 15.2 카메라 조작)
+- id: canvas.zoom
+  reason: 화면 확대. 저장·출력 무관
+- id: canvas.hover
+  reason: 강조 표시만. 집기 조회로 강조할 요소를 고른다
+  queries: [view.pick]
+- id: canvas.drag_preview
+  reason: 끌기 중 고무줄 미리보기. 놓을 때 확정 커맨드를 낸다. 스냅 후보는 조회로 받는다
+  queries: [geom.snap]
+- id: selection.temp
+  reason: 임시 선택. 저장은 selection.save(B3)
+  queries: [view.pick, view.scene]
+- id: ui.panel_layout
+  reason: 패널 배치·테마·창 크기
