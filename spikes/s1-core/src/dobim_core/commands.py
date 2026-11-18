@@ -3101,7 +3101,7 @@ def _dangling_view_levels(ctx) -> list:
     out = []
     for vid in sorted(st.by_kind.get("view", ())):
         p = st.el[vid]["params"]
-        if p["type"] == "plan" and st.el.get(p["level"], {}).get("kind") != "level":
+        if p["type"] == "plan" and not Q.plan_level_ok(st.el.get(p["level"])):
             out.append((p["name"], p["level"]))
     return out
 
@@ -3234,7 +3234,8 @@ def view_create(ctx, a: ViewCreate):
     _fresh_id(ctx, a, "view")
     _view_name_free(ctx, a.name)
     if a.type == "plan":
-        ctx.row(a.level, "level")
+        if not Q.plan_level_ok(ctx.st.el.get(a.level)):   # 레벨 또는 외래 IFC 층(1단계 외래 도면 경로)
+            raise DobimError("NOT_FOUND", f"level 를 찾을 수 없다: {a.level}", path="/level")
         params = {"name": a.name, "type": "plan", "level": a.level, "cut_height": a.cut_height, "view_depth": a.view_depth, "scale": a.scale}
     elif a.type == "section":
         params = {"name": a.name, "type": "section", "p1": list(a.p1), "p2": list(a.p2), "depth": a.depth, "flip": a.flip, "scale": a.scale}
@@ -3413,7 +3414,7 @@ def _warn_omitted(ctx, omitted: dict) -> None:
     """도면이 그리지 못한 외래 요소·분리된 벽이 있으면 조용히 넘기지 않고 알린다(S2 × S3)."""
     if omitted["foreign"] or omitted["detached"]:
         ctx.warn(f"이 뷰는 외래 요소 {omitted['foreign']}개와 분리된 벽 {omitted['detached']}개를 그리지 않았다"
-                 "(외래는 형상 정보가 없고, 분리된 벽의 의도 값은 낡았다)")
+                 "(외래는 IFC 형상이 없거나 그리지 않는 종류(공간·개구부 등)이고, 분리된 벽의 의도 값은 낡았다)")
 
 
 def _render_view(ctx, vid, detail=False, hidden=False, hier=False):
