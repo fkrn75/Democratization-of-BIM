@@ -176,4 +176,4 @@ B0·B1 은 GUI 없이 코어만 바꾸므로 지금의 시험 체계로 끝까�
 
 **`view.pick`** — 점에서 허용 거리(기본 용지 3mm = 3 x 축척) 안의 요소를 가까운 순으로(같으면 절단선 > 채움 안 > 나머지 > 문자). 채움 다각형 안이면 거리 0. **`geom.snap`** — 끝점·중점·교점(근처 선분 200개 안에서)·벽 축선 끝·중점(평면)·수선의 발(`from` 필요)·직교(`from` 을 지나는 가로·세로) 후보를 가까운 순으로, `best` 는 첫 후보.
 
-**측정**(합성 격자 평면, `tools/bench_gui_scene.py`) 결과는 `spikes/phase1-drawings/baseline.md` 31절.
+**측정**(합성 격자 평면, `tools/bench_gui_scene.py`) 결과는 `spikes/phase1-drawings/baseline.md` 32절.

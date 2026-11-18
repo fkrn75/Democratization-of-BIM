@@ -197,6 +197,57 @@ def test_뷰를_지우면_장면_노드도_치운다(rich):
     assert not [k for k in rich.eng.g.nodes if k[0] in (SC.view_scene, SC._el_parts_q, CG.scene_rows, CG.scene_digest) and k[1] == F.V1]
 
 
+# ================================================================ 외래 IFC 모델(외래 IFC 2차의 절단면 채움·공간 실명)
+@pytest.fixture
+def ba(tmp_path):
+    """저장소 외래 표본 BA 를 가져온 프로젝트와 정해진 뷰(test_foreign_drawings.py 와 같은 준비)."""
+    sys.path.insert(0, str(ROOT.parent / "phase1-drawings"))
+    import foreign_corpus as FC
+    from dobim_core import dispatch
+    p = FC.sample_path("BA")
+    if p is None:
+        pytest.skip("외래 표본 BA 가 없다")
+    env = dispatch.Env(tmp_path, "t")
+    FC._import(env, p)
+    FC.render_project(env)
+    eng = env.engine(FC.PROJECT)
+    yield env, eng, {eng.st.el[v]["params"]["name"]: v for v in eng.st.by_kind["view"]}, FC.PROJECT
+    env.close()
+
+
+def test_외래_요소의_채움과_공간_문자도_도면과_같다(ba):
+    env, eng, vs, proj = ba
+    g = eng.g
+    for name in ("plan-0", "sec-x", "elev-S"):
+        v = vs[name]
+        sc = g.q(SC.view_scene, v)
+        same_cover(cover(scene_lines(sc)), cover(g.q(D.view_lines, v)))
+        assert sorted(p for t in sc for p in t[3]) == sorted(g.q(D.view_fills, v)), name
+        assert sorted(x for t in sc for x in t[4]) == sorted(g.q(D.view_labels, v)), name
+    plan = vs["plan-0"]
+    by = {t[1]: t for t in g.q(SC.view_scene, plan)}
+    filled = [e for e in g.q(D.scope_foreign, plan) if g.q(D.foreign_fills, plan, e)]
+    assert filled and all(by[e][3] == g.q(D.foreign_fills, plan, e) for e in filled)   # 외래 절단면 채움은 그 요소 id 로
+    spaces = g.q(D.scope_foreign_spaces, plan)
+    assert spaces and all(by[s][0] == "foreign" and by[s][4] == g.q(D.foreign_space_labels, plan, s) for s in spaces)   # 외래 공간 실명은 그 공간 id 로
+    t = by[spaces[0]][4][0]   # 외래 공간 실명 문자 위치를 집으면 그 공간이 걸린다
+    from dobim_core import dispatch
+    hit = ok(dispatch.run(env, "view.pick", {"id": plan, "x": t[0], "y": t[1], "tol": 10}, project=proj))
+    assert spaces[0] in [h["id"] for h in hit["items"]]
+
+
+def test_외래_모델_증분과_전체_계산이_같다(ba):
+    env, eng, vs, proj = ba
+    g = eng.g
+    plan = vs["plan-0"]
+    g.q(SC.view_scene, plan)
+    wall = next(e for e in g.q(D.scope_foreign, plan) if eng.st.el[e]["ifc_class"] in D.F_WALLS and g.q(D._f_cut, plan, e))
+    from dobim_core import dispatch
+    ok(dispatch.run(env, "pset.set", {"id": wall, "pset": "Pset_WallCommon", "prop": "LoadBearing", "value": False}, project=proj))
+    eng.sync()
+    assert g.q(SC.view_scene, plan) == s3lib.RefGraph(s3lib._Inputs(eng)).q(SC.view_scene, plan)
+
+
 # ================================================================ 집기
 def test_집기(rich):
     hits = ok(rich.run("view.pick", {"id": F.V1, "x": 3000, "y": 0}))["items"]

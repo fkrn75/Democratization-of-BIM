@@ -121,6 +121,9 @@ def _el_parts(g, v, cfg, kind, e):
         lines.extend(g.q(D.solid_lines, v, e))
     elif kind == "foreign":
         lines.extend(g.q(D.foreign_lines, v, e))
+        fills.extend(g.q(D.foreign_fills, v, e))   # 외래 절단면 채움(외래 IFC 2차, view_fills 와 같은 질의)
+    elif kind == "fspace":
+        texts.extend(g.q(D.foreign_space_labels, v, e))   # 외래 공간(IfcSpace) 실명·면적(외래 IFC 2차, view_labels 와 같은 질의)
     elif kind == "grid":
         gm = g.q(D.grid_marks, v, e)
         lines.extend(gm[0])
@@ -225,9 +228,9 @@ def view_scene(g, v):
     if cfg[0] != "site":
         scopes = (("wall", D.scope_walls), ("fam", D.scope_fams), ("slab", D.scope_slabs), ("stair", D.scope_stairs),
                   ("railing", D.scope_railings), ("elevator", D.scope_elevators), ("roof", D.scope_roofs),
-                  ("solid", D.scope_solids), ("foreign", D.scope_foreign), ("space", D.scope_spaces))
+                  ("solid", D.scope_solids), ("foreign", D.scope_foreign), ("space", D.scope_spaces), ("fspace", D.scope_foreign_spaces))
         for kind, fn in scopes:
-            if kind == "space" and cfg[0] != "plan":
+            if kind in ("space", "fspace") and cfg[0] != "plan":
                 continue
             for e in g.q(fn, v):
                 lines, fills, texts = g.q(_el_parts_q, v, kind, e)
