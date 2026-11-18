@@ -1,11 +1,18 @@
 {
+ "history": [
+  {
+   "date": "2026-11-19",
+   "what": "ra01 의 derived·ifc 해시와 IFC 파일 정규화 해시 2종을 main(eb869f5) 값으로 갱신. state 해시·rev 76 은 그대로",
+   "why": "결함이 아니라 의도된 코어 변경: 스파이크 커밋 26238d5 에서는 기준값과 같고, ifc 해시는 G1 통합 병합(#1, 9411f10)에서 처음 달라졌으며(S2 IFC 투영 통합) 이후 IFC 투영 기능 병합에서 더 바뀜. derived 해시는 main 첫 부모 이분 탐색으로 #18(도면 6단계: L 조인 IFC 형상) 병합에서 바뀜. 같은 코드 두 번 실행은 같은 해시(결정성 시험 통과)"
+  }
+ ],
  "note": "Windows 새 venv 와 Linux(Debian·Ubuntu) 컨테이너에서 같은 값이 나온 기준값. 코어 코드가 바뀌면 hashes 도 바뀐다(의도된 변경이면 갱신)",
  "ra01": {
-  "data_sha256": "f05c5d6c71bcb4107df01b54839bc6e57900aafb97e9252989c090a2e3a7b53b",
-  "globalid_sha256": "917cb68afcec95b5fde8409fcee26c8581f7ace20612bcb79bc19a99a2f99a0d",
+  "data_sha256": "59931d647bbc0592f9be2fc9499ae917a22e480e6557a786dc42963c28e9da0a",
+  "globalid_sha256": "2e572130bc4ad0053bc752487076e5f405f00670f60441f5f8024e16aebf1813",
   "hashes": {
-   "derived": "9569372e9b849e39441c74de8bf5f1ab9588886cdee4e9e9cf4ade026fa60dbe",
-   "ifc": "9ffc85e9f0b8a4b87e071b4ba835112d6b26c15def5c206cd676b8bfb47350ca",
+   "derived": "a3b4ab8a0ceb07675b179dafac5ec63971be8c7e6461d636f6b352365f4b9051",
+   "ifc": "8bbb8169081bb754e3008c2affaeba96189295c97dd6954e82413e43a9b9154d",
    "rev": 76,
    "state": "3f315184fc601b9a2d08fd011cd0cf9c8fe0dc08d79781a98a32684ed189fee1"
   }
