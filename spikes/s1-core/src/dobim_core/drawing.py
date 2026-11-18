@@ -215,6 +215,12 @@ def _openings(g, w, doors_only):
         z1 = min(zt, box[3])
         if u1 - u0 > EPS and z1 - z0 > EPS:
             out.append((u0, u1, z0, z1))
+    if not doors_only:   # 다른 벽에 호스팅된 창이 이 벽도 함께 자르는 개구부(25단계 also_cuts). 없으면 이전과 같다
+        for _f, box in g.q(Q.wall_xcuts, w):
+            u0, u1 = max(start, box[0]), min(end, box[1])
+            z0, z1 = max(zb, elev + box[2]), min(zt, elev + box[3])
+            if u1 - u0 > EPS and z1 - z0 > EPS:
+                out.append((u0, u1, z0, z1))
     if not doors_only:   # 모양 개구부(18단계)의 사각 부분: 아치 머리·원은 띠에서 속이 찬 것으로 두고 윤곽선만 따로 그린다(가림 근사)
         for box, _loop, _fill in g.q(wall_shape_openings, w):
             if box is not None and box[0] >= start - EPS and box[1] <= end + EPS:

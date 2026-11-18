@@ -234,6 +234,11 @@ def _finst_params(p):
               "rotation": num_ok, "elevation": num_ok}
     spec = dict(common, **({"offset": num_ok, "width": lambda v: num_ok(v) and v >= 0, "height": lambda v: num_ok(v) and v >= 0}
                            if "offset" in p else {"position": lambda v: isinstance(v, list) and len(v) in (2, 3) and all(num_ok(x) for x in v)}))
+    if "offset" in p and "also_cuts" in p:   # 함께 자르는 벽(25단계): 호스팅 인스턴스만, 1~4개의 서로 다른 벽 id
+        v = p["also_cuts"]
+        if not (isinstance(v, list) and 1 <= len(v) <= 4 and all(id_ok(x) for x in v) and len(set(v)) == len(v)):
+            return "finst.also_cuts 값이 올바르지 않다"
+        spec["also_cuts"] = lambda v: True
     return _check_fields("finst", p, spec)
 
 
@@ -1205,6 +1210,8 @@ def _keys_el(e):
     if e[2] is None or e[3] is None:   # 생성·삭제는 버킷·개수 입력도 바꾼다
         kind = (e[3] or e[2])["kind"]
         out |= {("bucket", kind, bucket_of(e[1])), ("count", kind)}
+    if any(r is not None and r["kind"] == "finst" and "also_cuts" in r["params"] for r in (e[2], e[3])):
+        out.add(("xcut_finsts",))   # 함께 자르는 벽(25단계)이 있는 인스턴스 목록 입력: 그런 인스턴스가 생기거나 바뀔 때만 바뀐다
     if any(r is not None and r["kind"] == "wall" and "top_level" in r["params"] for r in (e[2], e[3])):
         out.add(("tied_walls",))   # 상단 구속 벽(24단계) 목록 입력: 구속 벽이 생기거나 바뀔 때만 바뀐다(다른 벽 편집은 평면 캐시를 흔들지 않는다)
     return out

@@ -108,7 +108,7 @@ def hosted_flipped(rotation) -> bool:
     return abs(r - 180.0) < 1e-6
 
 
-def inst_params(name, tid, values, ev, hosted, offset, position, rotation, elevation) -> dict:
+def inst_params(name, tid, values, ev, hosted, offset, position, rotation, elevation, also=()) -> dict:
     """인스턴스 행의 params. family.place/family.set 이 쓰는 것이 정본이고, 가져오기가 의도를 복원할 때 같은 식으로 다시 계산해 대조한다
     (width/height 는 평가한 개구부에서 나오는 파생값이라 의도 텍스트의 값이 평가와 다르면 손상으로 본다)."""
     p: dict = {"name": name, "type": tid, "values": values, "rotation": rotation, "elevation": elevation}
@@ -117,6 +117,8 @@ def inst_params(name, tid, values, ev, hosted, offset, position, rotation, eleva
         p["offset"] = offset
         p["width"] = (cut["x"][1] - cut["x"][0]) if cut else 0.0
         p["height"] = (cut["z"][1] - cut["z"][0]) if cut else 0.0
+        if also:   # 함께 자르는 벽(25단계): 없으면 키가 없다(행은 이전과 같다)
+            p["also_cuts"] = list(also)
     else:
         p["position"] = list(position)
     return p

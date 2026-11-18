@@ -635,6 +635,12 @@ def _trim_raw(wid, axis, partners):
     return (start, end)
 
 
+def _xcut_refs(ctx, wid: str) -> list:
+    """이 벽을 also_cuts(25단계)로 가리키는 패밀리 인스턴스 id(이 벽에 호스팅된 것은 벽과 함께 지워지므로 뺀다)."""
+    own = set(ctx.rels_out("hosts", wid))
+    return [f for f in sorted(ctx.st.by_kind.get("finst", ())) if f not in own and wid in ctx.st.el[f]["params"].get("also_cuts", ())]
+
+
 def _assert_succ_acyclic(ctx, start) -> None:
     """불변식: 분할 이력(succ)은 순환하지 않는다. start 에서 이력을 따라가 같은 벽을 두 번 만나면 거절한다
     (new_id 검사가 막으므로 정상 흐름에서는 일어나지 않는다. 손상된 로그를 재생할 때의 마지막 안전망)."""
@@ -666,6 +672,10 @@ def wall_split(ctx, a: WallSplit):
     - 지워진 벽도 이력에는 남으므로, 이력에 한 번이라도 쓰인 id 는 new_id 로 다시 쓸 수 없다(succ 순환·엉뚱한 부활 방지)."""
     r = ctx.authored(a.id, "wall", what="분할")   # S5 의 분할이 S2 의 저작 확인을 거치지 않던 틈
     p = r["params"]
+    xcut = _xcut_refs(ctx, a.id)
+    if xcut:   # 함께 자르는 벽(25단계): 나누면 어느 조각을 자를지 모호하다
+        raise DobimError("CONSTRAINT", f"패밀리 인스턴스 {len(xcut)}개가 이 벽을 함께 자른다(also_cuts): 나눌 수 없다", path="/id",
+                         hint="family.set 으로 also_cuts 를 뗀 뒤 나누고 다시 지정하세요", details={"instances": xcut[:20]})
     x1, y1, x2, y2 = p["axis"]
     _, _, c, s, length = _frame_of(p["axis"])
     if a.at < 1.0 or length - a.at < 1.0:
@@ -886,6 +896,10 @@ def element_delete(ctx, a: IdArg):
             ctx.warn(f"이 타입에 타입 지정으로 붙은 외래 요소 {len(ft)}개의 타입 지정이 타입과 함께 사라진다(실행 취소로 되살아나지 않는다): {', '.join(ft[:3])}"
                      + (" 외" if len(ft) > 3 else ""))
     elif r["kind"] == "wall":
+        xcut = _xcut_refs(ctx, a.id)
+        if xcut:   # 함께 자르는 벽(25단계): 다른 벽의 창이 이 벽을 also_cuts 로 가리킨다
+            raise DobimError("CONSTRAINT", f"패밀리 인스턴스 {len(xcut)}개가 이 벽을 함께 자른다(also_cuts)", path="/id",
+                             hint="family.set 으로 그 인스턴스의 also_cuts 에서 이 벽을 빼세요", details={"instances": xcut[:20]})
         fv = ctx.foreign_voids(a.id)
         if fv:   # 다른 도구가 이 벽에 뚫은 개구부는 벽과 함께 사라진다: 개구부는 형상을 가진 제품이라 실행 취소로 되살리지 않는다
             ctx.warn(f"이 벽을 뚫는 외래 개구부 {len(fv)}개가 벽과 함께 지워진다(실행 취소로 되살아나지 않는다): {', '.join(fv[:3])}"

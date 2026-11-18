@@ -1,9 +1,9 @@
 {
   "schema": "dobim.family/1",
   "id": "window.storefront",
-  "version": 1,
+  "version": 2,
   "name": "복합 창호",
-  "description": "벽에 호스팅되는 큰 창호(스토어프런트). 한 프레임 안에 고정창 칸(bay_max 이하로 자동 분할)과 선택 여닫이문(한 짝·두 짝), 선택 가로대(transom). 끝(end_l/end_r)을 corner 로 두면 그 끝의 문틀이 없어져 90도 모서리에서 다른 벽의 창호와 이어진다(family.place_corner).",
+  "description": "벽에 호스팅되는 큰 창호(스토어프런트). 한 프레임 안에 고정창 칸(bay_max 이하로 자동 분할)과 선택 여닫이문(한 짝·두 짝), 선택 가로대(transom, 25단계부터 transom2~4 로 여러 개). 끝(end_l/end_r)을 corner 로 두면 그 끝의 문틀이 없어져 90도 모서리에서 다른 벽의 창호와 이어진다(family.place_corner).",
   "ifc": {
     "class": "IfcWindow",
     "type_class": "IfcWindowType",
@@ -104,6 +104,30 @@
       "default": 0,
       "unit": "mm",
       "description": "가로대 높이(창호 아래에서 가로대 윗면까지). 0 이면 없다. 창호 아래·위 끝에서 300mm 이상 떨어져야 쓰인다(아니면 없는 것으로 본다). 문이 있으면 문 위 끝이 가로대 아래다",
+      "min": 0,
+      "max": 7000
+    },
+    "transom2": {
+      "kind": "type",
+      "default": 0,
+      "unit": "mm",
+      "description": "2번째 가로대 높이(창호 아래에서). 0 이면 없음. 앞 가로대보다 300mm 이상 위, 창호 위 끝보다 300mm 이상 아래일 때만 가로대가 된다(아니면 없는 것으로 본다). transoms 목록으로 주면 그렇지 않을 때 거절한다",
+      "min": 0,
+      "max": 7000
+    },
+    "transom3": {
+      "kind": "type",
+      "default": 0,
+      "unit": "mm",
+      "description": "3번째 가로대 높이(창호 아래에서). 0 이면 없음. 앞 가로대보다 300mm 이상 위, 창호 위 끝보다 300mm 이상 아래일 때만 가로대가 된다(아니면 없는 것으로 본다). transoms 목록으로 주면 그렇지 않을 때 거절한다",
+      "min": 0,
+      "max": 7000
+    },
+    "transom4": {
+      "kind": "type",
+      "default": 0,
+      "unit": "mm",
+      "description": "4번째 가로대 높이(창호 아래에서). 0 이면 없음. 앞 가로대보다 300mm 이상 위, 창호 위 끝보다 300mm 이상 아래일 때만 가로대가 된다(아니면 없는 것으로 본다). transoms 목록으로 주면 그렇지 않을 때 거절한다",
       "min": 0,
       "max": 7000
     },
@@ -229,6 +253,13 @@
     "b2": "(xe - seg2_a)/n2 if seg2 else 0",
     "tz": "z0 + transom",
     "has_tr": "transom >= 300 and transom <= height - 300",
+    "tz2": "z0 + transom2",
+    "has_tr2": "has_tr and transom2 >= transom + 300 and transom2 <= height - 300",
+    "tz3": "z0 + transom3",
+    "has_tr3": "has_tr2 and transom3 >= transom2 + 300 and transom3 <= height - 300",
+    "tz4": "z0 + transom4",
+    "has_tr4": "has_tr3 and transom4 >= transom3 + 300 and transom4 <= height - 300",
+    "n_tr": "(1 if has_tr else 0) + (1 if has_tr2 else 0) + (1 if has_tr3 else 0) + (1 if has_tr4 else 0)",
     "glass_top": "(tz - frame_w) if has_tr else (z1 - frame_w)",
     "door_top": "(tz - frame_w) if has_tr else (z1 - frame_w)",
     "leaf_w": "door_w / door_leaves",
@@ -544,6 +575,132 @@
         ],
         "v": [
           "tz",
+          "(tz2 - frame_w) if has_tr2 else (z1 - frame_w)"
+        ]
+      },
+      "range": [
+        "gy - glass_t/2",
+        "gy + glass_t/2"
+      ]
+    },
+    {
+      "id": "transom_bar2",
+      "op": "extrude",
+      "plane": "xz",
+      "when": "has_tr2",
+      "profile": {
+        "shape": "rect",
+        "u": [
+          "xa",
+          "xe"
+        ],
+        "v": [
+          "tz2 - frame_w",
+          "tz2"
+        ]
+      },
+      "range": [
+        "fy0",
+        "fy1"
+      ]
+    },
+    {
+      "id": "glass_lite2",
+      "op": "extrude",
+      "plane": "xz",
+      "when": "has_tr2",
+      "profile": {
+        "shape": "rect",
+        "u": [
+          "xa",
+          "xe"
+        ],
+        "v": [
+          "tz2",
+          "(tz3 - frame_w) if has_tr3 else (z1 - frame_w)"
+        ]
+      },
+      "range": [
+        "gy - glass_t/2",
+        "gy + glass_t/2"
+      ]
+    },
+    {
+      "id": "transom_bar3",
+      "op": "extrude",
+      "plane": "xz",
+      "when": "has_tr3",
+      "profile": {
+        "shape": "rect",
+        "u": [
+          "xa",
+          "xe"
+        ],
+        "v": [
+          "tz3 - frame_w",
+          "tz3"
+        ]
+      },
+      "range": [
+        "fy0",
+        "fy1"
+      ]
+    },
+    {
+      "id": "glass_lite3",
+      "op": "extrude",
+      "plane": "xz",
+      "when": "has_tr3",
+      "profile": {
+        "shape": "rect",
+        "u": [
+          "xa",
+          "xe"
+        ],
+        "v": [
+          "tz3",
+          "(tz4 - frame_w) if has_tr4 else (z1 - frame_w)"
+        ]
+      },
+      "range": [
+        "gy - glass_t/2",
+        "gy + glass_t/2"
+      ]
+    },
+    {
+      "id": "transom_bar4",
+      "op": "extrude",
+      "plane": "xz",
+      "when": "has_tr4",
+      "profile": {
+        "shape": "rect",
+        "u": [
+          "xa",
+          "xe"
+        ],
+        "v": [
+          "tz4 - frame_w",
+          "tz4"
+        ]
+      },
+      "range": [
+        "fy0",
+        "fy1"
+      ]
+    },
+    {
+      "id": "glass_lite4",
+      "op": "extrude",
+      "plane": "xz",
+      "when": "has_tr4",
+      "profile": {
+        "shape": "rect",
+        "u": [
+          "xa",
+          "xe"
+        ],
+        "v": [
+          "tz4",
           "z1 - frame_w"
         ]
       },
@@ -866,6 +1023,9 @@
         },
         "DoorLeaves": {
           "expr": "door_leaves"
+        },
+        "TransomCount": {
+          "expr": "n_tr"
         }
       }
     },

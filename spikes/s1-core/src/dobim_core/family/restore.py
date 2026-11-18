@@ -116,7 +116,7 @@ def check_finst(it: dict, type_row: dict, host_params: dict | None) -> str:
         ev = FS.finst_eval(tp, {"values": iv}, host_ctx)
     except FamilyError as ex:
         raise ValueError(f"인스턴스를 평가할 수 없다: {ex.issues[0].message[:80]}") from None
-    want = FS.inst_params(p["name"], it["type"], iv, ev, hosted, p.get("offset"), p.get("position"), p["rotation"], p["elevation"])
+    want = FS.inst_params(p["name"], it["type"], iv, ev, hosted, p.get("offset"), p.get("position"), p["rotation"], p["elevation"], p.get("also_cuts", ()))
     if json.dumps(want, sort_keys=True) != json.dumps(p, sort_keys=True):
         raise ValueError("인스턴스의 파생값(width·height)이 평가와 다르다")
     return r.ifc.class_

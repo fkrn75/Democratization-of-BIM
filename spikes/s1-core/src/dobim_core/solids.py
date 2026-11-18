@@ -77,7 +77,17 @@ SOLID_CATEGORIES = {
     "alarm_panel": ("IfcUnitaryControlElement", "ALARMPANEL", None),   # 화재 수신반
     "light_fixture": ("IfcLightFixture", None, None),               # 조명 기구
     "exit_sign": ("IfcLightFixture", "SECURITYLIGHTING", None),     # 유도등(피난구·통로)
+    # 위생기구 종류(25단계, 설계: elements-design.md 27절): IfcSanitaryTerminal 의 IFC4 PredefinedType. sanitary_terminal(종류 미지정)과 같은 클래스라 solid.set 으로 서로 바꿀 수 있다
+    "toilet": ("IfcSanitaryTerminal", "TOILETPAN", None),            # 양변기·대변기
+    "urinal": ("IfcSanitaryTerminal", "URINAL", None),               # 소변기
+    "bidet": ("IfcSanitaryTerminal", "BIDET", None),                 # 비데
+    "washbasin": ("IfcSanitaryTerminal", "WASHHANDBASIN", None),     # 세면기
+    "sink": ("IfcSanitaryTerminal", "SINK", None),                   # 싱크(주방·청소)
+    "bath": ("IfcSanitaryTerminal", "BATH", None),                   # 욕조
+    "shower": ("IfcSanitaryTerminal", "SHOWER", None),               # 샤워
+    "cistern": ("IfcSanitaryTerminal", "CISTERN", None),             # 수조·하이탱크
 }
+SANITARY_CATEGORIES = ("sanitary_terminal", "toilet", "urinal", "bidet", "washbasin", "sink", "bath", "shower", "cistern")
 
 
 def _num(v) -> bool:

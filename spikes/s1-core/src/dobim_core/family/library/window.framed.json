@@ -1,9 +1,9 @@
 {
   "schema": "dobim.family/1",
   "id": "window.framed",
-  "version": 2,
+  "version": 3,
   "name": "창틀 창(리빌 표현)",
-  "description": "벽에 호스팅되는 창. 깊이 있는 창틀·유리·(열리는 창이면 문짝 틀)·선택 창대/문선. 열림 방식: 고정·여닫이(안/밖)·프로젝트(위 경첩 밖 젖힘)·미닫이(두 짝). 틀의 벽 안 위치(inset = 기준면에서 틀 바깥면까지)로 리빌이 보인다. 기준면 = 호스트 지역 -v 면, 180 뒤집으면 +v 면.",
+  "description": "벽에 호스팅되는 창. 깊이 있는 창틀·유리·(열리는 창이면 문짝 틀)·선택 창대/문선. 열림 방식: 고정·여닫이(안/밖)·프로젝트(위 경첩 밖 젖힘)·미닫이(두 짝). 틀의 벽 안 위치(inset = 기준면에서 틀 바깥면까지)로 리빌이 보인다. 기준면 = 호스트 지역 -v 면, 180 뒤집으면 +v 면. 25단계: 멀리언으로 나눈 칸마다 열림 방식(bay1~bay3 = same/fixed/project_out)을 줄 수 있다(고정 + 프로젝트 혼합).",
   "ifc": {
     "class": "IfcWindow",
     "type_class": "IfcWindowType",
@@ -25,7 +25,7 @@
     "panels": [
       {
         "operation": {
-          "expr": "'FIXEDCASEMENT' if operation == 'fixed' else ('TOPHUNG' if operation == 'project_out' else ('SLIDINGHORIZONTAL' if sl else 'NOTDEFINED'))"
+          "expr": "'FIXEDCASEMENT' if e1 == 'fixed' else ('TOPHUNG' if e1 == 'project_out' else ('SLIDINGHORIZONTAL' if sl else 'NOTDEFINED'))"
         },
         "position": {
           "expr": "'LEFT' if sl or mullions > 0 else 'MIDDLE'"
@@ -33,7 +33,7 @@
       },
       {
         "operation": {
-          "expr": "'FIXEDCASEMENT' if operation == 'fixed' else ('TOPHUNG' if operation == 'project_out' else ('SLIDINGHORIZONTAL' if sl else 'NOTDEFINED'))"
+          "expr": "'FIXEDCASEMENT' if e2 == 'fixed' else ('TOPHUNG' if e2 == 'project_out' else ('SLIDINGHORIZONTAL' if sl else 'NOTDEFINED'))"
         },
         "position": {
           "expr": "'RIGHT' if sl or mullions == 1 else 'MIDDLE'"
@@ -41,7 +41,9 @@
         "when": "sl or mullions > 0"
       },
       {
-        "operation": "FIXEDCASEMENT",
+        "operation": {
+          "expr": "'FIXEDCASEMENT' if e3 == 'fixed' else ('TOPHUNG' if e3 == 'project_out' else ('SLIDINGHORIZONTAL' if sl else 'NOTDEFINED'))"
+        },
         "position": "RIGHT",
         "when": "mullions == 2"
       }
@@ -124,6 +126,39 @@
       "description": "세로 멀리언 개수(고정창만)",
       "min": 0,
       "max": 2
+    },
+    "bay1": {
+      "kind": "type",
+      "default": "same",
+      "type": "enum",
+      "values": [
+        "same",
+        "fixed",
+        "project_out"
+      ],
+      "description": "1번째 칸(지역 -x 부터)의 열림 방식. same 이면 operation 을 따른다. 멀리언으로 칸을 나눈 fixed/project_out 창에서만 쓰고, 그 밖(칸이 없거나 여닫이·미닫이)에서는 무시한다"
+    },
+    "bay2": {
+      "kind": "type",
+      "default": "same",
+      "type": "enum",
+      "values": [
+        "same",
+        "fixed",
+        "project_out"
+      ],
+      "description": "2번째 칸(지역 -x 부터)의 열림 방식. same 이면 operation 을 따른다. 멀리언으로 칸을 나눈 fixed/project_out 창에서만 쓰고, 그 밖(칸이 없거나 여닫이·미닫이)에서는 무시한다"
+    },
+    "bay3": {
+      "kind": "type",
+      "default": "same",
+      "type": "enum",
+      "values": [
+        "same",
+        "fixed",
+        "project_out"
+      ],
+      "description": "3번째 칸(지역 -x 부터)의 열림 방식. same 이면 operation 을 따른다. 멀리언으로 칸을 나눈 fixed/project_out 창에서만 쓰고, 그 밖(칸이 없거나 여닫이·미닫이)에서는 무시한다"
     },
     "stool_t": {
       "kind": "type",
@@ -220,7 +255,23 @@
     "sl": "operation == 'sliding'",
     "casement": "operation == 'casement_in' or operation == 'casement_out'",
     "sl_d": "(fd - 10)/2",
-    "sl_w": "(width - 2*frame_w + sash_w)/2"
+    "sl_w": "(width - 2*frame_w + sash_w)/2",
+    "e1": "bay1 if bay1 != 'same' and mullions > 0 and (operation == 'fixed' or operation == 'project_out') else operation",
+    "e2": "bay2 if bay2 != 'same' and mullions > 0 and (operation == 'fixed' or operation == 'project_out') else operation",
+    "e3": "bay3 if bay3 != 'same' and mullions >= 2 and (operation == 'fixed' or operation == 'project_out') else operation",
+    "bay_mixed": "mullions > 0 and (e1 == 'project_out' or e2 == 'project_out' or (mullions >= 2 and e3 == 'project_out'))",
+    "b1a": "left + frame_w",
+    "b1b": "left + frame_w + (width - 2*frame_w)/(mullions + 1) - frame_w/4",
+    "b2a": "left + frame_w + (width - 2*frame_w)/(mullions + 1) + frame_w/4",
+    "b2b": "(left + frame_w + 2*(width - 2*frame_w)/(mullions + 1) - frame_w/4) if mullions >= 2 else (right - frame_w)",
+    "b3a": "left + frame_w + 2*(width - 2*frame_w)/(mullions + 1) + frame_w/4",
+    "b3b": "right - frame_w",
+    "p1": "bay_mixed and e1 == 'project_out'",
+    "p2": "bay_mixed and e2 == 'project_out'",
+    "p3": "bay_mixed and mullions >= 2 and e3 == 'project_out'",
+    "g1": "sash_w if p1 else 0",
+    "g2": "sash_w if p2 else 0",
+    "g3": "sash_w if p3 else 0"
   },
   "refs": {
     "left": {
@@ -242,8 +293,8 @@
       "message": "유리가 틀 깊이보다 10mm 이상 얇아야 한다(frame_d 를 키우거나 glass_t 를 줄이세요)"
     },
     {
-      "expr": "operation == 'fixed' or mullions == 0",
-      "message": "여닫이 창에는 멀리언을 둘 수 없다(mullions 를 0 으로)"
+      "expr": "operation == 'fixed' or operation == 'project_out' or mullions == 0",
+      "message": "멀리언은 고정창·프로젝트창에만 둘 수 있다(여닫이·미닫이는 mullions 를 0 으로)"
     },
     {
       "expr": "operation != 'sliding' or glass_t <= sl_d - 4",
@@ -252,6 +303,10 @@
     {
       "expr": "operation != 'sliding' or sl_w - 2*sash_w >= 100",
       "message": "미닫이 문짝의 유리 폭이 100mm 미만이다(width 를 키우세요)"
+    },
+    {
+      "expr": "not bay_mixed or (b1b - b1a - 2*sash_w >= 100 and b2b - b2a - 2*sash_w >= 100)",
+      "message": "프로젝트 칸의 유리 폭이 100mm 미만이다(width 를 키우거나 멀리언을 줄이세요)"
     }
   ],
   "solids": [
@@ -303,7 +358,7 @@
       "id": "sash",
       "op": "extrude",
       "plane": "xz",
-      "when": "operation != 'fixed' and not sl",
+      "when": "operation != 'fixed' and not sl and mullions == 0",
       "profile": {
         "shape": "rect",
         "u": [
@@ -328,7 +383,7 @@
       "cuts": [
         "sash"
       ],
-      "when": "operation != 'fixed' and not sl",
+      "when": "operation != 'fixed' and not sl and mullions == 0",
       "profile": {
         "shape": "rect",
         "u": [
@@ -364,7 +419,208 @@
         "gy - glass_t/2",
         "gy + glass_t/2"
       ],
-      "when": "not sl"
+      "when": "not sl and not bay_mixed"
+    },
+    {
+      "id": "bay_sash1",
+      "op": "extrude",
+      "plane": "xz",
+      "when": "p1",
+      "profile": {
+        "shape": "rect",
+        "u": [
+          "b1a",
+          "b1b"
+        ],
+        "v": [
+          "z0 + frame_w",
+          "z1 - frame_w"
+        ]
+      },
+      "range": [
+        "gy - sash_d/2",
+        "gy + sash_d/2"
+      ]
+    },
+    {
+      "id": "bay_sash_hole1",
+      "op": "extrude",
+      "plane": "xz",
+      "role": "void",
+      "cuts": [
+        "bay_sash1"
+      ],
+      "when": "p1",
+      "profile": {
+        "shape": "rect",
+        "u": [
+          "b1a + sash_w",
+          "b1b - sash_w"
+        ],
+        "v": [
+          "z0 + frame_w + sash_w",
+          "z1 - frame_w - sash_w"
+        ]
+      },
+      "range": [
+        "gy - sash_d",
+        "gy + sash_d"
+      ]
+    },
+    {
+      "id": "bay_glass1",
+      "op": "extrude",
+      "plane": "xz",
+      "when": "bay_mixed",
+      "profile": {
+        "shape": "rect",
+        "u": [
+          "b1a + g1",
+          "b1b - g1"
+        ],
+        "v": [
+          "z0 + frame_w + g1",
+          "z1 - frame_w - g1"
+        ]
+      },
+      "range": [
+        "gy - glass_t/2",
+        "gy + glass_t/2"
+      ]
+    },
+    {
+      "id": "bay_sash2",
+      "op": "extrude",
+      "plane": "xz",
+      "when": "p2",
+      "profile": {
+        "shape": "rect",
+        "u": [
+          "b2a",
+          "b2b"
+        ],
+        "v": [
+          "z0 + frame_w",
+          "z1 - frame_w"
+        ]
+      },
+      "range": [
+        "gy - sash_d/2",
+        "gy + sash_d/2"
+      ]
+    },
+    {
+      "id": "bay_sash_hole2",
+      "op": "extrude",
+      "plane": "xz",
+      "role": "void",
+      "cuts": [
+        "bay_sash2"
+      ],
+      "when": "p2",
+      "profile": {
+        "shape": "rect",
+        "u": [
+          "b2a + sash_w",
+          "b2b - sash_w"
+        ],
+        "v": [
+          "z0 + frame_w + sash_w",
+          "z1 - frame_w - sash_w"
+        ]
+      },
+      "range": [
+        "gy - sash_d",
+        "gy + sash_d"
+      ]
+    },
+    {
+      "id": "bay_glass2",
+      "op": "extrude",
+      "plane": "xz",
+      "when": "bay_mixed",
+      "profile": {
+        "shape": "rect",
+        "u": [
+          "b2a + g2",
+          "b2b - g2"
+        ],
+        "v": [
+          "z0 + frame_w + g2",
+          "z1 - frame_w - g2"
+        ]
+      },
+      "range": [
+        "gy - glass_t/2",
+        "gy + glass_t/2"
+      ]
+    },
+    {
+      "id": "bay_sash3",
+      "op": "extrude",
+      "plane": "xz",
+      "when": "p3",
+      "profile": {
+        "shape": "rect",
+        "u": [
+          "b3a",
+          "b3b"
+        ],
+        "v": [
+          "z0 + frame_w",
+          "z1 - frame_w"
+        ]
+      },
+      "range": [
+        "gy - sash_d/2",
+        "gy + sash_d/2"
+      ]
+    },
+    {
+      "id": "bay_sash_hole3",
+      "op": "extrude",
+      "plane": "xz",
+      "role": "void",
+      "cuts": [
+        "bay_sash3"
+      ],
+      "when": "p3",
+      "profile": {
+        "shape": "rect",
+        "u": [
+          "b3a + sash_w",
+          "b3b - sash_w"
+        ],
+        "v": [
+          "z0 + frame_w + sash_w",
+          "z1 - frame_w - sash_w"
+        ]
+      },
+      "range": [
+        "gy - sash_d",
+        "gy + sash_d"
+      ]
+    },
+    {
+      "id": "bay_glass3",
+      "op": "extrude",
+      "plane": "xz",
+      "when": "bay_mixed and mullions >= 2",
+      "profile": {
+        "shape": "rect",
+        "u": [
+          "b3a + g3",
+          "b3b - g3"
+        ],
+        "v": [
+          "z0 + frame_w + g3",
+          "z1 - frame_w - g3"
+        ]
+      },
+      "range": [
+        "gy - glass_t/2",
+        "gy + glass_t/2"
+      ]
     },
     {
       "id": "sl_sash",
@@ -456,8 +712,8 @@
       "profile": {
         "shape": "rect",
         "u": [
-          "left + frame_w + (i + 1)*inner_w/(mullions + 1) - frame_w/4",
-          "left + frame_w + (i + 1)*inner_w/(mullions + 1) + frame_w/4"
+          "left + frame_w + (i + 1)*(width - 2*frame_w)/(mullions + 1) - frame_w/4",
+          "left + frame_w + (i + 1)*(width - 2*frame_w)/(mullions + 1) + frame_w/4"
         ],
         "v": [
           "z0 + frame_w",
@@ -675,13 +931,49 @@
       },
       {
         "type": "line",
-        "when": "operation == 'project_out'",
+        "when": "operation == 'project_out' and mullions == 0",
         "from": [
           "left + frame_w",
           "fy0"
         ],
         "to": [
           "right - frame_w",
+          "fy0 - 60"
+        ]
+      },
+      {
+        "type": "line",
+        "when": "p1",
+        "from": [
+          "b1a",
+          "fy0"
+        ],
+        "to": [
+          "b1b",
+          "fy0 - 60"
+        ]
+      },
+      {
+        "type": "line",
+        "when": "p2",
+        "from": [
+          "b2a",
+          "fy0"
+        ],
+        "to": [
+          "b2b",
+          "fy0 - 60"
+        ]
+      },
+      {
+        "type": "line",
+        "when": "p3",
+        "from": [
+          "b3a",
+          "fy0"
+        ],
+        "to": [
+          "b3b",
           "fy0 - 60"
         ]
       }

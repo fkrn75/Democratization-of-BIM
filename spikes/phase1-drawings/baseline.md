@@ -977,3 +977,23 @@ s10-headless 실패 2건(test_gui_scan, test_headless_ra01 IFC 기준 해시)은
 ### 26.2 시험
 test_practical6(14건).
 
+
+## 27. 스물다섯 번째 작업: 전개 창호·모서리 판정·가로대 여러 개·칸별 열림 방식·층 경계를 넘는 창·호스트 적합 규칙·위생기구 종류 (2026-11-18, 브랜치 phase1/practical-modeling-7)
+
+산출은 비공개 산출 폴더(phase1-after25)에 두었다. 같은 모델에 `run_baseline.py --sheets` 를 돌렸다(새 입력 없음). 설계 메모는 elements-design.md 27절. 해시 형식 그대로(CLOSURE_FORMAT 15).
+
+### 27.0 바이트 비교 (after24 대비, work/·run.json 제외)
+**같은 파일 183개, 달라진 파일 0, 새 산출 0, 사라진 파일 0.** 기준선은 바꾼 패밀리(window.storefront version 2·window.framed version 3)·새 인자(transoms·also_cuts·tol·values_by)·새 범주를 쓰지 않는다. 새 그래프 입력(xcut_finsts)은 also_cuts 가 있는 인스턴스가 없으면 비어 있어 벽 형상·도면·IFC 가 같다. 호스트 적합 규칙은 받는 범위만 넓혀(축선 ∪ 조인 범위) 기존 배치가 그대로다. 솔리드 PredefinedType 투영은 값이 같으면 엔터티를 건드리지 않는다.
+s10-headless 실패 2건(test_gui_scan, test_headless_ra01 IFC 기준 해시)은 23~26절과 같은 기존 상태다. parity: 커맨드 110 전부 예시 실행(예시 130·오류 사례 49), 불일치 0.
+
+### 27.1 변경 요지
+1. `family.place_corner`: 벽 2~4개 전개(가운데 벽은 두 모서리 사이 전체), values_by, 응답 corners.
+2. 모서리 판정: 두 축선 교점 + 허용 오차(tol, 조인된 벽은 조인 규칙, 아니면 300mm).
+3. `window.storefront` version 2: transom2~4·TransomCount, 커맨드 인자 `transoms`.
+4. `window.framed` version 3: bay1~bay3(칸별 고정·프로젝트), 칸별 IfcWindowPanelProperties.
+5. 호스팅 인스턴스 `also_cuts`: 쌓인 벽·이어지는 벽을 함께 자른다(도면 개구부·IFC 부속 개구부·왕복).
+6. 호스트 적합 규칙 `check_fit`: 축선 ∪ 조인 범위, corner 끝 500mm, 넘치면 also_cuts, 아니면 CONSTRAINT + details.
+7. 솔리드 범주 toilet·urinal·bidet·washbasin·sink·bath·shower·cistern(IfcSanitaryTerminal PredefinedType).
+
+### 27.2 시험
+test_practical7(15건). s1-core 전체(test_slow 제외): 1044 통과, 38 건너뜀, 실패 0.
