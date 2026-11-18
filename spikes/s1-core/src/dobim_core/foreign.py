@@ -440,6 +440,8 @@ class _Inputs:
             return tuple(st.out.get((key[1], key[2]), ()))
         if t == "rel_in":
             return tuple(st.inn.get((key[1], key[2]), ()))
+        if t == "xcut_finsts":   # 함께 자르는 벽이 있는 인스턴스(25단계): 지금 계획에 올라온 행에서 찾는다
+            return tuple(sorted(f for f, r in st.el.items() if r is not None and r["kind"] == "finst" and "also_cuts" in r["params"]))
         raise KeyError(key)
 
 

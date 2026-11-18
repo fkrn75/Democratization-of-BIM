@@ -44,6 +44,11 @@ def rel_in(g, kind, dst):
     return g.input(("rel_in", kind, dst))
 
 
+def xcut_finsts(g):
+    """함께 자르는 벽(also_cuts)이 있는 패밀리 인스턴스 id(25단계). 그런 인스턴스가 없으면 빈 값이고 벽 형상은 이전과 같다."""
+    return g.input(("xcut_finsts",))
+
+
 def tied_walls(g):
     """상단 레벨로 구속된 벽 id(24단계). 다른 벽을 편집해도 바뀌지 않는 입력이라 평면이 모든 벽에 의존하지 않는다."""
     return g.input(("tied_walls",))
@@ -154,6 +159,29 @@ def wall_footprint(g, w):
 
 def wall_hosted(g, w):
     return rel_out(g, "hosts", w)
+
+
+def wall_xcuts(g, w):
+    """다른 벽에 호스팅된 인스턴스가 이 벽을 함께 자르는 개구부(25단계 also_cuts): ((인스턴스 id, (u0, u1, z0, z1)), ...).
+    u 는 이 벽의 지역 좌표, z 는 이 벽 레벨 기준이다. 호스트 지역 좌표의 개구부를 세계로 옮긴 뒤 이 벽 축선에 투영한다."""
+    out = []
+    for f in xcut_finsts(g):
+        p = el(g, f)["params"]
+        if w not in p.get("also_cuts", ()):
+            continue
+        h = g.q(finst_host, f)
+        if h is None:
+            continue
+        spec = g.q(ifc_spec, f)
+        cut = spec.get("cut")
+        if not cut:
+            continue
+        hx, hy, hc, hs, _ = g.q(wall_frame, h)
+        ox, oy, oc, os_, _ = g.q(wall_frame, w)
+        us = [((hx + u * hc) - ox) * oc + ((hy + u * hs) - oy) * os_ for u in (spec["offset"] + cut["x"][0], spec["offset"] + cut["x"][1])]
+        dz = g.q(level_info, g.q(wall_level, h))[1] - g.q(level_info, g.q(wall_level, w))[1]
+        out.append((f, (min(us), max(us), dz + spec["elevation"] + cut["z"][0], dz + spec["elevation"] + cut["z"][1])))
+    return tuple(out)
 
 
 def wall_cut_boxes(g, w):
@@ -422,6 +450,10 @@ def ifc_spec(g, e):
         if "top_profile" in p:   # 벽 상단 윤곽(21단계): 지역 (u, z) 수직 윤곽을 두께로 돌출한다. 없으면 명세는 이전과 같다
             fp = spec["footprint"]
             spec["top"] = tuple(WT.loop(p["top_profile"], fp[0][0], fp[1][0], WT.base(p)))
+            spec["thickness"] = p["thickness"]
+        xc = g.q(wall_xcuts, e)
+        if xc:   # 다른 벽의 창이 함께 자르는 개구부(25단계 also_cuts): (인스턴스 id, 지역 (u, z) 사각 윤곽). 없으면 명세는 이전과 같다
+            spec["xopenings"] = tuple((f, ((b[0], b[2]), (b[1], b[2]), (b[1], b[3]), (b[0], b[3]))) for f, b in xc)
             spec["thickness"] = p["thickness"]
         if "cuts" in p:   # 벽 잘라내기(23단계): 몸체에서 뺄 상자(형상 범위로 자른 값). 없으면 명세는 이전과 같다
             spec["cuts"] = g.q(wall_cut_boxes, e)

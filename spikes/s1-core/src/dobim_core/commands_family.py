@@ -25,6 +25,10 @@ from dobim_core.paths import resolve_in_workspace
 
 FamilyId = Annotated[str, Field(pattern=ID_RE, max_length=64, description="레시피 id (예: door.single)")]
 Values = Annotated[dict[str, PropValue], Field(max_length=64)]
+TRANSOMS_MAX = 4          # 가로대 목록(25단계) 상한: 레시피 매개변수 transom, transom2 .. transom4
+ALSO_CUTS_MAX = 4         # 함께 자르는 벽(25단계) 상한
+Transoms = Annotated[list[Annotated[Num, Field(gt=0)]], Field(max_length=TRANSOMS_MAX)] | None
+AlsoCuts = Annotated[list[Id], Field(max_length=ALSO_CUTS_MAX)] | None
 MAX_ISSUES = 20
 MAX_RECIPE_FILE = 64 * 1024
 HISTORY_ARG_LIMIT = 1500
@@ -217,6 +221,43 @@ class FamilyRegister(Source):
     id: Id | None = None
     type_values: Values = Field(default_factory=dict, description="타입 매개변수 값(생략한 것은 레시피 기본값). 인스턴스 매개변수는 place 에서 준다")
     name: Name | None = None
+    transoms: Transoms = Field(None, description="가로대 높이 목록 mm(25단계). 레시피의 transom, transom2, ... 타입 값으로 풀린다")
+
+
+def _expand_transoms(r, type_values: dict, transoms, path: str = "/transoms") -> dict:
+    """가로대 목록(25단계)을 레시피 타입 매개변수 transom, transom2 .. 로 푼다. 목록이 없으면 type_values 그대로(이전과 같다).
+    목록과 transom* 값을 함께 주거나, 오름차순이 아니거나, 레시피에 그만큼의 가로대 매개변수가 없으면 거절한다."""
+    if transoms is None:
+        return type_values
+    keys = ["transom"] + [f"transom{i}" for i in range(2, TRANSOMS_MAX + 1)]
+    if any(k in type_values for k in keys):
+        raise DobimError("CONSTRAINT", "transoms 와 transom* 타입 값은 함께 줄 수 없다", path=path)
+    if any(b <= a for a, b in zip(transoms, transoms[1:])):
+        raise DobimError("CONSTRAINT", "transoms 는 아래에서 위로 오름차순이어야 한다", path=path, details={"transoms": list(transoms)})
+    have = [k for k in keys if k in r.params and r.params[k].kind == "type"]
+    if len(transoms) > len(have) or have != keys[:len(have)]:
+        raise DobimError("CONSTRAINT", f"{r.id} 는 가로대를 {len(have)}개까지만 받는다", path=path,
+                         hint="window.storefront 처럼 transom, transom2, ... 매개변수가 있는 패밀리를 쓰세요",
+                         details={"given": len(transoms), "max": len(have)})
+    out = dict(type_values)
+    for k, v in zip(keys, transoms):
+        out[k] = v
+    return out
+
+
+def _check_transoms(r, plan, tv: dict, transoms) -> None:
+    """가로대 목록(25단계)이 모두 가로대가 됐는지 본다. 레시피는 규칙(앞 가로대보다 300 위, 위 끝보다 300 아래)을 어긴 값을 없는 것으로 보므로
+    목록으로 준 값이 빠지면 조용히 넘기지 않고 거절한다. 레시피가 가로대 개수(속성 TransomCount)를 내보내지 않으면 보지 않는다."""
+    if not transoms:
+        return
+    try:
+        ev = FE.evaluate(r, plan, tv, None, None)
+    except FamilyError as ex:
+        raise _fam_error(ex, "타입") from None
+    got = next((ps["TransomCount"] for ps in ev["psets"]["type"].values() if "TransomCount" in ps), None)
+    if got is not None and got != len(transoms):
+        raise DobimError("CONSTRAINT", f"가로대 {len(transoms)}개 가운데 {got}개만 가로대가 된다(창호 아래·위 끝과 앞 가로대에서 300mm 이상 떨어져야 한다)",
+                         path="/transoms", details={"transoms": list(transoms), "height": tv.get("height"), "accepted": got})
 
 
 @command("family.register", kind="mutation", risk="write", group="family",
@@ -227,9 +268,14 @@ def family_register(ctx, a: FamilyRegister):
     data = _load_source(ctx.eng.workspace, a)
     try:
         r, plan = FE.load_recipe(data)
-        tv, _ = FE.resolve_values(r, a.type_values, None)
     except FamilyError as ex:
         raise _fam_error(ex) from None
+    tvals = _expand_transoms(r, a.type_values, a.transoms)
+    try:
+        tv, _ = FE.resolve_values(r, tvals, None)
+    except FamilyError as ex:
+        raise _fam_error(ex) from None
+    _check_transoms(r, plan, tv, a.transoms)
     rhash = FS.recipe_hash_of(data)
     explicit = a.id is not None
     tid = a.id or _content_tid(ctx, rhash, tv)
@@ -256,13 +302,17 @@ class FamilyPlace(A):
     rotation: Num = Field(0.0, description="자립형: z 축 회전 deg. 호스팅: 0 또는 180(180 = 뒤집기, 문짝이 벽 반대쪽으로 열리고 경첩 쪽도 바뀐다)")
     elevation: Num = Field(0.0, description="원점의 높이 mm(호스팅이면 벽 아래, 자립형이면 레벨 위)")
     name: Name | None = None
+    transoms: Transoms = Field(None, description="가로대 높이 목록 mm(창호 아래에서, 오름차순, 25단계). 레시피의 transom, transom2, ... 타입 값으로 풀린다(family 로 지정할 때만)")
+    also_cuts: AlsoCuts = Field(None, description="개구부가 호스트 벽 밖(위·아래로 쌓인 벽, 같은 선으로 이어지는 벽)으로 나갈 때 함께 자를 벽 id 목록(25단계)")
 
     @model_validator(mode="after")
     def _shape(self):
         if (self.type is None) == (self.family is None):
             raise ValueError("type 과 family 중 정확히 하나를 지정해야 한다")
-        if self.type is not None and self.type_values:
-            raise ValueError("type 을 지정하면 type_values 는 줄 수 없다(타입은 이미 값이 정해졌다)")
+        if self.type is not None and (self.type_values or self.transoms is not None):
+            raise ValueError("type 을 지정하면 type_values·transoms 는 줄 수 없다(타입은 이미 값이 정해졌다)")
+        if self.also_cuts is not None and self.host is None:
+            raise ValueError("also_cuts 는 호스팅 배치(host+offset)에서만 쓴다")
         hosted = self.host is not None or self.offset is not None
         free = self.level is not None or self.position is not None
         if hosted == free:
@@ -274,7 +324,7 @@ class FamilyPlace(A):
         return self
 
 
-def _inst_geometry(ctx, tp: dict, values: dict, host_id: str | None, offset, elevation):
+def _inst_geometry(ctx, tp: dict, values: dict, host_id: str | None, offset, elevation, rotation=0.0, also=()):
     """인스턴스 평가 + 호스트 적합성 검사. (평가 결과, 호스트 문맥)을 돌려준다."""
     host_ctx = None
     if host_id is not None:
@@ -285,15 +335,138 @@ def _inst_geometry(ctx, tp: dict, values: dict, host_id: str | None, offset, ele
     except FamilyError as ex:
         raise _fam_error(ex, "인스턴스") from None
     if host_id is not None and ev["cut"]:
-        length = C.sqrt(C._axis_len2(ctx.st.el[host_id]["params"]["axis"]))
-        x0, x1 = ev["cut"]["x"]
-        z0, z1 = ev["cut"]["z"]
-        if offset + x0 < 0 or offset + x1 > length:
-            raise DobimError("CONSTRAINT", f"개구부({offset + x0:.0f}..{offset + x1:.0f}mm)가 호스트 벽({length:.1f}mm) 밖으로 나간다", path="/offset")
-        b0 = WT.base(ctx.st.el[host_id]["params"])   # 바닥 오프셋(22단계)
-        if elevation + z0 < b0 - 1e-9 or elevation + z1 > b0 + _wall_height(ctx, host_id):
-            raise DobimError("CONSTRAINT", "개구부가 호스트 벽의 높이 밖으로 나간다", path="/elevation")
+        check_fit(ctx, host_id, ctx.st.el[host_id]["params"], offset, elevation, ev["cut"], values, rotation, also)
     return ev, host_ctx
+
+
+# ---------------------------------------------------------------- 호스트 적합 규칙(25단계, 설계: elements-design.md 27절)
+FIT_TOL = 0.5             # 개구부가 벽 범위를 이만큼(mm)은 넘어도 된다(반올림 잡음)
+CORNER_END_ALLOW = 500.0  # 모서리 끝(end_l/end_r = corner)은 축선 교점까지 이만큼 더 나가도 된다(place_corner 의 끝점 허용 오차 상한과 같다)
+PARALLEL_COS = 0.0087     # also_cuts 벽은 호스트와 0.5도 안으로 평행해야 한다
+
+
+def host_range(ctx, wid: str, wp: dict | None = None) -> tuple[float, float]:
+    """벽 지역 u 범위: 축선 [0, 길이] 와 조인 형상 범위(조인 지점까지 자르기·늘리기 + L 조인 모서리 반 두께 연장, queries.wall_extent 와 같은 규칙)의 합집합.
+    합집합이라 예전에 받던 위치(축선 안)는 모두 그대로 받는다. wp 를 주면 그 값(바뀔 벽 값)으로 계산한다."""
+    wp = wp or ctx.st.el[wid]["params"]
+    axis = wp["axis"]
+    x, y, c, s, length = C._frame_of(axis)
+    partners = sorted(set(ctx.rels_out("joins", wid) + ctx.rels_in("joins", wid)))
+    pax = [(o, ctx.st.el[o]["params"]["axis"]) for o in partners]
+    start, end = 0.0, length
+    for o, oax in pax:   # queries.wall_trim 과 같은 자르기·늘리기
+        pt = C._join_pt(wid, axis, o, oax)
+        if pt is None:
+            continue
+        t = (pt[0] - x) * c + (pt[1] - y) * s
+        if abs(t) <= abs(t - length):
+            if abs(t) <= C.Q.JOIN_MAX_EXT:
+                start = t
+        elif abs(t - length) <= C.Q.JOIN_MAX_EXT:
+            end = t
+    ok = end - start >= C.Q.MIN_TRIMMED   # 퇴화한 조인이면 자르기·모서리 연장이 없다(queries.wall_extent 와 같다)
+    if not ok:
+        start, end = 0.0, length
+    for o, oax in (pax if ok and C.Q.CORNER_EXTEND else ()):
+        if not wid < o:
+            continue
+        pt = C._join_pt(wid, axis, o, oax)
+        if pt is None:
+            continue
+        ox, oy, oc, os_, olen = C._frame_of(oax)
+        t = (pt[0] - x) * c + (pt[1] - y) * s
+        to = (pt[0] - ox) * oc + (pt[1] - oy) * os_
+        if min(abs(to), abs(to - olen)) > C.Q.JOIN_MAX_EXT:
+            continue
+        sin = c * os_ - s * oc
+        if abs(sin) < C.Q.MIN_SIN:
+            continue
+        ext = ctx.st.el[o]["params"]["thickness"] / 2.0 / abs(sin)
+        if abs(t) <= abs(t - length):
+            if abs(t) <= C.Q.JOIN_MAX_EXT:
+                start = min(start, t - ext)
+        elif abs(t - length) <= C.Q.JOIN_MAX_EXT:
+            end = max(end, t + ext)
+    return (min(0.0, start), max(length, end))
+
+
+def _level_elev(ctx, wid: str) -> float:
+    return ctx.st.el[ctx.rels_out("on_level", wid)[0]]["params"]["elevation"]
+
+
+def _also_box(ctx, host_id: str, hp: dict, oid: str, i: int):
+    """함께 자르는 벽 oid 의 범위를 호스트 지역 좌표(u, 호스트 레벨 기준 z)로 옮긴다. 평행·같은 선(두께 안)이 아니면 거절."""
+    path = f"/also_cuts/{i}"
+    if oid == host_id:
+        raise DobimError("CONSTRAINT", "also_cuts 에 호스트 벽을 넣을 수 없다", path=path)
+    op = ctx.authored(oid, "wall", what="개구부로 함께 자르기")["params"]
+    hx, hy, hc, hs, _ = C._frame_of(hp["axis"])
+    ox, oy, oc, os_, olen = C._frame_of(op["axis"])
+    if abs(hc * os_ - hs * oc) > PARALLEL_COS:
+        raise DobimError("CONSTRAINT", f"함께 자를 벽 {oid} 이 호스트 벽과 평행하지 않다", path=path,
+                         hint="위·아래로 쌓인 벽이나 같은 선으로 이어지는 벽만 함께 자를 수 있다")
+    dist = abs((ox - hx) * hs - (oy - hy) * hc)   # 호스트 축선에서 다른 벽 축선까지 수직 거리
+    if dist > (hp["thickness"] + op["thickness"]) / 2.0:
+        raise DobimError("CONSTRAINT", f"함께 자를 벽 {oid} 이 호스트 벽과 같은 선에 있지 않다(축선 거리 {dist:.0f}mm)", path=path,
+                         details={"wall": oid, "axis_distance": round(dist, 3), "limit": (hp["thickness"] + op["thickness"]) / 2.0})
+    e0, e1 = host_range(ctx, oid, op)
+    us = [((ox + t * oc) - hx) * hc + ((oy + t * os_) - hy) * hs for t in (e0, e1)]
+    dz = _level_elev(ctx, oid) - _level_elev(ctx, host_id)
+    b = WT.base(op) + dz
+    return (min(us), max(us), b, b + op["height"])
+
+
+def check_fit(ctx, host_id: str, hp: dict, offset, elevation, cut: dict, values: dict, rotation, also, path_prefix: str = "") -> None:
+    """개구부(호스트 지역 u·z)가 호스트 벽 안에 드는지 본다(25단계 규칙, 설계 메모 27절).
+    - 가로: 축선 [0, 길이] ∪ 조인 형상 범위(host_range). 모서리 끝(end_l/end_r = corner)은 CORNER_END_ALLOW 까지 더 나가도 된다.
+    - 그 밖으로 나가는 쪽(시작·끝·아래·위)은 also_cuts 의 벽 가운데 하나가 그 끝까지 닿아야 한다(쌓인 벽·이어지는 벽). 벽 사이 틈(슬래브 단부)은 비워 둔다.
+    - 안 되면 CONSTRAINT 와 details(개구부·호스트 범위·넘친 길이·조인 상대·also_cuts 범위)."""
+    x0, x1 = cut["x"]
+    z0, z1 = cut["z"]
+    u0, u1 = offset + x0, offset + x1
+    w0, w1 = elevation + z0, elevation + z1
+    e0, e1 = host_range(ctx, host_id, hp)
+    flipped = FS.hosted_flipped(rotation)
+    lo_end, hi_end = ("end_r", "end_l") if flipped else ("end_l", "end_r")   # 뒤집으면 지역 x 가 반대다
+    a0 = CORNER_END_ALLOW if values.get(lo_end) == "corner" else 0.0
+    a1 = CORNER_END_ALLOW if values.get(hi_end) == "corner" else 0.0
+    b0 = WT.base(hp)
+    top = b0 + hp["height"]
+    over = {"start": max(0.0, (e0 - a0) - u0 - FIT_TOL), "end": max(0.0, u1 - (e1 + a1) - FIT_TOL),
+            "bottom": max(0.0, b0 - w0 - 1e-9), "top": max(0.0, w1 - top - 1e-9)}
+    if not any(over.values()):
+        return
+    boxes = [_also_box(ctx, host_id, hp, o, i) for i, o in enumerate(also or ())]
+    for i, bx in enumerate(boxes):
+        if min(u1, bx[1]) - max(u0, bx[0]) <= FIT_TOL or min(w1, bx[3]) - max(w0, bx[2]) <= FIT_TOL:
+            raise DobimError("CONSTRAINT", f"함께 자를 벽 {also[i]} 이 개구부와 겹치지 않는다", path=f"{path_prefix}/also_cuts/{i}",
+                             details={"wall": also[i], "opening": {"u": [u0, u1], "z": [w0, w1]}, "wall_box": {"u": bx[:2], "z": bx[2:]}})
+
+    def u_ok(b):
+        return min(w1, b[3]) - max(w0, b[2]) > FIT_TOL
+
+    def z_ok(b):
+        return min(u1, b[1]) - max(u0, b[0]) > FIT_TOL
+    served = {"start": any(u_ok(b) and b[0] <= u0 + FIT_TOL for b in boxes),
+              "end": any(u_ok(b) and b[1] >= u1 - FIT_TOL for b in boxes),
+              "bottom": any(z_ok(b) and b[2] <= w0 + FIT_TOL for b in boxes),
+              "top": any(z_ok(b) and b[3] >= w1 - FIT_TOL for b in boxes)}
+    bad = [k for k, v in over.items() if v and not served[k]]
+    if not bad:
+        return
+    length = C.sqrt(C._axis_len2(hp["axis"]))
+    joined = sorted(set(ctx.rels_out("joins", host_id) + ctx.rels_in("joins", host_id)))
+    details = {"opening": {"u": [round(u0, 3), round(u1, 3)], "z": [round(w0, 3), round(w1, 3)]},
+               "host": {"id": host_id, "axis_length": round(length, 3), "range": [round(e0, 3), round(e1, 3)], "z": [b0, top]},
+               "overflow": {k: round(v, 3) for k, v in over.items() if v}, "unserved": bad, "joined": joined[:8],
+               "also_cuts": [{"id": o, "u": [round(b[0], 3), round(b[1], 3)], "z": [round(b[2], 3), round(b[3], 3)]} for o, b in zip(also or (), boxes)]}
+    if any(k in ("start", "end") for k in bad):
+        raise DobimError("CONSTRAINT", f"개구부({u0:.0f}..{u1:.0f}mm)가 호스트 벽({length:.1f}mm, 조인 범위 {e0:.0f}..{e1:.0f})"
+                         f" 밖으로 {max(over['start'], over['end']):.0f}mm 나간다", path=path_prefix + "/offset",
+                         hint="벽을 조인(join.set)해 모서리까지 잇거나, 같은 선으로 이어지는 벽을 also_cuts 로 함께 자르거나, 폭·offset 을 줄이세요",
+                         details=details)
+    raise DobimError("CONSTRAINT", "개구부가 호스트 벽의 높이 밖으로 나간다", path=path_prefix + "/elevation",
+                     hint="위·아래로 쌓인 벽을 also_cuts 로 함께 자르거나, 벽을 상단 레벨(top_level)로 구속해 높이를 늘리세요", details=details)
 
 
 def _check_hosted_rotation(ev, rotation) -> None:
@@ -345,20 +518,29 @@ def check_hosted_fit(ctx, wall_id: str, old_wp: dict, new_wp: dict) -> None:
             continue
         x0, x1 = cut["x"]
         z0, z1 = cut["z"]
-        if p["offset"] + x0 < 0 or p["offset"] + x1 > length:
-            raise DobimError("CONSTRAINT", f"호스팅된 패밀리 인스턴스 {d} 의 개구부가 새 벽({length:.1f}mm) 밖으로 나간다", path=path,
-                             details={"instance": d})
-        b0 = WT.base(new_wp)
-        if p["elevation"] + z0 < b0 - 1e-9 or p["elevation"] + z1 > b0 + new_wp["height"]:
-            raise DobimError("CONSTRAINT", f"호스팅된 패밀리 인스턴스 {d} 의 개구부가 새 벽 높이({new_wp['height']:g}mm) 밖으로 나간다", path=path,
-                             details={"instance": d})
+        try:
+            check_fit(ctx, wall_id, new_wp, p["offset"], p["elevation"], cut, p["values"], p.get("rotation", 0.0), p.get("also_cuts", ()))
+        except DobimError as ex:
+            high = ex.path.endswith("/elevation")
+            msg = (f"호스팅된 패밀리 인스턴스 {d} 의 개구부가 새 벽 높이({new_wp['height']:g}mm) 밖으로 나간다" if high else
+                   f"호스팅된 패밀리 인스턴스 {d} 의 개구부가 새 벽({length:.1f}mm) 밖으로 나간다")
+            raise DobimError("CONSTRAINT", msg, path=path, hint=ex.hint, details={"instance": d, **(ex.details or {})}) from None
         w, h = x1 - x0, z1 - z0
         if w != p["width"] or h != p["height"]:
             ctx.put_el(d, dict(row, params=dict(p, width=w, height=h)))
 
 
-def _inst_params(a_name, tid, values, ev, hosted, offset, position, rotation, elevation) -> dict:
-    return FS.inst_params(a_name, tid, values, ev, hosted, offset, position, rotation, elevation)   # 정본은 family.spec (가져오기가 같은 식으로 대조한다)
+def _inst_params(a_name, tid, values, ev, hosted, offset, position, rotation, elevation, also=()) -> dict:
+    return FS.inst_params(a_name, tid, values, ev, hosted, offset, position, rotation, elevation, also)
+
+
+def _also_list(also) -> tuple:
+    """also_cuts(25단계) 정리: 없으면 (). 중복은 거절한다(순서는 준 대로 저장한다)."""
+    if not also:
+        return ()
+    if len(set(also)) != len(also):
+        raise DobimError("CONSTRAINT", "also_cuts 에 같은 벽이 두 번 있다", path="/also_cuts")
+    return tuple(also)   # 정본은 family.spec (가져오기가 같은 식으로 대조한다)
 
 
 EXAMPLE_FINST = "0" * 21 + "1"   # IFC GlobalId 첫 글자는 0~3 만 유효하다; family.place 예시가 만들고 family.set 예시가 고치는 인스턴스 id(예시는 이름순으로 한 프로젝트에서 실행된다)
@@ -380,9 +562,14 @@ def family_place(ctx, a: FamilyPlace):
         recipe = _recipe_of(ctx, a.family)
         try:
             r, plan = FE.load_recipe(recipe)
-            tv, _ = FE.resolve_values(r, a.type_values, None)
         except FamilyError as ex:
             raise _fam_error(ex) from None
+        tvals = _expand_transoms(r, a.type_values, a.transoms)
+        try:
+            tv, _ = FE.resolve_values(r, tvals, None)
+        except FamilyError as ex:
+            raise _fam_error(ex) from None
+        _check_transoms(r, plan, tv, a.transoms)
         rhash = FS.recipe_hash_of(recipe)
         tid = _content_tid(ctx, rhash, tv)
         made = tid not in ctx.st.el
@@ -401,12 +588,13 @@ def family_place(ctx, a: FamilyPlace):
         ctx.authored(a.host, "wall", what="패밀리 인스턴스 호스팅")   # S2 의 저작 확인: 분리·외래 벽에는 놓을 수 없다
     else:
         ctx.authored(a.level, "level", what="레벨에 패밀리 인스턴스를 놓는 것")
-    ev, _ = _inst_geometry(ctx, tp, iv, a.host, a.offset, a.elevation)
+    also = _also_list(a.also_cuts)
+    ev, _ = _inst_geometry(ctx, tp, iv, a.host, a.offset, a.elevation, a.rotation, also)
     if hosted:
         _check_hosted_rotation(ev, a.rotation)
     name = a.name or f"{r.id.split('.')[0][:1].upper()}-{a.id[-6:]}"
     ctx.put_el(a.id, {"kind": "finst", "ifc_class": r.ifc.class_, "origin": "authored", "family_id": r.id,
-                      "params": _inst_params(name, tid, iv, ev, hosted, a.offset, a.position, a.rotation, a.elevation)})
+                      "params": _inst_params(name, tid, iv, ev, hosted, a.offset, a.position, a.rotation, a.elevation, also)})
     ctx.rel("of_type", a.id, tid, True)
     if hosted:
         ctx.rel("hosts", a.host, a.id, True)
@@ -427,10 +615,11 @@ class FamilySet(A):
     position: Annotated[list[Num], Field(min_length=2, max_length=2)] | None = None
     rotation: Num | None = None
     elevation: Num | None = None
+    also_cuts: AlsoCuts = Field(None, description="함께 자를 벽 id 목록(25단계). 주면 바꾼다([] 이면 뗀다), 생략하면 그대로")
 
     @model_validator(mode="after")
     def _any(self):
-        if not self.values and all(v is None for v in (self.name, self.offset, self.position, self.rotation, self.elevation)):
+        if not self.values and all(v is None for v in (self.name, self.offset, self.position, self.rotation, self.elevation, self.also_cuts)):
             raise ValueError("바꿀 필드가 하나도 없다")
         return self
 
@@ -454,11 +643,15 @@ def family_set(ctx, a: FamilySet):
     host_id = ctx.rels_in("hosts", a.id)[0] if hosted else None
     offset = a.offset if a.offset is not None else p.get("offset")
     elevation = a.elevation if a.elevation is not None else p["elevation"]
-    ev, _ = _inst_geometry(ctx, tp, iv, host_id, offset, elevation)
+    if a.also_cuts is not None and not hosted:
+        raise DobimError("CONSTRAINT", "also_cuts 는 호스팅 인스턴스에만 쓴다", path="/also_cuts")
+    also = _also_list(a.also_cuts) if a.also_cuts is not None else tuple(p.get("also_cuts", ()))
+    rot = a.rotation if a.rotation is not None else p["rotation"]
+    ev, _ = _inst_geometry(ctx, tp, iv, host_id, offset, elevation, rot, also)
     if hosted and a.rotation is not None:
         _check_hosted_rotation(ev, a.rotation)
     np_ = _inst_params(a.name or p["name"], p["type"], iv, ev, hosted, offset, a.position or p.get("position"),
-                       a.rotation if a.rotation is not None else p["rotation"], elevation)
+                       rot, elevation, also)
     ctx.put_el(a.id, dict(r_, params=np_))
     for pset, props in sorted(ev["psets"]["instance"].items()):
         for prop, v in sorted(props.items()):
@@ -466,40 +659,78 @@ def family_set(ctx, a: FamilySet):
     return {"id": a.id}
 
 
-# ---------------------------------------------------------------- family.place_corner (24단계: 90도로 꺾인 모서리 창호)
-CORNER_TOL = 1.0          # 두 벽 축선 끝점이 이 거리(mm) 안이면 같은 모서리로 본다
+# ---------------------------------------------------------------- family.place_corner (24단계: 90도로 꺾인 모서리 창호, 25단계: 2~4개 벽 전개·모서리 판정 확장)
 CORNER_COS_TOL = 0.0087   # 직각에서 0.5도 안
+CORNER_REACH = 300.0      # 25단계: 조인하지 않은 두 벽의 축선 교점이 각 벽 축선 끝에서 이 거리(mm) 안이면 모서리로 본다(tol 로 바꾼다)
+CORNER_SPAN_TOL = 1.0     # 가운데 벽(양 끝이 모서리)의 다리 길이와 두 모서리 사이 거리의 허용 차
 
 
 class FamilyPlaceCorner(A):
-    ids: Annotated[list[Id], Field(min_length=2, max_length=2)] | None = Field(None, description="두 인스턴스 id [벽 a 쪽, 벽 b 쪽]. 비우면 자동")
+    ids: Annotated[list[Id], Field(min_length=2, max_length=4)] | None = Field(None, description="다리 인스턴스 id(walls 와 같은 순서·개수). 비우면 자동")
     family: FamilyId = Field(description="모서리 끝(end_l/end_r 의 corner)을 지원하는 호스팅 패밀리(예: window.storefront)")
-    walls: Annotated[list[Id], Field(min_length=2, max_length=2)] = Field(description="모서리에서 직각으로 만나는 두 벽 [a, b](축선 끝점이 맞닿아야 한다)")
-    legs: Annotated[list[Annotated[Num, Field(gt=0)]], Field(min_length=2, max_length=2)] = Field(description="모서리(두 축선의 교점)에서 각 벽을 따라 창호가 차지하는 길이 mm [a, b]. 각 다리의 width 가 된다")
-    type_values: Values = Field(default_factory=dict, description="두 다리 공통 타입 값(width 는 legs 로 정한다)")
-    values: Values = Field(default_factory=dict, description="두 다리 공통 인스턴스 값(모서리 쪽 end_l/end_r 는 corner 로 정한다)")
-    values_b: Values = Field(default_factory=dict, description="벽 b 쪽 다리에만 덮어쓸 인스턴스 값(예: 문 위치)")
-    flip: Annotated[list[bool], Field(min_length=2, max_length=2)] = Field([False, False], description="다리별 뒤집기(rotation 180) [a, b]")
+    walls: Annotated[list[Id], Field(min_length=2, max_length=4)] = Field(
+        description="직각으로 차례로 꺾이는 벽 2~4개 [a, b, (c, d)]. 이웃한 두 벽은 축선 끝(또는 두 축선의 교점, join 으로 이어진 L)에서 만나야 한다")
+    legs: Annotated[list[Annotated[Num, Field(gt=0)]], Field(min_length=2, max_length=4)] = Field(
+        description="모서리(두 축선의 교점)에서 각 벽을 따라 창호가 차지하는 길이 mm(walls 와 같은 개수). 각 다리의 width 가 된다. 양 끝이 모서리인 가운데 벽은 두 모서리 사이 거리와 같아야 한다")
+    type_values: Values = Field(default_factory=dict, description="다리 공통 타입 값(width 는 legs 로 정한다)")
+    values: Values = Field(default_factory=dict, description="다리 공통 인스턴스 값(모서리 쪽 end_l/end_r 는 corner 로 정한다)")
+    values_b: Values = Field(default_factory=dict, description="벽 b 쪽 다리(둘째)에만 덮어쓸 인스턴스 값(예: 문 위치)")
+    values_by: Annotated[list[Values], Field(min_length=2, max_length=4)] | None = Field(None, description="다리별로 덮어쓸 인스턴스 값(walls 와 같은 개수, 25단계)")
+    flip: Annotated[list[bool], Field(min_length=2, max_length=4)] | None = Field(None, description="다리별 뒤집기(rotation 180), walls 와 같은 개수. 생략하면 모두 false")
+    tol: Annotated[Num, Field(ge=0, le=CORNER_END_ALLOW)] | None = Field(
+        None, description=f"모서리 판정 허용 오차 mm(25단계): 두 축선의 교점이 각 벽 축선 끝에서 이 거리 안이면 모서리다. 생략하면 조인된 두 벽은 조인 규칙, 아니면 {CORNER_REACH:g}")
+    transoms: Transoms = Field(None, description="가로대 높이 목록 mm(25단계, window.storefront 의 transom, transom2 ..)")
     name: Name | None = None
 
+    @model_validator(mode="after")
+    def _counts(self):
+        n = len(self.walls)
+        for k in ("legs", "ids", "flip", "values_by"):
+            v = getattr(self, k)
+            if v is not None and len(v) != n:
+                raise ValueError(f"{k} 는 walls 와 개수가 같아야 한다({n}개)")
+        return self
 
-def _corner_end(axis, corner) -> str | None:
-    """축선의 어느 끝이 모서리인가: 'end'(p2) / 'start'(p1) / None."""
-    x1, y1, x2, y2 = axis
-    if C.sqrt((x2 - corner[0]) ** 2 + (y2 - corner[1]) ** 2) <= CORNER_TOL:
-        return "end"
-    if C.sqrt((x1 - corner[0]) ** 2 + (y1 - corner[1]) ** 2) <= CORNER_TOL:
-        return "start"
-    return None
+
+def _corner_between(ctx, i: int, wa: str, wb: str, axa, axb, tol):
+    """이웃한 두 벽의 모서리: 두 축선(무한 직선)의 교점이 두 벽 모두의 한 끝 가까이에 있어야 한다.
+    돌려주는 값: (교점, [벽 a 의 끝 'start'|'end', 교점의 지역 u], [벽 b 의 ...]). 허용 오차는 tol, 없으면 조인된 벽은 조인 규칙(JOIN_MAX_EXT), 아니면 CORNER_REACH."""
+    path = f"/walls/{i + 1}"
+    joined = wb in ctx.rels_out("joins", wa) or wa in ctx.rels_out("joins", wb)
+    reach = float(tol) if tol is not None else (C.Q.JOIN_MAX_EXT if joined else CORNER_REACH)
+    reach = max(reach, 1.0)   # 24단계(축선 끝이 1mm 안에서 맞닿음)는 늘 모서리다
+    pt = C._join_pt(wa, axa, wb, axb)
+    if pt is None:
+        raise DobimError("CONSTRAINT", f"벽 {wa} 와 {wb} 가 평행해 모서리가 없다", path=path)
+    ends, dist = [], {}
+    for w, ax in ((wa, axa), (wb, axb)):
+        x, y, c, s, length = C._frame_of(ax)
+        t = (pt[0] - x) * c + (pt[1] - y) * s
+        end = "start" if abs(t) <= abs(t - length) else "end"
+        d = abs(t) if end == "start" else abs(t - length)
+        dist[w] = round(d, 3)
+        ends.append((end, t, (c, s)))
+    far = {w: d for w, d in dist.items() if d > reach}
+    if far:
+        raise DobimError("CONSTRAINT", f"벽 {wa} 와 {wb} 의 축선 교점이 벽 끝에서 {max(far.values()):.0f}mm 떨어져 모서리로 보지 않는다(허용 {reach:g}mm)",
+                         path=path, hint="tol 로 허용 오차를 늘리거나, 두 벽을 join.set 으로 이으세요(조인된 L 은 조인 규칙으로 모서리를 찾는다)",
+                         details={"corner": [round(pt[0], 3), round(pt[1], 3)], "distance": dist, "reach": reach, "joined": joined})
+    (ea, ta, da), (eb, tb, db) = ends
+    sa = 1.0 if ea == "start" else -1.0   # 모서리에서 벽을 따라 멀어지는 방향
+    sb = 1.0 if eb == "start" else -1.0
+    if abs(da[0] * sa * db[0] * sb + da[1] * sa * db[1] * sb) > CORNER_COS_TOL:
+        raise DobimError("CONSTRAINT", f"벽 {wa} 와 {wb} 가 직각으로 만나지 않는다", path=path)
+    return pt, (ea, ta), (eb, tb)
 
 
 @command("family.place_corner", kind="mutation", risk="write", group="family",
-         summary="직각으로 만나는 두 벽의 모서리에 꺾인 창호(두 다리)를 놓는다. 각 다리는 모서리 쪽 끝이 corner(문틀 없음)인 호스팅 인스턴스다",
+         summary="직각으로 차례로 꺾이는 벽 2~4개에 걸친 전개 창호를 한 단위로 놓는다. 각 다리는 모서리 쪽 끝이 corner(문틀 없음)인 호스팅 인스턴스다",
          args=FamilyPlaceCorner, since="0.4",
          examples=[{"family": "window.storefront", "walls": [C.F.W1, C.F.W2], "legs": [2500, 2000], "type_values": {"height": 2400, "bay_max": 1200}}])
 def family_place_corner(ctx, a: FamilyPlaceCorner):
-    if a.walls[0] == a.walls[1]:
-        raise DobimError("CONSTRAINT", "두 벽이 같다", path="/walls")
+    n = len(a.walls)
+    if len(set(a.walls)) != n:
+        raise DobimError("CONSTRAINT", "같은 벽이 두 번 있다", path="/walls")
     if "width" in a.type_values:
         raise DobimError("CONSTRAINT", "width 는 legs 로 정한다", path="/type_values/width")
     rows = [ctx.authored(w, "wall", what="패밀리 인스턴스 호스팅") for w in a.walls]
@@ -513,44 +744,57 @@ def family_place_corner(ctx, a: FamilyPlaceCorner):
         if prm is None or (k != "width" and "corner" not in (prm.values or ())):
             raise DobimError("CONSTRAINT", f"{r.id} 는 모서리 창호를 지원하지 않는다(매개변수 {k} 가 없거나 corner 값이 없다)", path="/family",
                              hint="window.storefront 처럼 end_l/end_r 에 corner 가 있는 호스팅 패밀리를 쓰세요")
-    if ctx.rels_out("on_level", a.walls[0]) != ctx.rels_out("on_level", a.walls[1]):
-        raise DobimError("CONSTRAINT", "두 벽이 다른 레벨에 있다", path="/walls")
+    _expand_transoms(r, a.type_values, a.transoms)   # 목록 모양만 미리 본다(다리마다 family.place 가 풀고 검사한다)
+    lv = ctx.rels_out("on_level", a.walls[0])
+    for i, w in enumerate(a.walls[1:], 1):
+        if ctx.rels_out("on_level", w) != lv:
+            raise DobimError("CONSTRAINT", "벽들이 같은 레벨에 있지 않다", path=f"/walls/{i}")
     axes = [rw["params"]["axis"] for rw in rows]
-    corner = None
-    for pa in ((axes[0][0], axes[0][1]), (axes[0][2], axes[0][3])):
-        if _corner_end(axes[1], pa) is not None:
-            corner = pa
-            break
-    if corner is None:
-        raise DobimError("CONSTRAINT", "두 벽의 축선 끝점이 맞닿지 않는다(모서리가 없다)", path="/walls",
-                         hint="두 벽의 축선이 한 점에서 끝나게 하세요(join 으로 모서리를 잇는 L 형 벽)")
-    dirs = []
-    for ax in axes:   # 모서리에서 벽을 따라 멀어지는 방향
-        x1, y1, x2, y2 = ax
-        ln = C.sqrt((x2 - x1) ** 2 + (y2 - y1) ** 2)
-        s = 1.0 if _corner_end(ax, corner) == "start" else -1.0
-        dirs.append(((x2 - x1) / ln * s, (y2 - y1) / ln * s))
-    if abs(dirs[0][0] * dirs[1][0] + dirs[0][1] * dirs[1][1]) > CORNER_COS_TOL:
-        raise DobimError("CONSTRAINT", "두 벽이 직각으로 만나지 않는다", path="/walls")
-    ids = list(a.ids) if a.ids else [None, None]
-    if a.ids and a.ids[0] == a.ids[1]:
-        raise DobimError("CONSTRAINT", "두 id 가 같다", path="/ids")
+    corners = []
+    sides: list[dict] = [{} for _ in range(n)]   # 벽마다 {'start'|'end': 교점의 지역 u}
+    for i in range(n - 1):
+        pt, (ea, ta), (eb, tb) = _corner_between(ctx, i, a.walls[i], a.walls[i + 1], axes[i], axes[i + 1], a.tol)
+        for j, e, t in ((i, ea, ta), (i + 1, eb, tb)):
+            if e in sides[j]:
+                raise DobimError("CONSTRAINT", f"벽 {a.walls[j]} 의 같은 끝에 모서리가 둘이다(벽 순서를 확인하세요)", path=f"/walls/{j}")
+            sides[j][e] = t
+        corners.append(pt)
+    ids = list(a.ids) if a.ids else [None] * n
+    if a.ids and len(set(a.ids)) != n:
+        raise DobimError("CONSTRAINT", "id 가 겹친다", path="/ids")
+    flips = list(a.flip) if a.flip else [False] * n
     out = []
-    for i, (w, ax, leg) in enumerate(zip(a.walls, axes, a.legs)):
-        length = C.sqrt(C._axis_len2(ax))
-        at_end = _corner_end(ax, corner) == "end"
-        offset = length - leg / 2.0 if at_end else leg / 2.0
-        flipped = bool(a.flip[i])
-        key = ("end_r" if at_end else "end_l") if not flipped else ("end_l" if at_end else "end_r")   # 뒤집으면 지역 x 가 반대다
-        vals = {**a.values, **(a.values_b if i == 1 else {}), key: "corner"}
-        nm = f"{a.name}-{'ab'[i]}" if a.name else None
-        res = family_place(ctx, FamilyPlace(id=ids[i], family=a.family, type_values={**a.type_values, "width": leg}, values=vals,
-                                            host=w, offset=offset, rotation=180.0 if flipped else 0.0, name=nm))
+    for i, (w, leg) in enumerate(zip(a.walls, a.legs)):
+        sd = sides[i]
+        if len(sd) == 2:   # 가운데 벽: 두 모서리 사이 전체
+            span = sd["end"] - sd["start"]
+            if abs(span - leg) > CORNER_SPAN_TOL:
+                raise DobimError("CONSTRAINT", f"가운데 벽 {w} 의 다리 길이({leg:g})가 두 모서리 사이 거리({span:.1f})와 다르다", path=f"/legs/{i}",
+                                 details={"expected": round(span, 3), "given": leg})
+            offset, width, cend = (sd["start"] + sd["end"]) / 2.0, span, {"start", "end"}
+        else:
+            e, t = next(iter(sd.items()))
+            offset = t - leg / 2.0 if e == "end" else t + leg / 2.0
+            width, cend = leg, {e}
+        flipped = bool(flips[i])
+        vals = {**a.values, **(a.values_b if i == 1 else {}), **((a.values_by or [{}] * n)[i])}
+        for e in cend:   # 뒤집으면 지역 x 가 반대다
+            key = ("end_r" if e == "end" else "end_l") if not flipped else ("end_l" if e == "end" else "end_r")
+            vals[key] = "corner"
+        nm = f"{a.name}-{'abcd'[i]}" if a.name else None
+        res = family_place(ctx, FamilyPlace(id=ids[i], family=a.family, type_values={**a.type_values, "width": width}, values=vals,
+                                            host=w, offset=offset, rotation=180.0 if flipped else 0.0, name=nm,
+                                            **({"transoms": a.transoms} if a.transoms is not None else {})))
         out.append(res)
-    for i, res in enumerate(out):   # 두 다리를 한 모서리 창호로 묶는 표식(속성)
-        ctx.set_prop(res["id"], "DoBIM_CornerUnit", "Leg", "ab"[i])
-        ctx.set_prop(res["id"], "DoBIM_CornerUnit", "Partner", out[1 - i]["id"])
-    return {"ids": [x["id"] for x in out], "types": [x["type"] for x in out], "corner": [float(corner[0]), float(corner[1])]}
+    for i, res in enumerate(out):   # 다리들을 한 모서리 창호로 묶는 표식(속성)
+        ctx.set_prop(res["id"], "DoBIM_CornerUnit", "Leg", "abcd"[i])
+        if n == 2:
+            ctx.set_prop(res["id"], "DoBIM_CornerUnit", "Partner", out[1 - i]["id"])
+        else:   # 3~4개 다리(25단계): 이웃 다리와 전체 묶음
+            ctx.set_prop(res["id"], "DoBIM_CornerUnit", "Partner", ",".join(out[j]["id"] for j in (i - 1, i + 1) if 0 <= j < n))
+            ctx.set_prop(res["id"], "DoBIM_CornerUnit", "Unit", ",".join(x["id"] for x in out))
+    return {"ids": [x["id"] for x in out], "types": [x["type"] for x in out], "corner": [float(corners[0][0]), float(corners[0][1])],
+            "corners": [[float(p[0]), float(p[1])] for p in corners]}
 
 
 # ---------------------------------------------------------------- family.preview

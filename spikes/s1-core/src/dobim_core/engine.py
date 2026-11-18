@@ -163,6 +163,8 @@ class _Inputs:
             return tuple(st.out.get((key[1], key[2]), ()))
         if t == "rel_in":
             return tuple(st.inn.get((key[1], key[2]), ()))
+        if t == "xcut_finsts":   # 함께 자르는 벽이 있는 인스턴스(25단계)
+            return tuple(sorted(f for f in st.by_kind.get("finst", ()) if "also_cuts" in st.el[f]["params"]))
         if t == "tied_walls":   # 상단 구속 벽(24단계): 이 입력이 바뀌는 경우는 kinds._keys_el 이 정한다
             return tuple(sorted(w for w in st.by_kind.get("wall", ()) if "top_level" in st.el[w]["params"]))
         ifc = self.eng.ifc

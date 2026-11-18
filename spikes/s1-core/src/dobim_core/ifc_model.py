@@ -1127,10 +1127,15 @@ class IfcModel:
             self._clear_layers(e)
         # 모양 개구부(18단계): 벽 지역 (u, z) 윤곽을 두께 방향(지역 y)으로 벽보다 양쪽 10mm 더 길게 돌출한 IfcOpeningElement. 없으면 부속도 없다(이전과 같다)
         ops = spec.get("openings", ())
-        if ops or eid in self.parts:
+        xops = spec.get("xopenings", ())   # 다른 벽의 창이 함께 자르는 개구부(25단계): 부속 키는 인스턴스 id 라 순서가 바뀌어도 GlobalId 가 같다
+        if ops or xops or eid in self.parts:
             half = spec.get("thickness", 0.0) / 2.0 + 10.0
-            self._sync_parts(eid, {f"opening:{i}": {"cls": "IfcOpeningElement", "name": f"{spec['name']}-opening{i + 1}", "rel": "void",
-                                                     "solid": (lambda lp=lp: self._vprofile_solid(lp, half, 2.0 * half))} for i, lp in enumerate(ops)})
+            wanted = {f"opening:{i}": {"cls": "IfcOpeningElement", "name": f"{spec['name']}-opening{i + 1}", "rel": "void",
+                                       "solid": (lambda lp=lp: self._vprofile_solid(lp, half, 2.0 * half))} for i, lp in enumerate(ops)}
+            for fid, lp in xops:
+                wanted[f"xopening:{fid}"] = {"cls": "IfcOpeningElement", "name": f"{spec['name']}-xopening:{fid}", "rel": "void",
+                                             "solid": (lambda lp=lp: self._vprofile_solid(lp, half, 2.0 * half))}
+            self._sync_parts(eid, wanted)
 
     def _cut_body(self, e, cuts, rng):
         """벽 몸체(이미 투영된 돌출 하나)에서 상자들을 뺀다(23단계). 벽 면과 같은 평면에 놓인 상자 면은 FACE_PAD 만큼 벽 밖으로 내밀어
@@ -1180,8 +1185,10 @@ class IfcModel:
         """일반 솔리드(18단계): 레벨 좌표계 원점에 IfcFacetedBrep 하나. 범주가 정한 PredefinedType·ObjectType 을 적는다."""
         e = self.ents[eid]
         e.Name = spec["name"]
-        if spec["predefined"] and hasattr(e, "PredefinedType"):
-            e.PredefinedType = spec["predefined"]
+        if hasattr(e, "PredefinedType") and e.PredefinedType != spec["predefined"]:
+            if e.PredefinedType == "USERDEFINED" and not spec["object_type"]:   # 범주를 바꿔 사용자 정의 종류를 뗐다(25단계): 이름표도 뗀다
+                e.ObjectType = None
+            e.PredefinedType = spec["predefined"]   # 같은 클래스 안에서 범주를 바꾸면(예: 위생기구 종류) 종류도 따라간다. 처음 만들 때 None 이면 그대로
         if spec["object_type"]:
             e.ObjectType = spec["object_type"]
         self._contain(eid, spec["level"])
@@ -1235,6 +1242,16 @@ class IfcModel:
                       else any(r.RelatingObject == e for r in (getattr(p, "Decomposes", None) or ())))
             if linked:
                 have[label] = p
+        if kind == "wall":   # 다른 벽의 창이 함께 자르는 개구부(25단계): 이름표의 인스턴스 id 를 이름에서 읽고 GlobalId(part_guid)로 확인한다
+            for r in getattr(e, "HasOpenings", None) or ():
+                p = r.RelatedOpeningElement
+                name = p.Name if isinstance(p.Name, str) else ""
+                cut = name.rfind("-xopening:")
+                if cut < 0:
+                    continue
+                label = "xopening:" + name[cut + len("-xopening:"):]
+                if label not in have and p.GlobalId == part_guid(eid, label):
+                    have[label] = p
         if not have:
             self.parts.pop(eid, None)
 
