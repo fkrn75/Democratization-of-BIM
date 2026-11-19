@@ -80,7 +80,8 @@ PRE = {**_DRAFT_PRE, "history.redo": [("history.undo", {})], "ifc.restore": [_EX
        "keynote.delete": [_KN1], "keynote.assign": [_KN1], "keynote.legend": [_V1, _KN1],
        "view.vg.set": [_V1], "view.vg.get": [_V1], "view.filter.set": [_V1], "view.filter.delete": [_V1, _VF1],
        "view.template.set": [_VT1], "view.template.delete": [_VT1], "view.template.apply": [_V1, _VT1],
-       "view.callout": [_V1], "sheet.viewport.set": [_V1, _SH1], "view.refs": [_V1, _SH1]}
+       "view.callout": [_V1], "sheet.viewport.set": [_V1, _SH1], "view.refs": [_V1, _SH1],
+       "view.areas": [("view.area_plan", {"id": F.VA1, "name": "1F 바닥면적", "level": F.LV1, "scheme": "gross"})]}
 ERROR_CASES = [
     ("없는 커맨드", "no.such.command", {}, {}),
     ("스키마 오류(타입)", "wall.move", {"id": F.W1, "dx": "abc"}, {}),

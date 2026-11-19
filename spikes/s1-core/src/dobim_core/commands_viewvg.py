@@ -50,10 +50,16 @@ def _target(ctx, tid, write=True):
     if r is not None and r["kind"] == "vtemplate":
         return r
     r = ctx.row(tid, "view")
+    _no_legend(r)
     if write and r["params"].get("template") is not None:
         raise DobimError("CONSTRAINT", "이 뷰는 뷰 템플릿을 따른다: 가시성·필터는 템플릿에서 고친다", path="/id",
                          hint="템플릿 id 로 같은 커맨드를 쓰거나 view.template.apply 에 template=null 을 주어 템플릿을 뗀다")
     return r
+
+
+def _no_legend(r):
+    if r["params"]["type"] == "legend":   # 범례 뷰(W1 1-C 3차)는 모델 범주를 그리지 않는다
+        raise DobimError("CONSTRAINT", "범례 뷰에는 가시성·필터·템플릿을 쓰지 않는다", path="/id")
 
 
 def _put(ctx, tid, r, p):
@@ -334,6 +340,7 @@ class TemplateApply(A):
          args=TemplateApply, since="0.10", examples=[{"view": F.V1, "template": F.VT1}])
 def view_template_apply(ctx, a: TemplateApply):
     vr = ctx.row(a.view, "view")
+    _no_legend(vr)
     vp = vr["params"]
     old = vp.get("template")
     if a.template is None:

@@ -3313,7 +3313,7 @@ class ViewSet(A):
 def view_set(ctx, a: ViewSet):
     r = ctx.row(a.id, "view")
     p = dict(r["params"])
-    allowed = {"plan": _PLAN_ONLY, "section": _SEC_ONLY, "elevation": _ELEV_ONLY, "site": _SITE_ONLY}[p["type"]]
+    allowed = {"plan": _PLAN_ONLY, "section": _SEC_ONLY, "elevation": _ELEV_ONLY, "site": _SITE_ONLY, "legend": ()}[p["type"]]
     for k in ("name", "scale", "cut_height", "view_depth", *_SEC_ONLY, *_ELEV_ONLY):
         v = getattr(a, k)
         if v is None:
@@ -3449,7 +3449,12 @@ def _render_view(ctx, vid, detail=False, hidden=False, hier=False):
     _warn_omitted(ctx, ctx.g.q(D.view_omitted, vid))
     return {"type": p["type"], "name": p["name"], "scale": p["scale"], "lines": lines, "fills": ctx.g.q(D.view_fills, vid),
             "datums": levels, "annots": ctx.g.q(AN.view_annots, vid) + ctx.g.q(D.site_dims, vid) + ctx.g.q(D.view_dims, vid), "labels": ctx.g.q(D.view_labels, vid),
-            **_drafts_of(ctx, vid)}
+            **_drafts_of(ctx, vid), **_mode_of(p)}
+
+
+def _mode_of(p) -> dict:
+    """반사 천장 평면·면적 평면(W1 1-C 3차)의 제목 종류. 모드가 없는 뷰는 키를 만들지 않는다(기존 도면 바이트 불변)."""
+    return {"mode": "rcp"} if p.get("rcp") else {"mode": "area"} if "area" in p else {}
 
 
 def _render_view_vg(ctx, vid, p, levels, vgd, detail, hidden):
@@ -3464,7 +3469,7 @@ def _render_view_vg(ctx, vid, p, levels, vgd, detail, hidden):
     _warn_omitted(ctx, ctx.g.q(D.view_omitted, vid))
     annots = tuple(it for it in ctx.g.q(AN.view_annots, vid) + ctx.g.q(D.site_dims, vid) + ctx.g.q(D.view_dims, vid) if VG.annot_kind(it) not in hid)
     items = vitems + (() if "draft" in hid else ctx.g.q(DRF.view_drafts, vid))
-    out = {"type": p["type"], "name": p["name"], "scale": p["scale"], "lines": lines, "fills": fills, "datums": levels, "annots": annots, "labels": labels}
+    out = {"type": p["type"], "name": p["name"], "scale": p["scale"], "lines": lines, "fills": fills, "datums": levels, "annots": annots, "labels": labels, **_mode_of(p)}
     return dict(out, drafts=items) if items else out
 
 
@@ -4831,3 +4836,4 @@ from dobim_core import commands_rules  # noqa: E402,F401
 from dobim_core import commands_revision  # noqa: E402,F401
 from dobim_core import commands_viewvg  # noqa: E402,F401
 from dobim_core import commands_viewref  # noqa: E402,F401
+from dobim_core import commands_viewplans  # noqa: E402,F401

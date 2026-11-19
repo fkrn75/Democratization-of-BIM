@@ -96,7 +96,8 @@ def view_omitted(g, v):
 
 def view_cfg(g, v):
     """뷰 설정을 계산용 튜플로 푼다.
-    평면: ("plan", 레벨, 절단 z, 보이는 깊이, 축척)
+    평면: ("plan", 레벨, 절단 z, 보이는 깊이, 축척) + 모드가 있으면 (모드,): "rcp" 반사 천장 평면(보이는 깊이는 절단면 위로), "gross"·"rooms" 면적 평면(W1 1-C 3차)
+    범례 뷰(legend)는 모델을 자르지 않으므로 None 이다(모델 질의는 고아 뷰처럼 비고, viewplans 가 범례를 그린다)
     배치도: ("site", None, 0, 0, 축척)  (모델 전체를 위에서 본 대지·건물 외곽 뷰)
     그 밖: (종류, ox, oy, 보는방향 dx, dy, 오른쪽 rx, ry, near, far, 절단 여부, 축척)"""
     row = Q.el(g, v)
@@ -106,20 +107,28 @@ def view_cfg(g, v):
     t, scale = p["type"], p["scale"]
     if t == "site":
         return ("site", None, 0.0, 0.0, scale)
+    if t == "legend":
+        return None
     if t == "plan":
+        mode = ("rcp",) if p.get("rcp") else (p["area"],) if "area" in p else ()   # 모드가 없는 평면은 이전과 같은 5칸이다
         lv = p["level"]
         lrow = Q.el(g, lv)
         if not Q.plan_level_ok(lrow):   # 없거나 레벨이 아닌 요소(예전 데이터의 잘못된 참조)면 고아 뷰로 그린다(터지지 않게)
-            return ("plan", None, 0.0, 0.0, scale)
+            return ("plan", None, 0.0, 0.0, scale) + mode
         if lrow["kind"] == "level":
             _, elev = g.q(Q.level_info, lv)
         else:   # 외래 IFC 층(1단계 외래 도면 경로): 고도는 IFC 배치에서 읽는다
             fg = Q.fgeom(g, lv)
             if fg is None or fg[0] != "storey":
-                return ("plan", None, 0.0, 0.0, scale)
+                return ("plan", None, 0.0, 0.0, scale) + mode
             elev = fg[1]
-        return ("plan", lv, elev + p["cut_height"], p["view_depth"], scale)
+        return ("plan", lv, elev + p["cut_height"], p["view_depth"], scale) + mode
     return cfg_from_params(p)
+
+
+def is_rcp(cfg) -> bool:
+    """반사 천장 평면(W1 1-C 3차, VIEW-02)인가: 절단면에서 위를 본다(절단선은 평면과 같고, 투영은 절단면 위 보이는 깊이 안의 것만, 문·창 기호 없음)."""
+    return cfg is not None and len(cfg) == 6 and cfg[5] == "rcp"
 
 
 def cfg_from_params(p):
@@ -602,6 +611,8 @@ def plan_pieces(g, v, w):
     cut, proj = [], []
     if sol[11] is not None:   # 상단 윤곽(21단계): 윤곽이 절단 높이보다 높은 구간은 절단, 낮은 구간(보이는 깊이 안)은 투영
         cut = [_quad(sol, a, b) for a, b in _cut_intervals(sol, cutz)]
+        if is_rcp(cfg):   # 반사 천장 평면: 절단면 아래는 보이지 않는다
+            return (tuple(cut), ())
         proj = [_quad(sol, a, b) for a, b in WT.ivs_between(sol[11], max(zb, cutz - depth) - EPS, cutz - EPS)]
         return (tuple(cut), tuple(proj))
     if zb - EPS <= cutz <= zt + EPS:
@@ -611,6 +622,9 @@ def plan_pieces(g, v, w):
                 break
         if g.q(_has_cuts, w) and g.q(_cut_at, w, cutz):   # 벽 잘라내기(23단계): 절단 높이를 품는 상자를 뺀 (u, v) 조각
             cut = [_quad_v(sol, q[0], q[1], q[2], q[3]) for q in g.q(_cut_at, w, cutz)]
+    elif is_rcp(cfg):   # 반사 천장 평면: 바닥이 절단면 위 보이는 깊이 안에 있는 벽만 윤곽(아래에서 올려다본 밑면)
+        if cutz + EPS < zb <= cutz + depth:
+            proj = [_quad(sol, sol[5], sol[6])]
     elif zt < cutz - EPS and zt >= cutz - depth:
         proj = [_quad(sol, sol[5], sol[6])]
     return (tuple(cut), tuple(proj))
@@ -884,6 +898,8 @@ def plan_fam_parts(g, v, e):
     """평면의 자립형 요소: (선분들, 채움 다각형들). 절단 높이가 요소 높이 범위에 들 때만 그린다(기둥 단면 + 기호)."""
     cfg = g.q(view_cfg, v)
     ff = g.q(free_fam, e)
+    if ff is not None and is_rcp(cfg) and cfg[2] + EPS < ff[3] <= cfg[2] + cfg[3]:   # 반사 천장 평면: 절단면 위에 매단 요소(조명 등)는 평면 기호를 투영선으로
+        return (tuple(("proj",) + x[1:] for x in _plan_items(ff[5], _free_world(ff))), ())
     if ff is None or cfg[0] != "plan" or not (ff[3] - EPS <= cfg[2] <= ff[4] + EPS):
         return ((), ())
     fills: list = []
@@ -1071,7 +1087,11 @@ def scope_slabs(g, v):
     if cfg[0] == "plan":
         if cfg[1] is None:
             return ()
-        return tuple(e for e in sorted(Q.rel_in(g, "on_level", cfg[1])) if g.q(slab_info, e) is not None)
+        own = tuple(e for e in sorted(Q.rel_in(g, "on_level", cfg[1])) if g.q(slab_info, e) is not None)
+        if is_rcp(cfg):   # 반사 천장 평면: 밑면이 절단면 위 보이는 깊이 안에 있는 다른 층 슬래브(위층 바닥 = 천장)도 본다
+            up = [e for e in g.q(all_slabs) if cfg[2] + EPS < g.q(slab_info, e)[0] <= cfg[2] + cfg[3]]
+            return tuple(sorted(set(own) | set(up)))
+        return own
     return g.q(all_slabs)
 
 
@@ -1234,6 +1254,16 @@ def plan_slab_parts(g, v, s):
     if info is None or cfg is None or cfg[0] != "plan":
         return ((), ())
     holes = info[3]
+    if is_rcp(cfg) and not info[0] - EPS <= cfg[2] <= info[1] + EPS:   # 반사 천장 평면: 위 슬래브는 밑면 윤곽·구멍(X), 아래 슬래브는 그리지 않는다
+        if not cfg[2] + EPS < info[0] <= cfg[2] + cfg[3]:
+            return ((), ())
+        segs = []
+        for ring in (info[2],) + holes:
+            m = len(ring)
+            segs += [("proj", ring[i][0], ring[i][1], ring[(i + 1) % m][0], ring[(i + 1) % m][1]) for i in range(m)]
+        for o in holes:
+            segs += [("symbol", a[0], a[1], b[0], b[1]) for a, b in _hole_x(o)]
+        return (tuple(segs), ())
     if info[0] - EPS <= cfg[2] <= info[1] + EPS:
         poly = info[2]
         n = len(poly)
@@ -1304,7 +1334,7 @@ def plan_roof_marks(g, v, s):
     cfg = g.q(view_cfg, v)
     info = g.q(slab_info, s)
     roof = g.q(slab_roof, s)
-    if cfg is None or cfg[0] != "plan" or info is None or roof is None or cfg[2] <= info[1] + EPS:
+    if cfg is None or cfg[0] != "plan" or info is None or roof is None or cfg[2] <= info[1] + EPS or is_rcp(cfg):
         return ((), ())
     poly = info[2]
     n = len(poly)
@@ -1533,7 +1563,7 @@ def scope_stairs(g, v):
     if cfg is None or cfg[0] == "site":
         return ()
     if cfg[0] == "plan":
-        if cfg[1] is None:
+        if cfg[1] is None or is_rcp(cfg):   # 반사 천장 평면(W1 1-C 3차)은 아직 그리지 않는다
             return ()
         return tuple(e for e in sorted(Q.rel_in(g, "on_level", cfg[1])) if g.q(stair_info, e) is not None)
     return g.q(all_stairs)
@@ -1879,7 +1909,7 @@ def scope_railings(g, v):
     if cfg is None or cfg[0] == "site":
         return ()
     if cfg[0] == "plan":
-        if cfg[1] is None:
+        if cfg[1] is None or is_rcp(cfg):   # 반사 천장 평면(W1 1-C 3차)은 아직 그리지 않는다
             return ()
         return tuple(e for e in sorted(Q.rel_in(g, "on_level", cfg[1])) if g.q(railing_info, e) is not None)
     return g.q(all_railings)
@@ -1994,7 +2024,7 @@ def scope_elevators(g, v):
         return ()
     allv = g.q(all_elevators)
     if cfg[0] == "plan":
-        if cfg[1] is None:
+        if cfg[1] is None or is_rcp(cfg):   # 반사 천장 평면(W1 1-C 3차)은 아직 그리지 않는다
             return ()
         return tuple(e for e in allv if (ex := g.q(elevator_ext, e))["pit_z0"] - EPS <= cfg[2] <= ex["mach_z1"] + EPS)
     return allv
@@ -2152,7 +2182,7 @@ def scope_roofs(g, v):
     if cfg is None or cfg[0] == "site":
         return ()
     if cfg[0] == "plan":
-        if cfg[1] is None:
+        if cfg[1] is None or is_rcp(cfg):   # 반사 천장 평면(W1 1-C 3차)은 아직 그리지 않는다
             return ()
         return tuple(e for e in sorted(Q.rel_in(g, "on_level", cfg[1])) if g.q(roof_info, e) is not None)
     return g.q(all_roofs)
@@ -2465,6 +2495,9 @@ def plan_space_labels(g, v, s):
     info = g.q(space_info, s)
     if info is None or cfg is None or cfg[0] != "plan":
         return ()
+    if len(cfg) == 6:   # 반사 천장 평면·면적 평면(W1 1-C 3차)
+        from dobim_core import viewplans as VP
+        return VP.mode_space_labels(g, cfg, s, info)
     if cfg[1] is not None and cfg[2] > g.q(Q.level_info, cfg[1])[1] + Q.el(g, s)["params"]["height"] + EPS:
         return ()   # 절단 높이가 공간 윗면보다 높은 평면(지붕 평면)은 방을 자르지 못하고 지붕 위에서 내려다본다: 방 이름·면적은 관행상 쓰지 않는다
     holes = g.q(space_holes, s)
@@ -2478,7 +2511,8 @@ def view_labels(g, v):
     """뷰의 문자 층: ((x, y, 문자, 높이 mm, 앵커), ...). 선분과 달리 병합하지 않고 만든 순서(공간 id 순 등)를 유지한다."""
     cfg = g.q(view_cfg, v)
     if cfg is None:
-        return ()
+        from dobim_core import viewplans as VP   # 범례 뷰(W1 1-C 3차): 범례가 아니면 빈 값
+        return g.q(VP.legend_labels, v)
     if cfg[0] == "site":
         return g.q(site_labels, v)
     out = []
@@ -2503,6 +2537,9 @@ def view_labels(g, v):
     elif cfg[0] == "sec":
         out.extend(g.q(site_section_labels, v))
     out.extend(g.q(view_grid_labels, v))   # 통심선 기호 문자(19단계)
+    if len(cfg) == 6 and cfg[5] != "rcp":   # 면적 평면의 면적 이름·값·합계(W1 1-C 3차)
+        from dobim_core import viewplans as VP
+        out.extend(g.q(VP.area_labels, v))
     opts = g.q(view_opts, v)
     if "crop" in opts:   # 부위 상세: 잘라낸 사각형 밖의 문자는 뺀다
         c = opts["crop"]
@@ -2564,7 +2601,7 @@ def plan_fire_labels(g, v, w):
         start, end, _st = g.q(Q.wall_trim, w)
         m = (start + end) / 2.0
         out.append((round(x + c * m - s * half, 3), round(y + s * m + c * half, 3), "FW " + fr, LABEL_FIRE_H, "middle"))
-    for d in g.q(Q.wall_hosted, w):
+    for d in (() if is_rcp(cfg) else g.q(Q.wall_hosted, w)):   # 반사 천장 평면(W1 1-C 3차)에는 문이 없다
         row = Q.el(g, d)
         fd = fire_rating(g, d, "Pset_DoorCommon") if row is not None and row["kind"] == "door" else None
         if fd is not None:
@@ -2689,7 +2726,7 @@ def plan_wall_lines(g, v, w):
         if proj:
             others = [(o, q) for o in nb for q in g.q(plan_pieces, v, o)[1]]
             lines += [("proj", a[0], a[1], b[0], b[1]) for a, b in outline_edges(list(proj), others, w)]
-    if cut or sol[7] - EPS <= cfg[2] <= sol[8] + EPS:   # 20단계: 개구부가 벽 길이를 다 차지해 절단 조각이 없어도 기호는 그린다
+    if (cut or sol[7] - EPS <= cfg[2] <= sol[8] + EPS) and not is_rcp(cfg):   # 20단계: 개구부가 벽 길이를 다 차지해 절단 조각이 없어도 기호는 그린다
         for op in g.q(wall_door_openings, w):
             if op[2] <= cfg[2] + EPS and cfg[2] <= op[3] + EPS:   # 절단면이 문 개구부 높이 안에 있을 때만(문 위를 자르면 벽이 이어져 문이 안 보인다)
                 lines += _door_symbol(sol, op)
@@ -2982,7 +3019,7 @@ def view_detail_lines(g, v):
         return ()
     segs = []
     if cfg[0] == "plan":
-        if cfg[4] > DETAIL_SCALE:
+        if cfg[4] > DETAIL_SCALE or is_rcp(cfg):
             return ()
         for w in g.q(scope_walls, v):
             segs.extend(g.q(plan_detail_lines, v, w))
@@ -3497,7 +3534,11 @@ def building_outline(g):
     """건물 다각형들의 합집합 바깥 선분: ((x0, y0, x1, y1), ...). 다른 다각형 안쪽에 들어가거나 이웃과 맞닿은 변은 뺀다.
     각 변을 다른 다각형 변과의 교점에서 쪼개고, 조각 중점에서 바깥으로 조금 나간 점이 다른 다각형 안이면 안쪽 이음매다.
     닫힌 방 안쪽을 향한 변(그 점에서 어느 방향으로도 건물 밖으로 나갈 수 없는 자리)은 외곽이 아니라서 뺀다: 외벽 안쪽 면·칸막이 윤곽이 배치도에 남지 않는다."""
-    polys = g.q(building_polys)
+    return outline_of(g.q(building_polys))
+
+
+def outline_of(polys):
+    """반시계 다각형들의 합집합 바깥 선분(building_outline 의 계산, 면적 평면도 쓴다). 선분은 원래 변의 방향(반시계)을 지킨다."""
     boxes = [_poly_bbox(p) for p in polys]
     edges = [(P[k], P[(k + 1) % len(P)]) for P in polys for k in range(len(P))]
     out = []
@@ -4476,7 +4517,7 @@ def scope_solids(g, v):
     if cfg is None or cfg[0] == "site":
         return ()
     if cfg[0] == "plan":
-        if cfg[1] is None:
+        if cfg[1] is None or is_rcp(cfg):   # 반사 천장 평면(W1 1-C 3차)은 아직 그리지 않는다
             return ()
         c, lo = cfg[2], cfg[2] - cfg[3]
         return tuple(e for e in g.q(all_solids) if (bb := g.q(solid_info, e)[4])[2] <= c + EPS and bb[5] >= lo - EPS)
@@ -4788,7 +4829,8 @@ def view_grid_labels(g, v):
 def view_lines(g, v):
     cfg = g.q(view_cfg, v)
     if cfg is None:
-        return ()
+        from dobim_core import viewplans as VP   # 범례 뷰(W1 1-C 3차): 범례가 아니면 빈 값
+        return g.q(VP.legend_lines, v)
     if cfg[0] == "site":
         return g.q(site_lines, v)
     fn = plan_wall_lines if cfg[0] == "plan" else vwall_lines
@@ -4821,6 +4863,9 @@ def view_lines(g, v):
     elif cfg[0] == "sec":
         segs.extend(g.q(site_section_lines, v))
     segs.extend(g.q(view_grid_lines, v))   # 통심선(19단계): 없으면 선분은 이전과 같다
+    if len(cfg) == 6:   # 반사 천장 평면의 천장선·면적 평면의 면적 경계·해치(W1 1-C 3차)
+        from dobim_core import viewplans as VP
+        segs.extend(g.q(VP.mode_lines, v))
     return _crop_if(g, v, merge_lines(segs))
 
 
@@ -4875,6 +4920,9 @@ def view_lines_hier(g, v):
     elif cfg[0] == "sec":
         segs.extend(g.q(site_section_lines, v))
     segs.extend(g.q(view_grid_lines, v))   # 통심선(19단계): 없으면 선분은 이전과 같다
+    if len(cfg) == 6:   # 반사 천장 평면의 천장선·면적 평면의 면적 경계·해치(W1 1-C 3차)
+        from dobim_core import viewplans as VP
+        segs.extend(g.q(VP.mode_lines, v))
     return _crop_if(g, v, merge_lines(segs))
 
 
@@ -5037,7 +5085,7 @@ def _f_pt(cfg, p):
 def scope_foreign(g, v):
     """뷰가 그리는 외래 요소. 평면은 높이 범위가 (절단 높이 - 보이는 깊이, 절단 높이) 에 걸치는 것(레벨 소속과 무관), 단면은 깊이 범위에 걸치는 것, 입면은 전부."""
     cfg = g.q(view_cfg, v)
-    if cfg is None or cfg[0] == "site" or (cfg[0] == "plan" and cfg[1] is None):
+    if cfg is None or cfg[0] == "site" or (cfg[0] == "plan" and (cfg[1] is None or is_rcp(cfg))):   # 반사 천장 평면(W1 1-C 3차)은 아직 그리지 않는다
         return ()
     out = []
     d0, d1 = _f_range(cfg)

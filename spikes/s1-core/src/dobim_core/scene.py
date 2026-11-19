@@ -138,7 +138,7 @@ def hosted_symbols(g, v, w):
     drawing.plan_wall_lines 가 벽 선분에 섞어 그리는 기호를 같은 함수(_door_symbol·_plan_items)로 요소별로 다시 만든다.
     view_scene 은 이 선분을 벽에서 빼서 그 요소의 것으로 돌린다(정확히 같은 선분만 빼므로 어긋나도 선이 사라지지는 않는다)."""
     cfg = g.q(D.view_cfg, v)
-    if cfg is None or cfg[0] != "plan":
+    if cfg is None or cfg[0] != "plan" or D.is_rcp(cfg):   # 반사 천장 평면(W1 1-C 3차)에는 문·창 기호가 없다
         return ()
     cut, _ = g.q(D.plan_pieces, v, w)
     sol = g.q(D.wall_solid, w)
@@ -189,6 +189,11 @@ def _view_parts(g, v, cfg):
     elif cfg[0] == "sec":
         lines.extend(g.q(D.site_section_lines, v))
         texts.extend(g.q(D.site_section_labels, v))
+    if cfg[0] == "plan" and len(cfg) == 6:   # 반사 천장 평면의 천장선·면적 평면의 면적 그림(W1 1-C 3차)
+        from dobim_core import viewplans as VP
+        lines.extend(g.q(VP.mode_lines, v))
+        if cfg[5] != "rcp":
+            texts.extend(g.q(VP.area_labels, v))
     if "dims" in g.q(D.view_opts, v):
         texts.extend(g.q(D.view_dim_labels, v))
     return lines, texts
@@ -221,8 +226,10 @@ def view_scene(g, v):
     작도(draft) 항목은 drafting.draft_items, 주석(dim·tag)은 annot.annot_draw 의 그림 항목 그대로다(이미 id 가 붙어 있다).
     뷰 단위 그림(대지 뷰 전체·표지판·지반선·치수 문자)은 종류 "view", id = 뷰 id 로 담는다. 뷰가 없으면 빈 값."""
     cfg = g.q(D.view_cfg, v)
-    if cfg is None:
-        return ()
+    if cfg is None:   # 범례 뷰(W1 1-C 3차)는 뷰 단위 그림 하나. 범례가 아니면 빈 값
+        from dobim_core import viewplans as VP
+        ll, lt = g.q(VP.legend_lines, v), g.q(VP.legend_labels, v)
+        return (("view", v, ll, (), lt, (), _bbox(ll, (), lt)),) if ll or lt else ()
     crop = g.q(D.view_opts, v).get("crop")
     groups = []   # (종류, id, 선분 원본, 채움, 문자)
     if cfg[0] != "site":
