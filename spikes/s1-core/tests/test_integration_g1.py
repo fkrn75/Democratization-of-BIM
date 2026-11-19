@@ -430,6 +430,9 @@ def test_9_종류_레지스트리가_모든_모듈과_맞는다(tmp_path):
         _ok(b.run("grid.create", {"name": "X1", "line": [0, -2000, 0, 8000]}, project=p))   # 통심선(19단계)
         _ok(b.run("revision.create", {"date": "2026-02-01", "sheets": [F.SH1]}, project=p))   # 리비전(W1 1-B 3차)
         _ok(b.run("keynote.set", {"key": "03.30.00", "text": "콘크리트"}, project=p))   # 키노트(W1 1-B 3차)
+        _ok(b.run("view.template.create", {"id": F.VT1, "name": "평면 기본", "scale": 50}, project=p))   # 뷰 템플릿(W1 1-C)
+        _ok(b.run("view.filter.set", {"id": F.VT1, "name": "두꺼운 벽", "cats": ["wall"], "rules": [{"field": "thickness", "op": "ge", "value": "200"}], "color": "#0050c0"}, project=p))
+        _ok(b.run("view.template.apply", {"view": F.V1, "template": F.VT1}, project=p))
     finally:
         b.close()
     eng = Engine(tmp_path / p, "t", create=False)

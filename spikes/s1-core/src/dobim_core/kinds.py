@@ -180,9 +180,98 @@ def _crop_ok(v) -> bool:
 
 
 _TRUE = lambda v: v is True   # noqa: E731
-# 뷰의 선택 파라미터(없으면 키 자체가 없다): crop 잘라내기(부위 상세 뷰), dims 승강기·계단 치수 자동 표기(평면·단면), finish 입면의 외부 마감 해치·재료 문자(입면)
-VIEW_OPTIONAL = {"plan": ("crop", "dims"), "section": ("with_site", "crop", "dims"), "elevation": ("crop", "finish"), "site": ()}
-_VIEW_OPT_CHECK = {"with_site": _TRUE, "crop": _crop_ok, "dims": _TRUE, "finish": _TRUE}
+
+# ---------------------------------------------------------------- 뷰 가시성·그래픽 재정의(VIEW-13)·뷰 필터(VIEW-14)·뷰 템플릿(VIEW-15) (W1 1-C)
+# vg      = {범주: 재정의}. 재정의 = {"hidden": true, "color": "#rrggbb", "cut_weight": mm, "proj_weight": mm, "halftone": true} 중 하나 이상.
+#           주석 범주(dim·tag·draft)는 숨기기만 한다.
+# filters = [{"name", "cats": [범주], "rules": [{"field", "op", "value"}], 재정의...}] 위가 우선. 규칙은 모두 맞아야(AND) 걸린다(규칙이 없으면 범주 전체).
+# template = 뷰 템플릿(vtemplate) id. 템플릿이 있으면 뷰의 vg·filters 대신 템플릿 것을 쓴다(Revit 처럼 템플릿이 정한다).
+VG_MODEL_CATS = ("wall", "door", "finst", "slab", "stair", "railing", "elevator", "roof", "solid", "foreign", "space", "grid")
+VG_ANNO_CATS = ("dim", "tag", "draft")
+VG_CATS = VG_MODEL_CATS + VG_ANNO_CATS
+VG_FILTER_CATS = tuple(c for c in VG_MODEL_CATS if c != "grid")   # 필터는 모델 요소에만 건다
+VG_OVR_KEYS = ("hidden", "color", "cut_weight", "proj_weight", "halftone")
+VG_FIELDS = ("name", "level", "material", "ifc_class", "keynote", "category", "fire_rating", "thickness", "width", "height")   # 그 밖은 "pset:속성셋.속성"
+VG_OPS = ("eq", "ne", "contains", "not_contains", "begins", "gt", "ge", "lt", "le", "has", "missing")
+VG_NUM_OPS = ("gt", "ge", "lt", "le")
+VG_FILTERS_MAX = 32
+VG_RULES_MAX = 8
+VG_VALUE_MAX = 255
+VG_WEIGHT = (0.05, 2.0)       # 재정의 선 굵기 범위(용지 mm)
+
+
+def vg_num(s):
+    """필터 규칙 값의 수(못 읽거나 유한하지 않으면 None)."""
+    try:
+        x = float(s)
+    except (TypeError, ValueError):
+        return None
+    return x if x == x and abs(x) != float("inf") else None
+
+
+def vg_field_ok(v) -> bool:
+    if v in VG_FIELDS:
+        return True
+    if not (text_ok(v, 8, 160) and v.startswith("pset:")):
+        return False
+    ps, dot, pr = v[5:].partition(".")
+    return bool(ps and dot and pr) and not any(ord(c) < 32 for c in v)
+
+
+def _vg_w(v) -> bool:
+    return num_ok(v) and VG_WEIGHT[0] <= v <= VG_WEIGHT[1]
+
+
+_VG_OVR_CHECK = {"hidden": _TRUE, "halftone": _TRUE, "color": lambda c: color_ok(c), "cut_weight": _vg_w, "proj_weight": _vg_w}
+
+
+def vg_ovr_ok(o, anno=False) -> bool:
+    """재정의 하나: 키가 하나 이상, 값이 올바르다. 주석 범주는 hidden 만."""
+    if not isinstance(o, dict) or not o or not set(o) <= set(VG_OVR_KEYS) or (anno and set(o) != {"hidden"}):
+        return False
+    return all(_VG_OVR_CHECK[k](x) for k, x in o.items())
+
+
+def vg_ok(v) -> bool:
+    return isinstance(v, dict) and len(v) > 0 and all(k in VG_CATS and vg_ovr_ok(o, k in VG_ANNO_CATS) for k, o in v.items())
+
+
+def vg_rule_ok(r) -> bool:
+    if not (isinstance(r, dict) and set(r) == {"field", "op", "value"} and vg_field_ok(r["field"]) and r["op"] in VG_OPS
+            and text_ok(r["value"], 0, VG_VALUE_MAX)):
+        return False
+    if r["op"] in ("has", "missing"):
+        return r["value"] == ""
+    return r["op"] not in VG_NUM_OPS or vg_num(r["value"]) is not None
+
+
+def vg_filters_ok(v) -> bool:
+    if not isinstance(v, list) or not 0 < len(v) <= VG_FILTERS_MAX:
+        return False
+    names = set()
+    for f in v:
+        if not isinstance(f, dict) or not {"name", "cats", "rules"} <= set(f):
+            return False
+        ovr = {k: x for k, x in f.items() if k not in ("name", "cats", "rules")}
+        cats, rules = f["cats"], f["rules"]
+        if not (_name(f["name"]) and f["name"] not in names and isinstance(cats, list) and cats and len(set(cats)) == len(cats)
+                and all(c in VG_FILTER_CATS for c in cats) and isinstance(rules, list) and len(rules) <= VG_RULES_MAX
+                and all(vg_rule_ok(r) for r in rules) and vg_ovr_ok(ovr)):
+            return False
+        names.add(f["name"])
+    return True
+
+
+def _vtemplate_params(p):
+    return _check_opt("vtemplate", p, {"name": _name}, {"vg": vg_ok, "filters": vg_filters_ok, "scale": lambda v: type(v) is int and 1 <= v <= 1000})
+
+
+_VG_VIEW_KEYS = ("vg", "filters", "template")
+# 뷰의 선택 파라미터(없으면 키 자체가 없다): crop 잘라내기(부위 상세 뷰), dims 승강기·계단 치수 자동 표기(평면·단면), finish 입면의 외부 마감 해치·재료 문자(입면),
+# vg·filters·template 가시성·그래픽 재정의·필터·템플릿(W1 1-C, 모든 종류)
+VIEW_OPTIONAL = {"plan": ("crop", "dims") + _VG_VIEW_KEYS, "section": ("with_site", "crop", "dims") + _VG_VIEW_KEYS,
+                 "elevation": ("crop", "finish") + _VG_VIEW_KEYS, "site": _VG_VIEW_KEYS}
+_VIEW_OPT_CHECK = {"with_site": _TRUE, "crop": _crop_ok, "dims": _TRUE, "finish": _TRUE, "vg": vg_ok, "filters": vg_filters_ok, "template": id_ok}
 
 
 def _view_params(p):
@@ -197,7 +286,7 @@ def _view_params(p):
         return _check_opt("view", p, {"name": _name, "type": lambda v: v == "elevation", "dir": lambda v: v in ("N", "E", "S", "W"),
                                       "scale": _SCALE}, {k: _VIEW_OPT_CHECK[k] for k in VIEW_OPTIONAL["elevation"]})
     if t == "site":   # 배치도: 모델 전체를 위에서 본 뷰라 레벨·절단 높이가 없다
-        return _check_fields("view", p, {"name": _name, "type": lambda v: v == "site", "scale": _SCALE})
+        return _check_opt("view", p, {"name": _name, "type": lambda v: v == "site", "scale": _SCALE}, {k: _VIEW_OPT_CHECK[k] for k in VIEW_OPTIONAL["site"]})
     return "view 의 종류가 올바르지 않다"
 
 
@@ -1248,7 +1337,10 @@ ELEMENT_KINDS: dict[str, ElementKind] = {k.name: k for k in (
     ElementKind("foreign", True, None, False, 5, _foreign_params),
     # 통심선(19단계): 뷰처럼 IFC 신원이 없는 의도 요소. 정의는 DoBIM_Defs 로 왕복한다
     ElementKind("grid", False, None, False, 6, _grid_params),
-    ElementKind("view", False, None, False, 6, _view_params, refs=(("level", "id", None),), ref_kinds=(("level", ("level",)),)),   # 평면 뷰만 level 이 있다
+    # 뷰 템플릿(W1 1-C, VIEW-15): 뷰 설정(가시성·그래픽 재정의·필터·축척) 묶음. 비 IFC 의도 요소라 정의는 DoBIM_Defs 로 왕복한다
+    ElementKind("vtemplate", False, None, False, 5, _vtemplate_params),
+    ElementKind("view", False, None, False, 6, _view_params, refs=(("level", "id", None), ("template", "id", None)),
+                ref_kinds=(("level", ("level",)), ("template", ("vtemplate",)))),   # 평면 뷰만 level 이 있다
     ElementKind("dim", False, None, False, 7, _dim_params, refs=(("view", "id", "annot_of"), ("a", "ref", None), ("b", "ref", None)),
                 ref_kinds=(("view", ("view",)),)),
     ElementKind("tag", False, None, False, 7, _tag_params, refs=(("view", "id", "annot_of"), ("target", "id", None)),

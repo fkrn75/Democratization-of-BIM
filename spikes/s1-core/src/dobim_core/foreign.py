@@ -526,8 +526,20 @@ def _restore_defs(f, rows: dict, rels: set, taken: set, plan: "ImportPlan") -> N
         return on_level.get(host_of.get(eid, eid) if kind in ("door", "finst") else eid)   # 자립 패밀리 인스턴스는 레벨에 직접 선다
 
     ok: dict[str, dict] = {}
+    tnames: dict[str, list] = {}
+    for eid in sorted(e for e, d in parsed.items() if d["kind"] == "vtemplate"):   # 뷰 템플릿(W1 1-C): 참조가 없다. 이름이 겹치면 어느 쪽이 원본인지 알 수 없다
+        tnames.setdefault(parsed[eid]["params"]["name"], []).append(eid)
+    for nm, ids in sorted(tnames.items()):
+        for eid in ids:
+            if len(ids) > 1:
+                skip(eid, "같은 이름의 뷰 템플릿이 더 있다")
+            else:
+                ok[eid] = parsed[eid]
     for eid in sorted(e for e, d in parsed.items() if d["kind"] == "view"):
         p = parsed[eid]["params"]
+        if "template" in p and ok.get(p["template"], {}).get("kind") != "vtemplate":   # 되살린 템플릿이 아니면(없음·다른 종류) 뷰는 템플릿 없이 되살린다
+            plan.warnings.append(f"{eid[:22]}: 뷰가 따르는 뷰 템플릿을 되살리지 못해 템플릿 없이 되살린다")
+            p = parsed[eid]["params"] = {k: v for k, v in p.items() if k != "template"}
         if p["type"] == "plan":
             st = state(p["level"])
             fl = st is not None and st[0] == "foreign" and Q.plan_level_ok(rows.get(p["level"]))   # 외래 IFC 층(1단계 외래 도면 경로): 고도를 IFC 배치에서 읽어 낡은 값이 없다
