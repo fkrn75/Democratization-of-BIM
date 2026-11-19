@@ -1451,3 +1451,26 @@ Revit 기능 차이표 1-C(뷰 제어) 가운데 가치가 가장 큰 VIEW-13(�
 ### 41.3 시험·parity
 - 새 시험 `tests/test_edit_w1f2.py`(8건): 원형 배열(90도 정확·문 따라감·겹침 거절), 간격띄우기 복사(좌우 방향·조인 옮김)·이동·거절, 트림/연장(늘이기 두 끝, 시작점 자르기 때 문 제자리, 문이 벽 밖이면 거절, 평행 거절, 되돌리기), 모서리 맞추기(교점·조인·다른 레벨 거절), 일괄 속성·재료·벽(where·ids, 하나 실패 시 전체 거절과 path), where 가 로그에 ids 로 남음, 재생·다시 열기·기준 그래프 일치(`kit.full_check`), IFC 왕복 해시 같음.
 - 결과(코드 커밋 831f713 뒤 한 번에, 도중 수정 없음): s1-core 전체(test_slow 제외) 1469 통과·40 건너뜀·실패 0. test_slow 8 통과. parity: 커맨드 171 전부 예시 실행(예시 207·오류 사례 49), 불일치 0, parity C 100%. parity_g: 통과(동작 59, 오류·경고 0).
+
+## 42. 입출력·납품(W1 1-E 첫 PR): 프로젝트 템플릿, 인쇄 용지 A0~A4·세로, 모델 품질 점검, 사용자 IDS 명세 (2026-11-20, 브랜치 phase1/w1e-data-1)
+
+W1 1-E 남은 항목 가운데 bench 가 필요 없는 네 가지를 넣었다. 새 커맨드는 `model.check` 하나이고, `project.new` 에 템플릿 인자를, 시트 커맨드 넷(`sheet.export`·`sheet.define`·`sheet.index`·`schedule.export`)에 용지 값을 더했다. 모두 레지스트리를 거쳐 CLI·MCP 가 같고(parity C), GUI 동작 2개(`project.new_template`, `check.model`)를 actions.json 에 더했다(parity G). 용지는 기존 시트 대화상자 동작의 선택지가 늘 뿐이라 새 동작이 없다.
+
+### 42.1 넣은 것
+| 차이표 | 커맨드 | 입력 | 값·동작 |
+|---|---|---|---|
+| DATA-12 | `project.new` | `{path, guid?, template?("kr-small") 또는 template_file?}` | 새 프로젝트에 템플릿 커맨드 목록을 한 트랜잭션으로 실행한다. 내장 `kr-small`: 레벨 3(1F·2F·RF), 평면 3·반사 천장 평면 1·입면 2, 뷰 템플릿 2(평면·입면 1:100, 뷰가 따름), 시트 4(A3), 키노트 6줄. 응답 `template.created` 는 종류별 개수 |
+| DATA-12 | 템플릿 파일 | `{"format": "dobim.template/1", "commands": [{command, args}]}` | args 안의 `"$이름"`(영문·숫자·_)은 uuid5(프로젝트 UUID, "template:이름") 를 IFC GlobalId 로 압축한 id 로 바뀐다. 같은 guid 면 같은 id, 다른 프로젝트와는 겹치지 않는다. 로그에는 바뀐 id 가 남아 재생이 같다. 변경(mutation) 커맨드만 받고(조회·세션·history 는 USAGE), 인자는 파일을 만들기 전에 모두 검사한다. 실행이 실패하면 프로젝트 파일을 지운다. 한 번 되돌리면 빈 프로젝트 |
+| IO-17 | 용지 | `paper`: A0·A1·A2·A3·A4, 끝에 P 면 세로(A4P) | ISO 216 크기(A0 1189×841 … A4 297×210, 세로는 폭·높이를 바꾼다). 윤곽선·표제란(오른쪽 띠 85mm)·배치 규칙은 같다. 작은 용지에서 표제란 칸(건축주·서명 등)이 축척 막대·방위표 칸과 겹치면 겹쳐 그리지 않고 SheetError 로 거절한다. 시트 정의(`sheet.define`)에 저장되고 IFC 로 왕복한다 |
+| ANA-06 | `model.check` | `{checks?, level?, tol=10, limit, cursor}` | 읽기 전용. short_wall(축 길이 < tol), overlap_wall(같은 레벨, 0.5도 안 평행, 수직 거리 ≤ tol, 겹침 > tol; 각·거리 칸으로 묶어 이웃 칸만 비교), duplicate(같은 종류·레벨·호스트에 이름 말고 매개변수가 같음), orphan(호스트 없는 문, 레벨 관계 없는 요소), off_level(벽 바닥이 위 레벨 이상이거나 벽 전체가 제 레벨 아래), space_open(공간 경계 변을 같은 레벨 평행 벽이 축선 두께/2 + tol 안에서 덮지 않는 틈이 tol 보다 김). 응답 `{counts, problems, items[{check, ids, msg}]}`, 쪽 나누기 |
+| DATA-09 | `rules.check ids=` | 사용자 IDS | identifier 가 KR-IDS-nn 이 아니거나 없는 명세도 KR-USR-1, 2, … 규칙으로 결과에 넣는다(심각도 "사용자", 노트에 원래 식별자). 기본 IDS 판정은 그대로 |
+
+- 알려진 한계: 내장 템플릿은 하나(kr-small)이고 단면 뷰·대지·패밀리 타입은 넣지 않았다. 용지 여백(윤곽선 10mm)과 표제란 위치는 고정이라 A4 세로의 도면 영역은 폭 89mm 다(축척 맞춤 인쇄는 아직 없다: 안 들어가면 큰 축척을 쓰라고 거절). 작성기준 프로파일(`drawing.profile`)의 기본 용지는 A1·A3 그대로 적는다(기준 도면 profile.json 불변). `model.check` 의 공간 경계 판정은 벽 축선 기준 근사라 곡면 벽·커튼월·실 구분선은 보지 않고, 겹침은 같은 레벨의 직선 벽만 본다. 세움터 프로파일 초안 확정은 원문 확인이 필요해 이번에 하지 않았다.
+
+### 42.2 기존 출력 불변·성능
+- 기준선 `run_baseline.py --sheets`: main 3361e7b 와 코드 커밋 ef607bb 에서 각각 뽑아 183 파일 바이트 같음(work/·run.json 제외).
+- 뷰 생성·선분 계산 경로(drawing.py·queries.py·view_cfg·view_lines)와 모델 저장 경로는 건드리지 않았다. 시트 조립(sheet.py)은 용지 표와 표제란 넘침 검사만 더했고 A1·A3 출력 바이트는 같다. 그래서 5만 요소 bench 는 다시 재지 않았다(39.2절 값 그대로).
+
+### 42.3 시험·parity
+- 새 시험 `tests/test_data_w1e.py`(10건): 내장 템플릿(종류별 개수, 기호 id = UUID 로 정한 값, 다른 프로젝트와 안 겹침, 한 번 되돌리면 빈 프로젝트), 템플릿 프로젝트 재생·다시 열기·기준 그래프 일치(`kit.full_check`)와 IFC 왕복 해시 같음, 사용자 템플릿 파일과 거절(형식·조회 커맨드·없는 커맨드·인자·실행 실패, 실패 때 파일 없음), GlobalId 압축이 ifcopenshell 과 같음, 용지 이름 한 집합, 용지별 SVG mm 크기·세로 시트 정의·작은 용지 거절, 표제란 넘침 거절, 깨끗한 모델 문제 0, 점검 여섯 가지(읽기 전용, 벽을 그으면 열린 경계가 닫힘, 레벨 거르기, 쪽 나누기), 401개 벽에서 겹침 한 쌍만. `tests/test_krules_commands.py` 에 KR-USR 시험 1건. 기존 시험 두 파일은 무효 용지 값 예를 A4·A0 에서 B4 로 바꿨다.
+- 결과(코드 커밋 ef607bb 뒤 한 번에, 도중 수정 없음): s1-core 전체(test_slow 제외) 1480 통과·40 건너뜀·실패 0. test_slow 8 통과. parity: 커맨드 172 전부 예시 실행(예시 210·오류 사례 49), 불일치 0, parity C 100%. parity_g: 통과(동작 61, 오류·경고 0).

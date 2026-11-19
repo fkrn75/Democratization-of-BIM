@@ -257,6 +257,7 @@ ADR-0011의 미확인 항목 전부. 특히 Codex의 이미지 처리와 출력 
 - Revit 기능 차이 W1 1-C 뷰 제어(2026-11-19, 3차 PR): 반사 천장 평면(절단면 위를 보는 평면: 위층 슬래브 밑면·매단 패밀리·공간 천장선과 천장 높이, 문·창 기호 없음), 면적 평면(바닥면적 = 벽 윤곽 바깥선, 실별 면적·합계, view.areas), 범례 뷰(문·패밀리 유형 기호, 재료 해치 견본)를 넣었다(view.rcp·view.area_plan·view.areas·view.legend, 모드 없는 평면 바이트 불변, 5만 요소 뷰 시간 그대로). 1-C 뷰 제어 완료. 상세 spikes/phase1-drawings/baseline.md 39절.
 - Revit 기능 차이 W1 1-F 소형 건물 모델링(2026-11-20, 첫 PR): 레벨 이름·높이 고치기(상단이 묶인 벽 높이 재계산), 요소 복사·선형 배열·다른 층으로 복사, 회전, 대칭(복사)을 넣었다(level.set·element.copy·element.rotate·element.mirror, 호스팅 문·패밀리·속성·재료·조인이 함께 간다, 기존 도면 바이트 불변). 남은 1-F: T 조인 정리, 임의 외곽 지붕, 천장, 경사로, 패밀리 30종, 일괄 편집, 모델 벽 간격띄우기·트림. 상세 spikes/phase1-drawings/baseline.md 40절.
 - Revit 기능 차이 W1 1-F 소형 건물 모델링(2026-11-20, 2차 PR): 원형 배열, 모델 벽 간격띄우기, 벽 자르기·늘이기(경계 벽까지)·모서리 맞추기, 여러 요소 속성·재료·벽 치수 일괄 편집(ids 또는 거르기, 로그에는 ids)을 넣었다(element.array_radial·wall.offset·wall.extend_to·wall.corner·pset.set_many·material.set_many·wall.set_many, 기존 도면 바이트 불변). 남은 1-F: T 조인 정리, 임의 외곽 지붕, 천장, 경사로, 패밀리 30종, 패밀리 유형 바꾸기. 상세 spikes/phase1-drawings/baseline.md 41절.
+- Revit 기능 차이 W1 1-E 입출력·납품(2026-11-20, 첫 PR): 프로젝트 템플릿(project.new template=kr-small·template_file, 커맨드 목록 JSON), 인쇄 용지 A0~A4·세로, 모델 품질 점검(model.check: 짧은·겹친 벽, 중복, 고아, 레벨 밖, 열린 공간 경계), 사용자 IDS 의 다른 식별자 명세 판정(KR-USR-n)을 넣었다(기존 도면 바이트 불변). 남은 1-E: 건축법 도면 기준 대조 규칙화, 세움터 프로파일 확정, IFC2x3 가져오기 표본 보강. 상세 spikes/phase1-drawings/baseline.md 42절.
 
 ### 2a단계: 헤드리스 저작 MVP (8.5~16PM)
 
