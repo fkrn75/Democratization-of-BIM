@@ -31,7 +31,7 @@ class IndexDrawing(A):
 
 class SheetIndex(C.SheetFrame):
     path: str = Field(max_length=260, description="작업 폴더 안의 .svg·.pdf·.png·.dxf 경로(DXF 는 R2013 UTF-8, 용지 mm 1:1, 범주별 층)")
-    paper: Literal["A1", "A3"] = Field("A1", description="용지(가로 방향). 표가 많으면 A1")
+    paper: C.Paper = Field("A1", description="용지 A0~A4(끝에 P 면 세로). 표가 많으면 큰 용지")
     project_name: Text = Field("", description="표제란 프로젝트명")
     sheet_name: Text = Field("", description="표제란 도면명(비우면 '도면목록·범례·일람표')")
     sheet_number: Text = Field("A-000", description="표제란 도면번호")
@@ -181,7 +181,7 @@ def build_profile(applied: dict | None = None) -> dict:
 def _base_profile(SH, uses, weights) -> dict:
     return {
         "version": 1,
-        "paper_size": {"sizes_mm": {k: list(v) for k, v in SH.PAPERS.items()}, "orientation": "가로", "border_offset_mm": SH.OUTER, "drawing_area_padding_mm": SH.PAD,
+        "paper_size": {"sizes_mm": {k: list(SH.PAPERS[k]) for k in SH.STANDARD_PAPERS}, "orientation": "가로", "border_offset_mm": SH.OUTER, "drawing_area_padding_mm": SH.PAD,
                        "title_block_width_mm": SH.TB_W},
         "layout_orientation": {"plan_up": "평면은 도면 위쪽이 정북(방위표 각도로 보정)", "section_elevation_down": "단면·입면은 중력 방향을 아래로",
                                "view_flow": "왼쪽 위에서 오른쪽, 아래 줄 순으로 놓는다", "view_gap_mm": SH.GAP, "caption": "뷰 아래에 도면명과 S=1:N"},

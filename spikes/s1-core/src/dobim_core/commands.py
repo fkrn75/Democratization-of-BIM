@@ -155,18 +155,76 @@ def _fresh_id(ctx, a, kind):
 class ProjectNew(A):
     path: str = Field(max_length=260, description="작업 폴더 안의 .dobim 경로")
     guid: str | None = Field(None, max_length=36, description="프로젝트 UUID. 생략하면 무작위, 지정하면 재현 가능")
+    template: Literal["kr-small"] | None = Field(None, description="내장 템플릿: 레벨·뷰·뷰 템플릿·시트·키노트를 미리 채운다")
+    template_file: str | None = Field(None, max_length=260, description="작업 폴더 안의 템플릿 JSON(dobim.template/1 커맨드 목록, $이름 은 id)")
+
+    @model_validator(mode="after")
+    def _one_template(self):
+        if self.template is not None and self.template_file is not None:
+            raise ValueError("template 과 template_file 은 함께 쓸 수 없다")
+        return self
 
 
-@command("project.new", kind="session", risk="write", group="project", summary="프로젝트 생성",
-         args=ProjectNew, needs_project=False, examples=[{"path": "new-example.dobim", "guid": "5d0b1a50-0000-4a00-8000-0d0b1a5000f2"}])
+def _template_cmds(env, a: ProjectNew, guid: str) -> list:
+    """템플릿을 읽어 (커맨드, 검증한 인자) 목록으로 만든다. 프로젝트 파일을 만들기 전에 다 검사한다."""
+    from dobim_core import dispatch
+    from dobim_core import project_template as PT
+    if a.template is not None:
+        tpl = PT.load_builtin(a.template)
+    else:
+        tpl = PT.load_file(resolve_in_workspace(env.workspace, a.template_file, must_exist=True))
+    out = []
+    for i, (name, args) in enumerate(PT.resolve(tpl, guid)):
+        try:
+            cmd = dispatch.get_command(name)
+            if cmd.kind != "mutation" or name.startswith("history."):
+                raise DobimError("USAGE", f"템플릿에는 모델을 바꾸는 커맨드만 넣을 수 있다: {name}", path="/command")
+            out.append((cmd, dispatch.parse_args(cmd, args)))
+        except DobimError as ex:
+            ex.path = f"/template/commands/{i}{ex.path or ''}"
+            raise
+    return out
+
+
+@command("project.new", kind="session", risk="write", group="project", summary="프로젝트 생성(템플릿을 주면 미리 채운다)",
+         args=ProjectNew, needs_project=False, examples=[{"path": "new-example.dobim", "guid": "5d0b1a50-0000-4a00-8000-0d0b1a5000f2"},
+                                                         {"path": "tpl-example.dobim", "guid": "5d0b1a50-0000-4a00-8000-0d0b1a5000f4", "template": "kr-small"}])
 def project_new(env, a: ProjectNew):
+    import uuid
     from dobim_core.engine import Engine
     p = resolve_in_workspace(env.workspace, a.path)
-    eng = Engine.create(p, env.actor, guid=a.guid)
+    use_tpl = a.template is not None or a.template_file is not None
+    guid = a.guid
+    if use_tpl and guid is None:   # 템플릿 기호의 id 는 프로젝트 UUID 로 정한다: 파일을 만들기 전에 정해 둔다
+        guid = str(uuid.uuid4())
     try:
-        return {"path": p.name, "rev": eng.rev, "project_uuid": eng.project_guid_uuid}
-    finally:
+        cmds = _template_cmds(env, a, str(uuid.UUID(guid))) if use_tpl else []
+    except ValueError:   # guid 가 UUID 꼴이 아니다(템플릿 없을 때는 엔진이 같은 검사를 한다)
+        raise DobimError("SCHEMA_INVALID", "guid 는 UUID 여야 한다", path="/guid") from None
+    if cmds and p.exists():
+        raise DobimError("FILE_EXISTS", f"이미 있는 파일이다: {p.name}", path="/path")
+    eng = Engine.create(p, env.actor, guid=guid)
+    try:
+        out = {"path": p.name, "rev": eng.rev, "project_uuid": eng.project_guid_uuid}
+        if cmds:   # 한 트랜잭션: 한 번의 실행 취소로 빈 프로젝트가 된다
+            r = eng.mutate(cmds)
+            kinds: dict = {}
+            for e in r["affected"]["created"]:
+                k = eng.st.el[e]["kind"]
+                kinds[k] = kinds.get(k, 0) + 1
+            out.update(rev=r["rev"], template={"name": a.template or Path(a.template_file).name, "commands": len(cmds), "created": dict(sorted(kinds.items()))})
+            if r["warnings"]:
+                out["warnings"] = r["warnings"][:10]
+    except BaseException:
         eng.close()
+        for suffix in ("", "-wal", "-shm", "-journal"):   # 템플릿이 실패하면 반쯤 채운 프로젝트 파일을 남기지 않는다
+            try:
+                Path(str(p) + suffix).unlink(missing_ok=True)
+            except OSError:
+                pass
+        raise
+    eng.close()
+    return out
 
 
 class Empty(A):
@@ -3593,6 +3651,11 @@ class SheetViewport(A):
     title: Name | None = Field(None, description="제목(생략=뷰 이름)")
 
 
+# 시트 용지(W1 1-E, IO-17): A0~A4 가로, 끝에 P 를 붙이면 세로. 크기는 sheet.PAPERS
+Paper = Literal["A0", "A1", "A2", "A3", "A4", "A0P", "A1P", "A2P", "A3P", "A4P"]
+assert get_args(Paper) == K.PAPER_NAMES, "용지 이름은 kinds.PAPER_NAMES 와 같아야 한다"
+
+
 class SheetFrame(A):
     """sheet.export·sheet.index 가 함께 쓰는 표제란·개정·선 굵기 입력. 모두 선택이며, 주지 않으면 시트는 이전과 같다."""
     client: Text = Field("", description="표제란 건축주(주면 건축주·설계사무소 영역이 생긴다)")
@@ -3629,7 +3692,7 @@ def site_north(ctx) -> float:
 class SheetExport(SheetFrame):
     views: list[Id] = Field(min_length=1, max_length=12, description="시트에 놓을 뷰 id 목록(앞에서부터 왼쪽 위 -> 오른쪽 -> 아래 순). 뷰는 자기 축척 그대로 놓인다")
     path: str = Field(max_length=260, description="작업 폴더 안의 .svg·.pdf·.png·.dxf 경로. PDF 는 한글 글꼴(시스템의 Noto Sans KR·나눔고딕, OFL)을 부분집합으로 내장한다. PNG 는 max_px·crop 을 쓴다. DXF 는 R2013(AC1027, UTF-8) 이며 단위 mm, 층은 범주별(A-CUT 절단선·A-DIM 치수 등), 한글 문자는 글꼴 스타일 DOBIM_KR(malgun.ttf), 치수는 분해한 선과 문자다(용지 mm 1:1, 뷰는 자기 축척)")
-    paper: Literal["A1", "A3"] = Field("A3", description="용지(가로 방향)")
+    paper: Paper = Field("A3", description="용지 A0~A4(가로, 끝에 P 면 세로)")
     project_name: Text = Field("", description="표제란 프로젝트명(비우면 '(프로젝트명 없음)')")
     sheet_name: Text = Field("", description="표제란 도면명(비우면 첫 뷰 이름)")
     sheet_number: Text = Field("A-001", description="표제란 도면번호")
@@ -4838,3 +4901,4 @@ from dobim_core import commands_viewvg  # noqa: E402,F401
 from dobim_core import commands_viewref  # noqa: E402,F401
 from dobim_core import commands_viewplans  # noqa: E402,F401
 from dobim_core import commands_edit  # noqa: E402,F401
+from dobim_core import commands_check  # noqa: E402,F401

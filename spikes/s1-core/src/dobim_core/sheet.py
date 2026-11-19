@@ -18,7 +18,10 @@ from dobim_core import drawing_export as DX
 from dobim_core import sheet_tables as ST
 from dobim_core.pdf_font import PdfFont
 
-PAPERS = {"A1": (841.0, 594.0), "A3": (420.0, 297.0)}     # 가로 방향 mm
+# 용지(W1 1-E, IO-17: A0~A4). 이름 그대로면 가로, 끝에 P 를 붙이면 세로(예: A4P). 값은 (폭, 높이) mm
+_ISO_A = {"A0": (1189.0, 841.0), "A1": (841.0, 594.0), "A2": (594.0, 420.0), "A3": (420.0, 297.0), "A4": (297.0, 210.0)}
+PAPERS = {**_ISO_A, **{k + "P": (h, w) for k, (w, h) in _ISO_A.items()}}
+STANDARD_PAPERS = ("A1", "A3")   # 작성기준 프로파일(drawing.profile)이 적는 납품 기본 용지(가로). 나머지는 인쇄 선택지
 OUTER = 10.0            # 용지 가장자리 -> 윤곽선
 PAD = 8.0               # 윤곽선 -> 도면 영역
 GAP = 12.0              # 뷰 사이 간격
@@ -309,6 +312,8 @@ def title_block(sh: Sheet, spec: dict, scales: list[int]):
     # 아래에서부터: 방위표(42), 축척 표시(26). 뷰가 없는 시트(색인)는 두 칸을 두지 않는다
     north_h, bar_h = (42.0, 26.0) if has_views else (0.0, 0.0)
     ybar, ynorth = y1 - north_h - bar_h, y1 - north_h
+    if y > ybar + 1e-6:   # 작은 용지(A4 가로 등)에 칸이 많으면 축척 막대·방위표와 겹친다
+        raise SheetError(f"표제란 칸이 {sh.paper} 용지 높이에 다 들어가지 않는다. 큰 용지나 세로(P)를 쓰거나 서명·건축주 칸을 줄이세요")
     # 개정란: 남는 높이에 표(개정·일자·내용)를 둔다. 개정 입력이 있으면 그 내용을 적는다(많으면 최근 것부터 칸 수만큼)
     free = ybar - y
     if free >= 18.0:

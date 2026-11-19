@@ -3,6 +3,7 @@
   "note": "평면 GUI(ADR-0016)의 모든 메뉴·도구·단축 동작. 항목마다 command(커맨드 하나) 또는 commands(여러 개, 순서대로·한 트랜잭션 묶음 가능) 또는 exempt(gui_exempt.yaml 의 같은 id)를 가진다. 검사: spikes/s1-core/tools/parity_g.py",
   "client_files": ["src/lib/commands.ts", "src-tauri/src/sidecar.rs"],
   "actions": [
+    {"id": "project.new_template", "label": "새 프로젝트(템플릿으로 시작)", "command": "project.new"},
     {"id": "level.add", "label": "레벨 추가", "command": "level.create"},
     {"id": "view.new", "label": "평면 뷰 만들기", "command": "view.create"},
     {"id": "view.open","label": "평면 뷰 열기", "commands": ["view.list", "view.scene"]},
@@ -56,6 +57,7 @@
     {"id": "edit.undo", "label": "되돌리기", "command": "history.undo"},
     {"id": "edit.redo", "label": "다시 실행", "command": "history.redo"},
     {"id": "props.show", "label": "속성 패널 읽기", "command": "element.get"},
+    {"id": "check.model", "label": "모델 품질 점검(겹친 벽·중복·고아·열린 공간 경계)", "command": "model.check"},
     {"id": "canvas.pan", "exempt": true},
     {"id": "canvas.zoom", "exempt": true},
     {"id": "canvas.hover", "exempt": true},
