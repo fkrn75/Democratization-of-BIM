@@ -219,6 +219,8 @@ def render_dxf(sh, style: dict | None = None, model: dict | None = None, caption
                 groups.pop()
             continue
         layer = classify(p, groups, style_rev, model is not None, caps)
+        if p[0] == "poly" and p[2] and p[2].lower() == "#ffffff" and groups and groups[-1][0].startswith("draft-"):
+            p = ("mask", p[1])   # 2D 작도 마스킹 영역(흰 칠): 종이 흰색 칠은 건너뛰지만 이것은 아래 선을 가려야 하니 흰 SOLID 해치로 쓴다
         items.append((layer, p))
         if p[0] == "line" and p[7]:
             dashes.add(tuple(p[7]))
@@ -319,6 +321,10 @@ def render_dxf(sh, style: dict | None = None, model: dict | None = None, caption
                 for x, y in q:
                     E(10, _f(x))
                     E(20, _f(y))
+            pts += q
+        elif kind == "mask":
+            q = [(X(x), Y(y)) for x, y in p[1]]
+            hatch(layer, "#ffffff", path_pts=q)
             pts += q
         elif kind == "circle":
             _, cx, cy, r, w, col, fill = p

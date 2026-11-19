@@ -69,20 +69,44 @@ def _pts(v):
     return [[float(x), float(y)] for x, y in v]
 
 
+OFF_SHAPES = ("dim", "dim_arc", "dim_chain", "dim_base")   # off 생략 시 DIM_OFF_DEFAULT 를 쓰는 모양
+A0_SHAPES = ("text", "dim_radius", "dim_diameter", "dim_chain", "dim_base")   # a0 하나가 회전각·방향인 모양
+
+
+def _view_rule(ctx, p):
+    """뷰 종류에 따라 값을 잴 수 없는 표고·경사는 글(text)을 직접 받는다(평면·배치도는 높이를 모른다)."""
+    vt = ctx.st.el[p["view"]]["params"]["type"]
+    if p["text"]:
+        return
+    if p["shape"] == "spot_slope" and vt not in ("section", "elevation"):
+        raise DobimError("CONSTRAINT", "평면·배치도의 경사 기호는 높이를 몰라 값을 잴 수 없다: text 로 경사를 준다", path="/text",
+                         hint='예: "text": "i=1/50"')
+    if p["shape"] == "spot_slope" and abs(p["pts"][1][0] - p["pts"][0][0]) < 1e-6:
+        raise DobimError("CONSTRAINT", "경사 기호의 두 점이 수직선 위에 있어 기울기를 잴 수 없다: text 로 준다", path="/pts")
+    if p["shape"] == "spot_elev" and vt == "site":
+        raise DobimError("CONSTRAINT", "배치도의 표고는 높이를 몰라 값을 잴 수 없다: text 로 준다", path="/text")
+
+
 # ================================================================ 생성·수정
 class DraftCreate(A):
     id: Id | None = None
     view: Id = Field(description="요소를 둘 뷰(평면·단면·입면·배치도)")
-    shape: Literal["line", "polyline", "arc", "circle", "text", "region", "dim"] = Field(
-        description="line 선분, polyline 꺾은선(closed 로 닫기), arc 호(중심·r·a0->a1 반시계 도), circle 원, text 문자(a0 = 회전각), region 채움 영역(fill), dim 두 점 사이 정렬 치수(off = 치수선 간격, 왼쪽 +)")
+    shape: Literal["line", "polyline", "arc", "circle", "text", "region", "dim", "dim_angle", "dim_radius", "dim_diameter", "dim_arc",
+                   "dim_chain", "dim_base", "spot_elev", "spot_coord", "spot_slope", "mask", "cloud"] = Field(
+        description="line 선분, polyline 꺾은선(closed 로 닫기), arc 호(중심·r·a0->a1 반시계 도), circle 원, text 문자(a0 = 회전각), region 채움 영역(fill), "
+                    "dim 두 점 사이 정렬 치수(off = 치수선 간격, 왼쪽 +), dim_angle 각도 치수(pts = 꼭짓점·첫 방향 점·둘째 방향 점, r = 치수 호 반지름, 반시계), "
+                    "dim_radius 반지름·dim_diameter 지름 치수(pts = 중심, r, a0 = 치수선 방향), dim_arc 호 길이 치수(중심·r·a0->a1, off = 치수 호 간격, 바깥 +), "
+                    "dim_chain 연속·dim_base 기준선 치수(점 2개 이상, a0 = 측정 방향, off = 첫 점에서 치수선까지 간격, 왼쪽 +), "
+                    "spot_elev 표고·spot_coord 좌표(pts = 재는 점·글 위치), spot_slope 경사 화살표(pts = 높은 점·낮은 점), "
+                    "mask 마스킹 영역(아래 모델 선을 가린다, closed 면 경계선을 그린다), cloud 리비전 구름(경계, r = 호 크기 뷰 mm·0 이면 용지 8mm, text = 리비전 번호)")
     pts: Pts
     closed: bool = Field(False, description="polyline 만: 닫힌 꺾은선")
     r: Annotated[float, Field(allow_inf_nan=False, ge=0, le=K.DRAFT_COORD_MAX)] = Field(0.0, description="arc·circle 반지름(뷰 mm)")
     a0: Angle = Field(0.0, description="arc 시작각, text 회전각(도, 반시계)")
     a1: Angle = Field(0.0, description="arc 끝각(도, 반시계)")
-    text: DText = Field("", description="text 의 글, dim 은 값 대신 쓸 글(비우면 잰 길이)")
+    text: DText = Field("", description="text 의 글, 치수·표고·좌표·경사는 값 대신 쓸 글(비우면 잰 값), cloud 는 리비전 번호")
     size: Annotated[float, Field(allow_inf_nan=False, ge=0.5, le=100)] = Field(2.5, description="text·dim 글 높이(용지 mm)")
-    off: Annotated[float, Field(allow_inf_nan=False, ge=-1e5, le=1e5)] | None = Field(None, description=f"dim 치수선 간격(뷰 mm, 생략하면 {DIM_OFF_DEFAULT:g})")
+    off: Annotated[float, Field(allow_inf_nan=False, ge=-1e5, le=1e5)] | None = Field(None, description=f"dim·dim_arc·dim_chain·dim_base 치수선 간격(뷰 mm, 생략하면 {DIM_OFF_DEFAULT:g})")
     fill: Literal["none", "solid", "hatch", "cross"] = Field("none", description="region 채움: solid 칠, hatch 45도 해치, cross 교차 해치")
     align: Literal["start", "middle", "end"] = Field("start", description="text 정렬")
     layer: LayerName = DR.DEFAULT_LAYER
@@ -104,12 +128,13 @@ def draft_create(ctx, a: DraftCreate):
     ctx.row(a.view, "view")
     params = {"name": a.name or f"DR-{a.id[-6:]}", "view": a.view, "shape": a.shape, "pts": _pts(a.pts), "closed": a.closed,
               "r": a.r, "a0": a.a0, "a1": a.a1, "text": a.text, "size": a.size,
-              "off": (a.off if a.off is not None else DIM_OFF_DEFAULT) if a.shape == "dim" else (a.off or 0.0),
+              "off": (a.off if a.off is not None else DIM_OFF_DEFAULT) if a.shape in OFF_SHAPES else (a.off or 0.0),
               "fill": a.fill, "align": a.align, "layer": a.layer,
               "weight": _bylayer(a.weight), "linetype": _bylayer(a.linetype), "color": _bylayer(a.color), "group": a.group}
-    if a.shape == "region" and K.polygon_area2(params["pts"]) < 0:   # 경계는 반시계로 저장한다(슬래브와 같은 규칙)
+    if a.shape in DR.POLY_SHAPES and K.polygon_area2(params["pts"]) < 0:   # 경계는 반시계로 저장한다(슬래브와 같은 규칙)
         params["pts"] = params["pts"][::-1]
     _check(ctx, params)
+    _view_rule(ctx, params)
     ctx.put_el(a.id, row("draft", "", "draft.basic", params))
     ctx.rel("annot_of", a.id, a.view, True)
     return {"id": a.id}
@@ -150,9 +175,10 @@ def draft_set(ctx, a: DraftSet):
     for k in a.model_fields_set - {"id"}:
         v = getattr(a, k)
         p[k] = _pts(v) if k == "pts" else (_bylayer(v) if k in ("weight", "linetype", "color") else v)
-    if p["shape"] == "region" and K.polygon_area2(p["pts"]) < 0:
+    if p["shape"] in DR.POLY_SHAPES and K.polygon_area2(p["pts"]) < 0:
         p["pts"] = p["pts"][::-1]
     _check(ctx, p, "/" + (sorted(a.model_fields_set - {"id"})[0]))
+    _view_rule(ctx, p)
     ctx.put_el(a.id, dict(r, params=p))
     return {"id": a.id}
 
@@ -187,14 +213,18 @@ def _select(ctx, a: Sel) -> list:
 def _map_params(p, fpt, ang_fn=None, mirror=False):
     """점 변환 fpt 를 요소 하나에 적용한 새 파라미터. ang_fn 은 각(호의 a0·a1, 문자 회전)을 바꾸는 함수."""
     q = dict(p, pts=[[round(c, 6) for c in fpt(x)] for x in p["pts"]])
-    if ang_fn is not None and p["shape"] == "arc":
+    if ang_fn is not None and p["shape"] in ("arc", "dim_arc"):
         a0, a1 = ang_fn(p["a0"]), ang_fn(p["a1"])
         q["a0"], q["a1"] = (round(a1 % 360.0, 6), round(a0 % 360.0, 6)) if mirror else (round(a0 % 360.0, 6), round(a1 % 360.0, 6))
-    elif ang_fn is not None and p["shape"] == "text":
+    elif ang_fn is not None and p["shape"] in A0_SHAPES:
         q["a0"] = round(ang_fn(p["a0"]) % 360.0, 6)
     if mirror and p["shape"] == "dim":   # 치수선이 대칭 쪽에 오도록 두 점 순서를 바꾼다(off 는 진행 방향 왼쪽)
         q["pts"] = q["pts"][::-1]
-    if p["shape"] == "region" and K.polygon_area2(q["pts"]) < 0:
+    if mirror and p["shape"] in ("dim_chain", "dim_base"):   # 측정 방향이 대칭되면 왼쪽이 오른쪽이 된다
+        q["off"] = -p["off"]
+    if mirror and p["shape"] == "dim_angle":   # 반시계로 재는 두 방향의 순서를 바꿔야 같은 각을 잰다
+        q["pts"] = [q["pts"][0], q["pts"][2], q["pts"][1]]
+    if p["shape"] in DR.POLY_SHAPES and K.polygon_area2(q["pts"]) < 0:
         q["pts"] = q["pts"][::-1]
     return q
 
@@ -427,11 +457,13 @@ def _item(ctx, i):
     for k in ("group", "weight", "linetype", "color"):
         if p[k] is not None:
             out[k] = p[k]
-    if p["shape"] in ("text", "dim") and p["text"]:
+    if p["text"]:
         out["text"] = p["text"]
-    if p["shape"] == "dim":
-        (x1, y1), (x2, y2) = p["pts"]
-        out["value"] = round(hypot(x2 - x1, y2 - y1), 3)
+    vals = DR.dim_values(p)
+    if p["shape"] in ("dim_chain", "dim_base"):
+        out["values"] = [round(v, 3) for v in vals]
+    elif vals:
+        out["value"] = round(vals[0], 3)
     return out
 
 

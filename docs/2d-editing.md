@@ -12,7 +12,7 @@
 
 | 종류 | 무엇 | IFC | 관계 |
 |---|---|---|---|
-| `draft` | 뷰에 속한 2D 요소 하나. 모양 `shape` = line·polyline·arc·circle·text·region·dim | 비 IFC 의도 요소(`NON_IFC_KINDS`), 정의는 `DoBIM_Defs` | `annot_of` → 뷰(뷰를 지우면 함께 지워지고 되돌리면 함께 돌아온다) |
+| `draft` | 뷰에 속한 2D 요소 하나. 모양 `shape` = line·polyline·arc·circle·text·region·dim, W1 1-B 에서 dim_angle·dim_radius·dim_diameter·dim_arc·dim_chain·dim_base·spot_elev·spot_coord·spot_slope·mask·cloud 추가 | 비 IFC 의도 요소(`NON_IFC_KINDS`), 정의는 `DoBIM_Defs` | `annot_of` → 뷰(뷰를 지우면 함께 지워지고 되돌리면 함께 돌아온다) |
 | `dlayer` | 층 스타일(이름·선굵기·선종류·색) | 같음 | 없음(요소가 층 이름으로 가리킨다) |
 
 `draft` 파라미터는 모양과 관계없이 키 집합이 고정이다(병합·가져오기 검사가 키 집합으로 모양을 거른다):
@@ -20,6 +20,7 @@
 
 - 좌표 `pts` 는 **그 뷰의 2D 좌표**다(평면 x,y / 단면·입면 s,z mm, `view_lines` 와 같은 공간). 모델 요소와 연관되지 않는다(연관 치수·태그는 S5 `annot.*`).
 - 모양별 값: 선·치수 점 2개, 폴리선 2~256개(`closed`), 영역 3~256개(자기 교차 금지, 반시계로 저장, `fill` none/solid/hatch/cross), 호·원 중심 1개 + `r`(호는 `a0`→`a1` 반시계 도), 문자 기준점 1개 + `text`·`size`(용지 mm)·`align`·회전 `a0`, 치수 `off`(치수선 간격, 진행 방향 왼쪽 +)·`text`(값 대신 쓸 글).
+- W1 1-B 모양(키 집합은 그대로, 필드 뜻만 모양별): 각도 치수 `dim_angle` 점 3개(꼭짓점·첫 방향·둘째 방향, 반시계) + `r`(치수 호 반지름), 반지름·지름 `dim_radius`·`dim_diameter` 중심 + `r` + `a0`(치수선 방향), 호 길이 `dim_arc` 중심 + `r` + `a0`→`a1` + `off`(치수 호 간격, 바깥 +), 연속·기준선 `dim_chain`·`dim_base` 점 2~256개 + `a0`(측정 방향) + `off`(첫 점에서 치수선까지, 왼쪽 +, 기준선은 용지 7mm 간격으로 쌓는다), 표고·좌표 `spot_elev`·`spot_coord` 점 2개(재는 점·글 위치), 경사 `spot_slope` 점 2개(높은 쪽 -> 낮은 쪽), 마스킹 `mask` 경계 3~256개(`closed` 면 경계선을 그린다), 리비전 구름 `cloud` 경계 3~256개 + `r`(호 크기, 0 이면 용지 8mm) + `text`(리비전 번호). 값은 그릴 때 잰다: 표고는 단면·입면에서 점의 높이, 평면에서 그 뷰 레벨 높이(표면 표본 아님), 배치도는 `text` 필수. 경사는 단면·입면에서만 재고 평면·배치도는 `text` 필수. 상세는 spikes/phase1-drawings/baseline.md 34절.
 - 스타일: `weight` thin 0.09·fine 0.18·medium 0.25·thick 0.5mm(기존 해치·투영·기호·절단 선 굵기 체계), `linetype` continuous·dashed·hidden·center·dashdot·dotted, `color` "#rrggbb". 셋 다 null 이면 층 스타일을 따른다(bylayer). 층 스타일이 없으면 fine·실선·검정.
 - 상세 그룹: `group` 이름. 같은 뷰의 같은 이름이 한 묶음이고, 편집 커맨드는 `ids` 대신 `view + group` 으로 묶음 전체를 고를 수 있다.
 - 층 이름은 DXF 층 이름으로 그대로 나가므로 DXF 금지 문자(`<>/\":;?*|=` 백틱)·제어 문자·앞뒤 공백을 막는다.
@@ -49,7 +50,7 @@ dobim run draft.copy -p p.dobim --json '{"view":"<평면 뷰>","group":"상세 A
 
 ### 1.3 도면 출력
 
-- 질의 `drafting.view_drafts(뷰)` 가 그림 항목(선·원·채움·문자, 뷰 좌표 + 용지 mm 굵기·색·층)을 낸다. 선종류는 **경로를 따라 미리 마디로 나눈 실선 조각**으로 낸다: SVG·PDF·PNG·DXF 어느 렌더러도 선종류를 몰라도 같은 모양이 나온다. 해치는 45도(교차는 45·135도) 2.5mm 간격 선분, 치수는 보조선·치수선·45도 눈금·값 글로 분해한다.
+- 질의 `drafting.view_drafts(뷰)` 가 그림 항목(선·원·채움·문자, 뷰 좌표 + 용지 mm 굵기·색·층)을 낸다. 선종류는 **경로를 따라 미리 마디로 나눈 실선 조각**으로 낸다: SVG·PDF·PNG·DXF 어느 렌더러도 선종류를 몰라도 같은 모양이 나온다. 해치는 45도(교차는 45·135도) 2.5mm 간격 선분, 치수는 보조선·치수선·45도 눈금·값 글로 분해한다. 마스킹 영역은 흰 채움 항목으로 내고 2D 요소 중 가장 먼저 그린다(모델 선만 가린다). DXF 는 이것을 흰 SOLID 해치(트루컬러 16777215)로 쓴다.
 - `view.export`(SVG·PDF·PNG)와 `sheet.export`·`sheet.render`·`view.image`·`sheet.image` 에 그려진다. 뷰 데이터에 `drafts` 키는 **2D 요소가 있을 때만** 생기므로 2D 요소가 없는 뷰·시트의 출력 바이트는 그대로다(시험으로 확인).
 - 시트(그리고 DXF)는 요소마다 그룹 `draft-<모양>` 에 `data-layer`(층 이름)·`data-id` 를 붙인다. DXF 내보내기(dobim-dxf, 별도 PR)는 시트 그림 요소를 읽어 `data-layer` 를 DXF 층으로 쓰므로 2D 요소가 자동으로 층별로 나간다(실선 원은 CIRCLE, 채움은 SOLID 해치, 나머지는 선·문자).
 - `view.linework`(모델 선분·디지스트)는 바뀌지 않는다: 2D 요소는 모델 그림이 아니다.

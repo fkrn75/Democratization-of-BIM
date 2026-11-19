@@ -1045,7 +1045,17 @@ def _foreign_params(p):
 # ---------------------------------------------------------------- 2D 작도(27단계 2D 편집, 설계: docs/2d-editing.md)
 # draft  = 뷰 위의 모델과 무관한 2D 요소(선·폴리선·호·원·문자·치수·채움 영역). 좌표는 그 뷰의 2D 좌표(평면 x,y / 단면·입면 s,z, view_lines 와 같은 공간) mm.
 # dlayer = 2D 요소 층의 스타일(선굵기·선종류·색). 요소의 weight·linetype·color 가 null 이면 층 스타일을 따른다(bylayer).
-DRAFT_SHAPES = ("line", "polyline", "arc", "circle", "text", "region", "dim")
+DRAFT_SHAPES = ("line", "polyline", "arc", "circle", "text", "region", "dim",
+                "dim_angle", "dim_radius", "dim_diameter", "dim_arc", "dim_chain", "dim_base",   # W1 1-B 치수 종류
+                "spot_elev", "spot_coord", "spot_slope", "mask", "cloud")                          # 표고·좌표·경사, 마스킹 영역, 리비전 구름
+DRAFT_PTS_NEED = {"line": (2, 2), "polyline": (2, 256), "region": (3, 256), "arc": (1, 1), "circle": (1, 1), "text": (1, 1), "dim": (2, 2),
+                  "dim_angle": (3, 3), "dim_radius": (1, 1), "dim_diameter": (1, 1), "dim_arc": (1, 1), "dim_chain": (2, 256), "dim_base": (2, 256),
+                  "spot_elev": (2, 2), "spot_coord": (2, 2), "spot_slope": (2, 2), "mask": (3, 256), "cloud": (3, 256)}
+_DRAFT_R = frozenset({"arc", "circle", "dim_angle", "dim_radius", "dim_diameter", "dim_arc"})   # 반지름 r > 0 이 필요한 모양(cloud 는 0 = 기본 호 크기)
+_DRAFT_A0 = frozenset({"text", "dim_radius", "dim_diameter", "dim_chain", "dim_base"})          # a0 하나만 쓰는 모양(회전각·방향)
+_DRAFT_TEXT = frozenset({"text", "dim", "dim_angle", "dim_radius", "dim_diameter", "dim_arc", "spot_elev", "spot_coord", "spot_slope", "cloud"})
+_DRAFT_OFF = frozenset({"dim", "dim_arc", "dim_chain", "dim_base"})
+_DRAFT_POLY = frozenset({"region", "mask", "cloud"})
 DRAFT_WEIGHTS = ("thin", "fine", "medium", "thick")
 DRAFT_LINETYPES = ("continuous", "dashed", "hidden", "center", "dashdot", "dotted")
 DRAFT_FILLS = ("none", "solid", "hatch", "cross")
@@ -1072,36 +1082,72 @@ def _dpt(v) -> bool:
 def draft_shape_problem(p) -> str | None:
     """2D 요소의 모양별 검사(안 되면 이유). 커맨드와 가져오기·병합이 같은 규칙을 쓴다."""
     s, pts = p["shape"], p["pts"]
-    need = {"line": (2, 2), "polyline": (2, DRAFT_PTS_MAX), "region": (3, DRAFT_PTS_MAX), "arc": (1, 1), "circle": (1, 1), "text": (1, 1), "dim": (2, 2)}[s]
+    need = DRAFT_PTS_NEED[s]
     if not need[0] <= len(pts) <= need[1]:
         return f"{s} 의 점은 {need[0]}~{need[1]}개여야 한다(현재 {len(pts)}개)"
-    if p["closed"] and s != "polyline":
-        return "closed 는 폴리선에만 쓴다"
-    if s in ("line", "dim") and (pts[1][0] - pts[0][0]) ** 2 + (pts[1][1] - pts[0][1]) ** 2 < 1e-6:
+    if p["closed"] and s not in ("polyline", "mask"):
+        return "closed 는 폴리선(닫기)·마스킹 영역(경계선 보이기)에만 쓴다"
+
+    def same(a, b):
+        return (b[0] - a[0]) ** 2 + (b[1] - a[1]) ** 2 < 1e-6
+
+    if s in ("line", "dim", "spot_slope") and same(pts[0], pts[1]):
         return f"{s} 의 두 점이 같다"
+    if s == "dim_angle" and (same(pts[0], pts[1]) or same(pts[0], pts[2])):
+        return "각도 치수의 재는 점이 꼭짓점과 같다"
     if s == "polyline" and any(pts[i] == pts[i + 1] for i in range(len(pts) - 1)):
         return "폴리선에 이어진 같은 점이 있다"
-    if s == "region" and (err := polygon_problem(pts)) is not None:
-        return f"영역 경계: {err}"
-    if (s in ("arc", "circle")) != (p["r"] > 0):
-        return "반지름 r 은 호·원에만 0 보다 크게 둔다"
-    if s == "arc" and (abs(p["a0"]) > 3600 or abs(p["a1"]) > 3600 or abs((p["a1"] - p["a0"]) % 360.0) < 1e-9):
-        return "호의 시작각·끝각이 같거나 범위를 벗어났다"
-    if s not in ("arc", "text") and (p["a0"] != 0 or p["a1"] != 0):
-        return "a0·a1 은 호(시작각·끝각)·문자(회전각 a0)에만 쓴다"
-    if s == "text" and (p["a1"] != 0 or abs(p["a0"]) > 3600):
-        return "문자의 회전각은 a0 하나다"
+    if s in _DRAFT_POLY and (err := polygon_problem(pts)) is not None:
+        return f"{s} 경계: {err}"
+    if s in _DRAFT_R and not p["r"] > 0:
+        return f"{s} 은 반지름 r 을 0 보다 크게 둔다"
+    if s not in _DRAFT_R and s != "cloud" and p["r"] != 0:
+        return "반지름 r 은 호·원·각도·반지름·지름·호 길이 치수·구름(호 크기)에만 쓴다"
+    if abs(p["a0"]) > 3600 or abs(p["a1"]) > 3600:
+        return "각이 범위(±3600도)를 벗어났다"
+    if s in ("arc", "dim_arc"):
+        if abs((p["a1"] - p["a0"]) % 360.0) < 1e-9:
+            return "호의 시작각·끝각이 같다"
+    elif s in _DRAFT_A0:
+        if p["a1"] != 0:
+            return f"{s} 은 각 a0 하나만 쓴다"
+    elif p["a0"] != 0 or p["a1"] != 0:
+        return "a0·a1 은 호·호 길이 치수(시작각·끝각), 문자(회전각), 반지름·지름·연속·기준선 치수(방향 a0)에만 쓴다"
+    if s == "dim_angle" and not 1e-6 < (_ang(pts[0], pts[2]) - _ang(pts[0], pts[1])) % 360.0 < 360.0 - 1e-6:
+        return "각도 치수의 두 방향이 같다"
+    if s == "dim_arc" and p["r"] + p["off"] <= 0:
+        return "호 길이 치수선의 반지름(r + off)이 0 이하다"
+    if s in ("dim_chain", "dim_base"):
+        u = (_cos_deg(p["a0"]), _sin_deg(p["a0"]))
+        ss = [x * u[0] + y * u[1] for x, y in pts]
+        if max(ss) - min(ss) < 1e-6:
+            return "연속·기준선 치수의 점이 측정 방향(a0)으로 모두 같은 위치다"
     if s == "text" and not p["text"].strip():
         return "문자 요소의 text 는 비울 수 없다"
-    if s not in ("text", "dim") and p["text"]:
-        return "text 는 문자·치수(값 대신 쓸 글)에만 쓴다"
+    if s not in _DRAFT_TEXT and p["text"]:
+        return "text 는 문자·치수(값 대신 쓸 글)·표고·좌표·경사·구름(리비전 번호)에만 쓴다"
     if s != "region" and p["fill"] != "none":
         return "fill 은 영역에만 쓴다"
-    if s != "dim" and p["off"] != 0:
-        return "off 는 치수에만 쓴다"
+    if s not in _DRAFT_OFF and p["off"] != 0:
+        return "off 는 치수(선형·호 길이·연속·기준선)에만 쓴다"
     if s != "text" and p["align"] != "start":
         return "align 은 문자에만 쓴다"
     return None
+
+
+def _ang(a, b):
+    from math import atan2, degrees
+    return degrees(atan2(b[1] - a[1], b[0] - a[0]))
+
+
+def _cos_deg(v):
+    from math import cos, radians
+    return cos(radians(v))
+
+
+def _sin_deg(v):
+    from math import radians, sin
+    return sin(radians(v))
 
 
 def _draft_params(p):

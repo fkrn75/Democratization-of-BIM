@@ -61,6 +61,10 @@ DIR_ROLES = {"wall": frozenset({"axis.start", "axis.end", "trim.start", "trim.en
 TAG_FIELDS = {
     "wall": ("name", "thickness", "height", "length", "fire_rating", "material", "level"),
     "door": ("name", "width", "height", "sill", "fire_rating", "material", "level", "host"),
+    # W1 1-B(ANN-06·08): 슬래브·공간·계단 태그. material 은 모든 종류에 있어 재료 태그로 쓴다
+    "slab": ("name", "thickness", "area", "top_offset", "material", "level"),
+    "space": ("name", "category", "area", "height", "level"),
+    "stair": ("name", "width", "height", "risers", "material", "level"),
 }
 ORPHAN_REASONS = ("target_deleted", "successor_deleted", "bad_ref")
 PARALLEL_EPS = 1e-9
@@ -287,8 +291,10 @@ def _field(g, kind, eid, row, name):
     p = row["params"]
     if name == "name":
         return p["name"]
-    if name in ("width", "height", "sill", "thickness", "elevation"):
+    if name in ("width", "height", "sill", "thickness", "elevation", "top_offset"):
         return fmt_num(p[name])
+    if kind in ("slab", "space", "stair"):
+        return _field_more(g, kind, eid, p, name)
     if kind == "wall":
         lv = g.q(Q.wall_level, eid)
         if name == "length":
@@ -310,6 +316,20 @@ def _field(g, kind, eid, row, name):
         return "-" if m is None else str(m)
     v = Q.psets(g, eid).get(pset, {}).get("FireRating")
     return "-" if v is None else str(v)
+
+
+def _field_more(g, kind, eid, p, name):
+    """슬래브·공간·계단 태그 필드(W1 1-B)."""
+    if name == "level":
+        return g.q(Q.level_info, Q.rel_out(g, "on_level", eid)[0])[0]
+    if name == "material":
+        m = Q.material(g, eid)
+        return "-" if m is None else str(m)
+    if name == "area":   # 경계 면적에서 개구부(슬래브)·구멍(공간)을 뺀다
+        return D.area_text(p["boundary"], p.get("openings" if kind == "slab" else "holes", ()))
+    if name == "category":
+        return p["category"] or "-"
+    return str(p[name])   # risers
 
 
 def tag_text(g, t):
@@ -406,8 +426,13 @@ def annot_draw(g, a):
 
 
 def tag_anchor(g, target):
-    """태그가 가리키는 대상의 평면 대표점: 벽은 축선 중점, 문은 중심."""
+    """태그가 가리키는 대상의 평면 대표점: 벽은 축선 중점, 문은 중심, 슬래브·공간은 경계 무게중심, 계단은 걸음선 중점."""
     row = Q.el(g, target)
+    if row["kind"] in ("slab", "space"):
+        return D.polygon_centroid(row["params"]["boundary"])
+    if row["kind"] == "stair":
+        x0, y0, x1, y1 = row["params"]["run"]
+        return ((x0 + x1) / 2.0, (y0 + y1) / 2.0)
     if row["kind"] == "wall":
         x, y, c, s, length = g.q(Q.wall_frame, target)
         return (x + c * length / 2.0, y + s * length / 2.0)

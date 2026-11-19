@@ -27,6 +27,14 @@ REGION_FILL = "#cfcfcf"                             # 색을 주지 않은 채�
 HATCH_STEP = 2.5                                    # 해치 간격(용지 mm)
 ARC_SEG_DEG = 5.0                                   # 호·원을 선분으로 나눌 때 한 조각의 각(도)
 DIM_GAP, DIM_EXT, DIM_TICK, DIM_TEXT_GAP = 1.0, 2.0, 0.7, 0.8   # 치수 보조선 띄움·넘침, 눈금 반 길이, 글 띄움(용지 mm)
+DIM_BASE_STEP = 7.0                                 # 기준선 치수 줄 간격(용지 mm)
+ARROW_LEN, ARROW_DEG = 2.0, 15.0                    # 반지름·지름·경사 화살촉 길이(용지 mm)와 벌림 각(도)
+SPOT_MARK = 1.5                                     # 표고·좌표 기호 크기(용지 mm)
+CLOUD_CHORD = 8.0                                   # 리비전 구름 호 하나의 현 길이 기본값(용지 mm, r 을 0 으로 두면)
+CLOUD_MAX_BUMPS = 400                               # 구름 하나의 호 개수 상한
+MASK_FILL = "#ffffff"                               # 마스킹 영역 칠(종이 색). 2D 요소 중 가장 먼저 그려 아래 모델 선을 가린다
+POLY_SHAPES = ("region", "mask", "cloud")           # 닫힌 경계 요소(반시계로 저장한다)
+CENTER_SHAPES = ("circle", "arc", "dim_radius", "dim_diameter", "dim_arc")   # pts[0] 이 중심이고 r 이 반지름인 요소
 EPS = 1e-9
 
 
@@ -114,9 +122,9 @@ def boundary_hits(a, b, p) -> list:
     """무한선 a-b 가 경계 요소(params p)와 만나는 매개변수 t 목록(a=0, b=1). 선·폴리선·영역·치수 선분, 원·호."""
     s = p["shape"]
     out = []
-    if s in ("line", "polyline", "region", "dim"):
+    if s in ("line", "polyline", "region", "dim", "mask", "cloud"):
         pts = p["pts"]
-        closed = s == "region" or (s == "polyline" and p["closed"])
+        closed = s in POLY_SHAPES or (s == "polyline" and p["closed"])
         for i in range(len(pts) if closed else len(pts) - 1):
             c, d = pts[i], pts[(i + 1) % len(pts)]
             x = line_x(a, b, c, d)
@@ -140,8 +148,8 @@ def boundary_hits(a, b, p) -> list:
 
 def bbox_of(p) -> list:
     """요소가 차지하는 뷰 좌표 범위 [x0, y0, x1, y1](원·호는 원 전체, 문자는 기준점)."""
-    if p["shape"] in ("circle", "arc"):
-        (cx, cy), r = p["pts"][0], p["r"]
+    if p["shape"] in CENTER_SHAPES:
+        (cx, cy), r = p["pts"][0], p["r"] + max(0.0, p["off"])
         return [cx - r, cy - r, cx + r, cy + r]
     xs, ys = [q[0] for q in p["pts"]], [q[1] for q in p["pts"]]
     return [min(xs), min(ys), max(xs), max(ys)]
@@ -202,6 +210,7 @@ def draft_items(g, d):
     if vr is None or vr["kind"] != "view":
         return ()
     sc = float(vr["params"]["scale"])
+    vtype = vr["params"]["type"]
     w, pat, col = resolved_style(g, p)
     lay, s, pts = p["layer"], p["shape"], p["pts"]
     out = []
@@ -235,6 +244,17 @@ def draft_items(g, d):
         out.append(("text", d, lay, col, _r(pts[0][0]), _r(pts[0][1]), p["size"], p["text"], p["align"], round(p["a0"], 4)))
     elif s == "dim":
         out.extend(_dim_items(d, p, w, col, sc))
+    elif s == "mask":
+        out.append(("fill", d, lay, MASK_FILL, tuple((_r(x), _r(y)) for x, y in pts)))
+        if p["closed"]:   # 마스킹 경계선은 closed 일 때만 그린다(기본은 보이지 않는 경계)
+            path(pts + [pts[0]])
+    elif s == "cloud":
+        path(cloud_points(pts, p["r"] or CLOUD_CHORD * sc))
+        if p["text"]:
+            out.extend(_rev_mark(d, lay, w, col, pts[0], p["size"], p["text"], sc))
+    elif s in ANNOT_SHAPES:
+        lv = Q.level_info(g, vr["params"]["level"])[1] if vtype == "plan" and s == "spot_elev" else None
+        out.extend(ANNOT_SHAPES[s](d, p, w, col, sc, vtype, lv))
     return tuple(out)
 
 
@@ -270,13 +290,337 @@ def _dim_items(d, p, w, col, sc):
     return out
 
 
-def view_drafts(g, v):
-    """뷰에 속한 2D 요소의 그림 항목(요소 id 순). 2D 요소가 없으면 빈 값."""
+# ================================================================ 주석·치수 확장(W1 1-B): 각도·반지름·지름·호 길이·연속·기준선 치수, 표고·좌표·경사, 구름
+def _dir(ang):
+    return (cos(radians(ang)), sin(radians(ang)))
+
+
+def _ang_of(v):
+    return degrees(atan2(v[1], v[0]))
+
+
+def read_angle(ang) -> float:
+    """글이 거꾸로 서지 않게 (-90, 90] 도로 맞춘다."""
+    ang = (ang + 180.0) % 360.0 - 180.0
+    if ang > 90.0 + 1e-9:
+        ang -= 180.0
+    elif ang <= -90.0 + 1e-9:
+        ang += 180.0
+    return ang
+
+
+def fmt_len(v) -> str:
+    return f"{v:.0f}"
+
+
+def fmt_deg(v) -> str:
+    return f"{v:.2f}".rstrip("0").rstrip(".") + "°"
+
+
+def _ln(out, d, lay, w, col, a, b):
+    out.append(("line", d, lay, w, col, _r(a[0]), _r(a[1]), _r(b[0]), _r(b[1])))
+
+
+def _txt(out, d, lay, col, pos, size, text, align, ang):
+    out.append(("text", d, lay, col, _r(pos[0]), _r(pos[1]), size, text, align, round(ang, 4)))
+
+
+def _ext(out, d, lay, col, base, dpt, sc):
+    """치수 보조선: 재는 점 base 에서 띄움만큼 떨어져 시작해 치수선 점 dpt 를 넘침만큼 지난다. 두 점이 같으면 그리지 않는다."""
+    vx, vy = dpt[0] - base[0], dpt[1] - base[1]
+    ln = hypot(vx, vy)
+    if ln < 1e-6:
+        return
+    ex, ey = vx / ln, vy / ln
+    g0 = min(DIM_GAP * sc, ln)
+    _ln(out, d, lay, WEIGHT_MM["thin"], col, (base[0] + ex * g0, base[1] + ey * g0), (dpt[0] + ex * DIM_EXT * sc, dpt[1] + ey * DIM_EXT * sc))
+
+
+def _tick(out, d, lay, col, c, u, n, sc):
+    """45도 눈금(u = 치수선 방향, n = 그에 수직)."""
+    tk = DIM_TICK * sc
+    kx, ky = (u[0] + n[0]) * tk, (u[1] + n[1]) * tk
+    _ln(out, d, lay, WEIGHT_MM["medium"], col, (c[0] - kx, c[1] - ky), (c[0] + kx, c[1] + ky))
+
+
+def _arrow(out, d, lay, w, col, tip, u, sc):
+    """tip 에서 끝나는 열린 화살촉(u = 진행 방향 단위 벡터)."""
+    ln = ARROW_LEN * sc
+    for sg in (1.0, -1.0):
+        ca, sa = cos(radians(ARROW_DEG)), sin(radians(ARROW_DEG)) * sg
+        bx, by = -(u[0] * ca - u[1] * sa), -(u[0] * sa + u[1] * ca)
+        _ln(out, d, lay, w, col, tip, (tip[0] + bx * ln, tip[1] + by * ln))
+
+
+def _above(mid, ang, sc, extra=0.0):
+    """mid 에서 읽는 방향 위쪽으로 글 띄움(+extra)만큼 옮긴 점."""
+    a = radians(ang)
+    k = DIM_TEXT_GAP * sc + extra
+    return (mid[0] - sin(a) * k, mid[1] + cos(a) * k)
+
+
+def _arc_text(out, d, lay, col, c, rad, mid_ang, size, text, sc):
+    """호 바깥쪽에 호와 나란히 글을 둔다(글 위쪽이 안쪽을 보면 글 높이만큼 더 밀어낸다)."""
+    ang = read_angle(mid_ang - 90.0)
+    e = _dir(mid_ang)
+    up = (-sin(radians(ang)), cos(radians(ang)))
+    push = DIM_TEXT_GAP * sc + (0.0 if up[0] * e[0] + up[1] * e[1] >= 0 else size * sc)
+    _txt(out, d, lay, col, (c[0] + e[0] * (rad + push), c[1] + e[1] * (rad + push)), size, text, "middle", ang)
+
+
+def angle_sweep(p) -> float:
+    """각도 치수 값(도): 꼭짓점 pts[0] 에서 pts[1] 방향부터 pts[2] 방향까지 반시계."""
+    v, a, b = p["pts"]
+    return (_ang_of((b[0] - v[0], b[1] - v[1])) - _ang_of((a[0] - v[0], a[1] - v[1]))) % 360.0
+
+
+def arc_length(p) -> float:
+    return p["r"] * radians((p["a1"] - p["a0"]) % 360.0)
+
+
+def run_stations(p):
+    """연속·기준선 치수: 측정 방향 u(a0), 왼쪽 수직 n, 각 점의 (u 위치, n 위치), 치수선의 n 위치."""
+    u = _dir(p["a0"])
+    n = (-u[1], u[0])
+    st = [(x * u[0] + y * u[1], x * n[0] + y * n[1]) for x, y in p["pts"]]
+    return u, n, st, st[0][1] + p["off"]
+
+
+def dim_values(p) -> list:
+    """치수 요소가 재는 값 목록(draft.list 와 그림이 같은 규칙). 치수가 아니면 빈 목록."""
+    s = p["shape"]
+    if s == "dim":
+        (x1, y1), (x2, y2) = p["pts"]
+        return [hypot(x2 - x1, y2 - y1)]
+    if s == "dim_angle":
+        return [angle_sweep(p)]
+    if s == "dim_radius":
+        return [p["r"]]
+    if s == "dim_diameter":
+        return [2.0 * p["r"]]
+    if s == "dim_arc":
+        return [arc_length(p)]
+    if s == "dim_chain":
+        us = sorted(t[0] for t in run_stations(p)[2])
+        return [us[i + 1] - us[i] for i in range(len(us) - 1) if us[i + 1] - us[i] > 1e-6]
+    if s == "dim_base":
+        st = run_stations(p)[2]
+        return sorted(abs(t[0] - st[0][0]) for t in st[1:] if abs(t[0] - st[0][0]) > 1e-6)
+    return []
+
+
+def _d_angle(d, p, w, col, sc, vtype, lv):
+    v, a, b = p["pts"]
+    r = p["r"]
+    b1, sweep = _ang_of((a[0] - v[0], a[1] - v[1])), angle_sweep(p)
     out = []
-    for a in sorted(Q.rel_in(g, "annot_of", v)):
+    for x0, y0, x1, y1 in dash_path(arc_points(v, r, b1, b1 + sweep), None, sc):
+        out.append(("line", d, p["layer"], w, col, _r(x0), _r(y0), _r(x1), _r(y1)))
+    for q, bb in ((a, b1), (b, b1 + sweep)):
+        e = _dir(bb)
+        tip = (v[0] + e[0] * r, v[1] + e[1] * r)
+        if hypot(q[0] - v[0], q[1] - v[1]) < r - 1e-6:   # 호가 재는 선 바깥에 있으면 보조선을 호까지 늘인다
+            _ext(out, d, p["layer"], col, q, tip, sc)
+        _tick(out, d, p["layer"], col, tip, (-e[1], e[0]), e, sc)
+    _arc_text(out, d, p["layer"], col, v, r, b1 + sweep / 2.0, p["size"], p["text"] or fmt_deg(sweep), sc)
+    return out
+
+
+def _d_radius(d, p, w, col, sc, vtype, lv):
+    c, r = p["pts"][0], p["r"]
+    e = _dir(p["a0"])
+    tip = (c[0] + e[0] * r, c[1] + e[1] * r)
+    out = []
+    _ln(out, d, p["layer"], w, col, c, tip)
+    _arrow(out, d, p["layer"], w, col, tip, e, sc)
+    ang = read_angle(p["a0"])
+    _txt(out, d, p["layer"], col, _above(((c[0] + tip[0]) / 2, (c[1] + tip[1]) / 2), ang, sc), p["size"], p["text"] or "R" + fmt_len(r), "middle", ang)
+    return out
+
+
+def _d_diameter(d, p, w, col, sc, vtype, lv):
+    c, r = p["pts"][0], p["r"]
+    e = _dir(p["a0"])
+    t1, t2 = (c[0] - e[0] * r, c[1] - e[1] * r), (c[0] + e[0] * r, c[1] + e[1] * r)
+    out = []
+    _ln(out, d, p["layer"], w, col, t1, t2)
+    _arrow(out, d, p["layer"], w, col, t2, e, sc)
+    _arrow(out, d, p["layer"], w, col, t1, (-e[0], -e[1]), sc)
+    ang = read_angle(p["a0"])
+    _txt(out, d, p["layer"], col, _above(c, ang, sc), p["size"], p["text"] or "Ø" + fmt_len(2.0 * r), "middle", ang)
+    return out
+
+
+def _d_arc(d, p, w, col, sc, vtype, lv):
+    c, r, off = p["pts"][0], p["r"], p["off"]
+    R = r + off
+    sweep = (p["a1"] - p["a0"]) % 360.0
+    out = []
+    for x0, y0, x1, y1 in dash_path(arc_points(c, R, p["a0"], p["a0"] + sweep), None, sc):
+        out.append(("line", d, p["layer"], w, col, _r(x0), _r(y0), _r(x1), _r(y1)))
+    for bb in (p["a0"], p["a0"] + sweep):
+        e = _dir(bb)
+        _ext(out, d, p["layer"], col, (c[0] + e[0] * r, c[1] + e[1] * r), (c[0] + e[0] * R, c[1] + e[1] * R), sc)
+        _tick(out, d, p["layer"], col, (c[0] + e[0] * R, c[1] + e[1] * R), (-e[1], e[0]), e, sc)
+    _arc_text(out, d, p["layer"], col, c, R, p["a0"] + sweep / 2.0, p["size"], p["text"] or fmt_len(arc_length(p)), sc)
+    return out
+
+
+def _d_run(d, p, w, col, sc, vtype, lv):
+    """연속 치수(dim_chain: 이웃한 점 사이를 한 줄로)·기준선 치수(dim_base: 첫 점에서 각 점까지 줄을 쌓는다)."""
+    u, n, st, lvl = run_stations(p)
+    lay = p["layer"]
+
+    def at(s, h):
+        return (s * u[0] + h * n[0], s * u[1] + h * n[1])
+
+    ang = read_angle(p["a0"])
+    out = []
+    if p["shape"] == "dim_chain":
+        for (s, h), q in zip(st, p["pts"]):
+            _ext(out, d, lay, col, q, at(s, lvl), sc)
+        us = sorted({round(s, 6) for s, _ in st})
+        _ln(out, d, lay, w, col, at(us[0], lvl), at(us[-1], lvl))
+        for s in us:
+            _tick(out, d, lay, col, at(s, lvl), u, n, sc)
+        for s0, s1 in zip(us, us[1:]):
+            _txt(out, d, lay, col, _above(at((s0 + s1) / 2.0, lvl), ang, sc), p["size"], fmt_len(s1 - s0), "middle", ang)
+        return out
+    sg = 1.0 if p["off"] >= 0 else -1.0
+    s0 = st[0][0]
+    rows = sorted(((abs(s - s0), s, q) for (s, _h), q in zip(st[1:], p["pts"][1:]) if abs(s - s0) > 1e-6), key=lambda t: t[0])
+    for k, (dist, s, q) in enumerate(rows):
+        h = lvl + sg * k * DIM_BASE_STEP * sc
+        _ext(out, d, lay, col, q, at(s, h), sc)
+        _ln(out, d, lay, w, col, at(s0, h), at(s, h))
+        _tick(out, d, lay, col, at(s0, h), u, n, sc)
+        _tick(out, d, lay, col, at(s, h), u, n, sc)
+        _txt(out, d, lay, col, _above(at((s0 + s) / 2.0, h), ang, sc), p["size"], fmt_len(dist), "middle", ang)
+    if rows:
+        _ext(out, d, lay, col, p["pts"][0], at(s0, lvl + sg * (len(rows) - 1) * DIM_BASE_STEP * sc), sc)
+    return out
+
+
+def _leader(out, d, lay, w, col, pt, lab):
+    if hypot(lab[0] - pt[0], lab[1] - pt[1]) > 1e-6:
+        _ln(out, d, lay, w, col, pt, lab)
+
+
+def spot_value(p, vtype, lv) -> str | None:
+    """표고 값 글. 단면·입면은 점의 높이(뷰 y = z mm), 평면은 그 뷰 레벨 높이(바닥면 표면 표본이 아니다), 배치도는 값이 없다."""
+    if vtype in ("section", "elevation"):
+        z = p["pts"][0][1]
+    elif vtype == "plan" and lv is not None:
+        z = lv
+    else:
+        return None
+    return f"EL{z:+,.0f}"
+
+
+def _d_spot_elev(d, p, w, col, sc, vtype, lv):
+    pt, lab = p["pts"]
+    m = SPOT_MARK * sc
+    lay = p["layer"]
+    out = []
+    tri = [pt, (pt[0] - m, pt[1] + m * 1.4), (pt[0] + m, pt[1] + m * 1.4), pt]   # 꼭짓점이 재는 점을 가리키는 역삼각형
+    for i in range(3):
+        _ln(out, d, lay, w, col, tri[i], tri[i + 1])
+    _leader(out, d, lay, w, col, pt, lab)
+    _txt(out, d, lay, col, _above(lab, 0.0, sc), p["size"], p["text"] or spot_value(p, vtype, lv) or "EL ?", "start", 0.0)
+    return out
+
+
+def _d_spot_coord(d, p, w, col, sc, vtype, lv):
+    pt, lab = p["pts"]
+    m = SPOT_MARK * sc
+    lay = p["layer"]
+    out = []
+    _ln(out, d, lay, w, col, (pt[0] - m, pt[1]), (pt[0] + m, pt[1]))
+    _ln(out, d, lay, w, col, (pt[0], pt[1] - m), (pt[0], pt[1] + m))
+    _leader(out, d, lay, w, col, pt, lab)
+    if p["text"]:
+        lines = [p["text"]]
+    elif vtype in ("plan", "site"):
+        lines = [f"N {pt[1]:,.0f}", f"E {pt[0]:,.0f}"]          # 프로젝트 원점 기준(측량 기준점 변환 없음)
+    else:
+        lines = [f"Z {pt[1]:,.0f}", f"S {pt[0]:,.0f}"]
+    step = p["size"] * sc * 1.6
+    for k, t in enumerate(lines):
+        _txt(out, d, lay, col, _above((lab[0], lab[1] + step * (len(lines) - 1 - k)), 0.0, sc), p["size"], t, "start", 0.0)
+    return out
+
+
+def slope_value(p, vtype) -> str | None:
+    """경사 값 글. 단면·입면만 두 점에서 잰다(높이차 / 수평 거리, %). 평면·배치도는 높이를 모르니 None."""
+    if vtype not in ("section", "elevation"):
+        return None
+    (x0, y0), (x1, y1) = p["pts"]
+    if abs(x1 - x0) < 1e-6:
+        return None
+    return f"{abs(y1 - y0) / abs(x1 - x0) * 100.0:.1f}%"
+
+
+def _d_spot_slope(d, p, w, col, sc, vtype, lv):
+    a, b = p["pts"]
+    ln = hypot(b[0] - a[0], b[1] - a[1])
+    u = ((b[0] - a[0]) / ln, (b[1] - a[1]) / ln)
+    out = []
+    _ln(out, d, p["layer"], w, col, a, b)
+    _arrow(out, d, p["layer"], w, col, b, u, sc)   # 화살표는 낮은 쪽(두 번째 점)을 가리킨다
+    ang = read_angle(_ang_of(u))
+    _txt(out, d, p["layer"], col, _above(((a[0] + b[0]) / 2, (a[1] + b[1]) / 2), ang, sc), p["size"],
+         p["text"] or slope_value(p, vtype) or "i=?", "middle", ang)
+    return out
+
+
+def cloud_points(pts, chord) -> list:
+    """리비전 구름 꺾은선: 반시계 경계의 각 변을 현 길이 chord 쯤으로 나눠 바깥(진행 방향 오른쪽)으로 부푼 반원을 잇는다."""
+    out = [tuple(pts[0])]
+    n = len(pts)
+    per = sum(hypot(pts[(i + 1) % n][0] - pts[i][0], pts[(i + 1) % n][1] - pts[i][1]) for i in range(n))
+    chord = max(chord, per / CLOUD_MAX_BUMPS)   # 아주 작은 현으로 선분이 폭증하지 않게 호 개수에 상한을 둔다
+    for i in range(n):
+        a, b = pts[i], pts[(i + 1) % n]
+        ln = hypot(b[0] - a[0], b[1] - a[1])
+        k = max(1, int(round(ln / chord)))
+        for j in range(k):
+            q0 = (a[0] + (b[0] - a[0]) * j / k, a[1] + (b[1] - a[1]) * j / k)
+            q1 = (a[0] + (b[0] - a[0]) * (j + 1) / k, a[1] + (b[1] - a[1]) * (j + 1) / k)
+            mid = ((q0[0] + q1[0]) / 2, (q0[1] + q1[1]) / 2)
+            a0 = _ang_of((q0[0] - mid[0], q0[1] - mid[1]))
+            arc = arc_points(mid, ln / k / 2.0, a0, a0 + 180.0)   # q0 에서 반시계 반 바퀴 = 진행 방향 오른쪽(바깥)으로 부푼다
+            out.extend(arc[1:-1])
+            out.append(q1)
+    return out
+
+
+def _rev_mark(d, lay, w, col, at, size, text, sc):
+    """리비전 번호 삼각형(구름의 첫 꼭짓점에 둔다)."""
+    s = size * 2.2 * sc
+    h = s * sqrt(3.0) / 2.0
+    tri = [(at[0] - s / 2, at[1] - h / 3), (at[0] + s / 2, at[1] - h / 3), (at[0], at[1] + 2 * h / 3)]
+    out = []
+    for i in range(3):
+        _ln(out, d, lay, w, col, tri[i], tri[(i + 1) % 3])
+    _txt(out, d, lay, col, (at[0], at[1] - size * sc * 0.4), size, text, "middle", 0.0)
+    return out
+
+
+ANNOT_SHAPES = {"dim_angle": _d_angle, "dim_radius": _d_radius, "dim_diameter": _d_diameter, "dim_arc": _d_arc,
+                "dim_chain": _d_run, "dim_base": _d_run, "spot_elev": _d_spot_elev, "spot_coord": _d_spot_coord, "spot_slope": _d_spot_slope}
+
+
+def view_drafts(g, v):
+    """뷰에 속한 2D 요소의 그림 항목(마스킹 영역 먼저, 그다음 요소 id 순). 2D 요소가 없으면 빈 값.
+    마스킹 영역을 먼저 내야 다른 2D 요소는 가리지 않고 모델 선만 가린다(모델 선은 2D 요소보다 먼저 그린다)."""
+    ids = []
+    for a in Q.rel_in(g, "annot_of", v):
         r = Q.el(g, a)
         if r is not None and r["kind"] == "draft":
-            out.extend(g.q(draft_items, a))
+            ids.append((r["params"]["shape"] != "mask", a))
+    out = []
+    for _, a in sorted(ids):
+        out.extend(g.q(draft_items, a))
     return tuple(out)
 
 
