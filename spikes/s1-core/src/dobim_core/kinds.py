@@ -1010,12 +1010,16 @@ SHEET_KEYS = ("name", "views", "paper", "project_name", "sheet_name", "sheet_num
               "grids", "callouts", "marks", "tags", "key_plan", "key_zone", "line_profile")   # 시트 정의(sheet.define)가 저장하는 값 전부(빠짐없이 적는다)
 
 
+# 시트 용지 이름(sheet.PAPERS 와 같은 집합: commands 가 import 때 확인한다). P 로 끝나면 세로
+PAPER_NAMES = ("A0", "A1", "A2", "A3", "A4", "A0P", "A1P", "A2P", "A3P", "A4P")
+
+
 def _sheet_params(p):
     """시트 정의: 뷰 배치(앞에서부터 왼쪽 위 -> 오른쪽 -> 아래)와 표제란 인자. 값의 범위·참조는 정의를 되살릴 때(viewdefs) 마저 검사한다.
     viewports(W1 1-C 2차, DOC-02·VIEW-25) 는 선택 키다(없으면 키 자체가 없다: 이전 시트 정의의 저장 형식 그대로)."""
     return _check_opt("sheet", p, {
         "name": _name, "views": lambda v: isinstance(v, list) and 1 <= len(v) <= 12 and all(id_ok(x) for x in v),
-        "paper": lambda v: v in ("A1", "A3"), "project_name": lambda v: text_ok(v), "sheet_name": lambda v: text_ok(v), "sheet_number": lambda v: text_ok(v),
+        "paper": lambda v: v in PAPER_NAMES, "project_name": lambda v: text_ok(v), "sheet_name": lambda v: text_ok(v), "sheet_number": lambda v: text_ok(v),
         "date": lambda v: v is None or text_ok(v, 10, 10), "north_angle": num_ok, "client": lambda v: text_ok(v), "office": lambda v: text_ok(v),
         "signers": lambda v: _json_ok(v) and isinstance(v, list), "revisions": lambda v: _json_ok(v) and isinstance(v, list),
         "grids": lambda v: _json_ok(v) and isinstance(v, list), "callouts": lambda v: _json_ok(v) and isinstance(v, list), "marks": lambda v: type(v) is bool,

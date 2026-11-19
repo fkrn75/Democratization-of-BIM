@@ -80,7 +80,7 @@ def test_s1b_잘못된_정의는_거절한다(tmp_path):
     try:
         _build(b)
         bad = [("없는 뷰", {"views": ["9" * 22]}), ("뷰 중복", {"views": [V1, V1]}), ("구름이 올리지 않은 뷰", {"revisions": [{"rev": "1", "date": "2026-01-03", "desc": "x", "view": V2}]}),
-               ("키 플랜이 단면", {"key_plan": VS}), ("key_zone 만", {"key_plan": V1, "key_zone": [0, 0, 1], "views": [V2]}), ("용지", {"paper": "A0"})]
+               ("키 플랜이 단면", {"key_plan": VS}), ("key_zone 만", {"key_plan": V1, "key_zone": [0, 0, 1], "views": [V2]}), ("용지", {"paper": "B4"})]
         for why, kw in bad:
             r = b.run("sheet.define", {**SHEET, **kw}, project="src.dobim")
             assert not r["ok"], why
@@ -219,7 +219,7 @@ def test_s3_정의_값이_어긋나면_그_시트만_되살리지_않는다(tmp_
         _ok(b.run("sheet.define", SHEET, project=p))
         _ok(b.run("sheet.define", _second(name="둘째"), project=p))
     cases = {
-        "용지 값": lambda d: d["params"].update(paper="A0"),
+        "용지 값": lambda d: d["params"].update(paper="B4"),
         "알 수 없는 키": lambda d: d["params"].update(extra=1),
         "없는 뷰": lambda d: d["params"].update(views=["9" * 22]),
         "단면을 키 플랜으로": lambda d: d["params"].update(key_plan=VS),

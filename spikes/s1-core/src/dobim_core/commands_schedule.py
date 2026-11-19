@@ -193,7 +193,7 @@ class ScheduleExport(A):
     table: TableSpec | None = Field(None, description="내보낼 일람표(table·takeoff 중 하나만)")
     takeoff: TakeoffSpec | None = Field(None, description="내보낼 재료 물량(table·takeoff 중 하나만)")
     title: Text = Field("", description="표 제목(비우면 '<범주> 일람표' 또는 '재료 물량표')")
-    paper: Literal["A1", "A3"] = Field("A3", description="시트 용지(가로). 행이 많으면 A1")
+    paper: C.Paper = Field("A3", description="시트 용지 A0~A4(끝에 P 면 세로). 행이 많으면 큰 용지")
     project_name: Text = Field("", description="표제란 프로젝트명")
     sheet_number: Text = Field("A-600", description="표제란 도면번호")
     date: str | None = Field(None, pattern=r"^\d{4}-\d{2}-\d{2}$", description="작성일 YYYY-MM-DD(생략하면 오늘 날짜)")

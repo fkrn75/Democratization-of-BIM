@@ -38,6 +38,7 @@ IDS_PATH = Path(__file__).resolve().parent / "data" / "kr_delivery_construction.
 THERMAL_6 = ["IFCSLAB", "IFCWALL", "IFCROOF", "IFCDOOR", "IFCWINDOW", "IFCCURTAINWALL"]
 THERMAL_5 = ["IFCWALL", "IFCROOF", "IFCDOOR", "IFCWINDOW", "IFCCURTAINWALL"]
 PROFILE = "조달청 v2.1 실시설계 + 국토부 시행지침(설계자·발주자 편)"
+USER_SEVERITY = "사용자"   # 사용자 IDS 의 KR-IDS-nn 이 아닌 명세(KR-USR-n)의 심각도 표기
 
 # 열려 있는지 확인하는 구간 크기(헤더·꼬리 판독용)
 _HEAD_BYTES = 8192
@@ -175,8 +176,10 @@ def _reconcile(f, ident, applicable_ids, failed):
 def run_ids(f, ids_path: Path = IDS_PATH):
     """IDS 파일을 읽어 검증하고 spec 별 요약을 돌려준다. 읽을 수 없거나 지원하지 않는 IDS 면 ids_eval.IdsError."""
     out = {}
-    for spec in ids_eval.load(ids_path):
+    for k, spec in enumerate(ids_eval.load(ids_path)):
         ident = spec.identifier
+        if not ident or ident in out:   # 사용자 IDS(W1 1-E): 식별자가 없거나 겹치는 명세도 버리지 않고 순번 키로 둔다
+            ident = f"#{k + 1}"
         res = ids_eval.evaluate(f, spec)
         applicable_ids = {e.id() for e in res.applicable}
         applicable = len(res.applicable)
@@ -317,6 +320,12 @@ def run_file(path: Path, deliverable=False, as_name=None, ids_path: Path = IDS_P
             else:
                 r = _guard(fn, f, path=str(path), filename=filename, deliverable=deliverable)
         checks.append(_entry(cid, mode, sev, r, title))
+    if not use_override:   # 사용자 IDS(W1 1-E, DATA-09): KR-IDS-nn 이 아닌 명세도 KR-USR-n 규칙으로 판정 결과에 넣는다
+        for n, (ident, r) in enumerate(((k, v) for k, v in ids_res.items() if k not in catalog.CHECKS), 1):
+            r = dict(r)
+            title = r.pop("title")
+            r["note"] = f"사용자 명세 {ident}" + (f"; {r['note']}" if r.get("note") else "")
+            checks.append(_entry(f"KR-USR-{n}", "ids", USER_SEVERITY, r, title))
     if package is not None:
         checks.append(_package_entry(package))
     return {
