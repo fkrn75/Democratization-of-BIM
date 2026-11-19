@@ -284,7 +284,7 @@ def view_scene(g, v):
     for it in g.q(DRF.view_drafts, v):
         by.setdefault(("draft", it[1]), []).append(it)
     for it in g.q(AN.view_annots, v):
-        by.setdefault((it[0] if it[0] in ("dim", "tag") else it[2], it[1]), []).append(it)
+        by.setdefault(("dim" if it[0] == "adim" else (it[0] if it[0] in ("dim", "tag") else it[2]), it[1]), []).append(it)
     if vdims:
         by[("view", v)] = list(vdims)
     for (kind, e), items in by.items():
@@ -305,6 +305,8 @@ def _annot_segs(it):
         return [tuple(it[2]), tuple(it[3]), tuple(it[4])]
     if it[0] == "tag":
         return [tuple(it[2]) + tuple(it[3])]
+    if it[0] == "adim":   # 각도·반지름·지름 치수(W1 1-B 2차)
+        return [tuple(s) for s in it[2]]
     return []
 
 
@@ -314,6 +316,8 @@ def _annot_points(it):
         return [p for s in _annot_segs(it) for p in ((s[0], s[1]), (s[2], s[3]))] + [tuple(it[6])]
     if it[0] == "tag":
         return [tuple(it[2]), tuple(it[3])]
+    if it[0] == "adim":
+        return [p for s in _annot_segs(it) for p in ((s[0], s[1]), (s[2], s[3]))] + [tuple(it[5])]
     return [(it[4], it[5])]
 
 

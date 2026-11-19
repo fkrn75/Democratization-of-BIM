@@ -44,6 +44,7 @@ from __future__ import annotations
 from math import isfinite, sqrt
 
 from dobim_core import drawing as D
+from dobim_core import kinds as K
 from dobim_core import queries as Q
 
 ROLE_TYPES = {
@@ -53,11 +54,19 @@ ROLE_TYPES = {
     "level": {"elevation": "z"},
     "slab": {"top": "z", "bottom": "z"},
     "space": {"ceiling": "z"},
+    # W1 1-B 2차(ANN-02): 통심선·패밀리 인스턴스(창·기둥 등)에 붙는 연관 치수. 통심선을 옮기거나 기둥·창을 옮기면 값이 따라간다
+    "grid": {"line": "line", "start": "pt", "end": "pt"},
+    "finst": {"center": "pt", "jamb.start": "pt", "jamb.end": "pt", "base": "z", "circle": "circle"},
 }
 END_ROLES = frozenset({"axis.end", "trim.end"})           # 분할 이력(succ)을 따라가는 역할
 OWN_ROLE = {"own.end": "axis.end", "own.trim.end": "trim.end"}   # 이력을 따라가지 않는 짝
 DIR_ROLES = {"wall": frozenset({"axis.start", "axis.end", "trim.start", "trim.end", "own.end", "own.trim.end", "face.left", "face.right"}),
-             "door": frozenset({"center", "jamb.start", "jamb.end"})}   # 벽 축선의 방향에 의미가 걸린 역할
+             "door": frozenset({"center", "jamb.start", "jamb.end"}),
+             "finst": frozenset({"jamb.start", "jamb.end"}),   # 호스팅 인스턴스의 문틀 양쪽은 호스트 벽 방향에 걸린다
+             "grid": frozenset({"line"})}   # 각도 치수는 선의 방향으로 잰다(방향이 뒤집히면 값이 180 - θ 가 된다)
+MEASURES = ("angle", "radius", "diameter")   # 선형(기본, 키 없음) 밖의 치수 종류(dim params.measure). 선형 치수 행은 이전과 같다
+FAR_VERTEX = 1e8   # 각도 치수의 꼭짓점(두 선의 교점)이 원점에서 이보다 멀면 그리지 않는다(거의 평행: 무효 far_vertex)
+ARC_N = 24         # 각도 치수 호를 나누는 선분 수
 TAG_FIELDS = {
     "wall": ("name", "thickness", "height", "length", "fire_rating", "material", "level"),
     "door": ("name", "width", "height", "sill", "fire_rating", "material", "level", "host"),
@@ -65,8 +74,19 @@ TAG_FIELDS = {
     "slab": ("name", "thickness", "area", "top_offset", "material", "level"),
     "space": ("name", "category", "area", "height", "level"),
     "stair": ("name", "width", "height", "risers", "material", "level"),
+    # W1 1-B 2차(ANN-06): 패밀리 인스턴스(창·기둥·패밀리 문 등). category = 범주 이름(창·기둥…), family = 패밀리 id
+    "finst": ("name", "category", "family", "width", "height", "elevation", "material", "level", "host"),
+    # 다중 범주 태그(ANN-08)만 다는 종류: 지붕·난간
+    "roof": (), "railing": (),
 }
+# 다중 범주 태그(ANN-08): 이 필드들만 쓰는 태그는 태그 가능한 모든 종류에 달 수 있다(대상을 다른 범주로 다시 묶어도 그대로 쓴다).
+# ifc_class = 요소의 IFC 클래스(범주를 묻는 공통 필드: 공간의 category 는 공간 용도라 이름을 달리 둔다)
+MULTI_FIELDS = ("name", "level", "material", "ifc_class")
+TAG_ALLOWED = {k: v + tuple(f for f in MULTI_FIELDS if f not in v) for k, v in TAG_FIELDS.items()}   # 종류별로 쓸 수 있는 필드 전체(종류 고유 + 다중 범주)
+FINST_CATEGORY = {"IfcWindow": "창", "IfcColumn": "기둥", "IfcDoor": "문", "IfcFurnishingElement": "가구", "IfcBeam": "보",
+                  "IfcMember": "부재", "IfcPlate": "판", "IfcBuildingElementProxy": "일반 부재"}
 ORPHAN_REASONS = ("target_deleted", "successor_deleted", "bad_ref")
+assert set(TAG_FIELDS) == set(K.TAG_TARGET_KINDS) and MEASURES == K.DIM_MEASURES   # 가져오기 검사표와 같아야 한다
 PARALLEL_EPS = 1e-9
 RND = 3                 # 그림 좌표 반올림 자릿수(mm)
 
@@ -107,6 +127,19 @@ def uses_direction(kind: str, role: str) -> bool:
     return role in DIR_ROLES.get(kind, ())
 
 
+def dir_line(g, kind: str, eid: str):
+    """방향 지문을 잡는 선분 [x1,y1,x2,y2]: 벽은 축선, 문·호스팅 인스턴스는 호스트 벽 축선, 통심선은 선분. 없으면 None(자립 인스턴스)."""
+    if kind == "grid":
+        return Q.el(g, eid)["params"]["line"]
+    if kind == "door":
+        eid = g.q(Q.door_host, eid)
+    elif kind == "finst":
+        eid = g.q(Q.finst_host, eid)
+        if eid is None:
+            return None
+    return Q.el(g, eid)["params"]["axis"]
+
+
 # ================================================================ 참조 해석 (그래프 노드: 참조 문자열 하나가 노드 하나)
 def ref_resolve(g, ref):
     """참조를 기하로 푼다. 반환:
@@ -132,7 +165,54 @@ def ref_resolve(g, ref):
         if ch is None:
             return ("orphan", "target_deleted")   # 천장 높이 입력이 지워졌다: 정상적 고아(대상이 사라진 것과 같다)
         return ("z", g.q(Q.level_info, g.q(Q.space_level, eid))[1] + ch)
+    if kind == "grid":
+        x1, y1, x2, y2 = row["params"]["line"]
+        if role == "start":
+            return ("pt", x1, y1)
+        if role == "end":
+            return ("pt", x2, y2)
+        dx, dy = x2 - x1, y2 - y1
+        ln = sqrt(dx * dx + dy * dy)
+        return ("line", (x1 + x2) / 2.0, (y1 + y2) / 2.0, dx / ln, dy / ln)   # 길이는 1mm 이상(grid 파라미터 검사)
+    if kind == "finst":
+        return _finst_ref(g, eid, role, row)
     return ("z", g.q(Q.level_info, eid)[1])
+
+
+def _finst_ref(g, e, role, row):
+    """패밀리 인스턴스(창·기둥 등) 참조. 호스팅: 호스트 축선 위 삽입점(center)·개구부 양 끝(jamb), 자립: 배치점(center)·가장 큰 원 단면(circle).
+    그 인스턴스에 없는 역할(자립 인스턴스의 jamb, 원 단면이 없는 기둥의 circle)은 대상이 없는 것과 같아 target_deleted 고아다
+    (타입을 바꿔 원 단면이 사라질 수 있다: 조용히 다른 곳을 가리키지 않는다)."""
+    p = row["params"]
+    h = g.q(Q.finst_host, e)
+    if role == "base":
+        return ("z", g.q(Q.level_info, g.q(Q.finst_level, e))[1] + p["elevation"])
+    if h is not None:
+        if role == "circle":
+            return ("orphan", "target_deleted")
+        x, y, c, s, _ = g.q(Q.wall_frame, h)
+        t = p["offset"]
+        if role != "center":
+            cut = g.q(Q.ifc_spec, e).get("cut")
+            if not cut:
+                return ("orphan", "target_deleted")
+            t += cut["x"][0] if role == "jamb.start" else cut["x"][1]
+        return ("pt", x + t * c, y + t * s)
+    if role in ("jamb.start", "jamb.end"):
+        return ("orphan", "target_deleted")
+    px, py = p["position"][0], p["position"][1]
+    if role == "center":
+        return ("pt", px, py)
+    best = None
+    for b in g.q(Q.ifc_spec, e).get("body") or ():
+        pr = b.get("profile") or {}
+        if b.get("k") == "extrude" and b.get("plane") == "xy" and pr.get("shape") == "circle" and (best is None or pr["r"] > best[1]):
+            best = (pr["center"], pr["r"])
+    if best is None:
+        return ("orphan", "target_deleted")
+    sn, cs = D._sincos_deg(p.get("rotation", 0.0) or 0.0)
+    u, v = best[0][0], best[0][1]
+    return ("circle", px + u * cs - v * sn, py + u * sn + v * cs, best[1])
 
 
 def chain_tail(g, w):
@@ -193,19 +273,80 @@ def _door_ref(g, d, role, row):
 
 
 # ================================================================ 치수 값
-def measure(ra, rb):
-    """두 해석 결과 사이의 거리. ("ok", 값) 또는 ("invalid", 이유). 평면 거리와 높이 거리는 섞지 않는다.
-    좌표가 너무 커서 제곱이 넘치면 inf/nan 이 나오는데, 이 값으로 글자를 만들면 터지므로 값 없음(non_finite)으로 낸다."""
-    st, v = _measure(ra, rb)
+def measure(ra, rb, mode=None):
+    """두 해석 결과 사이의 거리(mode 없음) 또는 각도(도, "angle")·반지름("radius")·지름("diameter"). ("ok", 값) 또는 ("invalid", 이유).
+    평면 거리와 높이 거리는 섞지 않는다. 좌표가 너무 커서 제곱이 넘치면 inf/nan 이 나오는데, 이 값으로 글자를 만들면 터지므로 값 없음(non_finite)으로 낸다."""
+    st, v = _measure(ra, rb) if mode is None else _measure_more(ra, rb, mode)
     if st == "ok" and not isfinite(v):
         return ("invalid", "non_finite")
     return st, v
+
+
+# ---------------------------------------------------------------- 삼각함수(사칙연산과 sqrt 만: libm 의 sin·cos·atan 은 플랫폼마다 끝자리가 다를 수 있다)
+PI = 3.141592653589793
+DEG = 180.0 / PI
+
+
+def _atan_small(z):
+    """|z| <= 1 의 atan. 반각 공식 atan(z) = 2 atan(z / (1 + sqrt(1 + z²))) 을 두 번 써 |z| < 0.2 로 줄인 뒤 급수 30항(고정)."""
+    k = 1.0
+    for _ in range(2):
+        z = z / (1.0 + sqrt(1.0 + z * z))
+        k *= 2.0
+    acc, term, z2 = 0.0, z, z * z
+    for n in range(30):
+        acc += term / (2 * n + 1) * (1.0 if n % 2 == 0 else -1.0)
+        term *= z2
+    return k * acc
+
+
+def _atan2_pos(y, x):
+    """y > 0 인 atan2(라디안, 0 < 값 < π)."""
+    if abs(x) >= y:
+        a = _atan_small(y / x)
+        return a if x > 0 else a + PI
+    return PI / 2.0 - _atan_small(x / y)
+
+
+def _sincos(t):
+    """(sin t, cos t). t 를 [-π, π] 로 줄인 뒤 테일러 급수 고정 항수."""
+    t -= round(t / (2.0 * PI)) * 2.0 * PI
+    sn, cs, term_s, term_c, t2 = 0.0, 0.0, t, 1.0, t * t
+    for n in range(22):
+        sn += term_s
+        cs += term_c
+        term_s *= -t2 / ((2 * n + 2) * (2 * n + 3))
+        term_c *= -t2 / ((2 * n + 1) * (2 * n + 2))
+    return sn, cs
+
+
+def _rot(ux, uy, t):
+    """단위 벡터 (ux, uy) 를 t 라디안 돌린다."""
+    sn, cs = _sincos(t)
+    return ux * cs - uy * sn, ux * sn + uy * cs
+
+
+def _measure_more(ra, rb, mode):
+    """W1 1-B 2차(ANN-02): 모델 연관 각도·반지름·지름."""
+    if "orphan" in (ra[0], rb[0]):
+        return ("invalid", "orphan_ref")
+    if mode == "angle":
+        if ra[0] != "line" or rb[0] != "line":
+            return ("invalid", "mixed")
+        if abs(ra[3] * rb[4] - ra[4] * rb[3]) <= PARALLEL_EPS:
+            return ("invalid", "parallel")
+        return ("ok", _atan2_pos(abs(ra[3] * rb[4] - ra[4] * rb[3]), ra[3] * rb[3] + ra[4] * rb[4]) * DEG)   # 0 < θ < 180
+    if ra[0] != "circle" or ra[1:] != rb[1:]:   # 반지름·지름은 같은 원 하나(a = b)를 잰다
+        return ("invalid", "mixed")
+    return ("ok", ra[3] * (2.0 if mode == "diameter" else 1.0))
 
 
 def _measure(ra, rb):
     ta, tb = ra[0], rb[0]
     if "orphan" in (ta, tb):
         return ("invalid", "orphan_ref")
+    if "circle" in (ta, tb):   # 원은 반지름·지름 치수만 잰다
+        return ("invalid", "mixed")
     if ta == "z" and tb == "z":
         return ("ok", abs(ra[1] - rb[1]))
     if "z" in (ta, tb):
@@ -232,7 +373,7 @@ def dim_value(g, d):
     bad = tuple((w, r[1]) for w, r in (("a", ra), ("b", rb)) if r[0] == "orphan")
     if bad:
         return ("orphan", bad)
-    return measure(ra, rb)
+    return measure(ra, rb, row["params"].get("measure"))
 
 
 def dim_flags(g, d):
@@ -254,15 +395,16 @@ def dim_flags(g, d):
         tgt = Q.el(g, eid)
         if tgt is not None and tgt["kind"] == kind:   # 참조 종류와 다른 요소(예전 데이터의 잘못된 참조)는 고아로 해석되니 방향도 보지 않는다
             if kind == "wall":
-                cand.append(eid)
+                cand.append(("wall", eid))
                 if role in END_ROLES:
                     tail = chain_tail(g, eid)
                     if tail is not None and tail != eid and Q.el(g, tail) is not None:
-                        cand.append(tail)
-            else:
-                cand.append(g.q(Q.door_host, eid))
-        for w in cand:
-            cur = unit_dir(Q.el(g, w)["params"]["axis"])
+                        cand.append(("wall", tail))
+            elif kind in ("door", "finst", "grid"):
+                cand.append((kind, eid))
+        for ck, w in cand:
+            ln = dir_line(g, ck, w)
+            cur = None if ln is None else unit_dir(ln)
             if cur is not None and cur[0] * fp[0] + cur[1] * fp[1] < 0:
                 out.append(f"direction_changed:{side}")
                 break
@@ -291,6 +433,10 @@ def _field(g, kind, eid, row, name):
     p = row["params"]
     if name == "name":
         return p["name"]
+    if name == "ifc_class":   # 다중 범주 태그(ANN-08)
+        return K.FIXED_IFC_CLASS.get(kind) or row.get("ifc_class") or "-"
+    if kind in ("finst", "roof", "railing"):
+        return _field_finst(g, kind, eid, row, name)
     if name in ("width", "height", "sill", "thickness", "elevation", "top_offset"):
         return fmt_num(p[name])
     if kind in ("slab", "space", "stair"):
@@ -318,6 +464,28 @@ def _field(g, kind, eid, row, name):
     return "-" if v is None else str(v)
 
 
+def _field_finst(g, kind, eid, row, name):
+    """패밀리 인스턴스(창·기둥 등)·지붕·난간 태그 필드(W1 1-B 2차). 자립 인스턴스에 없는 값(폭·높이·호스트)은 '-'."""
+    p = row["params"]
+    if name == "material":
+        m = Q.material(g, eid)
+        return "-" if m is None else str(m)
+    if name == "level":
+        lv = g.q(Q.finst_level, eid) if kind == "finst" else Q.rel_out(g, "on_level", eid)[0]
+        return g.q(Q.level_info, lv)[0]
+    if name == "category":
+        c = row.get("ifc_class") or "-"
+        return FINST_CATEGORY.get(c, c)
+    if name == "family":
+        return str(row.get("family_id") or "-")
+    if name == "host":
+        h = g.q(Q.finst_host, eid)
+        return "-" if h is None else Q.el(g, h)["params"]["name"]
+    if name in ("width", "height") and name not in p:
+        return "-"
+    return fmt_num(p[name])   # width·height(호스팅 개구부)·elevation
+
+
 def _field_more(g, kind, eid, p, name):
     """슬래브·공간·계단 태그 필드(W1 1-B)."""
     if name == "level":
@@ -341,7 +509,7 @@ def tag_text(g, t):
     tgt = Q.el(g, p["target"])
     if tgt is None:
         return ("orphan", (("target", "target_deleted"),))
-    if tgt["kind"] not in TAG_FIELDS or any(f not in TAG_FIELDS[tgt["kind"]] for f in p["fields"]):
+    if tgt["kind"] not in TAG_FIELDS or any(f not in TAG_ALLOWED[tgt["kind"]] for f in p["fields"]):
         return ("orphan", (("target", "bad_ref"),))
     try:
         return ("ok", " ".join(_field(g, tgt["kind"], p["target"], tgt, f) for f in p["fields"]))
@@ -401,6 +569,46 @@ def dim_geometry(g, p, ra, rb):
     return e0, e1, line, _r((ax + bx) / 2.0 + ox, (ay + by) / 2.0 + oy), _r(ux, uy)
 
 
+def fmt_deg(v) -> str:
+    return f"{v:.2f}".rstrip("0").rstrip(".") + "°"   # 2D 작도 각도 치수(drafting.fmt_deg)와 같은 꼴
+
+
+def more_geometry(p, ra, rb, value):
+    """각도·반지름·지름 치수 그림 (선분들, 눈금들 (x, y, 접선 ux, uy), 글, 글 위치, 글 방향). 평면 좌표. 그릴 수 없으면 None(꼭짓점이 너무 멀다).
+    각도: 두 선의 교점에서 반지름 |off|(0 이면 600) 의 호를 a 방향에서 b 방향으로 그린다. off 가 음수면 맞꼭지각 쪽(값은 같다).
+    반지름: 원 중심에서 45도 방향으로 원둘레까지. 지름: 중심을 지나는 45도 선분."""
+    mode = p["measure"]
+    if mode == "angle":
+        ax, ay, adx, ady = ra[1], ra[2], ra[3], ra[4]
+        bx, by, bdx, bdy = rb[1], rb[2], rb[3], rb[4]
+        cr = adx * bdy - ady * bdx
+        t = ((bx - ax) * bdy - (by - ay) * bdx) / cr
+        px, py = ax + t * adx, ay + t * ady
+        if not (isfinite(px) and isfinite(py)) or abs(px) > FAR_VERTEX or abs(py) > FAR_VERTEX:
+            return None
+        rad = abs(p["off"]) if abs(p["off"]) >= 1.0 else 600.0
+        sg = 1.0 if cr > 0 else -1.0
+        s0 = -1.0 if p["off"] < 0 else 1.0
+        d0 = (adx * s0, ady * s0)                    # 호의 시작 방향(음수 off = 맞꼭지각 쪽)
+        th = sg * value / DEG
+        dirs = [_rot(d0[0], d0[1], th * i / ARC_N) for i in range(ARC_N + 1)]
+        pts = [(px + rad * ux, py + rad * uy) for ux, uy in dirs]
+        d1, dm = dirs[-1], _rot(d0[0], d0[1], th / 2.0)
+        ext = rad + 150.0
+        segs = [_r(px, py, px + ext * d0[0], py + ext * d0[1]), _r(px, py, px + ext * d1[0], py + ext * d1[1])]
+        segs += [_r(*pts[i], *pts[i + 1]) for i in range(ARC_N)]
+        ticks = (_r(*pts[0], -d0[1] * sg, d0[0] * sg), _r(*pts[-1], -d1[1] * sg, d1[0] * sg))
+        return tuple(segs), ticks, fmt_deg(value), _r(px + rad * dm[0], py + rad * dm[1]), _r(-dm[1] * sg, dm[0] * sg)
+    cx, cy, r = ra[1], ra[2], ra[3]
+    k = sqrt(0.5)
+    rim = (cx + r * k, cy + r * k)
+    if mode == "radius":
+        seg, ticks, txt, tpos = _r(cx, cy, *rim), (_r(*rim, k, k),), "R" + fmt_num(value), _r(cx + r * k / 2.0, cy + r * k / 2.0)
+    else:
+        seg, ticks, txt, tpos = _r(cx - r * k, cy - r * k, *rim), (_r(cx - r * k, cy - r * k, k, k), _r(*rim, k, k)), "Ø" + fmt_num(value), _r(cx, cy)
+    return (seg,), ticks, txt, tpos, _r(k, k)
+
+
 def annot_draw(g, a):
     """주석 하나의 그림 항목. 정상이면 ("dim"|"tag", ...), 고아·무효면 ("orphan", id, 종류, 이유, x, y)."""
     row = Q.el(g, a)
@@ -413,6 +621,14 @@ def annot_draw(g, a):
         return ("orphan", a, kind, st[1][0][1], *_r(*p["home"]))
     if st[0] != "ok":
         return ("invalid", a, kind, st[1], *_r(*p["home"]))
+    if kind == "dim" and "measure" in p:   # W1 1-B 2차: 각도·반지름·지름(그림 항목 adim). 선형 치수의 그림은 이전과 같다
+        ra, rb = g.q(ref_resolve, p["a"]), g.q(ref_resolve, p["b"])
+        geo = more_geometry(p, ra, rb, st[1])
+        if geo is None:
+            return ("invalid", a, kind, "far_vertex", *_r(*p["home"]))
+        if not all(isfinite(v) for part in (*geo[0], *geo[1], geo[3], geo[4]) for v in part):
+            return ("invalid", a, kind, "non_finite", *_r(*p["home"]))
+        return ("adim", a, *geo)
     if kind == "dim":
         ra, rb = g.q(ref_resolve, p["a"]), g.q(ref_resolve, p["b"])
         e0, e1, line, tpos, u = dim_geometry(g, p, ra, rb)
@@ -426,10 +642,18 @@ def annot_draw(g, a):
 
 
 def tag_anchor(g, target):
-    """태그가 가리키는 대상의 평면 대표점: 벽은 축선 중점, 문은 중심, 슬래브·공간은 경계 무게중심, 계단은 걸음선 중점."""
+    """태그가 가리키는 대상의 평면 대표점: 벽은 축선 중점, 문은 중심, 슬래브·공간·지붕은 경계 무게중심, 계단은 걸음선 중점,
+    패밀리 인스턴스는 삽입점, 난간은 경로 가운데 선분의 중점."""
     row = Q.el(g, target)
-    if row["kind"] in ("slab", "space"):
+    if row["kind"] in ("slab", "space", "roof"):
         return D.polygon_centroid(row["params"]["boundary"])
+    if row["kind"] == "finst":   # 창·기둥: 삽입점(호스팅은 호스트 축선 위)
+        r = g.q(ref_resolve, make_ref("finst", target, "center"))
+        return (r[1], r[2])
+    if row["kind"] == "railing":   # 난간: 경로 가운데 선분의 중점
+        path = row["params"]["path"]
+        i = max(1, len(path) // 2)
+        return ((path[i - 1][0] + path[i][0]) / 2.0, (path[i - 1][1] + path[i][1]) / 2.0)
     if row["kind"] == "stair":
         x0, y0, x1, y1 = row["params"]["run"]
         return ((x0 + x1) / 2.0, (y0 + y1) / 2.0)

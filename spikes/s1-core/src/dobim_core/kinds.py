@@ -205,13 +205,19 @@ def _ref(v) -> bool:
     return text_ok(v, 1, 80)
 
 
+DIM_MEASURES = ("angle", "radius", "diameter")   # 선형 밖의 치수 종류(annot.MEASURES 와 같다). 선형 치수는 measure 키가 없다
+
+
 def _dim_params(p):
+    base = p
     if isinstance(p, dict) and "at" in p:   # 높이 치수만 at 이 있다
         base = {k: v for k, v in p.items() if k != "at"}
         if not _pt_ok(p["at"]):
             return "dim.at 값이 올바르지 않다"
-    else:
-        base = p
+    if isinstance(p, dict) and "measure" in p:   # W1 1-B 2차: 각도·반지름·지름(평면 치수만, at 과 함께 둘 수 없다)
+        if p["measure"] not in DIM_MEASURES or "at" in p:
+            return "dim.measure 값이 올바르지 않다"
+        base = {k: v for k, v in p.items() if k != "measure"}
     return _check_fields("dim", base, {"name": _name, "view": id_ok, "a": _ref, "b": _ref, "off": num_ok, "home": _pt_ok,
                                        "dirs": lambda v: _json_ok(v) and isinstance(v, dict)})
 
@@ -1169,6 +1175,10 @@ def _dlayer_params(p):
                                        "linetype": lambda v: v in DRAFT_LINETYPES, "color": color_ok})
 
 
+# 태그 대상 종류(annot.TAG_FIELDS 와 같다: 가져오기가 복원한 태그 대상을 이 종류로 검사한다)
+TAG_TARGET_KINDS = ("wall", "door", "slab", "space", "stair", "finst", "roof", "railing")
+
+
 # ---------------------------------------------------------------- 요소 종류
 class ElementKind(NamedTuple):
     name: str
@@ -1207,7 +1217,7 @@ ELEMENT_KINDS: dict[str, ElementKind] = {k.name: k for k in (
     ElementKind("dim", False, None, False, 7, _dim_params, refs=(("view", "id", "annot_of"), ("a", "ref", None), ("b", "ref", None)),
                 ref_kinds=(("view", ("view",)),)),
     ElementKind("tag", False, None, False, 7, _tag_params, refs=(("view", "id", "annot_of"), ("target", "id", None)),
-                ref_kinds=(("view", ("view",)), ("target", ("wall", "door")))),
+                ref_kinds=(("view", ("view",)), ("target", TAG_TARGET_KINDS))),
     # 시트 정의(뷰 배치·표제란 인자): 뷰와 같은 비 IFC 의도 요소다. 뷰를 가리키는 참조는 목록(views)·중첩(revisions·callouts 의 view)이라 관계로 묻지 않는다
     ElementKind("sheet", False, None, False, 8, _sheet_params, refs=(("views", "ids", None), ("key_plan", "id", None)),
                 ref_kinds=(("key_plan", ("view",)),)),

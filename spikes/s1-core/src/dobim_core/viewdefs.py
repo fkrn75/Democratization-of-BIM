@@ -29,7 +29,7 @@ MAX_DEFS = 100_000                                                      # 한 �
 MAX_VIEW = 1e7                                                          # 뷰 좌표·거리 상한(commands.VCoord 와 같다)
 MAX_OFF = 1e5                                                           # 치수선·태그 간격 상한(commands.Off 와 같다)
 MAX_POS = 1e9                                                           # 저장된 위치(home·at) 상한(벽·문 의도의 위치 상한과 같다)
-_TAG_ANY = frozenset(f for fs in AN.TAG_FIELDS.values() for f in fs)
+_TAG_ANY = frozenset(f for fs in AN.TAG_ALLOWED.values() for f in fs)
 
 assert set(DEF_KINDS) == set(K.NON_IFC_KINDS)   # 새 비 IFC 종류를 더하면 정의 왕복도 함께 정해야 한다
 
@@ -95,6 +95,9 @@ def _dim_values(p: dict) -> None:
     vertical = ts[0] == "z" and ts[1] == "z"
     if (ts[0] == "z") != (ts[1] == "z"):
         raise ValueError("높이 참조와 평면 참조가 섞여 있다")
+    m = p.get("measure")   # W1 1-B 2차: 각도(선 둘)·반지름·지름(같은 원 하나). 선형 치수에는 원 참조가 없다
+    if (m == "angle" and ts != ["line", "line"]) or (m in ("radius", "diameter") and (ts != ["circle", "circle"] or p["a"] != p["b"]))             or (m is None and "circle" in ts):
+        raise ValueError("치수 종류와 참조 종류가 맞지 않는다")
     if vertical != ("at" in p):
         raise ValueError("높이 치수만 at 이 있어야 한다")
     if "at" in p and not _pt(p["at"], MAX_POS):
@@ -160,4 +163,4 @@ def parse_def(eid: str, text) -> dict:
 
 def tag_fields_ok(target_kind: str, fields) -> bool:
     """태그의 표시 필드가 대상 종류(벽·문)에 있는 것인가."""
-    return target_kind in AN.TAG_FIELDS and set(fields) <= set(AN.TAG_FIELDS[target_kind])
+    return target_kind in AN.TAG_FIELDS and set(fields) <= set(AN.TAG_ALLOWED[target_kind])

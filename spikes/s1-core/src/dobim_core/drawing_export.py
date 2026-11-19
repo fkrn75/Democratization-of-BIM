@@ -79,6 +79,8 @@ def _annot_pts(it):
         return [(it[2][0], it[2][1]), (it[2][2], it[2][3]), (it[3][2], it[3][3]), (it[4][0], it[4][1]), (it[4][2], it[4][3])]
     if t == "tag":
         return [tuple(it[2]), (it[3][0] + 1500.0, it[3][1])]
+    if t == "adim":   # 각도·반지름·지름 치수(W1 1-B 2차)
+        return [(s[0], s[1]) for s in it[2]] + [(s[2], s[3]) for s in it[2]] + [tuple(it[5])]
     return [(it[4], it[5]), (it[4] + 3000.0, it[5])]
 
 
@@ -128,8 +130,14 @@ def draft_svg(data, tx, ty, scale) -> list[str]:
     return out
 
 
+def adim_text_angle(u) -> float:
+    """각도·반지름·지름 치수 글의 용지 회전각(도). 글이 거꾸로 서지 않게 (-90, 90] 로 맞춘다(선형 치수와 같은 규칙)."""
+    ang = degrees(atan2(-u[1], u[0]))
+    return ang - 180.0 if ang > 90.0 else (ang + 180.0 if ang <= -90.0 else ang)
+
+
 REASON_KO = {"target_deleted": "대상 삭제됨", "successor_deleted": "이어받은 벽 삭제됨", "bad_ref": "잘못된 참조",
-             "not_parallel": "평행하지 않음", "mixed": "참조 종류 혼합"}
+             "not_parallel": "평행하지 않음", "mixed": "참조 종류 혼합", "parallel": "평행함", "far_vertex": "교점이 너무 멂"}
 ANNOT_COLOR, ORPHAN_COLOR = "#1a4fa0", "#c62828"
 
 
@@ -153,6 +161,18 @@ def annot_svg(data, tx, ty) -> list[str]:
                 out.append(f'<line x1="{px - kx:.3f}" y1="{py - ky:.3f}" x2="{px + kx:.3f}" y2="{py + ky:.3f}" stroke-width="0.25"/>')
             ang = degrees(atan2(upy, upx))
             ang = ang - 180.0 if ang > 90.0 else (ang + 180.0 if ang <= -90.0 else ang)
+            out.append(f'<text transform="translate({tx(tpos[0]):.3f},{ty(tpos[1]):.3f}) rotate({ang:.2f})" text-anchor="middle" '
+                       f'dy="-0.8" stroke="none">{_esc(text)}</text>')
+            out.append("</g>")
+        elif t == "adim":   # 각도·반지름·지름 치수(W1 1-B 2차): 선분들(호는 짧은 선분으로 나눴다)·끝 눈금·글
+            _, _, segs, ticks, text, tpos, u = it
+            out.append(f'<g class="dim" data-id="{aid}">')
+            for e in segs:
+                out.append(f'<line x1="{tx(e[0]):.3f}" y1="{ty(e[1]):.3f}" x2="{tx(e[2]):.3f}" y2="{ty(e[3]):.3f}"/>')
+            for x, y, ux, uy in ticks:
+                kx, ky = (ux + uy) * 0.64, (-uy + ux) * 0.64      # 45도 눈금(용지 y 는 아래로)
+                out.append(f'<line x1="{tx(x) - kx:.3f}" y1="{ty(y) - ky:.3f}" x2="{tx(x) + kx:.3f}" y2="{ty(y) + ky:.3f}" stroke-width="0.25"/>')
+            ang = adim_text_angle(u)
             out.append(f'<text transform="translate({tx(tpos[0]):.3f},{ty(tpos[1]):.3f}) rotate({ang:.2f})" text-anchor="middle" '
                        f'dy="-0.8" stroke="none">{_esc(text)}</text>')
             out.append("</g>")
@@ -287,6 +307,11 @@ def render_pdf(data, font=None) -> tuple[bytes, bool]:
             for e in (it[2], it[3], it[4]):
                 c.append(f"{px(e[0])} {py(e[1])} m {px(e[2])} {py(e[3])} l S")
             c.append(f"BT /F1 {2.5 * k:.2f} Tf {tx(it[6][0]) * k:.2f} {(h - ty(it[6][1]) + 0.8) * k:.2f} Td {txt(it[5])} Tj ET")
+        elif it[0] == "adim":   # 각도·반지름·지름 치수(W1 1-B 2차)
+            c.append(f"{0.13 * k:.3f} w")
+            for e in it[2]:
+                c.append(f"{px(e[0])} {py(e[1])} m {px(e[2])} {py(e[3])} l S")
+            c.append(f"BT /F1 {2.5 * k:.2f} Tf {tx(it[5][0]) * k:.2f} {(h - ty(it[5][1]) + 0.8) * k:.2f} Td {txt(it[4])} Tj ET")
         elif it[0] == "tag":
             c.append(f"{0.13 * k:.3f} w {px(it[2][0])} {py(it[2][1])} m {px(it[3][0])} {py(it[3][1])} l S")
             c.append(f"BT /F1 {2.5 * k:.2f} Tf {tx(it[3][0]) * k + 2:.2f} {(h - ty(it[3][1])) * k:.2f} Td {txt(it[4])} Tj ET")

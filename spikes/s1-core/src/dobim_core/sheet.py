@@ -151,6 +151,16 @@ def view_prims(sh: Sheet, data, tx, ty, datums, dx0, dx1, style=None, prof=None)
             ang = ang - 180.0 if ang > 90.0 else (ang + 180.0 if ang <= -90.0 else ang)
             a = radians(ang)
             sh.text(tx(tpos[0]) + 0.8 * sin(a), ty(tpos[1]) - 0.8 * cos(a), h_dim, fmt_dim(text, prof), "middle", DX.ANNOT_COLOR, ang)
+        elif t == "adim":   # 각도·반지름·지름 치수(W1 1-B 2차): 글은 R·Ø·° 가 붙어 작성기준 숫자 형식을 타지 않는다
+            _, _, segs, ticks, text, tpos, u = it
+            for e in segs:
+                sh.line(tx(e[0]), ty(e[1]), tx(e[2]), ty(e[3]), w_dim, DX.ANNOT_COLOR)
+            for x, y, ux, uy in ticks:
+                kx, ky = (ux + uy) * 0.64, (-uy + ux) * 0.64
+                sh.line(tx(x) - kx, ty(y) - ky, tx(x) + kx, ty(y) + ky, 0.25, DX.ANNOT_COLOR)
+            ang = DX.adim_text_angle(u)
+            a = radians(ang)
+            sh.text(tx(tpos[0]) + 0.8 * sin(a), ty(tpos[1]) - 0.8 * cos(a), h_dim, text, "middle", DX.ANNOT_COLOR, ang)
         elif t == "tag":
             _, _, anc, lab, text = it
             sh.line(tx(anc[0]), ty(anc[1]), tx(lab[0]), ty(lab[1]), 0.13, "#8a3b00")

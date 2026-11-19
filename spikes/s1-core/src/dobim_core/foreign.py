@@ -523,7 +523,7 @@ def _restore_defs(f, rows: dict, rels: set, taken: set, plan: "ImportPlan") -> N
     def level_of(kind, eid):   # 주석 대상이 놓인 레벨(저작 요소만 묻는다)
         if kind == "level":
             return eid
-        return on_level.get(host_of.get(eid) if kind == "door" else eid)
+        return on_level.get(host_of.get(eid, eid) if kind in ("door", "finst") else eid)   # 자립 패밀리 인스턴스는 레벨에 직접 선다
 
     ok: dict[str, dict] = {}
     for eid in sorted(e for e, d in parsed.items() if d["kind"] == "view"):
@@ -559,7 +559,10 @@ def _restore_defs(f, rows: dict, rels: set, taken: set, plan: "ImportPlan") -> N
             for k in ("a", "b"):
                 rk, rid, _role = AN.parse_ref(p[k])
                 st = state(rid)
-                if st is not None and st != (rk, "authored"):
+                if rk == "grid":   # 통심선(W1 1-B 2차): 정의로 왕복한다. 같은 파일에서 되살린 통심선이어야 하고 레벨이 없다
+                    if st is not None and ok.get(rid, {}).get("kind") != "grid":
+                        why = f"치수 참조 {k} 의 대상이 되살린 통심선이 아니다"
+                elif st is not None and st != (rk, "authored"):
                     why = f"치수 참조 {k} 의 대상이 저작 {rk} 가 아니다"
                 elif st is not None and vt == "plan" and level_of(rk, rid) != v["params"]["level"]:
                     why = f"치수 참조 {k} 의 대상이 이 평면 뷰의 레벨에 있지 않다"
@@ -568,7 +571,7 @@ def _restore_defs(f, rows: dict, rels: set, taken: set, plan: "ImportPlan") -> N
             if vt != "plan":
                 why = "태그는 평면 뷰에 둔다"
             elif st is not None and (K.ref_kind_error("tag", "target", st[0]) or st[1] != "authored" or not VD.tag_fields_ok(st[0], p["fields"])):
-                why = "태그 대상이 저작 벽·문이 아니거나 표시 필드가 맞지 않는다"
+                why = "태그 대상이 태그할 수 있는 저작 요소가 아니거나 표시 필드가 맞지 않는다"
             elif st is not None and level_of(st[0], p["target"]) != v["params"]["level"]:
                 why = "태그 대상이 이 평면 뷰의 레벨에 있지 않다"
         if why:
