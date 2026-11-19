@@ -1424,3 +1424,30 @@ Revit 기능 차이표 1-C(뷰 제어) 가운데 가치가 가장 큰 VIEW-13(�
 - 새 시험 `tests/test_edit_w1f.py`(11건): 레벨 이름·높이(상단 구속 벽 재계산·바닥 레벨·거절·되돌리기), 복사(문·속성·재료·조인·자동 이름), 배열·다른 층 복사·거절 사례(제자리·호스트 없는 문·레벨·통심선), 새 id 의 재생·다시 열기·기준 그래프 일치(`kit.full_check`)와 난간 출처 바꾸기, 회전 90도 정확·문 따라감·자립 패밀리 rotation·되돌리기, 회전한 지붕 슬래브 물매·배수구와 계단 난간 따라감, 승강기 구멍 슬래브 거절, 대칭(축선 뒤집기·문 거울상 위치·계단 꺾는 쪽·슬래브 반시계), 대칭 두 번이면 제자리·keep, 솔리드 대칭·45도 회전, IFC 왕복 해시 같음.
 - 결과(코드 커밋 e5e985c 뒤 한 번에, 도중 수정 없음): s1-core 전체(test_slow 제외) 1461 통과·40 건너뜀·실패 0. test_slow 8 통과. parity: 커맨드 164 전부 예시 실행(예시 199·오류 사례 49), 불일치 0, parity C 100%. parity_g: 통과(동작 52, 오류·경고 0).
 - 남은 1-E·1-F 항목과 다음 PR 제안은 로컬 목록으로 정리했다(1-E: IO-17 용지, DATA-09 사용자 IDS, ANA-05, ANA-06 모델 품질 점검, DATA-12 프로젝트 템플릿 / 1-F: UI-04 일괄 편집, UI-03 남은 것, ARC-03 T 조인, ARC-18 임의 외곽 지붕, ARC-21 천장, ARC-32 경사로, ARC-43·FAM-01·FAM-13 패밀리 라이브러리).
+
+## 41. 모델 편집(W1 1-F 2차): 원형 배열, 벽 간격띄우기·트림/연장, 일괄 편집 (2026-11-20, 브랜치 phase1/w1f-modeling-2)
+
+40절에 이어 UI-03 의 남은 것(원형 배열, 모델 벽 간격띄우기, 트림/연장)과 UI-04(여러 요소 한 번에 고치기)를 넣었다. 새 커맨드 7개(`element.array_radial`, `wall.offset`, `wall.extend_to`, `wall.corner`, `pset.set_many`, `material.set_many`, `wall.set_many`)는 모두 레지스트리를 거쳐 CLI·MCP 가 같고(parity C), GUI 동작 7개(`edit.array_radial`, `edit.bulk_pset`, `edit.bulk_material`, `wall.bulk_edit`, `wall.offset`, `wall.trim_extend`, `wall.trim_corner`)를 actions.json 에 더했다(parity G). 새 데이터 형식은 없다(기존 요소 행·관계·속성·재료). 코드는 `commands_edit.py` 에만 더했고 40절의 `_pick`·`_copy_set`·`_transform` 과 `wall.set` 검사를 그대로 쓴다.
+
+### 41.1 넣은 것
+| 차이표 | 커맨드 | 입력 | 값·동작 |
+|---|---|---|---|
+| UI-03 | `element.array_radial` | `{ids, center, step, count(1~50), new_ids?}` | k번째 복사본은 center 중심 k·step 도 회전(반시계 +). 어떤 k·step 이 360 의 배수면(원본과 겹침) 거절. 복사 규칙(호스팅 요소·속성·재료·조인·난간 출처·자동 이름)과 new_ids 로그는 `element.copy` 와 같다 |
+| UI-03 | `wall.offset` | `{ids(벽), distance, keep=true, new_ids?}` | 각 벽을 제 축선 진행 방향 왼쪽(+)·오른쪽(-)으로 distance 만큼 옮긴 복사본을 만든다(keep false 면 벽을 옮긴다). 이동량은 1e-6mm 반올림(축이 수평·수직이면 정확). 둘 다 띄운 벽끼리는 조인도 옮긴다 |
+| UI-03 | `wall.extend_to` | `{id, to, end?}` | 벽 한 끝을 경계 벽 축선(무한 직선)과의 교점으로 옮긴다(자르기·늘이기 하나로). end 를 생략하면 교점에 가까운 끝. 시작점이 움직이면 축선 거리로 잰 값(호스팅 문·패밀리 offset, 모양 개구부 offset, 잘라내기 u)을 그만큼 당겨 평면 위 위치를 지킨다. 문이 벽 밖으로 나가면 `wall.set` 검사로 거절. 평행이면 거절. 상단 윤곽이 있는 벽은 거절(윤곽을 떼고 다시 붙인다) |
+| UI-03 | `wall.corner` | `{a, b, join=true}` | 두 벽을 축선 교점까지 각각 가까운 끝으로 자르거나 늘이고, join 이면 조인한다(같은 레벨이어야 한다) |
+| UI-04 | `pset.set_many` | `{ids 또는 where, pset, prop, value}` | 여러 요소에 같은 속성. 예약 속성셋(DoBIM_Intent)은 거절 |
+| UI-04 | `material.set_many` | `{ids 또는 where, name}` | 여러 요소에 같은 재료(null 이면 뗀다). 외래·분리 요소와 층 구성 벽은 기존 `material.set` 규칙대로 거절 |
+| UI-04 | `wall.set_many` | `{ids 또는 where, thickness?, height?, base_offset?, top_level?, top_offset?}` | 벽마다 `wall.set` 을 그대로 부른다(호스팅 요소·상단 구속 검사 포함) |
+
+- `where` 는 `element.query` 와 같은 거르기 `{kind?, level?, name_contains?}`. 실행할 때 id 목록으로 풀어 인자 `ids` 로 로그에 남긴다(`where` 는 로그에서 빠진다): 재생·병합이 같은 대상을 고친다. 맞는 요소가 없으면 NOT_FOUND, 1000개를 넘으면 거절.
+- 일괄 편집은 한 트랜잭션이다. 한 요소라도 실패하면 전체를 거절하고 오류 path 는 `/ids/<번호>`, 메시지 앞에 그 요소 id 를 붙인다. 응답은 `{count, changed, ids(바뀐 것, 100개까지)}`.
+- 알려진 한계: 패밀리 유형 바꾸기(인스턴스 타입 교체)는 아직 없다. 트림/연장은 경계 벽 축선까지만 잰다(경계 벽의 면이나 2D 선·참조면은 아니다). 연장한 벽이 다른 벽과 겹쳐도 검사하지 않는다. `wall.offset` 은 체인을 한 덩어리로 다듬지 않는다(벽마다 띄우고 조인만 옮긴다, 모서리 맞추기는 `wall.corner`).
+
+### 41.2 기존 출력 불변·성능
+- 기준선 `run_baseline.py --sheets`: main c29f4d0 와 코드 커밋 831f713 에서 각각 뽑아 183 파일 바이트 같음(work/·run.json 제외).
+- 뷰 생성·선분 계산 경로와 모델 저장 경로는 건드리지 않았다(`commands_edit.py`·actions.json·시험만 바뀜). 그래서 5만 요소 bench 는 다시 재지 않았다(39.2절 값 그대로).
+
+### 41.3 시험·parity
+- 새 시험 `tests/test_edit_w1f2.py`(8건): 원형 배열(90도 정확·문 따라감·겹침 거절), 간격띄우기 복사(좌우 방향·조인 옮김)·이동·거절, 트림/연장(늘이기 두 끝, 시작점 자르기 때 문 제자리, 문이 벽 밖이면 거절, 평행 거절, 되돌리기), 모서리 맞추기(교점·조인·다른 레벨 거절), 일괄 속성·재료·벽(where·ids, 하나 실패 시 전체 거절과 path), where 가 로그에 ids 로 남음, 재생·다시 열기·기준 그래프 일치(`kit.full_check`), IFC 왕복 해시 같음.
+- 결과(코드 커밋 831f713 뒤 한 번에, 도중 수정 없음): s1-core 전체(test_slow 제외) 1469 통과·40 건너뜀·실패 0. test_slow 8 통과. parity: 커맨드 171 전부 예시 실행(예시 207·오류 사례 49), 불일치 0, parity C 100%. parity_g: 통과(동작 59, 오류·경고 0).

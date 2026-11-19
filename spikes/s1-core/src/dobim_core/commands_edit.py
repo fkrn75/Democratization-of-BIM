@@ -1,24 +1,27 @@
 # SPDX-License-Identifier: MPL-2.0
-"""모델 편집 커맨드(W1 1-F 첫 PR): 레벨 고치기(ARC-37), 요소 복사·배열·회전·대칭(UI-03).
+"""모델 편집 커맨드(W1 1-F): 레벨 고치기(ARC-37), 요소 복사·배열·회전·대칭·벽 간격띄우기·트림/연장(UI-03), 일괄 편집(UI-04).
 
 level.set       레벨 이름·높이를 바꾼다. 높이를 바꾸면 상단이 레벨에 묶인 벽의 height 를 다시 계산한다.
 element.copy    요소들을 (dx, dy) 만큼 count 번 복사한다(선형 배열). level 을 주면 그 레벨로 복사한다.
 element.rotate  요소들을 점 center 중심으로 angle 도 회전한다.
 element.mirror  요소들을 축 [x1,y1,x2,y2] 에 대해 대칭으로 옮긴다(keep 이면 원본을 두고 대칭 복사본을 만든다).
+element.array_radial  점 중심 원형 배열 복사(2차). wall.offset 벽 간격띄우기, wall.extend_to·wall.corner 트림/연장(2차).
+pset.set_many·material.set_many·wall.set_many  여러 요소(ids 또는 where 거르기)를 한 커맨드로 고친다(2차, 하나라도 실패하면 전체 거절).
 벽을 고르면 거기 호스팅된 문·패밀리 인스턴스가 함께 간다. 계단·슬래브가 낸 난간은 원본을 따라간다(이동 커맨드와 같은 규칙).
 형상 계산은 순수 모듈 xform 이 한다. 이 모듈은 ifcopenshell 을 import 하지 않는다.
 """
 from __future__ import annotations
 
 import copy as _copy
-from typing import Annotated
+from typing import Annotated, Literal
 
 from pydantic import Field, model_validator
 
+from dobim_core import commands as C
 from dobim_core import fixture as F
 from dobim_core import kinds as K
 from dobim_core import xform as X
-from dobim_core.commands import (RAIL_SRC, A, Id, Name, Num, _apply_top_level, _follow_railings, _hosted_span, _in_split_history,
+from dobim_core.commands import (RAIL_SRC, RESERVED_PSET, A, Id, Name, Num, Pos, PropName, PropValue, PsetName, _apply_top_level, _follow_railings, _hosted_span, _in_split_history,
                                  _xcut_refs, command)
 from dobim_core.errors import DobimError
 
@@ -336,3 +339,314 @@ def element_mirror(ctx, a: ElementMirror):
     out = _copy_set(ctx, sel, xf, None, _new_ids(ctx, a.new_ids, len(sel)), [])
     a.new_ids = out
     return {"count": len(out), "ids": out[:ANS_IDS], **({"truncated": True} if len(out) > ANS_IDS else {})}
+
+
+# ================================================================ 원형 배열(W1 1-F 2차, UI-03)
+class ElementArrayRadial(A):
+    ids: Annotated[list[Id], Field(min_length=1, max_length=IDS_MAX)] = Field(description="배열할 요소. 벽의 문·패밀리 인스턴스는 함께 간다")
+    center: Annotated[list[Num], Field(min_length=2, max_length=2)] = Field(description="회전 중심 [x,y] mm")
+    step: Annotated[float, Field(ge=-360, le=360, allow_inf_nan=False)] = Field(description="복사본 사이 각(도, 반시계 +). k번째 복사본은 k*step")
+    count: Annotated[int, Field(ge=1, le=50)] = Field(description="복사본 개수(원본 제외)")
+    new_ids: Annotated[list[Id], Field(max_length=COPY_MAX)] | None = Field(None, description="새 id(복사본 순서). 비우면 자동")
+
+
+@command("element.array_radial", kind="mutation", risk="write", group="model", summary="요소를 점 중심으로 원형 배열 복사",
+         args=ElementArrayRadial, since="0.12", examples=[{"ids": [F.W1], "center": [3000, 2000], "step": 90, "count": 3}])
+def element_array_radial(ctx, a: ElementArrayRadial):
+    for k in range(1, a.count + 1):
+        if (a.step * k) % 360.0 == 0:
+            raise DobimError("CONSTRAINT", f"{k}번째 복사본이 원본과 겹친다(각 {a.step * k:g}도)", path="/count")
+    sel = _pick(ctx, a.ids, "원형 배열", copy=True)
+    n = len(sel) * a.count
+    if n > COPY_MAX:
+        raise DobimError("CONSTRAINT", f"한 번에 {COPY_MAX}개까지 만든다(이번 {n}개)", path="/count")
+    ids = _new_ids(ctx, a.new_ids, n)
+    out = []
+    for k in range(1, a.count + 1):
+        xf = X.rotate(a.center[0], a.center[1], a.step * k)
+        out += _copy_set(ctx, sel, xf, None, ids[(k - 1) * len(sel):k * len(sel)], [])
+    a.new_ids = out   # 로그에 새 id 를 남겨 재생이 같은 id 를 만든다
+    return {"count": len(out), "ids": out[:ANS_IDS], **({"truncated": True} if len(out) > ANS_IDS else {})}
+
+
+# ================================================================ 벽 간격띄우기·트림/연장(W1 1-F 2차, UI-03)
+def _walls(ctx, ids: list, what: str) -> None:
+    if len(set(ids)) != len(ids):
+        raise DobimError("CONSTRAINT", "ids 에 같은 id 가 두 번 있다", path="/ids")
+    for i, w in enumerate(ids):
+        r = ctx.st.el.get(w)
+        if r is None or r["kind"] != "wall":
+            raise DobimError("NOT_FOUND", f"벽을 찾을 수 없다: {w}", path=f"/ids/{i}")
+        ctx.authored(w, "wall", what=what)
+
+
+def _left(axis, d: float) -> tuple:
+    """축선 왼쪽(+v)으로 d mm 옮기는 (dx, dy). 소수 6자리로 반올림(축이 수평·수직이면 정확한 값)."""
+    _, _, c, s, _ = C._frame_of(axis)
+    return X._r6(-s * d), X._r6(c * d)
+
+
+class WallOffset(A):
+    ids: Annotated[list[Id], Field(min_length=1, max_length=IDS_MAX)] = Field(description="벽. 각 벽을 제 축선의 왼쪽(+)·오른쪽(-)으로 띄운다")
+    distance: Num = Field(description="mm. + 는 축선 진행 방향 왼쪽")
+    keep: bool = Field(True, description="true 면 원본을 두고 띄운 복사본을 만든다. false 면 벽을 옮긴다")
+    new_ids: Annotated[list[Id], Field(max_length=COPY_MAX)] | None = Field(None, description="keep 의 새 id. 비우면 자동")
+
+
+@command("wall.offset", kind="mutation", risk="write", group="model.wall", summary="벽을 축선에 수직으로 간격띄우기(복사 또는 이동)",
+         args=WallOffset, since="0.12", examples=[{"ids": [F.W1], "distance": -1500}, {"ids": [F.W2], "distance": 600, "keep": False}])
+def wall_offset(ctx, a: WallOffset):
+    if a.distance == 0:
+        raise DobimError("CONSTRAINT", "distance 가 0 이면 제자리다", path="/distance")
+    if a.new_ids is not None and not a.keep:
+        raise DobimError("CONSTRAINT", "new_ids 는 keep 과 함께 쓴다", path="/new_ids")
+    _walls(ctx, a.ids, "간격띄우기")
+    st = ctx.st
+    moves = {w: _left(st.el[w]["params"]["axis"], a.distance) for w in a.ids}
+    if not a.keep:
+        for w in a.ids:
+            _transform(ctx, _pick(ctx, [w], "간격띄우기"), X.move(*moves[w]))
+        return {"count": len(a.ids)}
+    sels = [_pick(ctx, [w], "간격띄우기", copy=True) for w in a.ids]
+    n = sum(len(s) for s in sels)
+    if n > COPY_MAX:
+        raise DobimError("CONSTRAINT", f"한 번에 {COPY_MAX}개까지 만든다(이번 {n}개)", path="/ids")
+    ids = _new_ids(ctx, a.new_ids, n)
+    out, mp, i = [], {}, 0
+    for w, sel in zip(a.ids, sels):
+        got = _copy_set(ctx, sel, X.move(*moves[w]), None, ids[i:i + len(sel)], [])
+        i += len(sel)
+        mp[w] = got[0]
+        out += got
+    for w in a.ids:   # 둘 다 띄운 벽끼리는 조인도 옮긴다
+        for o in ctx.rels_out("joins", w):
+            if o in mp:
+                ctx.rel("joins", min(mp[w], mp[o]), max(mp[w], mp[o]), True)
+    a.new_ids = out
+    return {"count": len(out), "ids": out[:ANS_IDS], **({"truncated": True} if len(out) > ANS_IDS else {})}
+
+
+def _line_hit(ax, bx):
+    """두 축선(무한 직선)의 교점(소수 6자리). 평행이면 None."""
+    x1, y1, c1, s1, _ = C._frame_of(ax)
+    x2, y2, c2, s2, _ = C._frame_of(bx)
+    det = c1 * s2 - s1 * c2
+    if -C.Q.PARALLEL_EPS < det < C.Q.PARALLEL_EPS:
+        return None
+    t = ((x2 - x1) * s2 - (y2 - y1) * c2) / det
+    return X._r6(x1 + t * c1), X._r6(y1 + t * s1)
+
+
+def _near_end(axis, pt) -> str:
+    x, y, c, s, n = C._frame_of(axis)
+    t = (pt[0] - x) * c + (pt[1] - y) * s
+    return "start" if abs(t) < abs(t - n) else "end"
+
+
+def _to_point(ctx, w: str, end: str, pt, path: str) -> bool:
+    """벽 w 의 한 끝을 축선 위 점 pt 로 옮긴다(트림 또는 연장). 시작점이 움직이면 축선 거리로 잰 값
+    (개구부·호스팅 요소 offset, 잘라내기 u)을 그만큼 당겨 제자리에 둔다. 나머지 검사는 wall.set 이 한다."""
+    r = ctx.st.el[w]
+    p = r["params"]
+    x, y, c, s, n = C._frame_of(p["axis"])
+    t = (pt[0] - x) * c + (pt[1] - y) * s
+    if (end == "end" and t < 1.0) or (end == "start" and t > n - 1.0):
+        raise DobimError("CONSTRAINT", f"벽 {w} 의 {end} 끝을 옮기면 길이가 1mm 미만이거나 방향이 뒤집힌다", path=path)
+    new = [p["axis"][0], p["axis"][1], pt[0], pt[1]] if end == "end" else [pt[0], pt[1], p["axis"][2], p["axis"][3]]
+    if new == p["axis"]:
+        return False
+    if "top_profile" in p:
+        raise DobimError("CONSTRAINT", f"벽 {w} 에 상단 윤곽이 있어 길이를 바꿀 수 없다", path=path, hint="wall.detach_top 으로 뗀 뒤 다시 붙이세요")
+    sh = X._r6(t) if end == "start" else 0.0
+    if sh:
+        q = dict(p)
+        if "openings" in p:
+            q["openings"] = [dict(o, offset=X._r6(o["offset"] - sh)) for o in p["openings"]]
+        if "cuts" in p:
+            q["cuts"] = [[X._r6(cu[0] - sh), X._r6(cu[1] - sh), *cu[2:]] for cu in p["cuts"]]
+        ctx.put_el(w, dict(r, params=q))
+        for d in sorted(ctx.rels_out("hosts", w)):
+            dr = ctx.st.el[d]
+            ctx.authored(d, what="트림/연장")
+            ctx.put_el(d, dict(dr, params=dict(dr["params"], offset=X._r6(dr["params"]["offset"] - sh))))
+    try:
+        C.wall_set(ctx, C.WallSet(id=w, axis=new))
+    except DobimError as ex:
+        raise DobimError(ex.code, f"벽 {w}: {ex.message}", path=path, hint=ex.hint, details=ex.details) from None
+    return True
+
+
+class WallExtendTo(A):
+    id: Id = Field(description="자르거나 늘일 벽")
+    to: Id = Field(description="경계 벽(축선을 무한 직선으로 본다)")
+    end: Literal["start", "end"] | None = Field(None, description="옮길 끝. 생략하면 교점에 가까운 끝")
+
+
+@command("wall.extend_to", kind="mutation", risk="write", group="model.wall", summary="벽 한 끝을 경계 벽 축선까지 자르거나 늘인다",
+         args=WallExtendTo, since="0.12", examples=[{"id": F.W1, "to": F.W2, "end": "end"}])
+def wall_extend_to(ctx, a: WallExtendTo):
+    if a.id == a.to:
+        raise DobimError("CONSTRAINT", "경계는 다른 벽이어야 한다", path="/to")
+    _walls(ctx, [a.id], "트림/연장")
+    ctx.row(a.to, "wall")
+    pt = _line_hit(ctx.st.el[a.id]["params"]["axis"], ctx.st.el[a.to]["params"]["axis"])
+    if pt is None:
+        raise DobimError("CONSTRAINT", "두 벽이 평행해 만나지 않는다", path="/to")
+    end = a.end or _near_end(ctx.st.el[a.id]["params"]["axis"], pt)
+    changed = _to_point(ctx, a.id, end, pt, "/id")
+    return {"id": a.id, "end": end, "point": list(pt), "changed": changed}
+
+
+class WallCorner(A):
+    a: Id
+    b: Id
+    join: bool = Field(True, description="모서리를 맞춘 뒤 두 벽을 조인한다(같은 레벨이어야 한다)")
+
+
+@command("wall.corner", kind="mutation", risk="write", group="model.wall", summary="두 벽을 축선 교점까지 자르거나 늘여 모서리로 잇는다",
+         args=WallCorner, since="0.12", examples=[{"a": F.W1, "b": F.W2}])
+def wall_corner(ctx, a: WallCorner):
+    if a.a == a.b:
+        raise DobimError("CONSTRAINT", "같은 벽끼리는 모서리를 만들 수 없다", path="/b")
+    _walls(ctx, [a.a, a.b], "트림/연장")
+    pt = _line_hit(ctx.st.el[a.a]["params"]["axis"], ctx.st.el[a.b]["params"]["axis"])
+    if pt is None:
+        raise DobimError("CONSTRAINT", "두 벽이 평행해 만나지 않는다", path="/b")
+    if a.join and ctx.rels_out("on_level", a.a) != ctx.rels_out("on_level", a.b):
+        raise DobimError("CONSTRAINT", "다른 레벨의 벽은 조인할 수 없다", path="/b", hint="join 을 false 로 주세요")
+    ends = {w: _near_end(ctx.st.el[w]["params"]["axis"], pt) for w in (a.a, a.b)}
+    for w, path in ((a.a, "/a"), (a.b, "/b")):
+        _to_point(ctx, w, ends[w], pt, path)
+    if a.join:
+        ctx.rel("joins", min(a.a, a.b), max(a.a, a.b), True)
+    return {"point": list(pt), "ends": ends, "joined": a.join}
+
+
+# ================================================================ 일괄 편집(W1 1-F 2차, UI-04)
+BULK_MAX = 1000   # 한 번에 고치는 요소 수 상한
+
+
+class Where(A):
+    kind: Literal[K.KIND_NAMES] | None = None
+    level: Id | None = None
+    name_contains: str | None = Field(None, min_length=1, max_length=64)
+
+
+class Bulk(A):
+    ids: Annotated[list[Id], Field(min_length=1, max_length=BULK_MAX)] | None = Field(None, description="대상 id. where 와 둘 중 하나")
+    where: Where | None = Field(None, description="element.query 와 같은 거르기. 실행 때 ids 로 풀어 로그에 남긴다")
+
+    @model_validator(mode="after")
+    def _one(self):
+        if (self.ids is None) == (self.where is None):
+            raise ValueError("ids 와 where 중 정확히 하나를 준다")
+        return self
+
+
+def _targets(ctx, a: Bulk, kind: str | None = None) -> list:
+    """대상 id(준 순서 또는 id 순). where 는 ids 로 바꿔 둔다(재생이 같은 대상을 고친다)."""
+    st = ctx.st
+    if a.ids is not None:
+        if len(set(a.ids)) != len(a.ids):
+            raise DobimError("CONSTRAINT", "ids 에 같은 id 가 두 번 있다", path="/ids")
+        for i, e in enumerate(a.ids):
+            r = st.el.get(e)
+            if r is None or (kind and r["kind"] != kind):
+                raise DobimError("NOT_FOUND", f"{kind or '요소'} 를 찾을 수 없다: {e}", path=f"/ids/{i}")
+        return list(a.ids)
+    w = a.where
+    if kind and w.kind not in (None, kind):
+        raise DobimError("CONSTRAINT", f"이 커맨드는 {kind} 만 고친다", path="/where/kind")
+    k = kind or w.kind
+    hits = []
+    for e in (sorted(st.by_kind.get(k, ())) if k else sorted(st.el)):
+        if w.level and not (e == w.level or w.level in st.out.get(("on_level", e), ())):
+            continue
+        if w.name_contains and w.name_contains.lower() not in st.el[e]["params"]["name"].lower():
+            continue
+        hits.append(e)
+    if not hits:
+        raise DobimError("NOT_FOUND", "where 에 맞는 요소가 없다", path="/where")
+    if len(hits) > BULK_MAX:
+        raise DobimError("CONSTRAINT", f"한 번에 {BULK_MAX}개까지 고친다(맞는 요소 {len(hits)}개)", path="/where", hint="where 를 좁히세요")
+    a.ids, a.where = hits, None
+    return hits
+
+
+def _each(ids: list, fn) -> list:
+    """요소마다 fn 을 부르고 바뀐 id 를 모은다. 하나라도 실패하면 전체가 실패한다(어느 요소인지 path 에 적는다)."""
+    out = []
+    for i, e in enumerate(ids):
+        try:
+            if fn(e):
+                out.append(e)
+        except DobimError as ex:
+            raise DobimError(ex.code, f"{e}: {ex.message}", path=f"/ids/{i}", hint=ex.hint, details=ex.details) from None
+    return out
+
+
+def _bulk_ans(ids: list, changed: list) -> dict:
+    return {"count": len(ids), "changed": len(changed), "ids": changed[:ANS_IDS], **({"truncated": True} if len(changed) > ANS_IDS else {})}
+
+
+class PsetSetMany(Bulk):
+    pset: PsetName
+    prop: PropName
+    value: PropValue = Field(description="bool·정수·실수·문자열")
+
+
+@command("pset.set_many", kind="mutation", risk="write", group="model.pset", summary="여러 요소에 같은 속성 쓰기(ids 또는 where)",
+         args=PsetSetMany, since="0.12", examples=[{"where": {"kind": "door"}, "pset": "Pset_DoorCommon", "prop": "FireRating", "value": "EI30"}])
+def pset_set_many(ctx, a: PsetSetMany):
+    if a.pset == RESERVED_PSET:
+        raise DobimError("CONSTRAINT", f"{RESERVED_PSET} 는 투영이 소유한 예약 속성셋이다", path="/pset")
+    ids = _targets(ctx, a)
+    return _bulk_ans(ids, _each(ids, lambda e: ctx.set_prop(e, a.pset, a.prop, a.value)))
+
+
+class MaterialSetMany(Bulk):
+    name: Name | None = Field(description="null 이면 재료를 뗀다")
+
+
+@command("material.set_many", kind="mutation", risk="write", group="model.pset", summary="여러 요소에 같은 재료 지정(ids 또는 where)",
+         args=MaterialSetMany, since="0.12", examples=[{"where": {"kind": "slab"}, "name": "Concrete"}])
+def material_set_many(ctx, a: MaterialSetMany):
+    ids = _targets(ctx, a)
+
+    def one(e):
+        ctx.authored(e, what="재료 지정")
+        return ctx.set_material(e, a.name)
+    return _bulk_ans(ids, _each(ids, one))
+
+
+WALL_MANY = ("thickness", "height", "base_offset", "top_level", "top_offset")
+
+
+class WallSetMany(Bulk):
+    forbid_null = True
+    thickness: Pos | None = None
+    height: Pos | None = None
+    base_offset: Num | None = None
+    top_level: Id | None = None
+    top_offset: Num | None = None
+
+    @model_validator(mode="after")
+    def _any(self):
+        if all(getattr(self, k) is None for k in WALL_MANY):
+            raise ValueError("바꿀 필드가 하나도 없다")
+        if self.height is not None and (self.top_level is not None or self.top_offset is not None):
+            raise ValueError("height 와 top_level·top_offset 은 함께 줄 수 없다")
+        return self
+
+
+@command("wall.set_many", kind="mutation", risk="write", group="model.wall", summary="여러 벽의 두께·높이·바닥·상단 구속을 한 번에(ids 또는 where)",
+         args=WallSetMany, since="0.12", examples=[{"where": {"level": F.LV1}, "height": 3200}])
+def wall_set_many(ctx, a: WallSetMany):
+    ids = _targets(ctx, a, "wall")
+    vals = {k: getattr(a, k) for k in WALL_MANY if getattr(a, k) is not None}
+
+    def one(w):
+        before = ctx.st.el[w]["params"]
+        C.wall_set(ctx, C.WallSet(id=w, **vals))
+        return ctx.st.el[w]["params"] != before
+    return _bulk_ans(ids, _each(ids, one))
