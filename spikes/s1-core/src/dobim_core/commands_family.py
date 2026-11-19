@@ -824,6 +824,68 @@ def family_set(ctx, a: FamilySet):
     return {"id": a.id}
 
 
+# ---------------------------------------------------------------- family.set_type (W1 1-F 3차, UI-04: 패밀리 유형 바꾸기)
+class FamilySetType(A):
+    id: Id
+    type: Id | None = Field(None, description="바꿀 타입(ftype) id. 같은 패밀리여야 한다")
+    type_values: Values | None = Field(None, description="또는 지금 타입 값 위에 덮어쓸 값(같은 내용의 타입을 다시 쓰거나 만든다)")
+
+    @model_validator(mode="after")
+    def _one(self):
+        if (self.type is None) == (self.type_values is None):
+            raise ValueError("type 과 type_values 중 하나만 준다")
+        return self
+
+
+@command("family.set_type", kind="mutation", risk="write", group="family",
+         summary="패밀리 인스턴스의 타입을 바꾼다(같은 패밀리). 인스턴스 값·위치는 그대로 두고 새 타입으로 다시 평가한다",
+         args=FamilySetType, since="0.13",
+         examples=[{"id": EXAMPLE_FINST, "type_values": {"width": 1000}}])
+def family_set_type(ctx, a: FamilySetType):
+    r_ = ctx.authored(a.id, "finst")
+    p = dict(r_["params"])
+    old = p["type"]
+    if a.type is not None:
+        tid = a.type
+        tp = ctx.row(tid, "ftype")["params"]
+        r, plan = FE.load_recipe(tp["recipe"])
+        made = False
+    else:
+        otp = ctx.st.el[old]["params"]
+        recipe = otp["recipe"]
+        r, plan = FE.load_recipe(recipe)
+        try:
+            tv, _ = FE.resolve_values(r, {**otp["type_values"], **a.type_values}, None)
+        except FamilyError as ex:
+            raise _fam_error(ex) from None
+        _check_door(r, tv)
+        tid = _content_tid(ctx, FS.recipe_hash_of(recipe), tv)
+        made = tid not in ctx.st.el
+        if made:
+            _make_type(ctx, tid, recipe, r, plan, tv, None)
+        tp = ctx.st.el[tid]["params"]
+    if r.id != r_["family_id"]:
+        raise DobimError("CONSTRAINT", f"다른 패밀리의 타입이다({r.id}, 인스턴스는 {r_['family_id']})", path="/type")
+    if tid == old:
+        raise DobimError("CONSTRAINT", "지금과 같은 타입이다", path="/type" if a.type is not None else "/type_values")
+    hosted = "offset" in p
+    try:
+        _, iv = FE.resolve_values(r, tp["type_values"], p["values"])
+    except FamilyError as ex:
+        raise _fam_error(ex) from None
+    host_id = ctx.rels_in("hosts", a.id)[0] if hosted else None
+    also = tuple(p.get("also_cuts", ()))
+    ev, _ = _inst_geometry(ctx, tp, iv, host_id, p.get("offset"), p["elevation"], p["rotation"], also)
+    np_ = _inst_params(p["name"], tid, iv, ev, hosted, p.get("offset"), p.get("position"), p["rotation"], p["elevation"], also)
+    ctx.put_el(a.id, dict(r_, params=np_))
+    ctx.rel("of_type", a.id, old, False)
+    ctx.rel("of_type", a.id, tid, True)
+    for pset, props in sorted(ev["psets"]["instance"].items()):
+        for prop, v in sorted(props.items()):
+            ctx.set_prop(a.id, pset, prop, v)
+    return {"id": a.id, "type": tid, "from": old, "type_created": made}
+
+
 # ---------------------------------------------------------------- family.place_corner (24단계: 90도로 꺾인 모서리 창호, 25단계: 2~4개 벽 전개·모서리 판정 확장)
 CORNER_COS_TOL = 0.0087   # 직각에서 0.5도 안
 CORNER_REACH = 300.0      # 25단계: 조인하지 않은 두 벽의 축선 교점이 각 벽 축선 끝에서 이 거리(mm) 안이면 모서리로 본다(tol 로 바꾼다)

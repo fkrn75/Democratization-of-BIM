@@ -104,13 +104,37 @@ def join_point(g, a, b):
     return (x1 + t * cx1, y1 + t * sy1)
 
 
+def tee_end_at(frame, tee, p):
+    """T 조인(W1 1-F 3차): 점 p 가 벽(frame = wall_frame 값, tee = params 의 tee)의 줄기 끝인가. 끝은 p 에 가까운 쪽, 조인 거리 안이어야 한다.
+    맞으면 "start"|"end", 아니면 None. commands._trim_raw 가 같은 규칙을 원시 축선에서 쓴다."""
+    if not tee:
+        return None
+    x, y, c, s, length = frame
+    t = (p[0] - x) * c + (p[1] - y) * s
+    end = "start" if abs(t) <= abs(t - length) else "end"
+    return end if end in tee and min(abs(t), abs(t - length)) <= JOIN_MAX_EXT else None
+
+
+def _tee_of(g, w):
+    return el(g, w)["params"].get("tee")
+
+
+def _is_stem_at(g, o, p):
+    """상대 벽 o 가 점 p 에서 T 조인 줄기인가."""
+    tee = _tee_of(g, o)
+    return bool(tee) and tee_end_at(g.q(wall_frame, o), tee, p) is not None
+
+
 def wall_trim(g, w):
-    """(시작, 끝, 상태): 벽 지역 x 좌표. 원점은 축선 시작점이다."""
+    """(시작, 끝, 상태): 벽 지역 x 좌표. 원점은 축선 시작점이다.
+    T 조인(W1 1-F 3차): 조인 지점이 상대 벽의 줄기 끝(tee)이면 이 벽은 몸통이라 자르지 않는다."""
     x, y, c, s, length = g.q(wall_frame, w)
     start, end = 0.0, length
     for other in g.q(wall_joins, w):
         p = g.q(join_point, min(w, other), max(w, other))
         if p is None:
+            continue
+        if _is_stem_at(g, other, p):
             continue
         t = (p[0] - x) * c + (p[1] - y) * s
         if abs(t) <= abs(t - length):
@@ -132,12 +156,30 @@ def wall_extent(g, w):
     if not CORNER_EXTEND or status != "ok":
         return (start, end)
     x, y, c, s, length = g.q(wall_frame, w)
+    tee = _tee_of(g, w)
+    if tee:   # T 조인 줄기(W1 1-F 3차): 줄기 끝은 몸통 벽 면에서 멈춘다(축선 교점에서 몸통 반 두께/|sin| 만큼 물러난다)
+        for o in g.q(wall_joins, w):
+            pt = g.q(join_point, min(w, o), max(w, o))
+            if pt is None or _is_stem_at(g, o, pt):
+                continue
+            side = tee_end_at((x, y, c, s, length), tee, pt)
+            ox, oy, oc, os_, olen = g.q(wall_frame, o)
+            sin = c * os_ - s * oc
+            if side is None or abs(sin) < MIN_SIN:
+                continue
+            ext = el(g, o)["params"]["thickness"] / 2.0 / abs(sin)
+            if side == "start" and end - (start + ext) >= MIN_TRIMMED:
+                start += ext
+            elif side == "end" and (end - ext) - start >= MIN_TRIMMED:
+                end -= ext
     for o in g.q(wall_joins, w):
         if not w < o:
             continue
         pt = g.q(join_point, w, o)
         if pt is None:
             continue
+        if tee and tee_end_at((x, y, c, s, length), tee, pt) or _is_stem_at(g, o, pt):
+            continue                                      # T 조인(줄기·몸통): 모서리 연장 없음
         ox, oy, oc, os_, olen = g.q(wall_frame, o)
         t = (pt[0] - x) * c + (pt[1] - y) * s
         to = (pt[0] - ox) * oc + (pt[1] - oy) * os_

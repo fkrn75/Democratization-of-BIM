@@ -109,7 +109,8 @@ def mode_space_labels(g, cfg, s, info):
 
 
 def rcp_ceilings(g, v):
-    """반사 천장 평면의 천장선: 천장이 절단면 위 보이는 깊이 안에 있는 공간의 경계·섬 구멍(투영선)."""
+    """반사 천장 평면의 천장선: 천장이 절단면 위 보이는 깊이 안에 있는 공간의 경계·섬 구멍(투영선).
+    천장판(W1 1-F 3차: ceiling.create 가 만든 격자 있는 천장판)은 윤곽(투영선)과 격자(해치 선)를 더한다."""
     cfg = g.q(D.view_cfg, v)
     out = []
     for s in g.q(D.scope_spaces, v):
@@ -118,6 +119,54 @@ def rcp_ceilings(g, v):
             continue
         for ring in (g.q(D.space_info, s)[0],) + g.q(D.space_holes, s):
             out += [("proj", a[0], a[1], b[0], b[1]) for a, b in _ring_edges(ring)]
+    for e in g.q(rcp_grid_ceilings, v):
+        out.extend(g.q(ceiling_grid_lines, e))
+    return tuple(out)
+
+
+def rcp_grid_ceilings(g, v):
+    """반사 천장 평면이 그리는 천장판: 뷰 레벨 위, 밑면이 절단면 위 보이는 깊이 안에 있고 격자(grid)가 있는 범주 ceiling 의 수평 판.
+    격자가 없는 솔리드 천장(22단계)은 이전처럼 그리지 않는다(기존 도면 바이트 불변)."""
+    cfg = g.q(D.view_cfg, v)
+    out = []
+    for e in g.q(D.all_solids):
+        p = Q.el(g, e)["params"]
+        if p["category"] != "ceiling" or p["form"] != "plate" or "grid" not in p:
+            continue
+        z = g.q(Q.level_info, g.q(Q.solid_level, e))[1] + p["base"][2] - p["thickness"]
+        if cfg[2] - D.EPS <= z <= cfg[2] + cfg[3] + D.EPS:
+            out.append(e)
+    return tuple(out)
+
+
+def _grid_cuts(edges, k, c):
+    """닫힌 고리 선분들(짝홀 규칙)과 축 평행선(k=0: x = c 세로선, k=1: y = c 가로선)의 안쪽 구간 [(t0, t1), ...]."""
+    ts = []
+    for a, b in edges:
+        fa, fb = a[k], b[k]
+        if (fa <= c < fb) or (fb <= c < fa):
+            r = (c - fa) / (fb - fa)
+            ts.append(a[1 - k] + r * (b[1 - k] - a[1 - k]))
+    ts.sort()
+    return [(ts[j], ts[j + 1]) for j in range(0, len(ts) - 1, 2) if ts[j + 1] - ts[j] > D.SEG_MIN]
+
+
+def ceiling_grid_lines(g, e):
+    """천장판 하나의 반사 천장 평면 선: 윤곽·구멍(proj)과 격자(hatch, 원점에서 간격의 정수배 선을 윤곽 안만)."""
+    p = Q.el(g, e)["params"]
+    rings = [[tuple(q) for q in p["polygon"]]] + [[tuple(q) for q in h] for h in p.get("holes", ())]
+    edges = [ed for r in rings for ed in _ring_edges(r)]
+    out = [("proj", a[0], a[1], b[0], b[1]) for a, b in edges]
+    gd = p["grid"]
+    for k in (0, 1):
+        step, org = gd["size"][k], gd["origin"][k]
+        lo, hi = min(q[k] for q in rings[0]), max(q[k] for q in rings[0])
+        m = D._floor((lo - org) / step) + 1
+        while org + m * step < hi:
+            c = org + m * step
+            m += 1
+            for t0, t1 in _grid_cuts(edges, k, c):
+                out.append(("hatch", c, t0, c, t1) if k == 0 else ("hatch", t0, c, t1, c))
     return tuple(out)
 
 
