@@ -597,6 +597,9 @@ def violations(view: View) -> list[dict]:
             out.append(_v("VIEW_LEVEL_DELETED", (v,), "평면 뷰가 가리키는 레벨이 지워졌다", {"level": p.get("level")},
                           focus=(_pu(v, "level"), ("el", p.get("level"), "@"))))
         names_v.setdefault(p.get("name"), []).append(v)
+        if p.get("template") is not None and (p["template"] not in ex or view.kind(p["template"]) != "vtemplate"):   # 뷰 템플릿(W1 1-C)
+            out.append(_v("VIEW_TEMPLATE_DELETED", (v,), "뷰가 따르는 뷰 템플릿이 지워졌다", {"template": p.get("template")},
+                          focus=(_pu(v, "template"), ("el", p.get("template"), "@"))))
     for nm in _order(n for n in names_v if n is not None):
         for i, v1 in enumerate(names_v[nm]):
             for v2 in names_v[nm][i + 1:]:

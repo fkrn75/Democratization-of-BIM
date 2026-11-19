@@ -20,9 +20,10 @@ from dobim_core import annot as AN
 from dobim_core import kinds as K
 from dobim_core.family.recipe import FamilyError, load_json_text
 
-DEF_KINDS = ("view", "dim", "tag", "sheet", "grid", "dlayer", "draft", "revision", "keynote")                # 정의를 IFC 에 싣는 종류(kinds.NON_IFC_KINDS 와 같은 집합)
+DEF_KINDS = ("view", "dim", "tag", "sheet", "grid", "dlayer", "draft", "revision", "keynote", "vtemplate")   # 정의를 IFC 에 싣는 종류(kinds.NON_IFC_KINDS 와 같은 집합)
 FAMILY_ID = {"view": "view.basic", "dim": "annot.dim", "tag": "annot.tag", "sheet": "sheet.basic", "grid": "grid.basic",
-             "dlayer": "draft.layer", "draft": "draft.basic", "revision": "revision.basic", "keynote": "keynote.basic"}   # 커맨드가 만드는 행의 family_id
+             "dlayer": "draft.layer", "draft": "draft.basic", "revision": "revision.basic", "keynote": "keynote.basic",
+             "vtemplate": "view.template"}   # 커맨드가 만드는 행의 family_id
 DEFS_PSET = "DoBIM_Defs"                                                # IfcProject 의 예약 속성셋 이름
 MAX_DEF_CHARS = 16 * 1024                                               # 정의 하나의 텍스트 상한(정상 정의는 1KB 안팎)
 MAX_DEFS = 100_000                                                      # 한 파일에서 읽는 정의 수 상한(넘으면 나머지는 읽지 않고 경고)
@@ -60,6 +61,17 @@ def _pt(v, hi) -> bool:
 
 def _name_ok(v) -> bool:
     return not any(0xD800 <= ord(c) <= 0xDFFF for c in v)   # 짝 없는 서로게이트는 UTF-8 로 쓸 수 없다
+
+
+def _strs_ok(v) -> bool:
+    """중첩 값(가시성·필터) 안의 모든 글에 짝 없는 서로게이트가 없다."""
+    if isinstance(v, str):
+        return _name_ok(v)
+    if isinstance(v, dict):
+        return all(_strs_ok(k) and _strs_ok(x) for k, x in v.items())
+    if isinstance(v, list):
+        return all(_strs_ok(x) for x in v)
+    return True
 
 
 def _view_values(p: dict) -> None:
@@ -149,7 +161,11 @@ def parse_def(eid: str, text) -> dict:
     try:
         if not _name_ok(params["name"]) or (kind == "sheet" and not all(_name_ok(params[k]) for k in ("project_name", "sheet_name", "sheet_number", "client", "office"))):
             raise ValueError("이름에 짝 없는 서로게이트가 있다")
-        if kind in ("revision", "keynote"):   # 리비전·키노트(W1 1-B 3차): 값 범위는 kinds 의 파라미터 검사가 커맨드 범위로 본다
+        if kind in ("view", "vtemplate") and not all(_strs_ok(params.get(k)) for k in ("vg", "filters")):   # 가시성·필터(W1 1-C)
+            raise ValueError("가시성·필터 글에 짝 없는 서로게이트가 있다")
+        if kind == "vtemplate":   # 뷰 템플릿(W1 1-C): 값 범위는 kinds 의 파라미터 검사가 커맨드 범위로 본다
+            pass
+        elif kind in ("revision", "keynote"):   # 리비전·키노트(W1 1-B 3차): 값 범위는 kinds 의 파라미터 검사가 커맨드 범위로 본다
             if not all(_name_ok(params[k]) for k in ("desc", "issued_to", "issued_by", "text") if k in params):
                 raise ValueError("글에 짝 없는 서로게이트가 있다")
         elif kind in ("draft", "dlayer"):   # 2D 작도(27단계): 값 범위는 kinds 의 파라미터 검사(_draft_params·_dlayer_params)가 이미 커맨드 범위로 본다

@@ -146,7 +146,7 @@ def _fresh_id(ctx, a, kind):
     if _in_split_history(ctx, a.id):   # 지워진 벽의 id 를 다시 쓰면 분할 이력을 따라가는 참조가 엉뚱한 새 벽을 가리킨다
         raise DobimError("CONSTRAINT", f"벽 분할 이력에 쓰인 id 라 다시 쓸 수 없다: {a.id}", path="/id",
                          hint="새 id 를 쓰거나 생략하세요")
-    if kind in ("view", "dim", "tag", "sheet", "grid", "draft", "revision") and ctx.external_def(a.id):   # 가져온 파일에 되살리지 않은 외부 정의가 이 id 로 있다
+    if kind in ("view", "dim", "tag", "sheet", "grid", "draft", "revision", "vtemplate") and ctx.external_def(a.id):   # 가져온 파일에 되살리지 않은 외부 정의가 이 id 로 있다
         ctx.warn(f"가져온 파일에 이 id 의 {kind} 정의가 되살려지지 않은 채 남아 있다: 새 정의가 그 속성을 덮어쓴다(지우거나 되돌리면 원래 정의가 돌아온다)")
     return a.id
 
@@ -3432,6 +3432,10 @@ def _render_view(ctx, vid, detail=False, hidden=False, hier=False):
     p = r["params"]
     levels = sorted([(ctx.st.el[l]["params"]["name"], ctx.st.el[l]["params"]["elevation"]) for l in ctx.st.by_kind.get("level", ())]
                     + list(ctx.g.q(D.foreign_datums)), key=lambda t: (t[1], t[0]))   # 외래 IFC 층의 기준선(외래 도면 2차): 없으면 이전과 같다
+    from dobim_core import viewvg as VG
+    vgd = ctx.g.q(VG.vg_view, vid, hier)
+    if vgd is not None:   # 가시성·그래픽 재정의·필터·템플릿(W1 1-C): 설정이 없는 뷰는 아래 원래 경로(바이트 불변)
+        return _render_view_vg(ctx, vid, p, levels, vgd, detail, hidden)
     lines = ctx.g.q(D.view_lines_hier if hier else D.view_lines, vid)
     if detail:
         lines = lines + ctx.g.q(D.view_detail_lines, vid)
@@ -3441,6 +3445,22 @@ def _render_view(ctx, vid, detail=False, hidden=False, hier=False):
     return {"type": p["type"], "name": p["name"], "scale": p["scale"], "lines": lines, "fills": ctx.g.q(D.view_fills, vid),
             "datums": levels, "annots": ctx.g.q(AN.view_annots, vid) + ctx.g.q(D.site_dims, vid) + ctx.g.q(D.view_dims, vid), "labels": ctx.g.q(D.view_labels, vid),
             **_drafts_of(ctx, vid)}
+
+
+def _render_view_vg(ctx, vid, p, levels, vgd, detail, hidden):
+    """재정의가 걸린 뷰의 내보내기 데이터(viewvg.vg_view). 재정의 항목은 2D 작도 항목과 같은 모양이라 drafts 앞에 둔다(마스킹은 그 위를 가린다)."""
+    from dobim_core import drafting as DRF
+    from dobim_core import viewvg as VG
+    lines, fills, labels, vitems, hid, _n = vgd
+    if detail:
+        lines = lines + ctx.g.q(D.view_detail_lines, vid)
+    if hidden:
+        lines = lines + ctx.g.q(D.view_hidden_lines, vid)
+    _warn_omitted(ctx, ctx.g.q(D.view_omitted, vid))
+    annots = tuple(it for it in ctx.g.q(AN.view_annots, vid) + ctx.g.q(D.site_dims, vid) + ctx.g.q(D.view_dims, vid) if VG.annot_kind(it) not in hid)
+    items = vitems + (() if "draft" in hid else ctx.g.q(DRF.view_drafts, vid))
+    out = {"type": p["type"], "name": p["name"], "scale": p["scale"], "lines": lines, "fills": fills, "datums": levels, "annots": annots, "labels": labels}
+    return dict(out, drafts=items) if items else out
 
 
 def _drafts_of(ctx, vid) -> dict:
@@ -4788,3 +4808,4 @@ from dobim_core import commands_schedule  # noqa: E402,F401
 from dobim_core import commands_gui  # noqa: E402,F401
 from dobim_core import commands_rules  # noqa: E402,F401
 from dobim_core import commands_revision  # noqa: E402,F401
+from dobim_core import commands_viewvg  # noqa: E402,F401
