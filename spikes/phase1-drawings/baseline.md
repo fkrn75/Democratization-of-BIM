@@ -1315,3 +1315,30 @@ Revit 기능 차이 W1 묶음 1-B(주석·치수, 4.3PM) 가운데 가치가 큰
 ### 36.4 남은 1-B
 - ANN-02: 호 길이·연속·기준선 치수의 모델 연관(지금은 2D 작도). 연속·기준선은 치수 참조를 둘 넘게 담는 구조 확장(kinds._dim_params·참조 옮기기·가져오기 참조 검사·S5 오라클)이 필요하고, 호 길이는 곡선 모델 요소가 없어 대상이 기둥 원 정도다.
 - 리비전 구름을 리비전에 묶는 것은 표기 일치다(구름 쪽 참조 키 없음). 재료 키노트·사용자 키노트·키노트 파일 불러오기는 없다.
+
+## 37. 뷰 제어(W1 1-C 첫 PR): 가시성·그래픽 재정의, 뷰 필터, 뷰 템플릿 (2026-11-19, 브랜치 phase1/w1c-view-control)
+
+Revit 기능 차이표 1-C(뷰 제어) 가운데 가치가 가장 큰 VIEW-13(카테고리 가시성·그래픽 재정의), VIEW-14(뷰 필터), VIEW-15(뷰 템플릿)를 넣었다. 설정은 뷰 정의의 선택 키(`vg`·`filters`·`template`)와 새 비 IFC 의도 요소 `vtemplate`(뷰 템플릿)에 담겨 DoBIM_Defs 로 IFC 를 왕복하고 실행 취소·병합을 그대로 탄다. 새 커맨드는 9개(`view.vg.set·get`, `view.filter.set·delete`, `view.template.create·set·delete·apply·list`)이고 모두 레지스트리를 거쳐 CLI·MCP 가 같다(parity C). GUI 동작 `view.vg`·`view.filters`·`view.templates` 를 actions.json 에 더했다(parity G).
+
+### 37.1 넣은 것
+| 차이표 | 기능 | 입력 | 값·동작 |
+|---|---|---|---|
+| VIEW-13 | 범주 가시성·그래픽 재정의 | `view.vg.set {id(뷰·템플릿), category, hidden, color, cut_weight, proj_weight, halftone, unset, clear}`, `view.vg.get` | 범주 = wall·door·finst·slab·stair·railing·elevator·roof·solid·foreign·space·grid(모델), dim·tag·draft(주석, 숨기기만). 숨기면 그 요소의 선분·채움·문자가 빠지고, 색·굵기·하프톤이면 선(과 색이면 절단면 채움)이 그 굵기·색으로 그려진다. 하프톤 = 색을 흰색 쪽으로 절반 |
+| VIEW-14 | 뷰 필터 | `view.filter.set {id, name, cats, rules[{field, op, value}], 재정의, index}`, `view.filter.delete` | 규칙 필드 = name·level·material·ifc_class·keynote·category·fire_rating·thickness·width·height(태그 필드와 같은 계산) 또는 `pset:속성셋.속성`, 연산 = eq·ne·contains·not_contains·begins·gt·ge·lt·le·has·missing(글은 대소문자 무시, 둘 다 수면 수 비교), 규칙은 AND(없으면 범주 전체). 재정의 = 범주 재정의 위에 걸리는 필터를 덮고 목록의 위가 이긴다(Revit 필터 순서). 필터는 32개, 규칙은 8개까지 |
+| VIEW-15 | 뷰 템플릿 | `view.template.create {name, from_view, scale}`·`set {name, scale, clear_scale}`·`delete`·`apply {view, template|null}`·`list` | 템플릿 = 가시성·필터·축척 묶음(뷰에서 복사해 만들 수 있다). 템플릿을 따르는 뷰는 뷰 자신의 설정 대신 템플릿 것을 쓰고 뷰에서 고치면 거절한다. 템플릿 축척은 적용·변경 때 따르는 뷰에 쓴다. 떼거나(apply null) 지우면 그때의 설정을 뷰에 복사해 도면이 갑자기 바뀌지 않는다 |
+
+- 도면 적용(`viewvg.vg_view`): 평면 GUI 장면(scene.view_scene)의 요소별 분해를 그대로 쓴다. 재정의가 없는 요소의 선은 이전처럼 등급 선분으로 다시 합치고, 재정의 선·채움은 2D 작도 그림 항목과 같은 모양("line"/"fill", 요소 id, 층 "VG", 굵기, 색)으로 내보내 SVG·PDF·PNG·DXF·시트가 고치지 않고 그린다. 재정의 항목은 2D 요소보다 앞에 두어 마스킹 영역이 그 위를 가린다. 선 굵기 위계(hier)의 비내력벽 cutn 규칙은 그대로 건다.
+- 가져오기: 이름이 겹친 템플릿 정의는 되살리지 않고, 되살리지 못한 템플릿을 가리키는 뷰는 템플릿 없이 되살리며 경고한다. 병합 의미 검사에 `VIEW_TEMPLATE_DELETED`(뷰가 따르는 템플릿이 지워짐)를 더했다.
+- 알려진 한계: 숨긴 요소도 다른 요소의 가림 판정에는 남는다(가림은 요소별 질의가 이미 계산). 단면·입면의 옛 문(door) 선은 벽 선분에 섞여 벽 재정의를 따른다. 선 종류·채움 패턴 재정의는 없다. `view.scene`(GUI 장면)·`view.linework` 는 재정의 전 원본을 낸다. 상세(detail) 선·은선(hidden) 덧그림에는 범주 숨김이 걸리지 않는다.
+
+### 37.2 기존 출력 불변·성능
+- 기준선 `run_baseline.py --sheets`: main 036f760 과 코드 커밋 e29c6e1 에서 각각 뽑아 183 파일 바이트 같음(work/·run.json 제외).
+- 설정이 없는 뷰는 `_render_view` 가 `view_settings` 질의(뷰·템플릿 행만 읽는다) 하나를 더 묻고 None 이면 이전 경로 그대로다. 설정을 지우면 키가 사라져 저장 형식도 이전과 같다(시험: 설정 → 지우기·되돌리기 뒤 SVG 바이트 같음). 뷰 생성·선분 계산 경로(view.create·view_cfg·view_lines)는 바꾸지 않아 5만 요소 합성 모델(33절, 재정의 없음)은 다시 재지 않았다(#50 값 평면 8.7·단면 17.9·입면 25.7초 그대로로 본다).
+
+### 37.3 시험·parity
+- 새 시험 `tests/test_view_control_w1c.py`(7건): 설정 없는 뷰·지운 뒤·되돌린 뒤 SVG 바이트 같음, 범주 숨기기(모델·주석)·색·굵기·하프톤과 주석 범주 색 거절, 필터(대소 비교·우선순위·값 없음·속성셋 규칙·잘못된 규칙 스키마 거절·없는 필터), 템플릿(뷰에서 복사·축척 전파·템플릿 뷰 직접 수정 거절·빈 템플릿 = 원래 도면·지우기와 떼기의 설정 복사·되돌리기), PDF·PNG·DXF·시트·마스킹·2D 숨기기, IFC 왕복(해시·vg.get 같음·다시 내보낸 IFC 바이트 같음), 변조·범위 밖 정의 거절. test_integration_g1 의 '모든 종류' 시험에 템플릿·필터·적용 줄을 더했다.
+- 결과(코드 커밋 e29c6e1 뒤 한 번에, 도중 수정 없음): s1-core 전체(test_slow 제외) 1436 통과·40 건너뜀·실패 0. test_slow 8 통과. parity: 커맨드 153 전부 예시 실행(예시 184·오류 사례 49), 불일치 0, parity C 100%. parity_g: 통과(동작 45, 오류·경고 0). 기준선 183 파일 바이트 같음(37.2).
+
+### 37.4 남은 1-C
+- VIEW-02 반사 천장 평면(위를 보는 평면 종류), VIEW-06 상세·콜아웃 뷰(콜아웃 객체·부모 뷰 참조), VIEW-09 범례 뷰(기호·재료 범례 뷰 종류), VIEW-21 면적 평면(면적 계획), VIEW-25 뷰 참조(단면 머리 ↔ 시트 번호 연동), DOC-02 뷰포트 배치·뷰 제목.
+- 이번 PR 의 보완 후보: 재정의를 GUI 장면에 반영, 선 종류·채움 패턴 재정의, 프로젝트 공용 필터 객체(지금은 뷰·템플릿에 정의), 템플릿에 뷰 범위·상세 수준 묶기(VIEW-10·12 가 먼저 필요).
