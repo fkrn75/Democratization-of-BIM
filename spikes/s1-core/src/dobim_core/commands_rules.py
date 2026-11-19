@@ -108,7 +108,7 @@ class RulesCheck(A):
     path: str | None = Field(None, max_length=260, description="작업 폴더 안의 검사할 IFC 파일(.ifc·.ifczip·.ifcxml). 읽기만 한다. 생략하면 package 만 검사")
     profile: Profile = Field("procurement", description="납품처 프로파일: procurement(조달청 v2.1 + 국토부 시행지침, 기본) 또는 seumteo(세움터 초안)")
     rules: list[RuleId] | None = Field(None, max_length=60, description="보일 규칙 id 또는 접두(예: KR-IDS-01, KR-CODE-). 판정은 늘 전부 돌리고 결과만 거른다. violations·종료 코드도 거른 규칙 기준")
-    ids: str | None = Field(None, max_length=260, description="작업 폴더 안의 사용자 IDS(.ids). 주면 기본 IDS 대신 이 파일의 명세를 그대로 판정한다(한국어 사용자 속성 OR 판정을 쓰지 않음). 명세 identifier 가 KR-IDS-nn 인 것만 결과에 들어간다. procurement 전용")
+    ids: str | None = Field(None, max_length=260, description="작업 폴더 안의 사용자 IDS(.ids). 주면 기본 IDS 대신 이 파일의 명세를 그대로 판정한다(한국어 사용자 속성 OR 판정을 쓰지 않음). identifier 가 KR-IDS-nn 이 아닌 명세는 KR-USR-n 으로 판정한다. procurement 전용")
     energy: bool = Field(False, description="에너지 검토(환경 시뮬레이션) 사업: 조건부 규칙 KR-IDS-08/09/10 도 판정한다")
     deliverable: bool = Field(False, description="납품 후보: 파일명 규칙(KR-CODE-02/03)도 판정한다")
     as_name: str | None = Field(None, max_length=120, description="파일명 규칙을 이 이름으로 판정한다(예: 00_본관_BA.ifc)")

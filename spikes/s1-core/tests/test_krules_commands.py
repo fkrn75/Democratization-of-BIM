@@ -117,6 +117,24 @@ def test_사용자_IDS_와_지원하지_않는_IDS(ws):
     assert _run(ws, "rules.check", {"path": "RA-01.ifc", "ids": "mine.ids", "profile": "seumteo"})["error"]["code"] == "USAGE"
 
 
+
+def test_사용자_IDS_의_다른_식별자_명세는_KR_USR_로_판정한다(ws):
+    """W1 1-E(DATA-09): 사용자 IDS 에서 KR-IDS-nn 이 아니거나 식별자가 없는 명세도 버리지 않고 KR-USR-n 으로 결과에 넣는다."""
+    text = runner.IDS_PATH.read_text(encoding="utf-8")
+    text = text.replace('identifier="KR-IDS-01"', 'identifier="MY-STOREY"', 1).replace('identifier="KR-IDS-02"', "", 1)
+    (ws / "mine2.ids").write_text(text, encoding="utf-8")
+    d = {x["id"]: x for x in _all_items(ws, "rules.check", {"path": "RA-01.ifc", "rules": ["KR-IDS-01", "KR-IDS-02"], "detail": True})[1]}
+    r, rows = _all_items(ws, "rules.check", {"path": "RA-01.ifc", "ids": "mine2.ids", "rules": ["KR-USR-"], "detail": True})
+    got = {x["id"]: x for x in rows}
+    assert set(got) == {"KR-USR-1", "KR-USR-2"}
+    e = _run(ws, "rules.check", {"path": "RA-01.ifc", "ids": "mine2.ids", "rules": ["KR-IDS-01"]})   # 사용자 IDS 에 없는 규칙
+    assert e["error"]["code"] == "NOT_FOUND"
+    assert "MY-STOREY" in got["KR-USR-1"]["note"] and got["KR-USR-1"]["severity"] == runner.USER_SEVERITY
+    assert got["KR-USR-1"]["title"] == d["KR-IDS-01"]["title"] and got["KR-USR-1"]["status"] == d["KR-IDS-01"]["status"]
+    assert got["KR-USR-2"]["title"] == d["KR-IDS-02"]["title"]
+    assert r["result"]["rules"] == len(_all_items(ws, "rules.check", {"path": "RA-01.ifc", "ids": "mine2.ids"})[1])
+
+
 def test_납품_폴더만_검사(ws):
     pkg = ws / "납품"
     (pkg / "IFC").mkdir(parents=True)
