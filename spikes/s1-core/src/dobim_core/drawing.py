@@ -37,6 +37,8 @@ ARC_N = 8           # 문 회전 호의 분할 수(90도당)
 CIRC_N = 24         # 원 단면을 다각형으로 근사할 때 분할 수
 PI = 3.141592653589793
 NBR_PAD = 1.0       # 이웃 판정 경계 상자 여유(mm)
+NBR_CELL = 4000.0   # 이웃 판정 격자 색인의 칸 폭(mm). 결과는 칸 폭과 무관하다(후보만 줄인다)
+NBR_MAX_CELLS = 256  # 상자 하나가 이보다 많은 칸에 걸치면 칸에 넣지 않고 늘 후보로 본다
 CORNER_FILL = Q.CORNER_EXTEND  # L 조인 모서리는 코어 형상(Q.wall_extent)이 닫는다: 도면과 IFC 가 같다
 PRIORITY = {"cut": 3, "symbol": 2, "proj": 1}
 
@@ -620,23 +622,61 @@ def plan_bbox(g, v, w):
     return _bbox_pts(pts) if pts else None
 
 
-def _nbrs(g, bbfn, v, w):
+def _nbr_index(g, bbfn, v):
+    """뷰 하나의 벽 경계 상자 격자 색인(과업 ⑤ 성능: 이웃 판정이 벽 수의 제곱으로 늘던 것을 칸 조회로 줄인다).
+    값: (범위 벽들(scope_walls 순서), 경계 상자들, {칸: (번호, ...)}, {벽: 번호}, 칸이 너무 많은 상자 번호들).
+    상자는 자기가 걸친 칸마다 들어간다. 두 상자가 NBR_PAD 여유로 겹치면 공통 점이 있고 그 점의 칸을 둘 다 가지므로 후보에서 빠지지 않는다."""
+    walls = g.q(scope_walls, v)
+    boxes, cells, big = [], {}, []
+    for i, o in enumerate(walls):
+        bb = g.q(bbfn, v, o)
+        boxes.append(bb)
+        if bb is None:
+            continue
+        x0, x1 = int(bb[0] // NBR_CELL), int(bb[2] // NBR_CELL)
+        y0, y1 = int(bb[1] // NBR_CELL), int(bb[3] // NBR_CELL)
+        if (x1 - x0 + 1) * (y1 - y0 + 1) > NBR_MAX_CELLS:
+            big.append(i)   # 아주 긴 벽: 칸에 넣지 않고 늘 후보로 본다
+            continue
+        for cx in range(x0, x1 + 1):
+            for cy in range(y0, y1 + 1):
+                cells.setdefault((cx, cy), []).append(i)
+    return (walls, tuple(boxes), {k: tuple(x) for k, x in cells.items()}, {o: i for i, o in enumerate(walls)}, tuple(big))
+
+
+def _nbrs(g, bbfn, idxfn, v, w):
+    """w 와 경계 상자(NBR_PAD 여유)가 겹치는 범위 안 다른 벽들(scope_walls 순서). 색인으로 후보만 보고 판정식은 그대로다."""
     me = g.q(bbfn, v, w)
     if me is None:
         return ()
+    walls, boxes, cells, pos, big = g.q(idxfn, v)[:5]
+    x0, x1 = int((me[0] - NBR_PAD) // NBR_CELL), int((me[2] + NBR_PAD) // NBR_CELL)
+    y0, y1 = int((me[1] - NBR_PAD) // NBR_CELL), int((me[3] + NBR_PAD) // NBR_CELL)
+    cand = set(big)
+    if (x1 - x0 + 1) * (y1 - y0 + 1) > NBR_MAX_CELLS:
+        cand = range(len(walls))
+    else:
+        for cx in range(x0, x1 + 1):
+            for cy in range(y0, y1 + 1):
+                cand.update(cells.get((cx, cy), ()))
+    me_i = pos.get(w)
     out = []
-    for o in g.q(scope_walls, v):
-        if o == w:
+    for i in sorted(cand):
+        if i == me_i:
             continue
-        bb = g.q(bbfn, v, o)
+        bb = boxes[i]
         if bb is not None and bb[0] <= me[2] + NBR_PAD and me[0] <= bb[2] + NBR_PAD \
                 and bb[1] <= me[3] + NBR_PAD and me[1] <= bb[3] + NBR_PAD:
-            out.append(o)
+            out.append(walls[i])
     return tuple(out)
 
 
+def plan_nbr_index(g, v):
+    return _nbr_index(g, plan_bbox, v)
+
+
 def plan_nbrs(g, v, w):
-    return _nbrs(g, plan_bbox, v, w)
+    return _nbrs(g, plan_bbox, plan_nbr_index, v, w)
 
 
 # ================================================================ 패밀리 요소 (창·패밀리 문·기둥)
@@ -3017,8 +3057,15 @@ def vbbox(g, v, w):
     return (min(ss), min(z0 for z0, _, _ in ps), max(ss), max(z1 for _, z1, _ in ps))
 
 
+def vnbr_index(g, v):
+    """_nbr_index 에 벽마다 가림 조각의 가장 앞 깊이(w 최소, 조각이 없으면 None)를 붙인다(vnbrs_front 가 뒤쪽 이웃을 거른다)."""
+    idx = _nbr_index(g, vbbox, v)
+    wmin = tuple(min((b[2] for b in g.q(_wall_occ_boxes, v, o)), default=None) for o in idx[0])
+    return idx + (wmin,)
+
+
 def vnbrs(g, v, w):
-    return _nbrs(g, vbbox, v, w)
+    return _nbrs(g, vbbox, vnbr_index, v, w)
 
 
 def vcut_rects(g, v, w):
@@ -3222,38 +3269,131 @@ def _bridges(g, v, w):
 def _wall_occluders(g, v, w):
     """벽 w 의 선을 가릴 수 있는 벽 조각들: w 와 이웃 벽의 속이 찬 조각 + 띠 이음매를 메우는 조각."""
     occ = list(g.q(vpieces, v, w))
-    occ.extend(_bridges(g, v, w))
+    occ.extend(g.q(_bridges, v, w))   # 질의로 캐시한다(과업 ⑤: 이웃마다 다시 계산하던 비용). 값은 같다
     for o in g.q(vnbrs, v, w):
         occ.extend(g.q(vpieces, v, o))
-        occ.extend(_bridges(g, v, o))
+        occ.extend(g.q(_bridges, v, o))
     return occ
+
+
+CULL_PROBE = (2, 8, 32)   # 앞에서부터 이만큼 모았을 때마다 다 가려졌는지 본다(값과 무관, 속도만)
+CULL_TOL = 1.0e-3   # 가림 후보 거르기 여유(mm). 판정식의 부동소수 오차(1e-9 수준)보다 훨씬 커서 거른 조각은 실제로 아무 구간도 가리지 않는다
+
+
+def _W_KEY(b):
+    """가림 조각 경계 값의 w 최소(정렬 열쇠)."""
+    return b[2]
+
+
+def _occ_boxed(occ):
+    """가림 조각마다 경계 값을 붙인다: (s 최소, s 최대, w 최소, z0, z1, 조각)."""
+    out = []
+    for pc in occ:
+        poly = pc[2]
+        out.append((min(p[0] for p in poly), max(p[0] for p in poly), min(p[1] for p in poly), pc[0], pc[1], pc))
+    return out
+
+
+def _wall_occ_boxes(g, v, w):
+    """벽 하나의 가림 조각(속이 찬 조각 + 띠 이음매 조각)과 경계 값. 이웃 벽마다 다시 재지 않도록 질의로 캐시한다."""
+    return tuple(sorted(_occ_boxed(g.q(vpieces, v, w) + g.q(_bridges, v, w)), key=_W_KEY))   # 앞(w 최소)부터: 합칠 때 정렬이 빠르다
+
+
+def vnbrs_front(g, v, w):
+    """(앞쪽 이웃, 이웃 중 가림 조각이 있는 벽이 있는가). 앞쪽 이웃 = vnbrs 중 가림 조각의 가장 앞 깊이가 w 의 어느 선분보다
+    충분히 앞(w 최소 < 선분 w 최대 - EPS_V + CULL_TOL)인 벽. 그보다 뒤인 벽의 조각은 _visible_culled 가 모두 거르므로 빼도 값이 같다.
+    이웃마다 조각을 당기지 않도록 색인에 적어 둔 깊이를 쓴다(과업 ⑤). 값이 같으면 vwall_lines 로 전파가 멈춘다."""
+    nb = g.q(vnbrs, v, w)
+    if not nb:
+        return ((), False)
+    idx = g.q(vnbr_index, v)
+    pos, wmin = idx[3], idx[5]
+    edges = g.q(vedges, v, w) + g.q(vfam_hosted_edges, v, w)
+    any_occ = any(wmin[pos[o]] is not None for o in nb)
+    if not edges:
+        return ((), any_occ)
+    w_cut = max(max(e0[1], e1[1]) for e0, e1 in edges) - EPS_V + CULL_TOL
+    return (tuple(o for o in nb if wmin[pos[o]] is not None and wmin[pos[o]] < w_cut), any_occ)
+
+
+def _other_occ_boxes(g, v):
+    """벽이 아닌 가림 조각(기둥 등 패밀리, 슬래브, 계단, 경사 지붕 판)과 경계 값, 앞(w 최소)부터. 벽마다 다시 재지 않도록 뷰에 하나만 둔다(과업 ⑤).
+    조각 목록은 vwall_lines 가 예전에 벽마다 모으던 것과 같다."""
+    occ = []
+    for fe in g.q(scope_fams, v):
+        occ.extend(g.q(_fam_vpieces, v, fe))
+    for sl in g.q(scope_slabs, v):
+        occ.extend(g.q(_slab_vpieces, v, sl))
+    for st in g.q(scope_stairs, v):
+        occ.extend(g.q(_stair_vpieces, v, st))
+    for rf in g.q(scope_roofs, v):
+        occ.extend(g.q(_roof_solid_vpieces, v, rf))
+    return tuple(sorted(_occ_boxed(occ), key=_W_KEY))
+
+
+def _visible_culled(e0, e1, boxed):
+    """boxed: _occ_boxed 값을 w 최소 오름차순으로 정렬한 목록.
+    visible_parts(e0, e1, 전체 가림 조각)과 같은 값을 더 빨리 낸다(수평·수직 선분 전용, 과업 ⑤ 깊이 컬링).
+    1) 걸러내기: s 범위·z 범위가 닿지 않거나 선분보다 충분히 뒤(w 최소 >= 선분 w 최대 - EPS_V)인 조각은 어떤 구간도 가리지 않으므로 뺀다.
+    2) 앞에서부터: 남은 조각을 앞(w 최소가 작은) 순서로 몇 개만 먼저 보아 선분 전체가 가려지면 바로 빈 목록을 낸다.
+       가려진 구간들의 합집합이 [0, 1] 을 빈틈없이 덮으면 조각을 더 보태도 덮는다(visible_parts 의 합집합 계산은 단조다).
+    3) 다 덮이지 않으면 남은 조각 전체로 visible_parts 를 그대로 부른다. 가려진 구간 목록은 정렬하므로 조각 순서와 무관하다."""
+    s_lo, s_hi = (e0[0], e1[0]) if e0[0] <= e1[0] else (e1[0], e0[0])
+    z_lo, z_hi = (e0[2], e1[2]) if e0[2] <= e1[2] else (e1[2], e0[2])
+    w_hi = e0[1] if e0[1] >= e1[1] else e1[1]
+    w_cut = w_hi - EPS_V + CULL_TOL
+    vertical = abs(e1[0] - e0[0]) < 1e-9 and abs(e1[1] - e0[1]) < 1e-9   # visible_parts 와 같은 판정
+    ez, es = e0[2], e0[0]
+    cand = []
+    for b in boxed:   # boxed 는 앞(w 최소)부터 정렬돼 있다
+        if b[2] >= w_cut:
+            break   # 뒤는 모두 이 선분보다 뒤다
+        if vertical:   # visible_parts·_hit_point 가 건너뛰는 조건을 그대로 쓴다(같은 부동소수 식)
+            if b[4] <= z_lo or b[3] >= z_hi or es <= b[0] + 1e-6 or es >= b[1] - 1e-6:
+                continue
+        elif not (b[3] + EPS < ez < b[4] - EPS) or b[0] >= s_hi + CULL_TOL or b[1] <= s_lo - CULL_TOL:
+            continue
+        cand.append(b[5])
+        if len(cand) in CULL_PROBE and not visible_parts(e0, e1, cand):
+            return []   # 앞의 조각 몇 개만으로 다 가려졌다: 나머지를 보태도 다 가려진다
+    if not cand:
+        return [(0.0, 1.0)]
+    return visible_parts(e0, e1, cand)
 
 
 def vwall_lines(g, v, w):
     cfg = g.q(view_cfg, v)
-    nb = g.q(vnbrs, v, w)
-    occ = _wall_occluders(g, v, w)
-    for fe in g.q(scope_fams, v):                       # 기둥이 앞에 있으면 벽 선을 가린다
-        occ.extend(g.q(_fam_vpieces, v, fe))
+    front, nb_occ = g.q(vnbrs_front, v, w)
+    # 가림 조각: 벽(자기 + 앞쪽 이웃)은 경계 값과 함께 캐시한 _wall_occ_boxes(= _wall_occluders 와 같은 조각), 그 밖의 요소는 아래 목록(과업 ⑤)
+    wall_boxes = [b for x in (w,) + front for b in g.q(_wall_occ_boxes, v, x)]
     sls = g.q(scope_slabs, v)
-    for sl in sls:                                      # 슬래브가 앞에 있으면 벽 선을 가린다
-        occ.extend(g.q(_slab_vpieces, v, sl))
-    for st in g.q(scope_stairs, v):                     # 계단이 앞에 있으면 벽 선을 가린다
-        occ.extend(g.q(_stair_vpieces, v, st))
-    for rf in g.q(scope_roofs, v):                      # 경사 지붕 판이 앞에 있으면(처마 끝·판 안에 묻힌 벽 윗선) 벽 선을 가린다
-        occ.extend(g.q(_roof_solid_vpieces, v, rf))
-    occ.extend(_solid_wall_occ(g, v, w))                # 돌출·판 솔리드(부벽 등)가 앞에 있으면 벽 선을 가린다(18단계)
+    other = g.q(_other_occ_boxes, v)                    # 기둥·슬래브·계단·경사 지붕 판이 앞에 있으면 벽 선을 가린다
+    solid = _solid_wall_occ(g, v, w)                    # 돌출·판 솔리드(부벽 등)가 앞에 있으면 벽 선을 가린다(18단계)
+    occ = [b[5] for b in other] + list(solid)
     lines = []
-    if occ:
-        for e0, e1 in g.q(vedges, v, w) + g.q(vfam_hosted_edges, v, w):
+    if wall_boxes or occ or nb_occ:   # 원래 조건(_wall_occluders 전체 + 그 밖의 조각이 하나라도 있으면)과 같다
+        edges = g.q(vedges, v, w) + g.q(vfam_hosted_edges, v, w)
+        boxed, full = [], None
+        if edges:   # 이 벽의 어느 선분보다도 충분히 뒤에 있거나 높이가 닿지 않는 조각은 어떤 선도 가리지 않는다(_visible_culled 와 같은 거르기)
+            w_cut = max(max(e0[1], e1[1]) for e0, e1 in edges) - EPS_V + CULL_TOL
+            z_lo = min(min(e0[2], e1[2]) for e0, e1 in edges) - CULL_TOL
+            z_hi = max(max(e0[2], e1[2]) for e0, e1 in edges) + CULL_TOL
+            boxed = [b for b in wall_boxes if b[2] < w_cut]
+            boxed += [b for b in other if b[2] < w_cut and b[3] < z_hi and b[4] > z_lo]
+            boxed += [b for b in _occ_boxed(solid) if b[2] < w_cut]
+            boxed.sort(key=_W_KEY)   # 이미 정렬된 묶음을 이어 붙인 목록이라 정렬이 빠르다
+        for e0, e1 in edges:
             slanted = abs(e1[2] - e0[2]) > 1e-9 and (abs(e1[0] - e0[0]) > 1e-9 or abs(e1[1] - e0[1]) > 1e-9)   # 아치 윤곽의 현(18단계)
-            for t0, t1 in (_visible_slanted(e0, e1, occ) if slanted else visible_parts(e0, e1, occ)):
+            if slanted and full is None:
+                full = [b[5] for b in wall_boxes] + occ     # 비스듬한 선은 전체 조각으로 판정한다(가려진 구간을 정렬하므로 순서와 무관)
+            for t0, t1 in (_visible_slanted(e0, e1, full) if slanted else _visible_culled(e0, e1, boxed)):
                 x0, z0 = e0[0] + t0 * (e1[0] - e0[0]), e0[2] + t0 * (e1[2] - e0[2])
                 x1, z1 = e0[0] + t1 * (e1[0] - e0[0]), e0[2] + t1 * (e1[2] - e0[2])
                 lines.append(("proj", x0, z0, x1, z1))
     if cfg[9]:
         mine = g.q(vcut_rects, v, w)
         if mine:
+            nb = g.q(vnbrs, v, w)
             others = [(o, q) for o in nb for q in g.q(vcut_rects, v, o)]
             others += [(sl, q) for sl in sls for q in g.q(slab_cut_rects, v, sl)]   # 벽과 슬래브가 맞닿은 이음매 선을 지운다
             others += [(st, q) for st in g.q(scope_stairs, v) for q in g.q(stair_cut_rects, v, st)]   # 계단도 같다
@@ -4822,9 +4962,9 @@ def views_depending_on(g, input_keys, vids, include_not_fresh=True):
 
 
 # 뷰 하나에 딸린 질의 노드의 함수들 (첫 인자가 뷰 id). 뷰를 지우면 이 노드들을 그래프에서 치운다.
-VIEW_SCOPED = frozenset({view_cfg, scope_walls, view_omitted, plan_pieces, plan_bbox, plan_nbrs, plan_wall_lines, plan_detail_lines, view_detail_lines, vpieces, vbbox, vnbrs,
+VIEW_SCOPED = frozenset({view_cfg, scope_walls, view_omitted, plan_pieces, plan_bbox, plan_nbr_index, plan_nbrs, vnbr_index, plan_wall_lines, plan_detail_lines, view_detail_lines, vpieces, vbbox, vnbrs,
                          vwall_detail, slab_detail_lines, space_ceiling_lines, vwin_detail, view_lines_hier,
-                         vcut_rects, _vcut_top, vedges, vwall_lines, view_lines, view_fills,
+                         vcut_rects, _vcut_top, vedges, vwall_lines, _bridges, _wall_occ_boxes, vnbrs_front, _other_occ_boxes, view_lines, view_fills,
                          scope_fams, plan_fam_parts, _fam_vpieces, vfam_bbox, vfam_cut_rects, vfam_edges, vfam_nbr_pieces, fam_lines,
                          scope_solids, _solid_vpieces, solid_lines, _occ_index, plan_wall_glazing,
                          vfam_hosted_edges, scope_slabs, plan_slab_parts, _slab_vpieces, slab_vbbox, slab_cut_rects, slab_vedges, slab_nbr_walls, slab_lines,

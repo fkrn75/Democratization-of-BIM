@@ -1,0 +1,543 @@
+{
+ "what": "과업 ⑤: 합성 격자 모델(tools/bench_50k.py, 시드 20261119)에서 읽기 전용 뷰 1장(새 프로세스에서 열기 + view.export .svg) 시간. 목표: 5만 요소 평면 1장 30초",
+ "machine": "AMD64 Family 25 Model 68 Stepping 1, AuthenticAMD",
+ "python": "3.12.2",
+ "curve_with_phase_timer": [
+  {
+   "build": {
+    "target": 1000,
+    "levels": 1,
+    "grid": 14,
+    "commands": 1237,
+    "build_sec": 0.5,
+    "stats": {
+     "counts": {
+      "level": 1,
+      "wall": 420,
+      "door": 420,
+      "slab": 1,
+      "space": 196
+     },
+     "door": {
+      "count": 420,
+      "total_width": 365300.0
+     },
+     "wall": {
+      "count": 420,
+      "total_length": 2310000.0,
+      "total_net_area": 6393870000.0
+     }
+    }
+   },
+   "plan": {
+    "view": "plan",
+    "open_sec": 0.159,
+    "view_lines_sec": 0.161,
+    "export_rest_sec": 0.288,
+    "total_sec": 0.609,
+    "lines": 6356,
+    "svg_bytes": 472673,
+    "phases_sec": {
+     "nbrs": 0.033,
+     "wall_lines": 0.088,
+     "other_lines": 0.0,
+     "scope": 0.011,
+     "merge": 0.026,
+     "fills": 0.003,
+     "labels": 0.053
+    }
+   },
+   "section": {
+    "view": "section",
+    "open_sec": 0.152,
+    "view_lines_sec": 0.129,
+    "export_rest_sec": 0.209,
+    "total_sec": 0.491,
+    "lines": 146,
+    "svg_bytes": 11625,
+    "phases_sec": {
+     "nbrs": 0.039,
+     "wall_lines": 0.082,
+     "other_lines": 0.001,
+     "scope": 0.002,
+     "merge": 0.003,
+     "fills": 0.0,
+     "labels": 0.0
+    }
+   },
+   "elevation": {
+    "view": "elevation",
+    "open_sec": 0.159,
+    "view_lines_sec": 0.19,
+    "export_rest_sec": 0.206,
+    "total_sec": 0.555,
+    "lines": 76,
+    "svg_bytes": 5152,
+    "phases_sec": {
+     "nbrs": 0.052,
+     "wall_lines": 0.126,
+     "other_lines": 0.001,
+     "scope": 0.002,
+     "merge": 0.004,
+     "fills": 0.002,
+     "labels": 0.0
+    }
+   }
+  },
+  {
+   "build": {
+    "target": 5000,
+    "levels": 1,
+    "grid": 32,
+    "commands": 6277,
+    "build_sec": 1.9,
+    "stats": {
+     "counts": {
+      "level": 1,
+      "wall": 2112,
+      "door": 2112,
+      "slab": 1,
+      "space": 1024
+     },
+     "door": {
+      "count": 2112,
+      "total_width": 1841400.0
+     },
+     "wall": {
+      "count": 2112,
+      "total_length": 11616000.0,
+      "total_net_area": 32142660000.0
+     }
+    }
+   },
+   "plan": {
+    "view": "plan",
+    "open_sec": 0.65,
+    "view_lines_sec": 1.011,
+    "export_rest_sec": 0.463,
+    "total_sec": 2.125,
+    "lines": 31944,
+    "svg_bytes": 2460681,
+    "phases_sec": {
+     "nbrs": 0.267,
+     "wall_lines": 0.371,
+     "other_lines": 0.0,
+     "scope": 0.134,
+     "merge": 0.228,
+     "fills": 0.016,
+     "labels": 0.083
+    }
+   },
+   "section": {
+    "view": "section",
+    "open_sec": 0.648,
+    "view_lines_sec": 0.791,
+    "export_rest_sec": 0.288,
+    "total_sec": 1.727,
+    "lines": 338,
+    "svg_bytes": 25287,
+    "phases_sec": {
+     "nbrs": 0.395,
+     "wall_lines": 0.362,
+     "other_lines": 0.003,
+     "scope": 0.007,
+     "merge": 0.01,
+     "fills": 0.001,
+     "labels": 0.0
+    }
+   },
+   "elevation": {
+    "view": "elevation",
+    "open_sec": 0.657,
+    "view_lines_sec": 1.379,
+    "export_rest_sec": 0.233,
+    "total_sec": 2.27,
+    "lines": 155,
+    "svg_bytes": 9881,
+    "phases_sec": {
+     "nbrs": 0.503,
+     "wall_lines": 0.81,
+     "other_lines": 0.005,
+     "scope": 0.007,
+     "merge": 0.017,
+     "fills": 0.004,
+     "labels": 0.001
+    }
+   }
+  },
+  {
+   "build": {
+    "target": 10000,
+    "levels": 2,
+    "grid": 32,
+    "commands": 12551,
+    "build_sec": 3.9,
+    "stats": {
+     "counts": {
+      "level": 2,
+      "wall": 4224,
+      "door": 4224,
+      "slab": 2,
+      "space": 2048
+     },
+     "door": {
+      "count": 4224,
+      "total_width": 3691000.0
+     },
+     "wall": {
+      "count": 4224,
+      "total_length": 23232000.0,
+      "total_net_area": 64268100000.0
+     }
+    }
+   },
+   "plan": {
+    "view": "plan",
+    "open_sec": 1.297,
+    "view_lines_sec": 1.012,
+    "export_rest_sec": 0.473,
+    "total_sec": 2.783,
+    "lines": 31944,
+    "svg_bytes": 2460681,
+    "phases_sec": {
+     "nbrs": 0.294,
+     "wall_lines": 0.321,
+     "other_lines": 0.0,
+     "scope": 0.138,
+     "merge": 0.247,
+     "fills": 0.017,
+     "labels": 0.09
+    }
+   },
+   "section": {
+    "view": "section",
+    "open_sec": 1.277,
+    "view_lines_sec": 1.825,
+    "export_rest_sec": 0.247,
+    "total_sec": 3.35,
+    "lines": 675,
+    "svg_bytes": 49727,
+    "phases_sec": {
+     "nbrs": 0.838,
+     "wall_lines": 0.913,
+     "other_lines": 0.009,
+     "scope": 0.013,
+     "merge": 0.021,
+     "fills": 0.003,
+     "labels": 0.0
+    }
+   },
+   "elevation": {
+    "view": "elevation",
+    "open_sec": 1.296,
+    "view_lines_sec": 3.117,
+    "export_rest_sec": 0.253,
+    "total_sec": 4.666,
+    "lines": 315,
+    "svg_bytes": 19428,
+    "phases_sec": {
+     "nbrs": 1.211,
+     "wall_lines": 1.746,
+     "other_lines": 0.018,
+     "scope": 0.013,
+     "merge": 0.042,
+     "fills": 0.009,
+     "labels": 0.003
+    }
+   }
+  },
+  {
+   "build": {
+    "target": 20000,
+    "levels": 4,
+    "grid": 32,
+    "commands": 25099,
+    "build_sec": 8.3,
+    "stats": {
+     "counts": {
+      "level": 4,
+      "wall": 8448,
+      "door": 8448,
+      "slab": 4,
+      "space": 4096
+     },
+     "door": {
+      "count": 8448,
+      "total_width": 7393200.0
+     },
+     "wall": {
+      "count": 8448,
+      "total_length": 46464000.0,
+      "total_net_area": 128512680000.0
+     }
+    }
+   },
+   "plan": {
+    "view": "plan",
+    "open_sec": 2.584,
+    "view_lines_sec": 1.073,
+    "export_rest_sec": 0.624,
+    "total_sec": 4.281,
+    "lines": 31944,
+    "svg_bytes": 2460681,
+    "phases_sec": {
+     "nbrs": 0.278,
+     "wall_lines": 0.435,
+     "other_lines": 0.0,
+     "scope": 0.197,
+     "merge": 0.149,
+     "fills": 0.019,
+     "labels": 0.101
+    }
+   },
+   "section": {
+    "view": "section",
+    "open_sec": 2.581,
+    "view_lines_sec": 4.041,
+    "export_rest_sec": 0.252,
+    "total_sec": 6.874,
+    "lines": 1342,
+    "svg_bytes": 100390,
+    "phases_sec": {
+     "nbrs": 1.944,
+     "wall_lines": 1.899,
+     "other_lines": 0.028,
+     "scope": 0.065,
+     "merge": 0.043,
+     "fills": 0.007,
+     "labels": 0.0
+    }
+   },
+   "elevation": {
+    "view": "elevation",
+    "open_sec": 2.6,
+    "view_lines_sec": 7.345,
+    "export_rest_sec": 0.259,
+    "total_sec": 10.204,
+    "lines": 624,
+    "svg_bytes": 38287,
+    "phases_sec": {
+     "nbrs": 3.089,
+     "wall_lines": 3.873,
+     "other_lines": 0.054,
+     "scope": 0.071,
+     "merge": 0.071,
+     "fills": 0.019,
+     "labels": 0.006
+    }
+   }
+  },
+  {
+   "build": {
+    "target": 50000,
+    "levels": 10,
+    "grid": 32,
+    "commands": 62743,
+    "build_sec": 22.1,
+    "stats": {
+     "counts": {
+      "level": 10,
+      "wall": 21120,
+      "door": 21120,
+      "slab": 10,
+      "space": 10240
+     },
+     "door": {
+      "count": 21120,
+      "total_width": 18487100.0
+     },
+     "wall": {
+      "count": 21120,
+      "total_length": 116160000.0,
+      "total_net_area": 321273090000.0
+     }
+    }
+   },
+   "plan": {
+    "view": "plan",
+    "open_sec": 7.127,
+    "view_lines_sec": 1.064,
+    "export_rest_sec": 0.509,
+    "total_sec": 8.701,
+    "lines": 31944,
+    "svg_bytes": 2460681,
+    "phases_sec": {
+     "nbrs": 0.346,
+     "wall_lines": 0.344,
+     "other_lines": 0.0,
+     "scope": 0.199,
+     "merge": 0.162,
+     "fills": 0.017,
+     "labels": 0.115
+    }
+   },
+   "section": {
+    "view": "section",
+    "open_sec": 7.053,
+    "view_lines_sec": 10.369,
+    "export_rest_sec": 0.264,
+    "total_sec": 17.687,
+    "lines": 3342,
+    "svg_bytes": 251410,
+    "phases_sec": {
+     "nbrs": 4.671,
+     "wall_lines": 5.192,
+     "other_lines": 0.094,
+     "scope": 0.147,
+     "merge": 0.104,
+     "fills": 0.019,
+     "labels": 0.001
+    }
+   },
+   "elevation": {
+    "view": "elevation",
+    "open_sec": 7.302,
+    "view_lines_sec": 18.679,
+    "export_rest_sec": 0.321,
+    "total_sec": 26.303,
+    "lines": 1583,
+    "svg_bytes": 97333,
+    "phases_sec": {
+     "nbrs": 8.373,
+     "wall_lines": 9.327,
+     "other_lines": 0.158,
+     "scope": 0.153,
+     "merge": 0.199,
+     "fills": 0.051,
+     "labels": 0.016
+    }
+   }
+  }
+ ],
+ "final_50k_no_phase_timer": [
+  {
+   "view": "plan",
+   "open_sec": 7.157,
+   "view_lines_sec": 1.084,
+   "export_rest_sec": 0.485,
+   "total_sec": 8.728,
+   "lines": 31944,
+   "svg_bytes": 2460681
+  },
+  {
+   "view": "section",
+   "open_sec": 7.024,
+   "view_lines_sec": 10.611,
+   "export_rest_sec": 0.273,
+   "total_sec": 17.909,
+   "lines": 3342,
+   "svg_bytes": 251410
+  },
+  {
+   "view": "elevation",
+   "open_sec": 7.038,
+   "view_lines_sec": 18.312,
+   "export_rest_sec": 0.344,
+   "total_sec": 25.696,
+   "lines": 1583,
+   "svg_bytes": 97333
+  }
+ ],
+ "before_main_447b8cd": {
+  "note": "같은 모델 파일, 같은 측정기, 고치기 전 코드(main 447b8cd). 산출 SVG 는 고친 뒤와 바이트가 같다",
+  "rows": [
+   {
+    "target": 10000,
+    "view": "section",
+    "open_sec": 1.277,
+    "view_lines_sec": 22.104,
+    "total_sec": 23.986,
+    "lines": 675,
+    "svg_bytes": 49727
+   },
+   {
+    "target": 10000,
+    "view": "elevation",
+    "open_sec": 1.305,
+    "view_lines_sec": 72.838,
+    "total_sec": 74.659,
+    "lines": 315,
+    "svg_bytes": 19428
+   },
+   {
+    "target": 20000,
+    "view": "section",
+    "open_sec": 2.903,
+    "view_lines_sec": 66.794,
+    "total_sec": 70.158,
+    "lines": 1342,
+    "svg_bytes": 100390
+   },
+   {
+    "target": 20000,
+    "view": "elevation",
+    "open_sec": 2.85,
+    "view_lines_sec": 206.561,
+    "total_sec": 212.178,
+    "lines": 624,
+    "svg_bytes": 38287
+   },
+   {
+    "target": 50000,
+    "view": "section",
+    "open_sec": 7.659,
+    "view_lines_sec": 371.805,
+    "total_sec": 379.979,
+    "lines": 3342,
+    "svg_bytes": 251410
+   },
+   {
+    "target": 50000,
+    "view": "elevation",
+    "open_sec": 8.808,
+    "view_lines_sec": 1035.248,
+    "total_sec": 1044.553,
+    "lines": 1583,
+    "svg_bytes": 97333
+   }
+  ]
+ },
+ "t1_wall_move_plan_refresh": {
+  "after": [
+   {
+    "model": "synth-5000.dobim",
+    "views": [
+     "plan"
+    ],
+    "cold_sec": 1.0,
+    "moves": 10,
+    "refresh_ms": {
+     "p50": 274.5,
+     "max": 346.5
+    },
+    "recomputed_nodes_p50": 2141.5
+   },
+   {
+    "model": "synth-50000.dobim",
+    "views": [
+     "plan"
+    ],
+    "cold_sec": 1.04,
+    "moves": 10,
+    "refresh_ms": {
+     "p50": 263.4,
+     "max": 658.5
+    },
+    "recomputed_nodes_p50": 2141.5
+   }
+  ],
+  "before_main_447b8cd": {
+   "model": "synth-5000.dobim",
+   "views": [
+    "plan"
+   ],
+   "cold_sec": 3.95,
+   "moves": 10,
+   "refresh_ms": {
+    "p50": 3299.0,
+    "max": 3520.2
+   },
+   "recomputed_nodes_p50": 2140.5
+  }
+ }
+}
