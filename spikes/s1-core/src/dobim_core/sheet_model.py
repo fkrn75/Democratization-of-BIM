@@ -261,12 +261,12 @@ def view_marks(g):
         cfg = g.q(D.view_cfg, v)
         p = Q.el(g, v)["params"]
         label = (p["name"].split() or ["?"])[0][:4]
-        if cfg is None:
+        if cfg is None or "parent" in p:   # 콜아웃 뷰(W1 1-C 2차)는 절단선·방향 기호가 아니라 부모 뷰의 콜아웃 기호로 그린다
             continue
         if cfg[0] == "sec":
-            secs.append({"label": label, "p1": tuple(p["p1"]), "p2": tuple(p["p2"]), "dir": (cfg[3], cfg[4])})
+            secs.append({"id": v, "label": label, "p1": tuple(p["p1"]), "p2": tuple(p["p2"]), "dir": (cfg[3], cfg[4])})
         elif cfg[0] == "elev":
-            elevs.append({"label": label, "dir": (cfg[3], cfg[4])})
+            elevs.append({"id": v, "label": label, "dir": (cfg[3], cfg[4])})
     return secs, elevs
 
 

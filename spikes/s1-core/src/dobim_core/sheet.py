@@ -361,8 +361,12 @@ def build_sheet(spec: dict, views: list[dict]) -> Sheet:
     nat = [_natural(v) for v in views]
     dims = spec.get("dims") or {}
     extra = [ST.ELEV_DIM_SPACE if (dims.get(v.get("id")) or {}).get("elevation") else 0.0 for v in views]   # 입면 치수가 있는 뷰는 아래를 더 비운다
+    vps = spec.get("viewports") or {}   # 뷰포트(W1 1-C 2차): 위치(at)를 준 뷰는 자동 배치에서 빼고 그 자리에 둔다
+    manual = {i: vps[v.get("id")]["at"] for i, v in enumerate(views) if (vps.get(v.get("id")) or {}).get("at")}
+    auto = [i for i in range(len(views)) if i not in manual]
     pos, x, y, row_h = [], area_x0, area_y0, 0.0
-    for (cw, ch, *_), ex_ in zip(nat, extra):
+    for i in auto:
+        (cw, ch, *_), ex_ = nat[i], extra[i]
         bh = ch + CAP_H + ex_
         if cw > area_x1 - area_x0 or bh > area_y1 - area_y0:
             raise SheetError(f"뷰가 {sh.paper} 용지에 들어가지 않는다({cw:.0f}x{ch:.0f}mm). 더 큰 용지를 쓰거나 뷰의 축척을 키우세요(예: 1:100 -> 1:200)")
@@ -371,28 +375,40 @@ def build_sheet(spec: dict, views: list[dict]) -> Sheet:
         pos.append((x, y))
         x += cw + GAP
         row_h = max(row_h, bh)
-    if not pos or pos[-1][1] + row_h > area_y1 + 1e-6:
+    if (not pos and not manual) or (pos and pos[-1][1] + row_h > area_y1 + 1e-6):
         raise SheetError(f"뷰 {len(views)}장이 {sh.paper} 용지 한 장에 다 들어가지 않는다. 용지를 키우거나 뷰를 나눠 시트를 여러 장 만드세요")
-    # 묶음 전체를 도면 영역 가운데로
-    gx0 = min(p[0] for p in pos)
-    gx1 = max(p[0] + n[0] for p, n in zip(pos, nat))
-    gy1 = pos[-1][1] + row_h
-    dx = (area_x0 + area_x1) / 2.0 - (gx0 + gx1) / 2.0
-    dy = ((area_y0 + area_y1) / 2.0 - (area_y0 + gy1) / 2.0)
-    for v, (cw, ch, tx, ty, datums, ex0, ex1), (px, py), ex_ in zip(views, nat, pos, extra):
-        ox, oy = px + dx, py + dy
+    at: dict[int, tuple] = {}
+    if pos:   # 묶음 전체를 도면 영역 가운데로
+        gx0 = min(p[0] for p in pos)
+        gx1 = max(p[0] + nat[i][0] for p, i in zip(pos, auto))
+        gy1 = pos[-1][1] + row_h
+        dx = (area_x0 + area_x1) / 2.0 - (gx0 + gx1) / 2.0
+        dy = ((area_y0 + area_y1) / 2.0 - (area_y0 + gy1) / 2.0)
+        at = {i: (px + dx, py + dy) for i, (px, py) in zip(auto, pos)}
+    for i, (mx, my) in manual.items():
+        cw, ch = nat[i][0], nat[i][1]
+        if mx < area_x0 - 1e-6 or my < area_y0 - 1e-6 or mx + cw > area_x1 + 1e-6 or my + ch + CAP_H + extra[i] > area_y1 + 1e-6:
+            raise SheetError(f"뷰포트 at [{mx:g}, {my:g}] 에 놓은 뷰({cw:.0f}x{ch:.0f}mm, 제목 포함)가 도면 영역 "
+                             f"[{area_x0:g}, {area_y0:g}]~[{area_x1:g}, {area_y1:g}] 을 벗어난다")
+        at[i] = (float(mx), float(my))
+    for i, (v, (cw, ch, tx, ty, datums, ex0, ex1), ex_) in enumerate(zip(views, nat, extra)):
+        ox, oy = at[i]
         f = DX.MARGIN
         sh.begin(f"view-{v.get('id') or len(sh.placed)}", **{"data-view": v.get("id") or "", "data-scale": v["scale"]})
         TX, TY = (lambda X, _tx=tx, _ox=ox: _ox + _tx(X) - f), (lambda Y, _ty=ty, _oy=oy: _oy + _ty(Y) - f)
         view_prims(sh, v, TX, TY, datums, ex0, ex1, _style(spec), prof)
         _view_extras(sh, spec, v, TX, TY)
-        cap = f"{v['name']}"
+        vp = vps.get(v.get("id"))
+        cap = f"{v['name']}" if vp is None or not vp.get("title") else vp["title"]
         ch_cap = ((prof or {}).get("text_height") or {}).get("caption", 4.0)
-        sh.text(ox, oy + ch + 7.0 + ex_, ch_cap, cap, bold=True)
-        sh.text(ox + est_w(cap, ch_cap) + 4.0, oy + ch + 7.0 + ex_, ch_cap * 0.875, f"S=1:{v['scale']}")
+        if vp is not None and vp.get("number"):
+            view_title(sh, ox, oy + ch + ex_, vp["number"], cap, v["scale"], ch_cap)
+        else:
+            sh.text(ox, oy + ch + 7.0 + ex_, ch_cap, cap, bold=True)
+            sh.text(ox + est_w(cap, ch_cap) + 4.0, oy + ch + 7.0 + ex_, ch_cap * 0.875, f"S=1:{v['scale']}")
         sh.end()
         sh.placed.append({"view": v.get("id"), "name": v["name"], "scale": v["scale"], "x": round(ox, 2), "y": round(oy, 2),
-                          "w": round(cw, 2), "h": round(ch, 2)})
+                          "w": round(cw, 2), "h": round(ch, 2), **({"number": vp["number"]} if vp and vp.get("number") else {})})
     for rv in spec.get("revisions") or []:                    # 개정 구름: 개정한 뷰를 구름으로 둘러싸고 차수 삼각형을 붙인다
         pl = next((q for q in sh.placed if q["view"] == rv.get("view")), None) if rv.get("view") else None
         if pl:
@@ -404,6 +420,21 @@ def build_sheet(spec: dict, views: list[dict]) -> Sheet:
     title_block(sh, spec, [v["scale"] for v in views])
     sh.end()
     return sh
+
+
+def view_title(sh: Sheet, x, y, number: str, title: str, scale, h: float = 4.0):
+    """번호가 있는 뷰 제목(W1 1-C 2차, DOC-02): 상세 번호 원 + 제목(굵게) + 밑줄 + 축척. (x, y) = 뷰 틀의 왼쪽 아래(용지 mm)."""
+    r = 4.5
+    cx, cy = x + r, y + 6.0
+    sh.begin("view-title", **{"data-number": number})
+    sh.circle(cx, cy, r, 0.35)
+    ns = 3.0 if len(number) <= 2 else (2.2 if len(number) <= 4 else 1.6)
+    sh.text(cx, cy + ns * 0.35, ns, number, "middle")
+    tx = x + 2.0 * r + 2.0
+    sh.text(tx, cy - 1.0, h, title, bold=True)
+    sh.line(x + 2.0 * r, cy + 0.6, tx + est_w(title, h) + 2.0, cy + 0.6, 0.5)
+    sh.text(tx, cy + 4.6, h * 0.7, f"S=1:{scale}")
+    sh.end()
 
 
 def _style(spec: dict):
@@ -424,7 +455,7 @@ def _view_extras(sh: Sheet, spec: dict, v: dict, TX, TY):
         ST.tag_items(sh, "room-numbers", tg.get("room"), TX, TY)
         ST.tag_items(sh, "opening-tags", tg.get("opening"), TX, TY)
         ST.tag_items(sh, "wall-tags", tg.get("wall"), TX, TY)
-    ST.callouts(sh, vid, TX, TY, spec.get("callouts") or [])
+    ST.callouts(sh, vid, TX, TY, (spec.get("callouts") or []) + (spec.get("vcallouts") or []))   # vcallouts = 콜아웃 뷰(W1 1-C 2차)
     dm = (spec.get("dims") or {}).get(vid)
     if dm:
         prof = spec.get("profile")

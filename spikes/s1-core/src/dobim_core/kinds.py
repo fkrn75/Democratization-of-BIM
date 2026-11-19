@@ -269,9 +269,10 @@ def _vtemplate_params(p):
 _VG_VIEW_KEYS = ("vg", "filters", "template")
 # 뷰의 선택 파라미터(없으면 키 자체가 없다): crop 잘라내기(부위 상세 뷰), dims 승강기·계단 치수 자동 표기(평면·단면), finish 입면의 외부 마감 해치·재료 문자(입면),
 # vg·filters·template 가시성·그래픽 재정의·필터·템플릿(W1 1-C, 모든 종류)
-VIEW_OPTIONAL = {"plan": ("crop", "dims") + _VG_VIEW_KEYS, "section": ("with_site", "crop", "dims") + _VG_VIEW_KEYS,
-                 "elevation": ("crop", "finish") + _VG_VIEW_KEYS, "site": _VG_VIEW_KEYS}
-_VIEW_OPT_CHECK = {"with_site": _TRUE, "crop": _crop_ok, "dims": _TRUE, "finish": _TRUE, "vg": vg_ok, "filters": vg_filters_ok, "template": id_ok}
+# parent 콜아웃 뷰의 부모 뷰 id(W1 1-C 2차, VIEW-06): 부모와 같은 종류이고 crop 이 콜아웃 범위다(부모 뷰에 콜아웃 기호로 그린다)
+VIEW_OPTIONAL = {"plan": ("crop", "dims") + _VG_VIEW_KEYS + ("parent",), "section": ("with_site", "crop", "dims") + _VG_VIEW_KEYS + ("parent",),
+                 "elevation": ("crop", "finish") + _VG_VIEW_KEYS + ("parent",), "site": _VG_VIEW_KEYS}
+_VIEW_OPT_CHECK = {"with_site": _TRUE, "crop": _crop_ok, "dims": _TRUE, "finish": _TRUE, "vg": vg_ok, "filters": vg_filters_ok, "template": id_ok, "parent": id_ok}
 
 
 def _view_params(p):
@@ -1002,8 +1003,9 @@ SHEET_KEYS = ("name", "views", "paper", "project_name", "sheet_name", "sheet_num
 
 
 def _sheet_params(p):
-    """시트 정의: 뷰 배치(앞에서부터 왼쪽 위 -> 오른쪽 -> 아래)와 표제란 인자. 값의 범위·참조는 정의를 되살릴 때(viewdefs) 마저 검사한다."""
-    return _check_fields("sheet", p, {
+    """시트 정의: 뷰 배치(앞에서부터 왼쪽 위 -> 오른쪽 -> 아래)와 표제란 인자. 값의 범위·참조는 정의를 되살릴 때(viewdefs) 마저 검사한다.
+    viewports(W1 1-C 2차, DOC-02·VIEW-25) 는 선택 키다(없으면 키 자체가 없다: 이전 시트 정의의 저장 형식 그대로)."""
+    return _check_opt("sheet", p, {
         "name": _name, "views": lambda v: isinstance(v, list) and 1 <= len(v) <= 12 and all(id_ok(x) for x in v),
         "paper": lambda v: v in ("A1", "A3"), "project_name": lambda v: text_ok(v), "sheet_name": lambda v: text_ok(v), "sheet_number": lambda v: text_ok(v),
         "date": lambda v: v is None or text_ok(v, 10, 10), "north_angle": num_ok, "client": lambda v: text_ok(v), "office": lambda v: text_ok(v),
@@ -1011,7 +1013,8 @@ def _sheet_params(p):
         "grids": lambda v: _json_ok(v) and isinstance(v, list), "callouts": lambda v: _json_ok(v) and isinstance(v, list), "marks": lambda v: type(v) is bool,
         "tags": lambda v: isinstance(v, list) and all(text_ok(x, 1, 16) for x in v), "key_plan": lambda v: v is None or id_ok(v),
         "key_zone": lambda v: v is None or (isinstance(v, list) and len(v) == 4 and all(num_ok(x) for x in v)),
-        "line_profile": lambda v: v is None or (_json_ok(v) and isinstance(v, dict))})
+        "line_profile": lambda v: v is None or (_json_ok(v) and isinstance(v, dict))},
+        {"viewports": lambda v: _json_ok(v) and isinstance(v, list) and 0 < len(v) <= 12})
 
 
 SITE_ROADS_MAX = 8
@@ -1339,8 +1342,8 @@ ELEMENT_KINDS: dict[str, ElementKind] = {k.name: k for k in (
     ElementKind("grid", False, None, False, 6, _grid_params),
     # 뷰 템플릿(W1 1-C, VIEW-15): 뷰 설정(가시성·그래픽 재정의·필터·축척) 묶음. 비 IFC 의도 요소라 정의는 DoBIM_Defs 로 왕복한다
     ElementKind("vtemplate", False, None, False, 5, _vtemplate_params),
-    ElementKind("view", False, None, False, 6, _view_params, refs=(("level", "id", None), ("template", "id", None)),
-                ref_kinds=(("level", ("level",)), ("template", ("vtemplate",)))),   # 평면 뷰만 level 이 있다
+    ElementKind("view", False, None, False, 6, _view_params, refs=(("level", "id", None), ("template", "id", None), ("parent", "id", None)),
+                ref_kinds=(("level", ("level",)), ("template", ("vtemplate",)), ("parent", ("view",)))),   # 평면 뷰만 level 이 있다. parent 는 콜아웃 뷰만
     ElementKind("dim", False, None, False, 7, _dim_params, refs=(("view", "id", "annot_of"), ("a", "ref", None), ("b", "ref", None)),
                 ref_kinds=(("view", ("view",)),)),
     ElementKind("tag", False, None, False, 7, _tag_params, refs=(("view", "id", "annot_of"), ("target", "id", None)),

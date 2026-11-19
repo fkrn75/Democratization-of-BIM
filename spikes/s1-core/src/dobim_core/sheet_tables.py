@@ -225,6 +225,21 @@ def bubble(sh, cx, cy, label: str, r=3.3, color=INK, size=2.3):
     sh.text(cx, cy + size * 0.35, size, label, "middle", color)
 
 
+REF_R = 4.4   # 뷰 참조 원 반지름(용지 mm, 기호 배율 1)
+
+
+def ref_bubble(sh, cx, cy, number: str, sheet: str, color=INK):
+    """뷰 참조 기호 머리(W1 1-C 2차, VIEW-25): 원을 가로선으로 나눠 위에 상세 번호, 아래에 시트 번호(Revit 의 단면 머리와 같은 뜻)."""
+    k = getattr(sh, "sym_k", 1.0)
+    r = REF_R * k
+    sh.circle(cx, cy, r, 0.3, color, "#ffffff")
+    sh.line(cx - r, cy, cx + r, cy, 0.25, color)
+    ns = (1.9 if len(number) <= 3 else 1.4) * k
+    ss = (1.5 if len(sheet) <= 5 else (1.15 if len(sheet) <= 7 else 0.9)) * k
+    sh.text(cx, cy - 0.9 * k, ns, number, "middle", color)
+    sh.text(cx, cy + ss + 0.7 * k, ss, sheet, "middle", color)
+
+
 def projection_symbol(sh, x, y, w, h, method="third"):
     """투상법 기호(KS 제3각법·제1각법): 원뿔대를 정면에서 본 모양(사다리꼴 + 중심선)과 옆(원 둘)에서 본 모양을 나란히 놓는다.
     제3각법은 정면도가 왼쪽·우측면도(동심원)가 오른쪽, 제1각법은 그 반대다. (x, y)는 기호 칸의 왼쪽 위, 크기 w x h(용지 mm)."""
@@ -349,8 +364,12 @@ def section_marks(sh, data, TX, TY, sections, elevs):
             for (px, py), sgn in ((a, -1.0), (b, 1.0)):
                 ex, ey = b[0] - a[0], b[1] - a[1]
                 el = sqrt(ex * ex + ey * ey) or 1.0
-                cx, cy = px + sgn * ex / el * 3.3, py + sgn * ey / el * 3.3
-                bubble(sh, cx, cy, s["label"], 3.3, INK, 1.9)
+                if s.get("ref"):   # 뷰 참조(W1 1-C 2차, VIEW-25): 상세 번호 / 시트 번호
+                    cx, cy = px + sgn * ex / el * REF_R, py + sgn * ey / el * REF_R
+                    ref_bubble(sh, cx, cy, *s["ref"])
+                else:
+                    cx, cy = px + sgn * ex / el * 3.3, py + sgn * ey / el * 3.3
+                    bubble(sh, cx, cy, s["label"], 3.3, INK, 1.9)
                 tip = (px + ux * 6.0, py + uy * 6.0)
                 sh.poly([tip, (px + ux * 2.4 - uy * 1.4, py + uy * 2.4 + ux * 1.4), (px + ux * 2.4 + uy * 1.4, py + uy * 2.4 - ux * 1.4)], INK, 0.0)
         sh.end()
@@ -361,6 +380,13 @@ def section_marks(sh, data, TX, TY, sections, elevs):
             dx, dy = e["dir"]                                             # 건물을 바라보는 방향(모델 좌표)
             px, py = cx - dx * ((TX(bb[2]) - TX(bb[0])) / 2.0 + 9.0), cy + dy * ((TY(bb[1]) - TY(bb[3])) / 2.0 + 9.0)
             ux, uy = dx, -dy
+            if e.get("ref"):   # 뷰 참조(W1 1-C 2차): 번호 / 시트 번호 원 + 바깥으로 보는 방향 삼각형
+                ref_bubble(sh, px, py, *e["ref"])
+                r = REF_R * getattr(sh, "sym_k", 1.0)
+                sh.poly([(px + ux * (r + 2.4), py + uy * (r + 2.4)), (px - uy * 1.8 + ux * (r - 0.4), py + ux * 1.8 + uy * (r - 0.4)),
+                         (px + uy * 1.8 + ux * (r - 0.4), py - ux * 1.8 + uy * (r - 0.4))], INK, 0.0)
+                sh.text(px, py - r - 1.4, 2.0, e["label"], "middle")
+                continue
             sh.circle(px, py, 3.3, 0.3)
             sh.poly([(px + ux * 3.0, py + uy * 3.0), (px - uy * 1.8 - ux * 1.0, py + ux * 1.8 - uy * 1.0), (px + uy * 1.8 - ux * 1.0, py - ux * 1.8 - uy * 1.0)], INK, 0.0)
             sh.text(px, py - 4.6, 2.0, e["label"], "middle")
@@ -379,7 +405,10 @@ def callouts(sh, view_id, TX, TY, items):
         ya, yb = TY(max(y0, y1)), TY(min(y0, y1))
         for p, q in (((xa, ya), (xb, ya)), ((xb, ya), (xb, yb)), ((xb, yb), (xa, yb)), ((xa, yb), (xa, ya))):
             dashdot(sh, p[0], p[1], q[0], q[1], 0.25)
-        bubble(sh, xb, ya - 3.3, c["label"], 3.0, INK, 2.0)
+        if c.get("ref"):   # 콜아웃 뷰가 시트에 번호와 함께 놓였다(W1 1-C 2차): 번호 / 시트 번호
+            ref_bubble(sh, xb, ya - REF_R * getattr(sh, "sym_k", 1.0), *c["ref"])
+        else:
+            bubble(sh, xb, ya - 3.3, c["label"], 3.0, INK, 2.0)
     sh.end()
 
 

@@ -3336,6 +3336,8 @@ def view_set(ctx, a: ViewSet):
         if k not in K.VIEW_OPTIONAL[p["type"]]:
             raise DobimError("CONSTRAINT", f"{p['type']} 뷰에는 쓰지 않는 필드다: {k}", path=f"/{k}")
         if k == "crop" and a.clear_crop:
+            if "parent" in p:   # 콜아웃 뷰(W1 1-C 2차): 잘라내기가 곧 콜아웃 범위다
+                raise DobimError("CONSTRAINT", "콜아웃 뷰의 잘라내기는 없앨 수 없다(범위는 crop 으로 바꾼다)", path="/clear_crop")
             p.pop(k, None)
         elif k == "crop":
             p[k] = list(v)
@@ -3356,6 +3358,9 @@ def view_delete(ctx, a: IdArg):
     used = sorted(sid for sid in ctx.st.by_kind.get("sheet", ()) if a.id in ctx.st.el[sid]["params"]["views"] or ctx.st.el[sid]["params"]["key_plan"] == a.id)
     if used:   # 시트 정의가 이 뷰를 올리고 있다: 조용히 시트를 고치거나 지우지 않는다
         raise DobimError("CONSTRAINT", f"시트가 이 뷰를 쓴다: {', '.join(used)}", path="/id", hint="sheet.define 으로 시트에서 뷰를 빼거나 sheet.delete 로 시트를 지우세요")
+    kids = sorted(v for v in ctx.st.by_kind.get("view", ()) if ctx.st.el[v]["params"].get("parent") == a.id)
+    if kids:   # 콜아웃 뷰(W1 1-C 2차)가 이 뷰를 부모로 둔다
+        raise DobimError("CONSTRAINT", f"콜아웃 뷰가 이 뷰를 부모로 쓴다: {', '.join(kids)}", path="/id", hint="콜아웃 뷰를 먼저 지우세요")
     gone = _cascade_view_annots(ctx, a.id)
     ctx.put_el(a.id, None)
     return {"deleted": [a.id, *gone]}
@@ -3572,6 +3577,17 @@ class SheetCallout(A):
     label: Name = Field(max_length=4, description="상세 부호")
 
 
+PaperMm = Annotated[float, Field(ge=0.0, le=1200.0, allow_inf_nan=False)]
+
+
+class SheetViewport(A):
+    """뷰포트(W1 1-C 2차)"""
+    view: Id = Field(description="뷰(views 안)")
+    at: list[PaperMm] | None = Field(None, min_length=2, max_length=2, description="틀 왼쪽 위 [x, y] 용지 mm")
+    number: Name | None = Field(None, max_length=8, description="상세 번호(기호 머리 참조)")
+    title: Name | None = Field(None, description="제목(생략=뷰 이름)")
+
+
 class SheetFrame(A):
     """sheet.export·sheet.index 가 함께 쓰는 표제란·개정·선 굵기 입력. 모두 선택이며, 주지 않으면 시트는 이전과 같다."""
     client: Text = Field("", description="표제란 건축주(주면 건축주·설계사무소 영역이 생긴다)")
@@ -3626,6 +3642,7 @@ class SheetExport(SheetFrame):
         "stair 평면의 계단 폭(L-09)"))
     detail: bool = Field(False, description="참이면 큰 축척(1:50 이하) 뷰에 상세 표현을 더한다(재료가 있는 벽의 마감선·문짝 두께·문턱선). 1:100 이상의 작은 축척 뷰는 그대로")
     profile: SheetProfile | None = Field(None, description="별도 작성기준 프로파일: 문자 높이·치수 형식(소수·천단위 쉼표)·기호 크기. 생략하면 기본 체계(시트는 이전과 바이트까지 같다)")
+    viewports: list[SheetViewport] | None = Field(None, min_length=1, max_length=12, description="뷰포트(위치·상세 번호·제목). 생략=이전과 같다")
     max_px: PngMaxPx = 1600
     crop: PngCrop | None = None
 
@@ -3646,6 +3663,9 @@ def build_sheet_for(ctx, a, sheet_id=None):
     from dobim_core import sheet as SH
     if len(set(a.views)) != len(a.views):
         raise DobimError("CONSTRAINT", "같은 뷰를 두 번 올릴 수 없다", path="/views")
+    from dobim_core import viewref as VR
+    if (err := VR.viewports_error(a.views, a.viewports)) is not None:   # 뷰포트(W1 1-C 2차)
+        raise DobimError("CONSTRAINT", err, path="/viewports")
     hidden = bool(a.profile is not None and a.profile.hidden_lines)
     hier = bool(a.profile is not None and a.profile.line_hierarchy)
     datas = [dict(_render_view(ctx, v, a.detail, hidden, hier), id=v) for v in a.views]
@@ -3659,6 +3679,7 @@ def build_sheet_for(ctx, a, sheet_id=None):
         spec["revisions"] = list(spec.get("revisions") or []) + mrev
     spec.update(SE.profile_spec(a))
     spec.update(SE.view_extras(ctx, a, datas))
+    VR.sheet_spec(ctx, a, sheet_id, spec)   # 뷰포트·뷰 참조·콜아웃 뷰 기호(W1 1-C 2차): 입력이 없으면 spec 은 이전과 같다
     try:
         sh = SH.build_sheet(spec, datas)
     except SH.SheetError as ex:
@@ -4809,3 +4830,4 @@ from dobim_core import commands_gui  # noqa: E402,F401
 from dobim_core import commands_rules  # noqa: E402,F401
 from dobim_core import commands_revision  # noqa: E402,F401
 from dobim_core import commands_viewvg  # noqa: E402,F401
+from dobim_core import commands_viewref  # noqa: E402,F401

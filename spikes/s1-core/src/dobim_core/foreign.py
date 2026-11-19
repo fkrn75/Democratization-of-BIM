@@ -547,6 +547,11 @@ def _restore_defs(f, rows: dict, rels: set, taken: set, plan: "ImportPlan") -> N
                 skip(eid, "평면 뷰가 가리키는 레벨이 저작이 아니다(분리·외래·다른 종류)")
                 continue
         ok[eid] = parsed[eid]
+    for eid in sorted(e for e, d in ok.items() if d["kind"] == "view" and "parent" in d["params"]):   # 콜아웃 뷰(W1 1-C 2차): 부모 뷰를 되살렸을 때만 콜아웃으로 남긴다
+        par = ok[eid]["params"]["parent"]
+        if par == eid or ok.get(par, {}).get("kind") != "view" or "parent" in ok[par]["params"] or ok[par]["params"]["type"] != ok[eid]["params"]["type"]:
+            plan.warnings.append(f"{eid[:22]}: 콜아웃 뷰의 부모 뷰를 되살리지 못해 잘라낸 일반 뷰로 되살린다")
+            ok[eid]["params"] = {k: v for k, v in ok[eid]["params"].items() if k != "parent"}
     gnames: dict[str, list] = {}
     for eid in sorted(e for e, d in parsed.items() if d["kind"] == "grid"):   # 통심선(19단계): 참조가 없다. 기호 문자가 겹치면 어느 쪽이 원본인지 알 수 없다
         gnames.setdefault(parsed[eid]["params"]["name"], []).append(eid)

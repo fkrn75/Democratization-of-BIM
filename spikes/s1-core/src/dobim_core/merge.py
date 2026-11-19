@@ -597,6 +597,9 @@ def violations(view: View) -> list[dict]:
             out.append(_v("VIEW_LEVEL_DELETED", (v,), "평면 뷰가 가리키는 레벨이 지워졌다", {"level": p.get("level")},
                           focus=(_pu(v, "level"), ("el", p.get("level"), "@"))))
         names_v.setdefault(p.get("name"), []).append(v)
+        if p.get("parent") is not None and (p["parent"] not in ex or view.kind(p["parent"]) != "view"):   # 콜아웃 뷰의 부모(W1 1-C 2차)
+            out.append(_v("VIEW_PARENT_DELETED", (v,), "콜아웃 뷰의 부모 뷰가 지워졌다", {"parent": p.get("parent")},
+                          focus=(_pu(v, "parent"), ("el", p.get("parent"), "@"))))
         if p.get("template") is not None and (p["template"] not in ex or view.kind(p["template"]) != "vtemplate"):   # 뷰 템플릿(W1 1-C)
             out.append(_v("VIEW_TEMPLATE_DELETED", (v,), "뷰가 따르는 뷰 템플릿이 지워졌다", {"template": p.get("template")},
                           focus=(_pu(v, "template"), ("el", p.get("template"), "@"))))

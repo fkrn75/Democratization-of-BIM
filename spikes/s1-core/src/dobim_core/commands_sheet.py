@@ -233,7 +233,18 @@ def _sheet_def_check(self):
         raise ValueError("부위 상세 표시를 둘 뷰가 시트에 없다")
     if self.key_zone is not None and self.key_plan is None:
         raise ValueError("key_zone 은 key_plan 과 함께 준다")
+    from dobim_core import viewref as VR
+    if (err := VR.viewports_error(self.views, self.viewports)) is not None:   # 뷰포트(W1 1-C 2차)
+        raise ValueError(err)
     return self
+
+
+def stored_params(d: dict) -> dict:
+    """저장하는 시트 정의의 모양: 뷰포트(W1 1-C 2차)가 없으면 키를 두지 않고(이전 시트 정의의 저장 형식·해시 그대로),
+    뷰포트 안의 값이 없는 항목(null)은 생략한다(커맨드 입력은 null 을 받지 않는다)."""
+    if d.get("viewports") is None:
+        return {k: v for k, v in d.items() if k != "viewports"}
+    return dict(d, viewports=[{k: v for k, v in x.items() if v is not None} for x in d["viewports"]])
 
 
 NOT_STORED = ("path", "overwrite", "profile", "detail", "dims", "max_px", "crop")   # 파일을 낼 때만 받는 입력(저장하는 시트 정의에는 넣지 않는다: 저장된 정의의 해시·형식은 그대로)
@@ -273,11 +284,13 @@ def sheet_define(ctx, a: SheetDefine):
     else:
         r = None
         a.id = sid = C._fresh_id(ctx, a, "sheet")
-    params = a.model_dump(mode="json", exclude={"id"})
+    params = stored_params(a.model_dump(mode="json", exclude={"id"}))
     if params.get("north_angle") is None:   # 생략한 방위 각은 지금 대지의 정북 각(없으면 0)으로 정해 저장한다(저장 형식은 그대로 숫자)
         params["north_angle"] = C.site_north(ctx)
     _sheet_name_free(ctx, a.name, sid if r else None)
     _check_sheet_views(ctx, params)
+    from dobim_core import viewref as VR
+    VR.check_numbered_once(ctx.st, sid, params)
     ctx.put_el(sid, C.row("sheet", "", "sheet.basic", params) if r is None else dict(r, params=params))
     return {"id": sid, "created": r is None}
 
