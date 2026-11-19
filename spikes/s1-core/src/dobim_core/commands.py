@@ -3708,8 +3708,8 @@ def view_affected(ctx, a: ViewAffected):
 # ================================================================ 주석: 치수·태그 (S5)
 # 주석은 의도 요소(kind dim, tag)이고 IFC 로 투영하지 않는다(IFC 해시 불변). 값은 저장하지 않고 항상 파생이다(그래프 질의).
 # 대상이 사라지면 조용히 지우지 않고 고아로 표시한다(annot.check). 뷰를 지우면 그 뷰의 주석도 같이 지운다(응답에 나열, undo 로 복귀).
-RefStr = Annotated[str, Field(pattern=r"^(wall|door|level|slab|space):[0-9A-Za-z_$]{22}#[a-z]{3,9}(\.[a-z]{3,9}){0,2}$", max_length=48,
-                              description="안정 참조 '종류:id#역할'. wall: axis.start axis.end(분할 뒤에도 원래 끝) own.end(이 벽 자신의 끝) trim.start trim.end own.trim.end axis face.left face.right base top / door: center jamb.start jamb.end sill head / level: elevation / slab: top bottom / space: ceiling(천장 마감 높이, 공간에 ceiling_height 가 있을 때)")]
+RefStr = Annotated[str, Field(pattern=r"^(wall|door|level|slab|space|grid|finst):[0-9A-Za-z_$]{22}#[a-z]{3,9}(\.[a-z]{3,9}){0,2}$", max_length=48,
+                              description="안정 참조 '종류:id#역할'. wall: axis.start axis.end(분할 뒤에도 원래 끝) own.end(이 벽 자신의 끝) trim.start trim.end own.trim.end axis face.left face.right base top / door: center jamb.start jamb.end sill head / level: elevation / slab: top bottom / space: ceiling(천장 마감 높이, 공간에 ceiling_height 가 있을 때) / grid: line start end(통심선) / finst: center jamb.start jamb.end(호스팅 창 개구부 양 끝) base circle(자립 기둥의 원 단면, 반지름·지름 치수)")]
 Off = Annotated[float, Field(allow_inf_nan=False, ge=-1e5, le=1e5)]
 _ANNOT_KINDS = ("dim", "tag")
 
@@ -3726,21 +3726,33 @@ def _ref_parts(ctx, ref, field):
 
 
 def _level_of(ctx, kind, eid):
+    """주석 대상이 놓인 레벨. 통심선은 레벨이 없다(None: 모든 평면 뷰에 보인다)."""
     if kind == "level":
         return eid
-    if kind == "door":
-        eid = ctx.rels_in("hosts", eid)[0]
+    if kind == "grid":
+        return None
+    if kind in ("door", "finst"):
+        h = ctx.rels_in("hosts", eid)
+        eid = h[0] if h else eid   # 자립 패밀리 인스턴스는 레벨에 직접 선다
     return ctx.rels_out("on_level", eid)[0]
 
 
-def _dim_checked(ctx, view, a_ref, b_ref, at):
-    """치수 정의를 검사하고 (높이 치수인지, 해석 결과 둘, 기준 그래프)를 돌려준다. 지금 메모리 상태를 직접 읽는다."""
+def _dim_checked(ctx, view, a_ref, b_ref, at, measure=None):
+    """치수 정의를 검사하고 (높이 치수인지, 해석 결과 둘, 기준 그래프)를 돌려준다. 지금 메모리 상태를 직접 읽는다.
+    measure(W1 1-B 2차): angle = 평행하지 않은 선 참조 둘, radius·diameter = 같은 원 참조 하나(a = b). 모두 평면 치수다."""
     vr = ctx.row(view, "view")
     pa, pb = _ref_parts(ctx, a_ref, "/a"), _ref_parts(ctx, b_ref, "/b")
     ta, tb = AN.ROLE_TYPES[pa[0]][pa[2]], AN.ROLE_TYPES[pb[0]][pb[2]]
     vertical = ta == "z" and tb == "z"
     if (ta == "z") != (tb == "z"):
         raise DobimError("CONSTRAINT", "높이 참조와 평면 참조는 한 치수에 섞을 수 없다", path="/b")
+    if measure == "angle" and (ta, tb) != ("line", "line"):
+        raise DobimError("CONSTRAINT", "각도 치수는 선 참조 두 개를 잰다", path="/b", hint="선 역할: wall axis·face.left·face.right, grid line")
+    if measure in ("radius", "diameter") and (ta != "circle" or a_ref != b_ref):
+        raise DobimError("CONSTRAINT", "반지름·지름 치수는 원 참조 하나를 잰다(b 는 생략하거나 a 와 같게)", path="/a",
+                         hint="원 역할: finst:<자립 기둥 id>#circle(원 단면이 있는 기둥)")
+    if measure is None and "circle" in (ta, tb):
+        raise DobimError("CONSTRAINT", "원 참조는 반지름·지름 치수(measure)에만 쓴다", path="/a")
     vt = vr["params"]["type"]
     if vertical and vt == "plan":
         raise DobimError("CONSTRAINT", "높이 치수는 단면·입면 뷰에 둔다", path="/view")
@@ -3748,7 +3760,8 @@ def _dim_checked(ctx, view, a_ref, b_ref, at):
         raise DobimError("CONSTRAINT", "평면 치수는 평면 뷰에 둔다", path="/view")
     if not vertical:
         for pr, fld in ((pa, "/a"), (pb, "/b")):
-            if _level_of(ctx, pr[0], pr[1]) != vr["params"]["level"]:
+            lv = _level_of(ctx, pr[0], pr[1])
+            if lv is not None and lv != vr["params"]["level"]:
                 raise DobimError("CONSTRAINT", "치수 대상이 이 평면 뷰의 레벨에 있지 않다", path=fld)
     if at is not None and not vertical:
         raise DobimError("CONSTRAINT", "at 은 높이 치수에만 쓴다", path="/at")
@@ -3757,11 +3770,21 @@ def _dim_checked(ctx, view, a_ref, b_ref, at):
     for r_, fld in ((ra, "/a"), (rb, "/b")):
         if r_[0] == "orphan":     # 요소는 있어도 끝 역할이 분할 후계 삭제로 고아일 수 있다
             raise DobimError("CONSTRAINT", f"참조를 풀 수 없다: {r_[1]}", path=fld)
-    st, val = AN.measure(ra, rb)
+    st, val = AN.measure(ra, rb, measure)
     if st != "ok":
         raise DobimError("CONSTRAINT", f"잴 수 없는 참조 쌍이다: {val}", path="/b",
-                         hint="선 참조 두 개는 평행해야 한다" if val == "not_parallel" else None)
+                         hint="선 참조 두 개는 평행해야 한다" if val == "not_parallel" else ("각도 치수의 두 선은 평행하지 않아야 한다" if val == "parallel" else None))
+    if measure is not None and AN.more_geometry({"measure": measure, "off": 600.0}, ra, rb, val) is None:
+        raise DobimError("CONSTRAINT", "두 선의 교점이 너무 멀다(거의 평행)", path="/b")
     return vertical, ra, rb, g
+
+
+def _dim_home(g, p, ra, rb):
+    """치수의 놓인 자리(고아·무효 표시 위치): 선형·높이는 재는 두 점의 중점, 각도·반지름·지름은 글 위치."""
+    if "measure" in p:
+        return list(AN.more_geometry(p, ra, rb, AN.measure(ra, rb, p["measure"])[1])[3])
+    (ax, ay), (bx, by) = AN.dim_ends(g, p, ra, rb)
+    return [round((ax + bx) / 2, 3), round((ay + by) / 2, 3)]
 
 
 def _dir_fp(ctx, ref):
@@ -3769,6 +3792,8 @@ def _dir_fp(ctx, ref):
     kind, eid, role = AN.parse_ref(ref)
     if not AN.uses_direction(kind, role):
         return None
+    if kind == "grid":
+        return AN.unit_dir(ctx.st.el[eid]["params"]["line"])
     w = eid if kind == "wall" else ctx.rels_in("hosts", eid)[0]
     return AN.unit_dir(ctx.st.el[w]["params"]["axis"])
 
@@ -3783,9 +3808,11 @@ class DimCreate(A):
     id: Id | None = None
     view: Id = Field(description="치수를 그릴 뷰. 평면 치수는 평면 뷰, 높이 치수는 단면·입면 뷰")
     a: RefStr
-    b: RefStr
-    offset: Off = Field(600.0, description="치수선 간격 mm (재는 방향 왼쪽이 +)")
+    b: RefStr | None = Field(None, description="둘째 참조. 반지름·지름 치수는 생략한다(a 와 같다)")
+    offset: Off = Field(600.0, description="치수선 간격 mm (재는 방향 왼쪽이 +). 각도 치수는 호의 반지름(음수면 맞꼭지각 쪽)")
     at: Point2 | None = Field(None, description="높이 치수: 치수선을 그릴 평면 위치 [x,y] (생략하면 [0,0])")
+    measure: Literal["angle", "radius", "diameter"] | None = Field(
+        None, description="생략 = 선형(거리). angle = 두 선 사이 각도(도), radius·diameter = 자립 기둥 원 단면(finst:<id>#circle)의 반지름·지름. 모두 모델 연관이라 요소를 옮기면 따라간다")
     name: Name | None = None
 
 
@@ -3795,13 +3822,17 @@ class DimCreate(A):
          examples=[{"view": F.V1, "a": f"wall:{F.W1}#trim.start", "b": f"wall:{F.W1}#trim.end"}])
 def annot_dim_create(ctx, a: DimCreate):
     _fresh_id(ctx, a, "dim")
-    vertical, ra, rb, g = _dim_checked(ctx, a.view, a.a, a.b, a.at)
-    params = {"name": a.name or f"DIM-{a.id[-6:]}", "view": a.view, "a": a.a, "b": a.b, "off": a.offset, "home": [0.0, 0.0],
-              "dirs": {"a": _dir_fp(ctx, a.a), "b": _dir_fp(ctx, a.b)}}
+    b = a.b if a.b is not None else (a.a if a.measure in ("radius", "diameter") else None)
+    if b is None:
+        raise DobimError("CONSTRAINT", "b 가 필요하다(반지름·지름 치수만 생략한다)", path="/b")
+    vertical, ra, rb, g = _dim_checked(ctx, a.view, a.a, b, a.at, a.measure)
+    params = {"name": a.name or f"DIM-{a.id[-6:]}", "view": a.view, "a": a.a, "b": b, "off": a.offset, "home": [0.0, 0.0],
+              "dirs": {"a": _dir_fp(ctx, a.a), "b": _dir_fp(ctx, b)}}
     if vertical:
         params["at"] = list(a.at or [0.0, 0.0])
-    (ax, ay), (bx, by) = AN.dim_ends(g, params, ra, rb)
-    params["home"] = [round((ax + bx) / 2, 3), round((ay + by) / 2, 3)]
+    if a.measure is not None:   # 선형 치수 행에는 키가 없다(이전과 같다)
+        params["measure"] = a.measure
+    params["home"] = _dim_home(g, params, ra, rb)
     return _new_annot(ctx, a, "dim", params)
 
 
@@ -3897,7 +3928,7 @@ def annot_dim_heights(ctx, a: DimHeights):
 class TagCreate(A):
     id: Id | None = None
     view: Id = Field(description="태그를 둘 평면 뷰")
-    target: Id = Field(description="벽·문·슬래브·공간·계단")
+    target: Id = Field(description="벽·문·슬래브·공간·계단·패밀리 인스턴스(창·기둥 등)·지붕·난간. 지붕·난간은 다중 범주 필드(name·level·material·ifc_class)만")
     fields: Annotated[list[Annotated[str, Field(max_length=16)]], Field(min_length=1, max_length=4)] = ["name"]
     offset: Annotated[list[Off], Field(min_length=2, max_length=2)] = [400.0, 400.0]
     name: Name | None = None
@@ -3910,10 +3941,10 @@ def _tag_checked(ctx, view, target, fields):
         raise DobimError("CONSTRAINT", "태그는 평면 뷰에 둔다", path="/view")
     if tr["kind"] not in AN.TAG_FIELDS:
         raise DobimError("CONSTRAINT", f"태그는 {'·'.join(AN.TAG_FIELDS)} 에만 단다: {tr['kind']}", path="/target")
-    bad = [f for f in fields if f not in AN.TAG_FIELDS[tr["kind"]]]
+    bad = [f for f in fields if f not in AN.TAG_ALLOWED[tr["kind"]]]
     if bad:
         raise DobimError("CONSTRAINT", f"{tr['kind']} 에 없는 표시 필드: {', '.join(bad)}", path="/fields",
-                         hint="가능: " + ", ".join(AN.TAG_FIELDS[tr["kind"]]))
+                         hint="가능: " + ", ".join(AN.TAG_ALLOWED[tr["kind"]]))
     if _level_of(ctx, tr["kind"], target) != vr["params"]["level"]:
         raise DobimError("CONSTRAINT", "태그 대상이 이 평면 뷰의 레벨에 있지 않다", path="/target")
 
@@ -3928,6 +3959,48 @@ def annot_tag_create(ctx, a: TagCreate):
     params = {"name": a.name or f"TAG-{a.id[-6:]}", "view": a.view, "target": a.target, "fields": list(a.fields),
               "off": list(a.offset), "home": [round(ax + a.offset[0], 3), round(ay + a.offset[1], 3)]}
     return _new_annot(ctx, a, "tag", params)
+
+
+TagKind = Literal["wall", "door", "slab", "space", "stair", "finst", "roof", "railing"]
+
+
+class TagAll(A):
+    view: Id = Field(description="태그를 둘 평면 뷰")
+    kinds: Annotated[list[TagKind], Field(min_length=1, max_length=8)] = Field(
+        description="태그할 범주(여러 개면 다중 범주 태그). finst = 패밀리 인스턴스(창·기둥 등)")
+    fields: Annotated[list[Annotated[str, Field(max_length=16)]], Field(min_length=1, max_length=4)] = Field(
+        ["name"], description="표시 필드. 여러 범주에 쓰려면 모든 범주에 있는 필드(name·level·material·ifc_class)")
+    offset: Annotated[list[Off], Field(min_length=2, max_length=2)] = [400.0, 400.0]
+
+
+@command("annot.tag.all", kind="mutation", risk="write", group="annot",
+         summary="평면 뷰 레벨의 아직 태그가 없는 요소에 범주별로 태그를 한꺼번에 단다(다중 범주 태그)",
+         args=TagAll, since="0.7", examples=[{"view": F.V1, "kinds": ["wall", "door"], "fields": ["name", "ifc_class"]}])
+def annot_tag_all(ctx, a: TagAll):
+    vr = ctx.row(a.view, "view")
+    if vr["params"]["type"] != "plan":
+        raise DobimError("CONSTRAINT", "태그는 평면 뷰에 둔다", path="/view")
+    kinds = sorted(set(a.kinds))
+    for k in kinds:
+        bad = [f for f in a.fields if f not in AN.TAG_ALLOWED[k]]
+        if bad:
+            raise DobimError("CONSTRAINT", f"{k} 에 없는 표시 필드: {', '.join(bad)}", path="/fields",
+                             hint="여러 범주에 함께 쓰는 필드: " + ", ".join(AN.MULTI_FIELDS))
+    st, lv = ctx.st, vr["params"]["level"]
+    tagged = {st.el[t]["params"]["target"] for t in ctx.rels_in("annot_of", a.view) if st.el[t]["kind"] == "tag"}
+    out = []
+    for k in kinds:
+        for e in sorted(st.by_kind.get(k, ())):
+            if e in tagged or st.el[e]["origin"] != "authored" or _level_of(ctx, k, e) != lv:
+                continue
+            tid = _det_id("annot.tag.all", a.view, e)
+            if tid in st.el:   # 같은 id 의 다른 요소가 있다(정상 흐름에서는 없다): 건너뛴다
+                continue
+            annot_tag_create(ctx, TagCreate(id=tid, view=a.view, target=e, fields=list(a.fields), offset=list(a.offset)))
+            out.append({"id": tid, "target": e, "kind": k})
+    if not out:
+        ctx.warn("새로 단 태그가 없다(대상이 없거나 이미 태그가 있다)")
+    return {"view": a.view, "created": [t["id"] for t in out], "tags": out}
 
 
 class AnnotRebind(A):
@@ -3957,14 +4030,15 @@ def annot_rebind(ctx, a: AnnotRebind):
         if a.target is not None or a.fields is not None:
             raise DobimError("CONSTRAINT", "치수에는 a, b 만 쓴다", path="/target")
         p["a"], p["b"] = a.a or p["a"], a.b or p["b"]
-        vertical, ra, rb, g = _dim_checked(ctx, p["view"], p["a"], p["b"], p.get("at"))
+        if p.get("measure") in ("radius", "diameter") and a.a is not None and a.b is None:
+            p["b"] = p["a"]   # 반지름·지름은 원 참조 하나(a = b)
+        vertical, ra, rb, g = _dim_checked(ctx, p["view"], p["a"], p["b"], p.get("at"), p.get("measure"))
         dirs = dict(p.get("dirs") or {})
         for side, given in (("a", a.a), ("b", a.b)):   # 다시 묶은 쪽만 지문을 새로 잡는다(같은 참조를 다시 주면 경고를 확인한 것으로 본다)
             if given is not None:
                 dirs[side] = _dir_fp(ctx, given)
         p["dirs"] = {"a": dirs.get("a"), "b": dirs.get("b")}
-        (ax, ay), (bx, by) = AN.dim_ends(g, p, ra, rb)
-        p["home"] = [round((ax + bx) / 2, 3), round((ay + by) / 2, 3)]
+        p["home"] = _dim_home(g, p, ra, rb)
     else:
         if a.a is not None or a.b is not None:
             raise DobimError("CONSTRAINT", "태그에는 target, fields 만 쓴다", path="/a")
@@ -3994,6 +4068,8 @@ def _annot_item(ctx, aid):
     out = {"id": aid, "kind": r["kind"], "name": p["name"], "view": p["view"], "status": st[1]}
     if r["kind"] == "dim":
         out.update(a=p["a"], b=p["b"])
+        if "measure" in p:
+            out["measure"] = p["measure"]
     else:
         out.update(target=p["target"], fields=p["fields"])
     flags = ctx.g.q(AN.annot_flags, aid)

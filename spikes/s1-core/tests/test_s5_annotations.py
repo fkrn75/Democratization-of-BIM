@@ -46,7 +46,7 @@ def test_참조는_종류_id_역할_이름이고_위상_인덱스를_쓰지_않�
     assert AN.parse_ref(f"wall:{F.W1}#jamb.start") is None        # 다른 종류의 역할
     assert AN.parse_ref("wall:짧은id#axis") is None and AN.parse_ref("garbage") is None
     for kind, roles in AN.ROLE_TYPES.items():
-        assert all(t in ("pt", "line", "z") for t in roles.values())
+        assert all(t in ("pt", "line", "z", "circle") for t in roles.values())   # circle: 자립 기둥 원 단면(W1 1-B 2차, 반지름·지름 치수)
         assert not any(ch.isdigit() for r in roles for ch in r)
 
 
