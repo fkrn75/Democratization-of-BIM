@@ -609,6 +609,20 @@ def _restore_defs(f, rows: dict, rels: set, taken: set, plan: "ImportPlan") -> N
             skip(eid, "2D 요소가 속한 뷰가 없거나 되살려지지 않았다")
         else:
             ok[eid] = parsed[eid]
+    # 리비전·키노트(W1 1-B 3차): 표기·순번·키가 겹치면 어느 쪽이 원본인지 알 수 없다. 리비전이 싣는 시트는 되살린 시트이거나 파일에 없는 id(지운 시트)여야 한다
+    for kind, keys in (("keynote", ("name",)), ("revision", ("name", "seq"))):
+        seen: dict = {}
+        for eid in sorted(e for e, d in parsed.items() if d["kind"] == kind):
+            for k in keys:
+                seen.setdefault((k, parsed[eid]["params"][k]), []).append(eid)
+        dup = {e for ids in seen.values() if len(ids) > 1 for e in ids}
+        for eid in sorted(e for e, d in parsed.items() if d["kind"] == kind):
+            if eid in dup:
+                skip(eid, "같은 키의 키노트가 더 있다" if kind == "keynote" else "같은 표기·순번의 리비전이 더 있다")
+            elif kind == "revision" and any(state(x) is not None and ok.get(x, {}).get("kind") != "sheet" for x in parsed[eid]["params"]["sheets"]):
+                skip(eid, "리비전이 싣는 시트가 되살린 시트가 아니다")
+            else:
+                ok[eid] = parsed[eid]
     for eid, d in ok.items():
         rows[eid] = {"kind": d["kind"], "ifc_class": "", "origin": "authored", "family_id": d["family_id"], "params": d["params"],
                      "projection_hash": None}

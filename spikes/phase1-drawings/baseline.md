@@ -1283,3 +1283,35 @@ Revit 기능 차이 W1 묶음 1-B(주석·치수, 4.3PM) 가운데 가치가 큰
 - ANN-02: 호 길이·연속·기준선 치수의 모델 연관(지금은 2D 작도).
 - ANN-04: 평면 표고를 바닥·지붕 표면에서 표본(지금은 뷰 레벨 높이), 측량점 기준 좌표.
 - ANN-09 키노트(키노트 표·키노트 태그·범례), ANN-17 리비전 요소·리비전 표, DOC-15 리비전 일정·시트 발행.
+
+## 36. 주석·치수 확장(W1 1-B 세 번째 PR): 평면 표면 표고·측량 좌표, 키노트, 리비전 요소·일정·시트 발행 (2026-11-19, 브랜치 phase1/w1b-annotation-3)
+
+35절에 남긴 1-B 가운데 ANN-04(평면 표면 표고·측량점 좌표), ANN-09(키노트), ANN-17(리비전 요소·리비전 표), DOC-15(리비전 일정·시트 발행)를 넣었다. 리비전·키노트는 시트·통심선처럼 비 IFC 의도 요소(kind `revision`·`keynote`)라 정의가 DoBIM_Defs 로 IFC 를 왕복하고 실행 취소·병합을 그대로 탄다. 새 커맨드는 9개(`revision.create·set·issue·delete·schedule`, `keynote.set·delete·assign·legend`)이고 모두 레지스트리를 거쳐 CLI·MCP 가 같다(parity C). GUI 동작 `revision.panel`·`revision.issue`·`keynote.panel`·`keynote.assign` 을 actions.json 에 더했다(parity G).
+
+### 36.1 넣은 것
+| 차이표 | 기능 | 입력 | 값·동작 |
+|---|---|---|---|
+| ANN-04 | 평면 표고 표면 표본 | 평면 뷰의 `spot_elev`(2D 작도) | 그 레벨의 저작 슬래브 윗면(레벨 + top_offset, 구멍 안 제외)과 경사 지붕 면 가운데 점을 덮고 절단면(레벨 + cut_height) 아래인 가장 높은 면. 덮는 면이 없으면 이전처럼 레벨 높이. 슬래브·지붕을 고치면 따라간다(증분 그래프가 그 레벨의 슬래브·지붕 목록과 행에 의존) |
+| ANN-04 | 측량 기준점 좌표 | `site.create·set survey=[E, N]`(대지 선택 속성, `clear: ["survey"]` 로 지움) | 평면·배치도 `spot_coord` 가 정북 각(north_angle)으로 돌린 뒤 E·N 을 더해 측량 좌표로 적는다. survey 가 없으면 이전처럼 프로젝트 원점 기준 |
+| ANN-09 | 키노트 표 | `keynote.set {key, text}`·`keynote.delete {key}` | 키(공백 없는 1~16자) -> 설명. id 는 키에서 결정적 |
+| ANN-09 | 요소 키노트 | `keynote.assign {ids, key}`(null 이면 뗀다) | 속성셋 DoBIM_Keynote.Key(IFC 속성으로 왕복). 패밀리 인스턴스는 자기 값이 없으면 패밀리 타입의 키노트를 따른다(Revit 은 타입 파라미터) |
+| ANN-09 | 키노트 태그·범례 | 태그 필드 `keynote`(다중 범주 필드), `keynote.legend {view·sheet}`, `sheet.index` 표 `keynotes` | 태그 글 = 키(없으면 "-"). 범례 = 태그가 보이는 키·설명·태그 수(표에 없는 키는 표시) |
+| ANN-17 | 리비전 요소 | `revision.create {date, desc, issued_to, issued_by, sheets, mark}`·`revision.set`·`revision.delete` | 순번은 마지막 다음, 표기 기본은 순번. 시트 개정란에는 sheets 에 든 시트와, 올린 뷰에 표기가 같은 리비전 구름(draft cloud 의 text)이 있는 시트에 순번 순으로 적는다(시트 정의의 revisions 입력 뒤에) |
+| DOC-15 | 시트 발행·리비전 일정 | `revision.issue {id, issued, date, issued_to, issued_by}`, `revision.schedule`, `sheet.index` 표 `revisions` | 발행된 리비전은 고치거나 지울 수 없다(issued=false 로 풀면 다시 고친다). 일정표 = 리비전별 순번·표기·일자·내용·발행·발행처·발행자·실린 시트(근거 listed·cloud), 시트별 현재 리비전 |
+
+- 시트를 지우면(`sheet.delete`) 그 시트를 싣는 리비전에서 같은 트랜잭션으로 빼낸다(되돌리면 돌아온다). 가져오기는 표기·순번·키가 겹친 정의와, 되살린 시트가 아닌 요소를 싣는 리비전 정의를 되살리지 않는다.
+- `sheet.render`·`sheet.image`(id) 는 저장된 시트 id 를 넘겨 그 시트를 싣는 리비전을 적는다. `sheet.export` 는 시트 id 가 없어 구름 근거만 본다.
+- 기존 종류의 `TAG_FIELDS` 튜플은 그대로이고 다중 범주 필드에 keynote 를 더했다. annot.py 순수성(math 는 sqrt·isfinite)은 그대로다.
+- 표면 표본·측량 변환은 2D 작도 모듈(drafting)에 두었다. 표고·좌표 기호가 없는 뷰는 그 질의를 부르지 않는다.
+
+### 36.2 기존 출력 불변·성능
+- 기준선 `run_baseline.py --sheets`: main 4050d22 와 코드 커밋 205619a 에서 각각 뽑아 183 파일 바이트 같음(work/·run.json 제외).
+- 리비전·키노트가 없으면 시트 spec·색인 시트 표가 이전과 같다(리비전 행·범례 행이 비면 표를 두지 않는다). 표고·좌표 기호가 없는 뷰의 경로는 바뀌지 않아 5만 요소 합성 모델(33절, 2D 작도·리비전·키노트 없음)은 다시 재지 않았다.
+
+### 36.3 시험·parity
+- 새 시험 `tests/test_annotation_w1b3.py`(9건): 리비전 개정란(싣는 시트·구름 근거)과 되돌린 뒤 시트 SVG 바이트 같음, 발행 잠금·풀기, 시트 삭제 정리·되돌리기, 색인 시트 리비전 일정표·키노트 범례와 되돌린 뒤 바이트 같음, 키노트 태그·타입 상속·인스턴스 우선·범례·표 삭제, IFC 왕복(해시 3종·일정표·범례·작도 목록 같음·다시 내보낸 IFC 바이트 같음), 변조 정의 거절, 평면 표고 표면 표본(슬래브 고침·구멍·이동·외쪽 지붕·되돌리기), 측량 좌표(정북 각 0·90·지움).
+- 결과(코드 커밋 205619a 뒤 한 번에, 도중 수정 없음): s1-core 전체(test_slow 제외) 1429 통과·40 건너뜀·실패 0. test_slow 8 통과. parity: 커맨드 144 전부 예시 실행(예시 174·오류 사례 49), 불일치 0, parity C 100%. parity_g: 통과(동작 42, 오류·경고 0). 기준선 183 파일 바이트 같음(36.2). 먼저 돌린 예비 실행에서 test_integration_g1 의 '모든 종류를 한 프로젝트에서 만든다' 단언이 새 종류(revision·keynote)를 몰라 실패해 그 시험에 두 종류를 만드는 줄을 더한 뒤 코드 커밋을 만들었다.
+
+### 36.4 남은 1-B
+- ANN-02: 호 길이·연속·기준선 치수의 모델 연관(지금은 2D 작도). 연속·기준선은 치수 참조를 둘 넘게 담는 구조 확장(kinds._dim_params·참조 옮기기·가져오기 참조 검사·S5 오라클)이 필요하고, 호 길이는 곡선 모델 요소가 없어 대상이 기둥 원 정도다.
+- 리비전 구름을 리비전에 묶는 것은 표기 일치다(구름 쪽 참조 키 없음). 재료 키노트·사용자 키노트·키노트 파일 불러오기는 없다.

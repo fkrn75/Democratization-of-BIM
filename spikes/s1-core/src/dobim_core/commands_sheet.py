@@ -19,7 +19,7 @@ from dobim_core import fixture as F
 from dobim_core.commands import A, Id, Name, Num, Text, command
 from dobim_core.errors import DobimError
 
-TABLES = ("drawing_list", "legend", "notes", "levels", "openings", "walls", "materials")
+TABLES = ("drawing_list", "legend", "notes", "levels", "openings", "walls", "materials", "revisions", "keynotes")
 
 
 class IndexDrawing(A):
@@ -37,8 +37,9 @@ class SheetIndex(C.SheetFrame):
     sheet_number: Text = Field("A-000", description="표제란 도면번호")
     date: str | None = Field(None, pattern=r"^\d{4}-\d{2}-\d{2}$", description="작성일 YYYY-MM-DD(생략하면 오늘 날짜)")
     drawings: list[IndexDrawing] = Field(default_factory=list, max_length=60, description="도면목록표의 행. 도면번호 첫 글자(A 건축 등)가 공종이 된다. 비우면 도면목록표를 만들지 않는다")
-    tables: list[Literal["drawing_list", "legend", "notes", "levels", "openings", "walls", "materials"]] = Field(
-        default_factory=lambda: list(TABLES), max_length=7, description="넣을 표(기본: 모두). 모델에서 뽑는 표: levels 레벨 노트, openings 창호 일람표, walls 벽체 일람표, materials 재료표")
+    tables: list[Literal["drawing_list", "legend", "notes", "levels", "openings", "walls", "materials", "revisions", "keynotes"]] = Field(
+        default_factory=lambda: list(TABLES), max_length=9, description="넣을 표(기본: 모두). 모델에서 뽑는 표: levels 레벨 노트, openings 창호 일람표, walls 벽체 일람표, materials 재료표, "
+                                                          "revisions 리비전 일정표(리비전이 있을 때), keynotes 키노트 범례(키노트 태그가 있을 때)")
     gl_level: Text = Field("", description="GL(지반) 기준으로 삼을 레벨 이름(비우면 가장 낮은 레벨)")
     notes: list[Text] = Field(default_factory=list, max_length=12, description="주기에 더할 줄")
     overwrite: bool = Field(False, description="거짓이면 이미 있는 파일을 덮어쓰지 않는다. 참이면 덮어쓰며 덮어쓰기 전에 자동 스냅숏을 남긴다(확인 토큰 필요)")
@@ -84,6 +85,11 @@ def sheet_index(ctx, a: SheetIndex):
         tables["materials"] = SM.material_rows(g)
     if "legend" in want:
         tables["legend"] = True
+    from dobim_core import commands_revision as CR
+    if "revisions" in want and (rows := CR.schedule_rows(ctx.st)):   # W1 1-B 3차: 행이 없으면 표를 두지 않는다(시트는 이전과 같다)
+        tables["revisions"] = rows
+    if "keynotes" in want and (rows := CR.legend_rows(ctx)):
+        tables["keynotes"] = rows
     if "notes" in want:
         tables["notes"] = ["치수는 mm 단위이며 단위 표기는 생략한다.",
                            "축척은 도면마다 적고, 축척이 다른 도면이 한 장에 있으면 표제란에는 '도면참조'로 적는다.",
@@ -280,8 +286,10 @@ def sheet_define(ctx, a: SheetDefine):
          args=C.IdArg, since="0.4", examples=[{"id": F.SH1}])
 def sheet_delete(ctx, a: C.IdArg):
     ctx.row(a.id, "sheet")
+    from dobim_core import commands_revision as CR
+    revs = CR.drop_sheet(ctx, a.id)   # 이 시트를 싣는 리비전에서 뺀다(W1 1-B 3차)
     ctx.put_el(a.id, None)
-    return {"deleted": [a.id]}
+    return {"deleted": [a.id], **({"revisions_updated": revs} if revs else {})}
 
 
 class SheetList(A):
@@ -333,7 +341,7 @@ def _render_preview(ctx, a: SheetRender):
          examples=[{"id": F.SH1, "path": "sheet-saved-example.svg", "overwrite": True}])
 def sheet_render(ctx, a: SheetRender):
     """저장된 시트 정의를 sheet.export 와 같은 방식으로 파일에 낸다."""
-    return C.sheet_export(ctx, _export_args(ctx, a))
+    return C.export_sheet(ctx, _export_args(ctx, a), a.id)
 
 
 # ================================================================ 이미지로 보기 (16단계 dobim_render): 파일을 쓰지 않는 읽기 커맨드
@@ -392,6 +400,6 @@ def sheet_image(ctx, a: SheetImage):
         exp = C.SheetExport.model_validate({**a.model_dump(mode="json", exclude={"id"}, exclude_none=True), "path": "image.png"})
     for v in exp.views:
         ctx.row(v, "view")
-    sh, _spec = C.build_sheet_for(ctx, exp)
+    sh, _spec = C.build_sheet_for(ctx, exp, a.id)
     rr = C.png_of(ctx, sh, exp)
     return _image_result(ctx, rr, {"id": a.id, "paper": exp.paper, "sheet_number": exp.sheet_number, "views": sh.placed})

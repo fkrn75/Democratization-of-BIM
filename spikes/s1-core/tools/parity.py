@@ -50,6 +50,8 @@ _DR1 = ("draft.create", {"id": F.DR1, "view": F.V1, "shape": "line", "pts": [[0,
 _DR2 = ("draft.create", {"id": F.DR2, "view": F.V1, "shape": "line", "pts": [[4000, -2000], [4000, -1000]]})
 _DR3 = ("draft.create", {"id": F.DR3, "view": F.V1, "shape": "line", "pts": [[8000, -2000], [8000, -1000]]})
 _DRL = ("draft.layer.set", {"name": "A-DRAFT"})
+_RV1 = ("revision.create", {"id": F.RV1, "date": "2026-02-01", "desc": "1층 평면 문 위치 변경"})   # 리비전 예시의 준비(W1 1-B 3차)
+_KN1 = ("keynote.set", {"key": "03.30.00", "text": "현장타설 콘크리트"})                           # 키노트 예시의 준비(W1 1-B 3차)
 _DRAFT_PRE = {"draft.create": [_V1], "draft.set": [_V1, _DR1], "draft.move": [_V1, _DR1], "draft.copy": [_V1, _DR1], "draft.rotate": [_V1, _DR1],
               "draft.mirror": [_V1, _DR1], "draft.delete": [_V1, _DR1], "draft.offset": [_V1, _DR1], "draft.trim": [_V1, _DR1, _DR2],
               "draft.extend": [_V1, _DR1, _DR3], "draft.group": [_V1, _DR1], "draft.list": [_V1, _DR1], "draft.layer.delete": [_DRL],
@@ -71,7 +73,9 @@ PRE = {**_DRAFT_PRE, "history.redo": [("history.undo", {})], "ifc.restore": [_EX
        "view.image": [_V1], "sheet.image": [_V1],
        "solid.set": [_SO1], "solid.move": [_SO1], "solid.delete": [_SO1],
        "grid.set": [_GR1], "grid.move": [_GR1], "grid.delete": [_GR1],
-       "wall.attach_top": [_RF1], "wall.cut_by": [_LB1]}
+       "wall.attach_top": [_RF1], "wall.cut_by": [_LB1],
+       "revision.set": [_RV1], "revision.issue": [_RV1], "revision.delete": [_RV1], "revision.schedule": [_V1, _SH1, _RV1],
+       "keynote.delete": [_KN1], "keynote.assign": [_KN1], "keynote.legend": [_V1, _KN1]}
 ERROR_CASES = [
     ("없는 커맨드", "no.such.command", {}, {}),
     ("스키마 오류(타입)", "wall.move", {"id": F.W1, "dx": "abc"}, {}),
