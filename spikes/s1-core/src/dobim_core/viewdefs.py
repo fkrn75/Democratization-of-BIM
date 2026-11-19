@@ -79,6 +79,8 @@ def _view_values(p: dict) -> None:
         raise ValueError("뷰 축척이 올바르지 않다")
     if "crop" in p and not all(_in(c, MAX_VIEW) for c in p["crop"]):   # 부위 상세 잘라내기 사각형(view.create 의 좌표 범위)
         raise ValueError("뷰 잘라내기 좌표가 범위를 벗어났다")
+    if "parent" in p and "crop" not in p:   # 콜아웃 뷰(W1 1-C 2차): 잘라내기 사각형이 곧 콜아웃 범위다
+        raise ValueError("콜아웃 뷰에 잘라내기가 없다")
     t = p["type"]
     if t == "plan":
         if not _in(p["cut_height"], MAX_VIEW) or not _in(p["view_depth"], MAX_VIEW, 0):
@@ -133,6 +135,7 @@ def _sheet_values(p: dict) -> None:
     from dobim_core import commands_sheet as CS   # 늦게 불러온다: 커맨드 모듈은 이 모듈을 쓰는 엔진보다 늦게 읽힌다
     try:
         d = CS.SheetDef.model_validate({k: v for k, v in p.items() if v is not None}).model_dump(mode="json")   # 값이 없는 선택 필드(null)는 생략으로 읽는다
+        d = CS.stored_params(d)   # 뷰포트(W1 1-C 2차)가 없으면 키를 두지 않는 저장 형식
     except ValueError as ex:   # pydantic ValidationError 는 ValueError 다
         raise ValueError(f"시트 값이 올바르지 않다({str(ex).splitlines()[0][:60]})") from None
     if canon(d) != canon(p):

@@ -433,6 +433,8 @@ def test_9_종류_레지스트리가_모든_모듈과_맞는다(tmp_path):
         _ok(b.run("view.template.create", {"id": F.VT1, "name": "평면 기본", "scale": 50}, project=p))   # 뷰 템플릿(W1 1-C)
         _ok(b.run("view.filter.set", {"id": F.VT1, "name": "두꺼운 벽", "cats": ["wall"], "rules": [{"field": "thickness", "op": "ge", "value": "200"}], "color": "#0050c0"}, project=p))
         _ok(b.run("view.template.apply", {"view": F.V1, "template": F.VT1}, project=p))
+        _ok(b.run("view.callout", {"id": F.VC1, "parent": F.V1, "rect": [0, -1000, 3000, 1000], "name": "C1 상세"}, project=p))   # 콜아웃 뷰(W1 1-C 2차)
+        _ok(b.run("sheet.viewport.set", {"id": F.SH1, "view": F.V1, "at": [40, 40], "number": "1"}, project=p))   # 뷰포트(W1 1-C 2차)
     finally:
         b.close()
     eng = Engine(tmp_path / p, "t", create=False)

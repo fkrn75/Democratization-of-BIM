@@ -37,6 +37,8 @@
     {"id": "view.vg", "label": "가시성·그래픽 재정의(범주별 숨기기·색·선 굵기·하프톤)", "commands": ["view.vg.get", "view.vg.set"]},
     {"id": "view.filters", "label": "뷰 필터(조건 기반 재정의)", "commands": ["view.filter.set", "view.filter.delete"]},
     {"id": "view.templates", "label": "뷰 템플릿(목록·만들기·고치기·지우기·적용)", "commands": ["view.template.list", "view.template.create", "view.template.set", "view.template.delete", "view.template.apply"]},
+    {"id": "view.callout", "label": "콜아웃 뷰 만들기(부위 확대)", "command": "view.callout"},
+    {"id": "sheet.viewports", "label": "뷰포트 배치·상세 번호·뷰 제목, 뷰 참조", "commands": ["sheet.viewport.set", "view.refs"]},
     {"id": "draft.layers", "label": "층 패널", "commands": ["draft.layer.list", "draft.layer.set", "draft.layer.delete"]},
     {"id": "edit.delete", "label": "지우기", "commands": ["element.delete", "draft.delete"]},
     {"id": "edit.undo", "label": "되돌리기", "command": "history.undo"},
