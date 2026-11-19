@@ -3581,13 +3581,11 @@ PaperMm = Annotated[float, Field(ge=0.0, le=1200.0, allow_inf_nan=False)]
 
 
 class SheetViewport(A):
-    """뷰포트(W1 1-C 2차, DOC-02·VIEW-25): 시트에 올린 뷰 하나의 위치·상세 번호·제목. 주지 않은 값은 이전 동작(자동 배치·뷰 이름 제목)이다."""
-    view: Id = Field(description="뷰포트로 놓을 뷰(views 에 있는 뷰)")
-    at: list[PaperMm] | None = Field(None, min_length=2, max_length=2, description="뷰 틀의 왼쪽 위 [x, y](용지 mm, 용지 왼쪽 위가 원점, y 는 아래로). "
-                                                                                "생략하면 다른 뷰와 함께 자동 배치. 응답의 views[].x·y 와 같은 좌표다")
-    number: Name | None = Field(None, max_length=8, description="상세 번호. 주면 뷰 제목을 번호 원 + 제목 + 밑줄 + 축척으로 그리고, "
-                                                                "marks 를 켠 시트의 단면·입면·콜아웃 기호 머리에 '번호 / 시트 번호'를 적는다(뷰 참조). 시트 안에서 겹치지 않는다")
-    title: Name | None = Field(None, description="시트 위 뷰 제목. 생략하면 뷰 이름")
+    """뷰포트(W1 1-C 2차)"""
+    view: Id = Field(description="뷰(views 안)")
+    at: list[PaperMm] | None = Field(None, min_length=2, max_length=2, description="틀 왼쪽 위 [x, y] 용지 mm")
+    number: Name | None = Field(None, max_length=8, description="상세 번호(기호 머리 참조)")
+    title: Name | None = Field(None, description="제목(생략=뷰 이름)")
 
 
 class SheetFrame(A):
@@ -3644,8 +3642,7 @@ class SheetExport(SheetFrame):
         "stair 평면의 계단 폭(L-09)"))
     detail: bool = Field(False, description="참이면 큰 축척(1:50 이하) 뷰에 상세 표현을 더한다(재료가 있는 벽의 마감선·문짝 두께·문턱선). 1:100 이상의 작은 축척 뷰는 그대로")
     profile: SheetProfile | None = Field(None, description="별도 작성기준 프로파일: 문자 높이·치수 형식(소수·천단위 쉼표)·기호 크기. 생략하면 기본 체계(시트는 이전과 바이트까지 같다)")
-    viewports: list[SheetViewport] | None = Field(None, min_length=1, max_length=12, description=(
-        "뷰포트 설정(뷰마다 위치 at·상세 번호 number·제목 title). 없는 뷰는 자동 배치·뷰 이름 제목. 생략하면 시트는 이전과 같다"))
+    viewports: list[SheetViewport] | None = Field(None, min_length=1, max_length=12, description="뷰포트(위치·상세 번호·제목). 생략=이전과 같다")
     max_px: PngMaxPx = 1600
     crop: PngCrop | None = None
 
