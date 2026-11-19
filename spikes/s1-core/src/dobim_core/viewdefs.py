@@ -81,6 +81,8 @@ def _view_values(p: dict) -> None:
         raise ValueError("뷰 잘라내기 좌표가 범위를 벗어났다")
     if "parent" in p and "crop" not in p:   # 콜아웃 뷰(W1 1-C 2차): 잘라내기 사각형이 곧 콜아웃 범위다
         raise ValueError("콜아웃 뷰에 잘라내기가 없다")
+    if "rcp" in p and "area" in p:   # 반사 천장 평면·면적 평면(W1 1-C 3차)은 함께 못 쓴다
+        raise ValueError("반사 천장 평면과 면적 평면을 함께 가질 수 없다")
     t = p["type"]
     if t == "plan":
         if not _in(p["cut_height"], MAX_VIEW) or not _in(p["view_depth"], MAX_VIEW, 0):

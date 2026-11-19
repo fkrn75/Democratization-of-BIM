@@ -22,7 +22,7 @@ from dobim_core.errors import DobimError
 
 VC1 = F.VC1
 
-_COPY = {"plan": ("level", "cut_height", "view_depth"), "section": ("p1", "p2", "depth", "flip", "with_site"), "elevation": ("dir", "finish")}
+_COPY = {"plan": ("level", "cut_height", "view_depth", "rcp", "area"), "section": ("p1", "p2", "depth", "flip", "with_site"), "elevation": ("dir", "finish")}
 
 
 class ViewCallout(A):
