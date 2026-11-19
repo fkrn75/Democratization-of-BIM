@@ -81,7 +81,9 @@ TAG_FIELDS = {
 }
 # 다중 범주 태그(ANN-08): 이 필드들만 쓰는 태그는 태그 가능한 모든 종류에 달 수 있다(대상을 다른 범주로 다시 묶어도 그대로 쓴다).
 # ifc_class = 요소의 IFC 클래스(범주를 묻는 공통 필드: 공간의 category 는 공간 용도라 이름을 달리 둔다)
-MULTI_FIELDS = ("name", "level", "material", "ifc_class")
+# keynote = 요소의 키노트 키(W1 1-B 3차, ANN-09: 속성셋 DoBIM_Keynote.Key, 패밀리 인스턴스는 없으면 타입의 키). 없으면 "-"
+MULTI_FIELDS = ("name", "level", "material", "ifc_class", "keynote")
+KEYNOTE_PSET, KEYNOTE_PROP = "DoBIM_Keynote", "Key"
 TAG_ALLOWED = {k: v + tuple(f for f in MULTI_FIELDS if f not in v) for k, v in TAG_FIELDS.items()}   # 종류별로 쓸 수 있는 필드 전체(종류 고유 + 다중 범주)
 FINST_CATEGORY = {"IfcWindow": "창", "IfcColumn": "기둥", "IfcDoor": "문", "IfcFurnishingElement": "가구", "IfcBeam": "보",
                   "IfcMember": "부재", "IfcPlate": "판", "IfcBuildingElementProxy": "일반 부재"}
@@ -433,6 +435,9 @@ def _field(g, kind, eid, row, name):
     p = row["params"]
     if name == "name":
         return p["name"]
+    if name == "keynote":
+        k = g.q(keynote_of, kind, eid)
+        return "-" if k is None else k
     if name == "ifc_class":   # 다중 범주 태그(ANN-08)
         return K.FIXED_IFC_CLASS.get(kind) or row.get("ifc_class") or "-"
     if kind in ("finst", "roof", "railing"):
@@ -462,6 +467,15 @@ def _field(g, kind, eid, row, name):
         return "-" if m is None else str(m)
     v = Q.psets(g, eid).get(pset, {}).get("FireRating")
     return "-" if v is None else str(v)
+
+
+def keynote_of(g, kind, eid):
+    """요소의 키노트 키(없으면 None). 패밀리 인스턴스에 없으면 패밀리 타입의 키노트를 따른다(Revit 은 키노트가 타입 파라미터)."""
+    v = Q.psets(g, eid).get(KEYNOTE_PSET, {}).get(KEYNOTE_PROP)
+    if v is None and kind == "finst":
+        t = Q.rel_out(g, "of_type", eid)
+        v = Q.psets(g, t[0]).get(KEYNOTE_PSET, {}).get(KEYNOTE_PROP) if t else None
+    return v if isinstance(v, str) and v else None
 
 
 def _field_finst(g, kind, eid, row, name):

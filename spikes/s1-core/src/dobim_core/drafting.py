@@ -16,6 +16,7 @@ from __future__ import annotations
 from math import atan2, ceil, cos, degrees, hypot, radians, sin, sqrt
 
 from dobim_core import drawing as D
+from dobim_core import kinds as K
 from dobim_core import queries as Q
 
 WEIGHT_MM = {"thin": 0.09, "fine": 0.18, "medium": 0.25, "thick": 0.50}   # 기존 선 등급(해치·투영·기호·절단)과 같은 굵기 체계
@@ -253,7 +254,11 @@ def draft_items(g, d):
         if p["text"]:
             out.extend(_rev_mark(d, lay, w, col, pts[0], p["size"], p["text"], sc))
     elif s in ANNOT_SHAPES:
-        lv = Q.level_info(g, vr["params"]["level"])[1] if vtype == "plan" and s == "spot_elev" else None
+        lv = None
+        if vtype == "plan" and s == "spot_elev":   # 평면 표고: 그 레벨의 슬래브·지붕 윗면 표본(W1 1-B 3차), 덮는 면이 없으면 레벨 높이
+            lv = g.q(plan_spot_z, vr["params"]["level"], float(vr["params"]["cut_height"]), float(pts[0][0]), float(pts[0][1]))
+        elif vtype in ("plan", "site") and s == "spot_coord":   # 측량 기준점이 있으면 측량 좌표(없으면 None = 프로젝트 원점 기준)
+            lv = g.q(site_survey)
         out.extend(ANNOT_SHAPES[s](d, p, w, col, sc, vtype, lv))
     return tuple(out)
 
@@ -506,8 +511,60 @@ def _leader(out, d, lay, w, col, pt, lab):
         _ln(out, d, lay, w, col, pt, lab)
 
 
+def level_surfaces(g, lv):
+    """레벨 lv 에 놓인 저작 슬래브·경사 지붕 id(정렬). 평면 표고 표본이 이 목록만 본다(다른 레벨의 요소가 바뀌어도 이 값만 다시 계산된다)."""
+    out = []
+    for kind in ("slab", "roof"):
+        for b in range(Q.NB):
+            for e in Q.bucket_ids(g, kind, b):
+                row = Q.el(g, e)
+                if row["origin"] == "authored" and tuple(Q.rel_out(g, "on_level", e))[:1] == (lv,):
+                    out.append((kind, e))
+    return tuple(sorted(out))
+
+
+def plan_spot_z(g, lv, cut, x, y):
+    """평면 표고점의 높이(W1 1-B 3차, ANN-04): 레벨 lv 의 슬래브 윗면(구멍 밖)과 경사 지붕 면 가운데 점 (x, y) 를 덮고 절단면(레벨 + cut) 아래인
+    가장 높은 면. 덮는 면이 없으면 레벨 높이."""
+    base = Q.level_info(g, lv)[1]
+    best = None
+    for kind, e in g.q(level_surfaces, lv):
+        p = Q.el(g, e)["params"]
+        if kind == "slab":
+            if K.point_in_polygon((x, y), p["boundary"]) < 0 or any(K.point_in_polygon((x, y), o) == 1 for o in p.get("openings", ())):
+                continue
+            z = base + p["top_offset"]
+        else:
+            geo = K.roof_geom(p)
+            zs = [a * x + b * y + c for fc, (a, b, c) in zip(geo["faces"], geo["planes"]) if K.point_in_polygon((x, y), [q[:2] for q in fc]) >= 0]
+            if not zs:
+                continue
+            z = base + max(zs)
+        if z <= base + cut and (best is None or z > best):
+            best = z
+    return base if best is None else best
+
+
+def site_survey(g):
+    """측량 기준점 변환 (E0, N0, cos, sin) — 저작 대지의 survey 와 정북 각. 없으면 None(좌표 기호는 프로젝트 원점 기준)."""
+    for b in range(Q.NB):
+        for e in sorted(Q.bucket_ids(g, "site", b)):
+            row = Q.el(g, e)
+            if row["origin"] == "authored" and "survey" in row["params"]:
+                t = radians(float(row["params"]["north_angle"]))
+                e0, n0 = row["params"]["survey"]
+                return (e0, n0, cos(t), sin(t))
+    return None
+
+
+def survey_en(sv, x, y):
+    """프로젝트 좌표 (x, y) -> 측량 좌표 (E, N). 정북이 도면 위에서 시계방향 θ 돌아 있으면 정북 단위 벡터는 (sin θ, cos θ), 정동은 (cos θ, -sin θ)."""
+    e0, n0, c, s = sv
+    return e0 + x * c - y * s, n0 + x * s + y * c
+
+
 def spot_value(p, vtype, lv) -> str | None:
-    """표고 값 글. 단면·입면은 점의 높이(뷰 y = z mm), 평면은 그 뷰 레벨 높이(바닥면 표면 표본이 아니다), 배치도는 값이 없다."""
+    """표고 값 글. 단면·입면은 점의 높이(뷰 y = z mm), 평면은 그 뷰 레벨의 슬래브·지붕 윗면 표본(plan_spot_z, 없으면 레벨 높이), 배치도는 값이 없다."""
     if vtype in ("section", "elevation"):
         z = p["pts"][0][1]
     elif vtype == "plan" and lv is not None:
@@ -540,8 +597,11 @@ def _d_spot_coord(d, p, w, col, sc, vtype, lv):
     _leader(out, d, lay, w, col, pt, lab)
     if p["text"]:
         lines = [p["text"]]
+    elif vtype in ("plan", "site") and lv is not None:      # 측량 기준점 기준(W1 1-B 3차, ANN-04)
+        e, n = survey_en(lv, pt[0], pt[1])
+        lines = [f"N {n:,.0f}", f"E {e:,.0f}"]
     elif vtype in ("plan", "site"):
-        lines = [f"N {pt[1]:,.0f}", f"E {pt[0]:,.0f}"]          # 프로젝트 원점 기준(측량 기준점 변환 없음)
+        lines = [f"N {pt[1]:,.0f}", f"E {pt[0]:,.0f}"]          # 프로젝트 원점 기준(대지에 측량 기준점이 없다)
     else:
         lines = [f"Z {pt[1]:,.0f}", f"S {pt[0]:,.0f}"]
     step = p["size"] * sc * 1.6

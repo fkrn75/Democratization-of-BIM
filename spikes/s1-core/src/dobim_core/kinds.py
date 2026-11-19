@@ -937,7 +937,7 @@ ZONE_USES = ("landscape", "open_space")
 SIGN_KINDS = ("sign", "address")
 
 
-SITE_OPTIONAL = ("terrain", "zones", "parking", "signs")   # 대지의 선택 파라미터(없으면 키 자체가 없다)
+SITE_OPTIONAL = ("terrain", "zones", "parking", "signs", "survey")   # 대지의 선택 파라미터(없으면 키 자체가 없다)
 
 
 def norm_site_extra(v):
@@ -1005,7 +1005,9 @@ def _site_params(p):
     err = _check_opt("site", p, {"name": _name, "boundary": boundary, "north_angle": lambda v: num_ok(v) and -360.0 <= v <= 360.0,
                                  "roads": lambda v: isinstance(v, list) and len(v) <= SITE_ROADS_MAX, "elevation": lambda v: v is None or num_ok(v)},
                      {"terrain": _terrain_ok, "zones": lambda v: isinstance(v, list) and 1 <= len(v) <= SITE_ZONES_MAX and all(_zone_ok(z) for z in v),
-                      "parking": _parking_ok, "signs": lambda v: isinstance(v, list) and 1 <= len(v) <= SITE_SIGNS_MAX and all(_sign_ok(z) for z in v)})
+                      "parking": _parking_ok, "signs": lambda v: isinstance(v, list) and 1 <= len(v) <= SITE_SIGNS_MAX and all(_sign_ok(z) for z in v),
+                      # 측량 기준점(W1 1-B 3차, ANN-04): 프로젝트 원점의 측량 좌표 [E, N] mm. 좌표 기호가 정북 각으로 돌려 이 값을 더한다
+                      "survey": lambda v: isinstance(v, list) and len(v) == 2 and all(num_ok(x) and abs(x) <= 1e12 for x in v)})
     if err:
         return err
     n = len(p["boundary"])
@@ -1175,6 +1177,39 @@ def _dlayer_params(p):
                                        "linetype": lambda v: v in DRAFT_LINETYPES, "color": color_ok})
 
 
+# ---------------------------------------------------------------- 리비전·키노트(W1 1-B 3차, ANN-17·DOC-15·ANN-09)
+# revision = 프로젝트 리비전(Revit 의 Sheet Issues/Revisions): 순번·표기·일자·내용·발행 상태와 그 리비전을 싣는 시트.
+#            시트 개정란은 sheets 에 든 시트와, 올린 뷰에 표기(name)가 같은 리비전 구름(draft cloud 의 text)이 있는 시트에 리비전을 적는다.
+# keynote  = 키노트 표의 한 줄(키 -> 설명). 요소의 키노트는 속성셋 DoBIM_Keynote.Key 에 두고 태그 필드 keynote 로 단다.
+REVISION_SEQ_MAX = 999
+REVISIONS_MAX = 200          # 프로젝트 리비전 수 상한
+REVISION_SHEETS_MAX = 200    # 리비전 하나가 직접 싣는 시트 수 상한
+KEYNOTE_KEY_MAX = 16
+KEYNOTE_TEXT_MAX = 255
+KEYNOTES_MAX = 2000          # 키노트 표 줄 수 상한
+_DATE = lambda v: isinstance(v, str) and len(v) == 10 and v[4] == "-" and v[7] == "-" and (v[:4] + v[5:7] + v[8:]).isdigit()   # noqa: E731
+
+
+def revision_mark_ok(v) -> bool:
+    return text_ok(v, 1, 8) and v.strip() == v
+
+
+def keynote_key_ok(v) -> bool:
+    return text_ok(v, 1, KEYNOTE_KEY_MAX) and v.strip() == v and not any(c in v for c in " \t\n\r")
+
+
+def _revision_params(p):
+    return _check_fields("revision", p, {
+        "name": revision_mark_ok, "seq": lambda v: type(v) is int and 1 <= v <= REVISION_SEQ_MAX, "date": _DATE,
+        "desc": lambda v: text_ok(v, 0, 255), "issued_to": lambda v: text_ok(v, 0, NAME_MAX), "issued_by": lambda v: text_ok(v, 0, NAME_MAX),
+        "issued": lambda v: type(v) is bool,
+        "sheets": lambda v: isinstance(v, list) and len(v) <= REVISION_SHEETS_MAX and all(id_ok(x) for x in v) and len(set(v)) == len(v)})
+
+
+def _keynote_params(p):
+    return _check_fields("keynote", p, {"name": keynote_key_ok, "text": lambda v: text_ok(v, 0, KEYNOTE_TEXT_MAX)})
+
+
 # 태그 대상 종류(annot.TAG_FIELDS 와 같다: 가져오기가 복원한 태그 대상을 이 종류로 검사한다)
 TAG_TARGET_KINDS = ("wall", "door", "slab", "space", "stair", "finst", "roof", "railing")
 
@@ -1224,6 +1259,9 @@ ELEMENT_KINDS: dict[str, ElementKind] = {k.name: k for k in (
     # 2D 작도(27단계): 뷰에 속한 2D 요소(관계 annot_of 로 뷰를 지울 때 함께 지운다)와 층 스타일. 정의는 DoBIM_Defs 로 왕복한다
     ElementKind("dlayer", False, None, False, 6, _dlayer_params),
     ElementKind("draft", False, None, False, 7, _draft_params, refs=(("view", "id", "annot_of"),), ref_kinds=(("view", ("view",)),)),
+    # 리비전·키노트(W1 1-B 3차): 시트처럼 비 IFC 의도 요소다. 리비전이 싣는 시트는 목록이라 관계로 묻지 않는다(지운 시트는 일정표에서 빠진다)
+    ElementKind("revision", False, None, False, 9, _revision_params, refs=(("sheets", "ids", None),)),
+    ElementKind("keynote", False, None, False, 6, _keynote_params),
 )}
 
 NON_IFC_KINDS = frozenset(k for k, v in ELEMENT_KINDS.items() if not v.ifc)      # 신원·속성셋·재료가 없는 의도 요소(뷰 정의, 치수·태그)

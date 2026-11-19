@@ -439,8 +439,12 @@ INDEX_COLS = {
     "openings": ("창호 일람표", [("부호", 14.0), ("구분", 16.0), ("폭", 16.0), ("높이", 16.0), ("하단높이", 18.0), ("내화", 16.0), ("수량", 14.0), ("설치 층", 28.0)]),
     "walls": ("벽체 일람표", [("부호", 14.0), ("구분", 16.0), ("두께", 16.0), ("재료", 28.0), ("내화", 16.0), ("수량", 14.0), ("설치 층", 28.0)]),
     "materials": ("재료표(외벽·내벽 마감)", [("부위", 18.0), ("재료(품명)", 36.0), ("규격(두께 mm)", 28.0), ("내화 성능", 22.0), ("적용 벽 수", 20.0), ("적용 층", 26.0)]),
+    # W1 1-B 3차: 리비전 일정표(DOC-15)·키노트 범례(ANN-09)
+    "revisions": ("리비전 일정표", [("차수", 12.0), ("일자", 22.0), ("내용", 50.0), ("발행", 12.0), ("발행처", 24.0), ("발행자", 20.0), ("시트", 36.0)]),
+    "keynotes": ("키노트 범례", [("키", 24.0), ("설명", 80.0), ("태그 수", 16.0)]),
 }
-INDEX_GID = {"drawing_list": "drawing-list", "levels": "level-note", "openings": "opening-schedule", "walls": "wall-schedule", "materials": "material-schedule"}
+INDEX_GID = {"drawing_list": "drawing-list", "levels": "level-note", "openings": "opening-schedule", "walls": "wall-schedule", "materials": "material-schedule",
+             "revisions": "revision-schedule", "keynotes": "keynote-legend"}
 
 
 def build_index_sheet(spec: dict, tables: dict) -> Sheet:
@@ -455,7 +459,7 @@ def build_index_sheet(spec: dict, tables: dict) -> Sheet:
     blocks = []
     if tables.get("legend"):
         blocks.append(("legend", 118.0, ST.LEGEND_H))
-    for key in ("drawing_list", "levels", "openings", "walls", "materials"):
+    for key in ("drawing_list", "levels", "openings", "walls", "materials", "revisions", "keynotes"):
         rows = tables.get(key)
         if rows is not None:
             cols = INDEX_COLS[key][1]

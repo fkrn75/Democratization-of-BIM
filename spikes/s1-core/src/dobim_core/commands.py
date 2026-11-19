@@ -146,7 +146,7 @@ def _fresh_id(ctx, a, kind):
     if _in_split_history(ctx, a.id):   # 지워진 벽의 id 를 다시 쓰면 분할 이력을 따라가는 참조가 엉뚱한 새 벽을 가리킨다
         raise DobimError("CONSTRAINT", f"벽 분할 이력에 쓰인 id 라 다시 쓸 수 없다: {a.id}", path="/id",
                          hint="새 id 를 쓰거나 생략하세요")
-    if kind in ("view", "dim", "tag", "sheet", "grid", "draft") and ctx.external_def(a.id):   # 가져온 파일에 되살리지 않은 외부 정의가 이 id 로 있다
+    if kind in ("view", "dim", "tag", "sheet", "grid", "draft", "revision") and ctx.external_def(a.id):   # 가져온 파일에 되살리지 않은 외부 정의가 이 id 로 있다
         ctx.warn(f"가져온 파일에 이 id 의 {kind} 정의가 되살려지지 않은 채 남아 있다: 새 정의가 그 속성을 덮어쓴다(지우거나 되돌리면 원래 정의가 돌아온다)")
     return a.id
 
@@ -2640,6 +2640,9 @@ class SiteSign(A):
     text: Annotated[str, Field(max_length=64), AfterValidator(_text_ok)] = ""
 
 
+SiteSurvey = Annotated[list[Annotated[float, Field(allow_inf_nan=False, ge=-1e12, le=1e12)]], Field(min_length=2, max_length=2, description=(
+    "측량 기준점(ANN-04): 프로젝트 원점(0,0)의 측량 좌표 [E, N] mm. 주면 평면·배치도 좌표 기호(spot_coord)가 정북 각(north_angle)으로 돌린 뒤 이 값을 더해 "
+    "측량 좌표로 적는다. 없으면 프로젝트 원점 기준"))]
 SiteSigns = Annotated[list[SiteSign], Field(min_length=1, max_length=K.SITE_SIGNS_MAX, description="간판·건물번호판(최대 32). 입면 뷰에 사각형과 크기 문자를 그린다")]
 
 
@@ -2647,7 +2650,7 @@ def _ccw(b):
     return b if polygon_area2(b) > 0 else b[::-1]
 
 
-def _site_extras(terrain, zones, parking, signs) -> dict:
+def _site_extras(terrain, zones, parking, signs, survey=None) -> dict:
     """대지 선택 속성 입력을 저장 모양(숫자 float, 영역은 반시계, accessible 은 참일 때만)으로 만든다. 주지 않은 것은 키가 없다."""
     out: dict = {}
     if terrain is not None:
@@ -2667,6 +2670,8 @@ def _site_extras(terrain, zones, parking, signs) -> dict:
     if signs is not None:
         out["signs"] = [{"name": g.name, "kind": g.kind, "face": g.face, "center": [float(g.center[0]), float(g.center[1])], "z": float(g.z), "w": float(g.w),
                          "h": float(g.h), "text": g.text} for g in signs]
+    if survey is not None:
+        out["survey"] = [float(v) for v in survey]
     return out
 
 
@@ -2709,6 +2714,7 @@ class SiteCreate(A):
     zones: SiteZones | None = None
     parking: SiteParking | None = None
     signs: SiteSigns | None = None
+    survey: SiteSurvey | None = None
 
 
 @command("site.create", kind="mutation", risk="write", group="model.site", summary="대지 생성(경계 다각형 + 방위 + 접한 도로)",
@@ -2720,7 +2726,7 @@ def site_create(ctx, a: SiteCreate):
     boundary, roads = _site_geometry(a.boundary, a.roads)
     a.name = a.name or f"SITE-{a.id[-6:]}"
     params = {"name": a.name, "boundary": boundary, "north_angle": a.north_angle, "roads": roads, "elevation": a.elevation,
-              **_site_extras(a.terrain, a.zones, a.parking, a.signs)}
+              **_site_extras(a.terrain, a.zones, a.parking, a.signs, a.survey)}
     _site_check(params)
     ctx.put_el(a.id, row("site", "IfcSite", "site.basic", params))
     return {"id": a.id}
@@ -2739,11 +2745,13 @@ class SiteSet(A):
     zones: SiteZones | None = Field(None, description="주면 조경·공개공지 영역을 통째로 바꾼다")
     parking: SiteParking | None = Field(None, description="주면 주차 계획을 통째로 바꾼다")
     signs: SiteSigns | None = Field(None, description="주면 간판·건물번호판을 통째로 바꾼다")
-    clear: list[Literal["terrain", "zones", "parking", "signs"]] = Field(default_factory=list, description="지울 선택 속성(지반 표고점·영역·주차 계획·간판)")
+    survey: SiteSurvey | None = None
+    clear: list[Literal["terrain", "zones", "parking", "signs", "survey"]] = Field(default_factory=list, description="지울 선택 속성(지반 표고점·영역·주차 계획·간판·측량 기준점)")
 
     @model_validator(mode="after")
     def _any(self):
-        if (all(v is None for v in (self.name, self.boundary, self.north_angle, self.roads, self.elevation, self.terrain, self.zones, self.parking, self.signs))
+        if (all(v is None for v in (self.name, self.boundary, self.north_angle, self.roads, self.elevation, self.terrain, self.zones, self.parking, self.signs,
+                                    self.survey))
                 and not self.clear_elevation and not self.clear):
             raise ValueError("바꿀 필드가 하나도 없다")
         if any(getattr(self, k) is not None for k in self.clear):
@@ -2769,7 +2777,7 @@ def site_set(ctx, a: SiteSet):
         p["boundary"], p["roads"] = _site_geometry(a.boundary if a.boundary is not None else p["boundary"], a.roads if a.roads is not None else keep)
     for k in a.clear:
         p.pop(k, None)
-    p.update(_site_extras(a.terrain, a.zones, a.parking, a.signs))
+    p.update(_site_extras(a.terrain, a.zones, a.parking, a.signs, a.survey))
     _site_check(p)
     ctx.put_el(a.id, dict(r, params=p))
     return {"id": a.id}
@@ -3610,8 +3618,9 @@ def _sheet_preview(ctx, a: SheetExport):
     return {"will_write": p.name, "format": ext[1:], "paper": a.paper, "views": len(a.views), "overwrites": p.exists(), "snapshot_before_overwrite": p.exists()}
 
 
-def build_sheet_for(ctx, a):
-    """시트 인자(SheetExport 모양)로 시트(그림 요소 목록)와 spec 을 만든다. sheet.export 와 sheet.image 가 함께 쓴다."""
+def build_sheet_for(ctx, a, sheet_id=None):
+    """시트 인자(SheetExport 모양)로 시트(그림 요소 목록)와 spec 을 만든다. sheet.export 와 sheet.image 가 함께 쓴다.
+    sheet_id = 저장된 시트(sheet.render·sheet.image id): 그 시트를 싣는 프로젝트 리비전도 개정란에 적는다(W1 1-B 3차)."""
     import datetime
 
     from dobim_core import sheet as SH
@@ -3625,6 +3634,9 @@ def build_sheet_for(ctx, a):
             "north_deg": a.north_angle if a.north_angle is not None else site_north(ctx)}
     from dobim_core import sheet_extras as SE
     spec.update(SE.frame_spec(a))
+    from dobim_core import commands_revision as CR
+    if mrev := CR.sheet_revision_rows(ctx.st, sheet_id, a.views):   # 프로젝트 리비전(ANN-17): 없으면 spec 은 이전과 같다
+        spec["revisions"] = list(spec.get("revisions") or []) + mrev
     spec.update(SE.profile_spec(a))
     spec.update(SE.view_extras(ctx, a, datas))
     try:
@@ -3640,11 +3652,16 @@ def build_sheet_for(ctx, a):
          examples=[{"views": [F.V1], "path": "sheet-example.svg", "paper": "A3", "project_name": "예시 프로젝트", "sheet_number": "A-101", "overwrite": True}])
 def sheet_export(ctx, a: SheetExport):
     """뷰를 A1·A3 시트에 놓고 윤곽선·표제란(프로젝트명·도면명·도면번호·축척·작성일·개정란·축척 막대·방위표)을 그려 내보낸다."""
+    return export_sheet(ctx, a)
+
+
+def export_sheet(ctx, a: SheetExport, sheet_id=None):
+    """sheet.export·sheet.render 의 본체. sheet_id = 저장된 시트(그 시트를 싣는 리비전을 개정란에 적는다)."""
     from dobim_core import pdf_font as PF
     from dobim_core import sheet as SH
     from dobim_core import sheet_extras as SE
     p, ext = _view_export_target(ctx, a)
-    sh, spec = build_sheet_for(ctx, a)
+    sh, spec = build_sheet_for(ctx, a, sheet_id)
     dropped, font_name, px, dxf = False, None, None, None
     if ext == ".svg":
         blob = SH.render_sheet_svg(sh, spec)
@@ -4770,3 +4787,4 @@ from dobim_core import commands_draft  # noqa: E402,F401
 from dobim_core import commands_schedule  # noqa: E402,F401
 from dobim_core import commands_gui  # noqa: E402,F401
 from dobim_core import commands_rules  # noqa: E402,F401
+from dobim_core import commands_revision  # noqa: E402,F401
