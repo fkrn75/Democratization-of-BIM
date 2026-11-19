@@ -255,6 +255,7 @@ ADR-0011의 미확인 항목 전부. 특히 Codex의 이미지 처리와 출력 
 - Revit 기능 차이 W1 1-C 뷰 제어(2026-11-19, 첫 PR): 범주별 가시성·그래픽 재정의(숨기기·색·선 굵기·하프톤), 조건 기반 뷰 필터, 뷰 템플릿(새 비 IFC 종류 vtemplate, 축척 전파·떼면 설정 복사)을 넣었다(view.vg.*·view.filter.*·view.template.* 커맨드 9개, 설정 없는 뷰의 도면 바이트 불변). 남은 1-C: 반사 천장 평면, 콜아웃 뷰, 범례 뷰, 면적 평면, 단면 머리↔시트 번호 참조, 뷰포트 배치·뷰 제목. 상세 spikes/phase1-drawings/baseline.md 37절.
 - Revit 기능 차이 W1 1-C 뷰 제어(2026-11-19, 2차 PR): 뷰포트 배치·뷰 제목(시트 정의의 viewports: 용지 위치·상세 번호·제목), 단면·입면·콜아웃 기호 머리의 '상세 번호 / 시트 번호' 참조, 콜아웃 뷰(부모 뷰와 같은 설정의 잘라낸 뷰, 부모 위 기호)를 넣었다(view.callout·sheet.viewport.set·view.refs, 뷰포트 없는 시트 바이트 불변). 남은 1-C: 반사 천장 평면, 범례 뷰, 면적 평면. 상세 spikes/phase1-drawings/baseline.md 38절.
 - Revit 기능 차이 W1 1-C 뷰 제어(2026-11-19, 3차 PR): 반사 천장 평면(절단면 위를 보는 평면: 위층 슬래브 밑면·매단 패밀리·공간 천장선과 천장 높이, 문·창 기호 없음), 면적 평면(바닥면적 = 벽 윤곽 바깥선, 실별 면적·합계, view.areas), 범례 뷰(문·패밀리 유형 기호, 재료 해치 견본)를 넣었다(view.rcp·view.area_plan·view.areas·view.legend, 모드 없는 평면 바이트 불변, 5만 요소 뷰 시간 그대로). 1-C 뷰 제어 완료. 상세 spikes/phase1-drawings/baseline.md 39절.
+- Revit 기능 차이 W1 1-F 소형 건물 모델링(2026-11-20, 첫 PR): 레벨 이름·높이 고치기(상단이 묶인 벽 높이 재계산), 요소 복사·선형 배열·다른 층으로 복사, 회전, 대칭(복사)을 넣었다(level.set·element.copy·element.rotate·element.mirror, 호스팅 문·패밀리·속성·재료·조인이 함께 간다, 기존 도면 바이트 불변). 남은 1-F: T 조인 정리, 임의 외곽 지붕, 천장, 경사로, 패밀리 30종, 일괄 편집, 모델 벽 간격띄우기·트림. 상세 spikes/phase1-drawings/baseline.md 40절.
 
 ### 2a단계: 헤드리스 저작 MVP (8.5~16PM)
 
