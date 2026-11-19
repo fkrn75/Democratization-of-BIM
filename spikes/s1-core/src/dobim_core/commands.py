@@ -3897,7 +3897,7 @@ def annot_dim_heights(ctx, a: DimHeights):
 class TagCreate(A):
     id: Id | None = None
     view: Id = Field(description="태그를 둘 평면 뷰")
-    target: Id = Field(description="벽 또는 문")
+    target: Id = Field(description="벽·문·슬래브·공간·계단")
     fields: Annotated[list[Annotated[str, Field(max_length=16)]], Field(min_length=1, max_length=4)] = ["name"]
     offset: Annotated[list[Off], Field(min_length=2, max_length=2)] = [400.0, 400.0]
     name: Name | None = None
@@ -3909,7 +3909,7 @@ def _tag_checked(ctx, view, target, fields):
     if vr["params"]["type"] != "plan":
         raise DobimError("CONSTRAINT", "태그는 평면 뷰에 둔다", path="/view")
     if tr["kind"] not in AN.TAG_FIELDS:
-        raise DobimError("CONSTRAINT", f"태그는 벽·문에만 단다: {tr['kind']}", path="/target")
+        raise DobimError("CONSTRAINT", f"태그는 {'·'.join(AN.TAG_FIELDS)} 에만 단다: {tr['kind']}", path="/target")
     bad = [f for f in fields if f not in AN.TAG_FIELDS[tr["kind"]]]
     if bad:
         raise DobimError("CONSTRAINT", f"{tr['kind']} 에 없는 표시 필드: {', '.join(bad)}", path="/fields",
