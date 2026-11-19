@@ -2513,10 +2513,10 @@ class MemberSection(A):
 class SolidGeom(A):
     form: Literal["prism", "loft", "panel", "sweep", "mesh", "member", "plate"] | None = Field(None, description="prism 수직 돌출, loft 단면 잇기(각뿔·첨탑), panel 수직면 위 윤곽 판(+개구부), sweep 평면 경로를 따른 단면(띠돌림), mesh 다면체, member 3D 축선을 따른 곧은 부재(보·가새·관·덕트), plate 기운 평면 위 윤곽 판(+구멍: 지붕판·경사 슬래브)")
     polygon: SoPoly | None = Field(None, description="prism·plate: 평면 윤곽 [[x,y],...] (3~256)")
-    holes: Annotated[list[SoPoly], Field(min_length=0, max_length=64)] | None = Field(None, description="plate: 구멍 윤곽 목록(윤곽 안, 서로 겹치지 않음). 빈 목록이면 뗀다")
+    holes: Annotated[list[SoPoly], Field(min_length=0, max_length=64)] | None = Field(None, description="plate: 구멍 윤곽 목록(빈 목록이면 뗀다)")
     base: SoPt3 | None = Field(None, description="plate: 윗면 위의 한 점 [x,y,z] (z 는 레벨 기준)")
     pitch: Annotated[float, Field(ge=0, le=80, allow_inf_nan=False)] | None = Field(None, description="plate: 물매(도). 0 이면 수평 판")
-    dir: Annotated[float, Field(ge=-360, le=360, allow_inf_nan=False)] | None = Field(None, description="plate: 물이 흐르는(내려가는) 방향, +x 에서 반시계 도")
+    dir: Annotated[float, Field(ge=-360, le=360, allow_inf_nan=False)] | None = Field(None, description="plate: 내려가는 방향(+x 에서 반시계 도)")
     z0: SoCoord | None = Field(None, description="prism: 아랫면 z mm(레벨 기준)")
     z1: SoCoord | None = Field(None, description="prism: 윗면 z mm(레벨 기준)")
     sections: Annotated[list[LoftSection], Field(min_length=2, max_length=32)] | None = Field(None, description="loft: 아래에서 위로 단면 목록(꼭짓점 수가 같아야 한다)")
