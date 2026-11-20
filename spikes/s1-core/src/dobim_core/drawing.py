@@ -894,13 +894,18 @@ def scope_fams(g, v):
     return g.q(all_free_fams)
 
 
+# 절단면 아래에 다 들어가도 평면 기호를 투영선으로 그리는 자립형 패밀리 클래스(가구·위생기구·가전). 기둥 같은 구조 요소는 절단 높이 범위 안일 때만 그린다
+BELOW_CUT_CLASSES = ("IfcFurniture", "IfcSanitaryTerminal", "IfcElectricAppliance")
+
+
 def plan_fam_parts(g, v, e):
     """평면의 자립형 요소: (선분들, 채움 다각형들). 절단 높이가 요소 높이 범위에 들 때만 그린다(기둥 단면 + 기호)."""
     cfg = g.q(view_cfg, v)
     ff = g.q(free_fam, e)
     if ff is not None and is_rcp(cfg) and cfg[2] + EPS < ff[3] <= cfg[2] + cfg[3]:   # 반사 천장 평면: 절단면 위에 매단 요소(조명 등)는 평면 기호를 투영선으로
         return (tuple(("proj",) + x[1:] for x in _plan_items(ff[5], _free_world(ff))), ())
-    if ff is not None and cfg[0] == "plan" and not is_rcp(cfg) and cfg[1] is not None and ff[4] + EPS < cfg[2]:
+    if (ff is not None and cfg[0] == "plan" and not is_rcp(cfg) and cfg[1] is not None and ff[4] + EPS < cfg[2]
+            and (Q.el(g, e) or {}).get("ifc_class") in BELOW_CUT_CLASSES):
         # 절단면 아래에 다 들어가는 요소(가구·위생기구·가전, W1 1-F 4차): 레벨 위에 서 있으면 평면 기호를 투영선으로(절단 선 모양은 투영선, 숨은선은 그대로)
         lv_z = g.q(Q.level_info, cfg[1])[1]
         if ff[3] + EPS < lv_z:
