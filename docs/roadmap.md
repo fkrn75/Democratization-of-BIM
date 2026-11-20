@@ -260,6 +260,7 @@ ADR-0011의 미확인 항목 전부. 특히 Codex의 이미지 처리와 출력 
 - Revit 기능 차이 W1 1-E 입출력·납품(2026-11-20, 첫 PR): 프로젝트 템플릿(project.new template=kr-small·template_file, 커맨드 목록 JSON), 인쇄 용지 A0~A4·세로, 모델 품질 점검(model.check: 짧은·겹친 벽, 중복, 고아, 레벨 밖, 열린 공간 경계), 사용자 IDS 의 다른 식별자 명세 판정(KR-USR-n)을 넣었다(기존 도면 바이트 불변). 남은 1-E: 건축법 도면 기준 대조 규칙화, 세움터 프로파일 확정, IFC2x3 가져오기 표본 보강. 상세 spikes/phase1-drawings/baseline.md 42절.
 - Revit 기능 차이 W1 1-F 소형 건물 모델링(2026-11-20, 3차 PR): T 조인(join.tee·join.auto tee: 몸통은 자르지 않고 줄기는 몸통 면에서 멈춤, 평면 맞닿는 선 정리), 천장(ceiling.create·ceiling.set: 공간 경계로 IfcCovering 천장판, 반사 천장 평면 격자), 경사로(ramp.create: IfcRamp, 참·오름 화살표, 1/12 경고), 패밀리 유형 바꾸기(family.set_type)를 넣었다(기존 도면 바이트 불변, 5만 요소 bench main 과 같은 수준). 남은 1-F: 임의 외곽 지붕, 패밀리 30종·컴포넌트 배치·로드 패밀리. 상세 spikes/phase1-drawings/baseline.md 43절.
 - Revit 기능 차이 W1 1-F 소형 건물 모델링(2026-11-20, 4차 PR): 임의 외곽 지붕(roof form=poly: 다각형 외곽 + 변마다 물매·박공, L·T·U 골, 면이 끊기면 거절), 내장 패밀리 16종(가구 7·위생기구 5·가전 2·양여닫이문·미서기창, 7 -> 23종, 절단면 아래 가구 평면 기호)을 넣었다(기존 도면 바이트 불변, 5만 요소 bench main 과 같은 수준). 남은 1-F: 패밀리 7종, 사용자 레시피 폴더(FAM-01). 상세 spikes/phase1-drawings/baseline.md 44절.
+- Revit 기능 차이 W1 1-F 소형 건물 모델링(2026-11-20, 5차 PR): 내장 패밀리 7종(접이문·외여닫이 유리문·방화문·여닫이창·들창·오르내리창·천장 조명, 23 -> 30종), 사용자 레시피 폴더 불러오기(family.load_dir: id 마다 version 고르기·잘못된 레시피 거절·기본 라이브러리 id 규칙), 인쇄 여백·축척 맞춤(sheet.render print), IFC2x3 원본 가져오기 표본 시험을 넣었다(기존 도면 바이트 불변). 1-F 게이트 항목 모두 닫힘, W1 남은 것은 1-E 의 ANA-05·DATA-09. 상세 spikes/phase1-drawings/baseline.md 45절.
 
 ### 2a단계: 헤드리스 저작 MVP (8.5~16PM)
 
