@@ -3557,7 +3557,7 @@ class ViewSet(A):
 def view_set(ctx, a: ViewSet):
     r = ctx.row(a.id, "view")
     p = dict(r["params"])
-    allowed = {"plan": _PLAN_ONLY, "section": _SEC_ONLY, "elevation": _ELEV_ONLY, "site": _SITE_ONLY, "legend": ()}[p["type"]]
+    allowed = {"plan": _PLAN_ONLY, "section": _SEC_ONLY, "elevation": _ELEV_ONLY, "site": _SITE_ONLY, "legend": (), "drafting": ()}[p["type"]]
     for k in ("name", "scale", "cut_height", "view_depth", *_SEC_ONLY, *_ELEV_ONLY):
         v = getattr(a, k)
         if v is None:
@@ -3611,7 +3611,7 @@ def view_delete(ctx, a: IdArg):
 
 
 class ViewList(A):
-    type: Literal["plan", "section", "elevation", "site"] | None = None
+    type: Literal["plan", "section", "elevation", "site", "legend", "drafting"] | None = None
     limit: int = Field(100, ge=1, le=1000, description="최대 개수. 응답 크기 상한에 걸리면 이보다 적게 돌려주고 page.truncated 로 알린다")
     cursor: str | None = Field(None, max_length=2048, description="이전 응답의 page.next_cursor")
 
@@ -3674,6 +3674,14 @@ def _warn_omitted(ctx, omitted: dict) -> None:
                  "(외래는 IFC 형상이 없거나 그리지 않는 종류(공간·개구부 등)이고, 분리된 벽의 의도 값은 낡았다)")
 
 
+def _warn_fsym(ctx, vid) -> None:
+    """외래 문·창의 여닫이 방식을 몰라 기본 기호로 그렸으면 알린다(외래 도면 3차)."""
+    n = ctx.g.q(D.foreign_symbol_defaults, vid)
+    if n:
+        ctx.warn(f"이 뷰는 외래 문·창 {n}개의 여닫이 방식(IfcDoor OperationType·IfcWindow 칸 나눔·창짝 방식)을 몰라 기본 기호"
+                 "(문: 왼쪽 외여닫이, 창: 칸 하나)로 그렸다. IFC 의 방식 값을 확인하라")
+
+
 def _render_view(ctx, vid, detail=False, hidden=False, hier=False):
     """뷰의 선분·채움·기준선(레벨)·제목을 내보내기용 데이터로 묶는다. detail 이면 큰 축척(1:50 이하) 상세 선을 더한다(SC-09).
     hier 이면 비내력벽(LoadBearing 거짓)의 절단선을 "cutn" 등급으로 나눈다(LN-04, 선 굵기 위계)."""
@@ -3691,9 +3699,13 @@ def _render_view(ctx, vid, detail=False, hidden=False, hier=False):
     if hidden:
         lines = lines + ctx.g.q(D.view_hidden_lines, vid)
     _warn_omitted(ctx, ctx.g.q(D.view_omitted, vid))
+    _warn_fsym(ctx, vid)
     return {"type": p["type"], "name": p["name"], "scale": p["scale"], "lines": lines, "fills": ctx.g.q(D.view_fills, vid),
             "datums": levels, "annots": ctx.g.q(AN.view_annots, vid) + ctx.g.q(D.site_dims, vid) + ctx.g.q(D.view_dims, vid), "labels": ctx.g.q(D.view_labels, vid),
             **_drafts_of(ctx, vid), **_mode_of(p)}
+
+
+MODEL_LESS_VIEWS = ("legend", "drafting")   # 모델을 자르지 않는 뷰 종류(범례 뷰 W1 1-C 3차, 제도 뷰 W1 연장 VIEW-07)
 
 
 def _mode_of(p) -> dict:
@@ -3711,6 +3723,7 @@ def _render_view_vg(ctx, vid, p, levels, vgd, detail, hidden):
     if hidden:
         lines = lines + ctx.g.q(D.view_hidden_lines, vid)
     _warn_omitted(ctx, ctx.g.q(D.view_omitted, vid))
+    _warn_fsym(ctx, vid)
     annots = tuple(it for it in ctx.g.q(AN.view_annots, vid) + ctx.g.q(D.site_dims, vid) + ctx.g.q(D.view_dims, vid) if VG.annot_kind(it) not in hid)
     items = vitems + (() if "draft" in hid else ctx.g.q(DRF.view_drafts, vid))
     out = {"type": p["type"], "name": p["name"], "scale": p["scale"], "lines": lines, "fills": fills, "datums": levels, "annots": annots, "labels": labels, **_mode_of(p)}
@@ -4095,6 +4108,9 @@ def _dim_checked(ctx, view, a_ref, b_ref, at, measure=None, along=None):
     if measure is None and "circle" in (ta, tb):
         raise DobimError("CONSTRAINT", "원 참조는 반지름·지름 치수(measure)에만 쓴다", path="/a")
     vt = vr["params"]["type"]
+    if vt in MODEL_LESS_VIEWS:
+        raise DobimError("CONSTRAINT", "모델이 없는 뷰(범례·제도 뷰)에는 모델 치수를 두지 않는다", path="/view",
+                         hint="제도 뷰의 치수는 draft.create 의 dim 계열 모양으로 그린다")
     if vertical and vt == "plan":
         raise DobimError("CONSTRAINT", "높이 치수는 단면·입면 뷰에 둔다", path="/view")
     if not vertical and vt != "plan":
@@ -4217,7 +4233,7 @@ class DimHeights(A):
          args=DimHeights, since="0.2", examples=[{"view": F.V2, "kinds": ["floor", "overall"]}])
 def annot_dim_heights(ctx, a: DimHeights):
     vr = ctx.row(a.view, "view")
-    if vr["params"]["type"] == "plan":
+    if vr["params"]["type"] in ("plan",) + MODEL_LESS_VIEWS:
         raise DobimError("CONSTRAINT", "높이 치수는 단면·입면 뷰에 둔다", path="/view")
     g = ctx.fresh()
     st = ctx.st

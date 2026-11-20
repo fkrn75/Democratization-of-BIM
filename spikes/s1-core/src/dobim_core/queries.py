@@ -54,6 +54,11 @@ def fgeom(g, e):
     return g.input(("fgeom", e))
 
 
+def fopen(g, e):
+    """외래 문·창의 평면 기호 입력(foreign_geom.opening, 외래 도면 3차): ("door", ...) / ("window", ...) / None."""
+    return g.input(("fopen", e))
+
+
 def plan_level_ok(row) -> bool:
     """평면 뷰의 레벨이 될 수 있는 요소 행인가: 레벨, 또는 외래 IFC 층(IfcBuildingStorey, 고도는 IFC 배치에서 읽는다)."""
     return row is not None and (row["kind"] == "level" or (row["kind"] == "foreign" and row.get("ifc_class") == "IfcBuildingStorey"))

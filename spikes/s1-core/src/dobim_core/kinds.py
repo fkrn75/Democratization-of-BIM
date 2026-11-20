@@ -281,8 +281,9 @@ _VG_VIEW_KEYS = ("vg", "filters", "template")
 # vg·filters·template 가시성·그래픽 재정의·필터·템플릿(W1 1-C, 모든 종류)
 # parent 콜아웃 뷰의 부모 뷰 id(W1 1-C 2차, VIEW-06): 부모와 같은 종류이고 crop 이 콜아웃 범위다(부모 뷰에 콜아웃 기호로 그린다)
 # rcp 반사 천장 평면·area 면적 평면("gross"·"rooms")(W1 1-C 3차, VIEW-02·21): 평면만, 둘 중 하나. legend 범례 뷰(VIEW-09)는 선택 키가 없다
+# drafting 제도 뷰(W1 연장 VIEW-07): 모델이 없어 선택 키가 없다(이름·축척만)
 VIEW_OPTIONAL = {"plan": ("crop", "dims") + _VG_VIEW_KEYS + ("parent", "rcp", "area"), "section": ("with_site", "crop", "dims") + _VG_VIEW_KEYS + ("parent",),
-                 "elevation": ("crop", "finish") + _VG_VIEW_KEYS + ("parent",), "site": _VG_VIEW_KEYS, "legend": ()}
+                 "elevation": ("crop", "finish") + _VG_VIEW_KEYS + ("parent",), "site": _VG_VIEW_KEYS, "legend": (), "drafting": ()}
 AREA_SCHEMES = ("gross", "rooms")
 LEGEND_KINDS = ("symbols", "materials")
 _VIEW_OPT_CHECK = {"with_site": _TRUE, "crop": _crop_ok, "dims": _TRUE, "finish": _TRUE, "vg": vg_ok, "filters": vg_filters_ok, "template": id_ok, "parent": id_ok,
@@ -304,6 +305,8 @@ def _view_params(p):
                                       "scale": _SCALE}, {k: _VIEW_OPT_CHECK[k] for k in VIEW_OPTIONAL["elevation"]})
     if t == "legend":   # 범례 뷰(W1 1-C 3차): 모델을 자르지 않는다
         return _check_opt("view", p, {"name": _name, "type": lambda v: v == "legend", "legend": lambda v: v in LEGEND_KINDS, "scale": _SCALE}, {})
+    if t == "drafting":   # 제도 뷰(W1 연장 VIEW-07): 모델 없이 2D 작도만 담는다
+        return _check_opt("view", p, {"name": _name, "type": lambda v: v == "drafting", "scale": _SCALE}, {})
     if t == "site":   # 배치도: 모델 전체를 위에서 본 뷰라 레벨·절단 높이가 없다
         return _check_opt("view", p, {"name": _name, "type": lambda v: v == "site", "scale": _SCALE}, {k: _VIEW_OPT_CHECK[k] for k in VIEW_OPTIONAL["site"]})
     return "view 의 종류가 올바르지 않다"

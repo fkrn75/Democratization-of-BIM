@@ -55,7 +55,7 @@ def _frame(data):
         x0 = y0 = 0.0
         x1 = y1 = 1000.0
     datums = []
-    if data["type"] not in ("plan", "site", "legend"):
+    if data["type"] not in ("plan", "site", "legend", "drafting"):
         for name, z in data.get("datums", ()):
             if y0 - 1.0 <= z <= y1 + 1.0:
                 datums.append((name, z))
@@ -199,7 +199,7 @@ def annot_svg(data, tx, ty) -> list[str]:
 
 
 def title_text(data) -> str:
-    kind = {"rcp": "반사 천장 평면도", "area": "면적 평면도"}.get(data.get("mode")) or {"plan": "평면도", "section": "단면도", "elevation": "입면도", "site": "배치도", "legend": "범례"}[data["type"]]
+    kind = {"rcp": "반사 천장 평면도", "area": "면적 평면도"}.get(data.get("mode")) or {"plan": "평면도", "section": "단면도", "elevation": "입면도", "site": "배치도", "legend": "범례", "drafting": "상세도"}[data["type"]]
     if kind in data["name"]:   # 뷰 이름이 종류명과 같거나 이미 포함하면 종류명을 한 번만 쓴다
         return f"{data['name']}  S=1:{data['scale']}"
     return f"{data['name']}  {kind}  S=1:{data['scale']}"

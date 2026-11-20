@@ -578,7 +578,7 @@ def _restore_defs(f, rows: dict, rels: set, taken: set, plan: "ImportPlan") -> N
         vt = v["params"]["type"]
         why = None
         if d["kind"] == "dim":
-            if ("at" in p) == (vt == "plan"):
+            if ("at" in p) == (vt == "plan") or vt in ("legend", "drafting"):   # 모델이 없는 뷰(범례·제도 뷰)에는 모델 치수가 없다
                 why = "치수의 종류(평면·높이)가 뷰의 종류와 맞지 않는다"
             for k in ("a", "b"):
                 rk, rid, _role = AN.parse_ref(p[k])
