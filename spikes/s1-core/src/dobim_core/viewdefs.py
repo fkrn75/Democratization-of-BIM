@@ -118,6 +118,8 @@ def _dim_values(p: dict) -> None:
         raise ValueError("높이 치수만 at 이 있어야 한다")
     if "at" in p and not _pt(p["at"], MAX_POS):
         raise ValueError("치수 at 이 올바르지 않다")
+    if "dl" in p and (vertical or not _pt(p["dl"], MAX_POS)):   # 연속·기준선 치수(W1 연장 ANN-02): 평면 치수만, 원 참조 없음(measure 없음은 kinds 가 본다)
+        raise ValueError("치수 dl 이 올바르지 않다")
 
 
 def _tag_values(p: dict) -> None:

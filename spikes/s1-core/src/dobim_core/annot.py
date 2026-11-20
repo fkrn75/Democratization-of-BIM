@@ -65,6 +65,7 @@ DIR_ROLES = {"wall": frozenset({"axis.start", "axis.end", "trim.start", "trim.en
              "finst": frozenset({"jamb.start", "jamb.end"}),   # 호스팅 인스턴스의 문틀 양쪽은 호스트 벽 방향에 걸린다
              "grid": frozenset({"line"})}   # 각도 치수는 선의 방향으로 잰다(방향이 뒤집히면 값이 180 - θ 가 된다)
 MEASURES = ("angle", "radius", "diameter")   # 선형(기본, 키 없음) 밖의 치수 종류(dim params.measure). 선형 치수 행은 이전과 같다
+CHAIN_KINDS = ("chain", "baseline")   # W1 연장(ANN-02): 연속·기준선 치수 묶음 종류(dim params.gk)
 FAR_VERTEX = 1e8   # 각도 치수의 꼭짓점(두 선의 교점)이 원점에서 이보다 멀면 그리지 않는다(거의 평행: 무효 far_vertex)
 ARC_N = 24         # 각도 치수 호를 나누는 선분 수
 TAG_FIELDS = {
@@ -88,8 +89,9 @@ TAG_ALLOWED = {k: v + tuple(f for f in MULTI_FIELDS if f not in v) for k, v in T
 FINST_CATEGORY = {"IfcWindow": "창", "IfcColumn": "기둥", "IfcDoor": "문", "IfcFurnishingElement": "가구", "IfcBeam": "보",
                   "IfcMember": "부재", "IfcPlate": "판", "IfcBuildingElementProxy": "일반 부재"}
 ORPHAN_REASONS = ("target_deleted", "successor_deleted", "bad_ref")
-assert set(TAG_FIELDS) == set(K.TAG_TARGET_KINDS) and MEASURES == K.DIM_MEASURES   # 가져오기 검사표와 같아야 한다
+assert set(TAG_FIELDS) == set(K.TAG_TARGET_KINDS) and MEASURES == K.DIM_MEASURES and CHAIN_KINDS == K.DIM_CHAIN_KINDS   # 가져오기 검사표와 같아야 한다
 PARALLEL_EPS = 1e-9
+SKEW_EPS = 1e-6         # 투영 치수(연속·기준선)에서 선 참조가 재는 방향에 수직인지 보는 허용(사인값). 10m 선에서 0.01mm
 RND = 3                 # 그림 좌표 반올림 자릿수(mm)
 
 
@@ -364,6 +366,26 @@ def _measure(ra, rb):
     return ("ok", abs(ln[3] * (pt[2] - ln[2]) - ln[4] * (pt[1] - ln[1])))
 
 
+def _anchor(r):
+    """투영 치수의 기준점: 점은 그 점, 선은 기준점(축선·통심선 중점)."""
+    return r[1], r[2]
+
+
+def measure_along(ra, rb, u):
+    """W1 연장(ANN-02): 정한 방향 u=[ux,uy] 로 투영한 거리(연속·기준선 치수의 한 칸). ("ok", 값) 또는 ("invalid", 이유).
+    선 참조는 u 에 수직이어야 한다(수직이 아니면 선 위 어느 점을 재느냐에 따라 값이 달라진다: skew). 평면 참조만 받는다."""
+    if "orphan" in (ra[0], rb[0]):
+        return ("invalid", "orphan_ref")
+    if ra[0] not in ("pt", "line") or rb[0] not in ("pt", "line"):
+        return ("invalid", "mixed")
+    for r in (ra, rb):
+        if r[0] == "line" and abs(r[3] * u[0] + r[4] * u[1]) > SKEW_EPS:
+            return ("invalid", "skew")
+    (ax, ay), (bx, by) = _anchor(ra), _anchor(rb)
+    v = abs((bx - ax) * u[0] + (by - ay) * u[1])
+    return ("ok", v) if isfinite(v) else ("invalid", "non_finite")
+
+
 def dim_value(g, d):
     """치수 하나의 상태: ("ok", 값) | ("orphan", ((a|b, 이유), ...)) | ("invalid", 이유) | ("gone",).
     두 참조 노드만 읽으므로 두 참조의 값이 그대로면 여기서 전파가 멈춘다(조기 차단)."""
@@ -375,6 +397,8 @@ def dim_value(g, d):
     bad = tuple((w, r[1]) for w, r in (("a", ra), ("b", rb)) if r[0] == "orphan")
     if bad:
         return ("orphan", bad)
+    if "along" in row["params"]:   # 연속·기준선 치수의 한 칸: 정한 방향으로 투영해 잰다
+        return measure_along(ra, rb, row["params"]["along"])
     return measure(ra, rb, row["params"].get("measure"))
 
 
@@ -583,6 +607,28 @@ def dim_geometry(g, p, ra, rb):
     return e0, e1, line, _r((ax + bx) / 2.0 + ox, (ay + by) / 2.0 + oy), _r(ux, uy)
 
 
+def along_geometry(p, ra, rb):
+    """연속·기준선 치수 한 칸의 그림(선형 치수와 같은 꼴: 보조선 2개, 치수선, 글 위치, 글 방향). 평면 좌표.
+    치수선은 params.dl 을 지나고 params.along 방향인 고정 직선 위에 놓인다(요소가 움직여도 치수선 자리는 그대로, 보조선 길이와 값이 따라간다).
+    보조선은 참조의 기준점(점은 그 점, 선은 중점)에서 치수선까지 수직으로 긋고 치수선을 150 넘긴다."""
+    ux, uy = p["along"]
+    lx, ly = p["dl"]
+    out = []
+    for r in (ra, rb):
+        x, y = _anchor(r)
+        t = (x - lx) * ux + (y - ly) * uy
+        qx, qy = lx + t * ux, ly + t * uy             # 치수선 위의 발
+        nx, ny = qx - x, qy - y
+        ln = sqrt(nx * nx + ny * ny)
+        nx, ny = (nx / ln, ny / ln) if ln > 1e-9 else (-uy, ux)
+        out.append((x, y, qx, qy, nx, ny))
+    (ax, ay, aqx, aqy, anx, any_), (bx, by, bqx, bqy, bnx, bny) = out
+    e0 = _r(ax, ay, aqx + anx * 150.0, aqy + any_ * 150.0)
+    e1 = _r(bx, by, bqx + bnx * 150.0, bqy + bny * 150.0)
+    sx, sy = (ux, uy) if (bqx - aqx) * ux + (bqy - aqy) * uy >= 0 else (-ux, -uy)   # 글 방향은 a 에서 b 로
+    return e0, e1, _r(aqx, aqy, bqx, bqy), _r((aqx + bqx) / 2.0, (aqy + bqy) / 2.0), _r(sx, sy)
+
+
 def fmt_deg(v) -> str:
     return f"{v:.2f}".rstrip("0").rstrip(".") + "°"   # 2D 작도 각도 치수(drafting.fmt_deg)와 같은 꼴
 
@@ -645,7 +691,8 @@ def annot_draw(g, a):
         return ("adim", a, *geo)
     if kind == "dim":
         ra, rb = g.q(ref_resolve, p["a"]), g.q(ref_resolve, p["b"])
-        e0, e1, line, tpos, u = dim_geometry(g, p, ra, rb)
+        # 연속·기준선 치수(W1 연장 ANN-02)는 고정 치수선 위에 그린다. 그림 항목은 선형 치수("dim")와 같은 꼴이라 내보내기 경로는 그대로다
+        e0, e1, line, tpos, u = along_geometry(p, ra, rb) if "along" in p else dim_geometry(g, p, ra, rb)
         if not all(isfinite(v) for part in (e0, e1, line, tpos, u) for v in part):   # 값은 유한해도 보조선 계산이 넘칠 수 있다
             return ("invalid", a, kind, "non_finite", *_r(*p["home"]))
         return ("dim", a, e0, e1, line, fmt_num(st[1]), tpos, u)

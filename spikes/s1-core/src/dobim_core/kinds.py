@@ -314,9 +314,23 @@ def _ref(v) -> bool:
 
 
 DIM_MEASURES = ("angle", "radius", "diameter")   # 선형 밖의 치수 종류(annot.MEASURES 와 같다). 선형 치수는 measure 키가 없다
+DIM_CHAIN_KINDS = ("chain", "baseline")          # 연속·기준선 치수 묶음 종류(annot.CHAIN_KINDS 와 같다)
+
+
+def unit_ok(v) -> bool:
+    """길이 1 인 평면 방향 [ux, uy](허용 1e-6)."""
+    return _pt_ok(v) and abs(v[0] * v[0] + v[1] * v[1] - 1.0) <= 1e-6
 
 
 def _dim_params(p):
+    if isinstance(p, dict) and ("along" in p or "dl" in p):   # W1 연장(ANN-02): 연속·기준선 치수의 한 칸(평면 선형 치수만, measure·at 과 함께 둘 수 없다)
+        if not ("along" in p and "dl" in p) or "measure" in p or "at" in p or not unit_ok(p["along"]) or not _pt_ok(p["dl"]):
+            return "dim.along·dl 값이 올바르지 않다"
+        p = {k: v for k, v in p.items() if k not in ("along", "dl")}
+    if isinstance(p, dict) and ("group" in p or "gk" in p):   # 연속·기준선 치수 묶음 표시(높이 치수에도 쓴다)
+        if not ("group" in p and "gk" in p) or not id_ok(p["group"]) or p["gk"] not in DIM_CHAIN_KINDS:
+            return "dim.group·gk 값이 올바르지 않다"
+        p = {k: v for k, v in p.items() if k not in ("group", "gk")}
     base = p
     if isinstance(p, dict) and "at" in p:   # 높이 치수만 at 이 있다
         base = {k: v for k, v in p.items() if k != "at"}

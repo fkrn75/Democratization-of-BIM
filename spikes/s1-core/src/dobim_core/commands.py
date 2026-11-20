@@ -4077,9 +4077,10 @@ def _level_of(ctx, kind, eid):
     return ctx.rels_out("on_level", eid)[0]
 
 
-def _dim_checked(ctx, view, a_ref, b_ref, at, measure=None):
+def _dim_checked(ctx, view, a_ref, b_ref, at, measure=None, along=None):
     """치수 정의를 검사하고 (높이 치수인지, 해석 결과 둘, 기준 그래프)를 돌려준다. 지금 메모리 상태를 직접 읽는다.
-    measure(W1 1-B 2차): angle = 평행하지 않은 선 참조 둘, radius·diameter = 같은 원 참조 하나(a = b). 모두 평면 치수다."""
+    measure(W1 1-B 2차): angle = 평행하지 않은 선 참조 둘, radius·diameter = 같은 원 참조 하나(a = b). 모두 평면 치수다.
+    along(W1 연장 ANN-02): 연속·기준선 치수의 한 칸. 정한 방향으로 투영해 재고, 선 참조는 그 방향에 수직이어야 한다(평면 치수만)."""
     vr = ctx.row(view, "view")
     pa, pb = _ref_parts(ctx, a_ref, "/a"), _ref_parts(ctx, b_ref, "/b")
     ta, tb = AN.ROLE_TYPES[pa[0]][pa[2]], AN.ROLE_TYPES[pb[0]][pb[2]]
@@ -4110,7 +4111,12 @@ def _dim_checked(ctx, view, a_ref, b_ref, at, measure=None):
     for r_, fld in ((ra, "/a"), (rb, "/b")):
         if r_[0] == "orphan":     # 요소는 있어도 끝 역할이 분할 후계 삭제로 고아일 수 있다
             raise DobimError("CONSTRAINT", f"참조를 풀 수 없다: {r_[1]}", path=fld)
-    st, val = AN.measure(ra, rb, measure)
+    if along is not None and vertical:
+        raise DobimError("CONSTRAINT", "투영 방향(along)은 평면 치수에만 쓴다", path="/along")
+    st, val = AN.measure(ra, rb, measure) if along is None else AN.measure_along(ra, rb, along)
+    if st == "invalid" and val == "skew":
+        raise DobimError("CONSTRAINT", "선 참조가 재는 방향에 수직이 아니다", path="/b",
+                         hint="연속·기준선 치수의 선 참조(벽 면·축선, 통심선)는 서로 평행하고 재는 방향(along)에 수직이어야 한다")
     if st != "ok":
         raise DobimError("CONSTRAINT", f"잴 수 없는 참조 쌍이다: {val}", path="/b",
                          hint="선 참조 두 개는 평행해야 한다" if val == "not_parallel" else ("각도 치수의 두 선은 평행하지 않아야 한다" if val == "parallel" else None))
@@ -4123,6 +4129,8 @@ def _dim_home(g, p, ra, rb):
     """치수의 놓인 자리(고아·무효 표시 위치): 선형·높이는 재는 두 점의 중점, 각도·반지름·지름은 글 위치."""
     if "measure" in p:
         return list(AN.more_geometry(p, ra, rb, AN.measure(ra, rb, p["measure"])[1])[3])
+    if "along" in p:   # 연속·기준선 치수의 한 칸: 치수선 위 글 위치
+        return list(AN.along_geometry(p, ra, rb)[3])
     (ax, ay), (bx, by) = AN.dim_ends(g, p, ra, rb)
     return [round((ax + bx) / 2, 3), round((ay + by) / 2, 3)]
 
@@ -4372,7 +4380,7 @@ def annot_rebind(ctx, a: AnnotRebind):
         p["a"], p["b"] = a.a or p["a"], a.b or p["b"]
         if p.get("measure") in ("radius", "diameter") and a.a is not None and a.b is None:
             p["b"] = p["a"]   # 반지름·지름은 원 참조 하나(a = b)
-        vertical, ra, rb, g = _dim_checked(ctx, p["view"], p["a"], p["b"], p.get("at"), p.get("measure"))
+        vertical, ra, rb, g = _dim_checked(ctx, p["view"], p["a"], p["b"], p.get("at"), p.get("measure"), p.get("along"))
         dirs = dict(p.get("dirs") or {})
         for side, given in (("a", a.a), ("b", a.b)):   # 다시 묶은 쪽만 지문을 새로 잡는다(같은 참조를 다시 주면 경고를 확인한 것으로 본다)
             if given is not None:
@@ -4410,6 +4418,8 @@ def _annot_item(ctx, aid):
         out.update(a=p["a"], b=p["b"])
         if "measure" in p:
             out["measure"] = p["measure"]
+        if "group" in p:   # 연속·기준선 치수 묶음(W1 연장 ANN-02)
+            out.update(group=p["group"], chain=p["gk"])
     else:
         out.update(target=p["target"], fields=p["fields"])
     flags = ctx.g.q(AN.annot_flags, aid)
@@ -5117,6 +5127,7 @@ from dobim_core import commands_viewplans  # noqa: E402,F401
 from dobim_core import commands_edit  # noqa: E402,F401
 from dobim_core import commands_param  # noqa: E402,F401
 from dobim_core import commands_area  # noqa: E402,F401
+from dobim_core import commands_dimchain  # noqa: E402,F401
 from dobim_core import commands_check  # noqa: E402,F401
 from dobim_core import commands_drawcheck  # noqa: E402,F401
 from dobim_core import commands_arch  # noqa: E402,F401
