@@ -1,0 +1,220 @@
+{
+  "schema": "dobim.family/1",
+  "id": "shelf.open",
+  "version": 1,
+  "name": "책장",
+  "description": "열린 책장(IfcFurniture SHELF). 옆판·위아래판·뒤판·선반(개수는 인스턴스 매개변수).",
+  "ifc": {
+    "class": "IfcFurniture",
+    "type_class": "IfcFurnitureType",
+    "predefined": "SHELF"
+  },
+  "params": {
+    "panel_t": {
+      "kind": "type",
+      "default": 18,
+      "unit": "mm",
+      "description": "판 두께",
+      "min": 12,
+      "max": 30
+    },
+    "width": {
+      "kind": "instance",
+      "default": 900,
+      "unit": "mm",
+      "min": 400,
+      "max": 1800
+    },
+    "depth": {
+      "kind": "instance",
+      "default": 300,
+      "unit": "mm",
+      "min": 200,
+      "max": 500
+    },
+    "height": {
+      "kind": "instance",
+      "default": 1800,
+      "unit": "mm",
+      "min": 600,
+      "max": 2400
+    },
+    "shelves": {
+      "kind": "instance",
+      "default": 4,
+      "type": "int",
+      "unit": "none",
+      "description": "희망 중간 선반 수(칸 높이 200mm 이상이 되게 shelf_n 으로 줄어든다)",
+      "min": 0,
+      "max": 10
+    }
+  },
+  "derived": {
+    "inner_h": "height - 2*panel_t",
+    "shelf_n": "min(shelves, floor(inner_h/200) - 1)"
+  },
+  "solids": [
+    {
+      "id": "side_l",
+      "op": "extrude",
+      "plane": "xy",
+      "profile": {
+        "shape": "rect",
+        "u": [
+          "-width/2",
+          "-width/2 + panel_t"
+        ],
+        "v": [
+          "-depth/2",
+          "depth/2"
+        ]
+      },
+      "range": [
+        0,
+        "height"
+      ]
+    },
+    {
+      "id": "side_r",
+      "op": "extrude",
+      "plane": "xy",
+      "profile": {
+        "shape": "rect",
+        "u": [
+          "width/2 - panel_t",
+          "width/2"
+        ],
+        "v": [
+          "-depth/2",
+          "depth/2"
+        ]
+      },
+      "range": [
+        0,
+        "height"
+      ]
+    },
+    {
+      "id": "top",
+      "op": "extrude",
+      "plane": "xy",
+      "profile": {
+        "shape": "rect",
+        "u": [
+          "-width/2 + panel_t",
+          "width/2 - panel_t"
+        ],
+        "v": [
+          "-depth/2",
+          "depth/2"
+        ]
+      },
+      "range": [
+        "height - panel_t",
+        "height"
+      ]
+    },
+    {
+      "id": "bottom",
+      "op": "extrude",
+      "plane": "xy",
+      "profile": {
+        "shape": "rect",
+        "u": [
+          "-width/2 + panel_t",
+          "width/2 - panel_t"
+        ],
+        "v": [
+          "-depth/2",
+          "depth/2"
+        ]
+      },
+      "range": [
+        0,
+        "panel_t"
+      ]
+    },
+    {
+      "id": "back",
+      "op": "extrude",
+      "plane": "xy",
+      "profile": {
+        "shape": "rect",
+        "u": [
+          "-width/2 + panel_t",
+          "width/2 - panel_t"
+        ],
+        "v": [
+          "-depth/2",
+          "-depth/2 + 6"
+        ]
+      },
+      "range": [
+        "panel_t",
+        "height - panel_t"
+      ]
+    },
+    {
+      "id": "shelf",
+      "op": "extrude",
+      "plane": "xy",
+      "repeat": {
+        "var": "i",
+        "count": "shelf_n"
+      },
+      "profile": {
+        "shape": "rect",
+        "u": [
+          "-width/2 + panel_t",
+          "width/2 - panel_t"
+        ],
+        "v": [
+          "-depth/2 + 6",
+          "depth/2"
+        ]
+      },
+      "range": [
+        "panel_t + (i + 1)*inner_h/(shelf_n + 1) - panel_t/2",
+        "panel_t + (i + 1)*inner_h/(shelf_n + 1) + panel_t/2"
+      ]
+    }
+  ],
+  "plan_symbol": {
+    "default": [
+      {
+        "type": "rect",
+        "u": [
+          "-width/2",
+          "width/2"
+        ],
+        "v": [
+          "-depth/2",
+          "depth/2"
+        ],
+        "style": "projection"
+      }
+    ],
+    "1:200": [
+      {
+        "type": "rect",
+        "u": [
+          "-width/2",
+          "width/2"
+        ],
+        "v": [
+          "-depth/2",
+          "depth/2"
+        ],
+        "style": "projection"
+      }
+    ]
+  },
+  "psets": {
+    "Pset_FurnitureTypeCommon": {
+      "on": "type",
+      "props": {
+        "IsBuiltIn": false
+      }
+    }
+  }
+}

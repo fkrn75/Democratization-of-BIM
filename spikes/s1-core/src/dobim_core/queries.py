@@ -590,6 +590,8 @@ def ifc_spec(g, e):
         for k in ("ridge", "dir"):
             if k in p:
                 spec[k] = p[k]
+        if "slopes" in p:   # 다각형 외곽 지붕(W1 1-F 4차): 없으면 명세는 이전과 같다
+            spec["slopes"] = tuple(p["slopes"])
         return spec
     if kind == "site":
         # 배치는 건물 아래 뼈대 대지 좌표계(원점·무회전)다. 방위·도로는 IFC 가 아니라 의도(DoBIM_Intent)로 왕복한다

@@ -39,9 +39,17 @@ from dobim_core import wallcut as WC
 from dobim_core.errors import DobimError
 from dobim_core.kinds import FIXED_IFC_CLASS, SLAB_OPENINGS_MAX, parapet_ring, roof_geom, stair_layout
 from dobim_core.solids import OPENINGS_MAX
+from dobim_core.roofpoly import FACES_MAX as ROOF_FACES_MAX   # 다각형 외곽 지붕(W1 1-F 4차)의 경사면 수 상한(직사각형은 4)
 from dobim_core.kinds import _plane_of as plane_of
 from dobim_core.family import ifcproj as fp
 from dobim_core.viewdefs import DEFS_PSET
+
+
+def _poly_roof_type(slopes) -> str:
+    """다각형 외곽 지붕(W1 1-F 4차)의 IfcRoof PredefinedType: 경사 변 하나 = 외쪽, 모두 경사 = 모임, 박공 변이 섞이면 모임 박공."""
+    n = sum(1 for v in slopes if v > 0)
+    return "SHED_ROOF" if n == 1 else ("HIP_ROOF" if n == len(slopes) else "HIPPED_GABLE_ROOF")
+
 
 def _rels_of(e, inv, attr: str, rel_cls: str, rel_attr: str) -> list:
     """e 가 rel_attr(관계의 대상 목록)에 들어 있는 rel_cls 관계들. IFC 의 역속성(attr)을 쓰면 엔진이 인덱스로 찾는다.
@@ -1229,7 +1237,7 @@ class IfcModel:
             return [f"opening:{i}" for i in range(SLAB_OPENINGS_MAX)] + ["parapet"]
         if kind == "wall":   # 모양 개구부(18단계)
             return [f"opening:{i}" for i in range(OPENINGS_MAX)]
-        return [f"face:{i}" for i in range(4)] if kind == "roof" else ["flight:0", "flight:1", "landing", "winder"]
+        return [f"face:{i}" for i in range(ROOF_FACES_MAX)] if kind == "roof" else ["flight:0", "flight:1", "landing", "winder"]
 
     def _adopt_parts(self, eid: str, kind: str, e) -> None:
         """가져온 파일에서 요소에 이미 달린 부속(GlobalId 가 part_guid 와 같고 요소와 관계가 이어진 것)을 이어받는다."""
@@ -1416,7 +1424,7 @@ class IfcModel:
         배치는 레벨 좌표계 원점이고 처마 높이는 레벨 + base_offset 이므로 레벨 높이는 읽지 않는다."""
         e = self.ents[eid]
         e.Name = spec["name"]
-        e.PredefinedType = {"gable": "GABLE_ROOF", "hip": "HIP_ROOF", "shed": "SHED_ROOF"}[spec["form"]]
+        e.PredefinedType = {"gable": "GABLE_ROOF", "hip": "HIP_ROOF", "shed": "SHED_ROOF"}.get(spec["form"]) or _poly_roof_type(spec.get("slopes", ()))
         self._contain(eid, spec["level"])
         self._place(e, self.ents[spec["level"]].ObjectPlacement, (0.0, 0.0, 0.0), (1.0, 0.0, 0.0))
         if e.Representation is not None:
@@ -1427,6 +1435,8 @@ class IfcModel:
         for k in ("ridge", "dir"):
             if k in spec:
                 p[k] = spec[k]
+        if "slopes" in spec:
+            p["slopes"] = list(spec["slopes"])
         gm = roof_geom(p)
         wanted = {f"face:{i}": {"cls": "IfcSlab", "name": f"{spec['name']}-face{i + 1}", "rel": "aggregate", "attrs": {"PredefinedType": "ROOF"},
                                 "solid": (lambda fc=fc: self._sloped_solid(fc, spec["thickness"]))} for i, fc in enumerate(gm["faces"])}

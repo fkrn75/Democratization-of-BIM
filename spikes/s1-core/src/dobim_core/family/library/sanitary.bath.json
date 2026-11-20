@@ -1,0 +1,142 @@
+{
+  "schema": "dobim.family/1",
+  "id": "sanitary.bath",
+  "version": 1,
+  "name": "욕조",
+  "description": "욕조(IfcSanitaryTerminal BATH). 바깥 상자에서 안쪽(공극)을 판다. length 는 x 방향 길이다.",
+  "ifc": {
+    "class": "IfcSanitaryTerminal",
+    "type_class": "IfcSanitaryTerminalType",
+    "predefined": "BATH"
+  },
+  "params": {
+    "wall_t": {
+      "kind": "type",
+      "default": 80,
+      "unit": "mm",
+      "description": "욕조 벽 두께",
+      "min": 40,
+      "max": 150
+    },
+    "floor_t": {
+      "kind": "type",
+      "default": 60,
+      "unit": "mm",
+      "description": "바닥 두께",
+      "min": 40,
+      "max": 120
+    },
+    "length": {
+      "kind": "instance",
+      "default": 1700,
+      "unit": "mm",
+      "min": 1200,
+      "max": 2000
+    },
+    "depth": {
+      "kind": "instance",
+      "default": 750,
+      "unit": "mm",
+      "min": 650,
+      "max": 900
+    },
+    "height": {
+      "kind": "instance",
+      "default": 550,
+      "unit": "mm",
+      "min": 400,
+      "max": 650
+    }
+  },
+  "derived": {
+    "width": "length"
+  },
+  "solids": [
+    {
+      "id": "shell",
+      "op": "extrude",
+      "plane": "xy",
+      "profile": {
+        "shape": "rect",
+        "u": [
+          "-width/2",
+          "width/2"
+        ],
+        "v": [
+          "-depth/2",
+          "depth/2"
+        ]
+      },
+      "range": [
+        0,
+        "height"
+      ]
+    },
+    {
+      "id": "inner",
+      "op": "extrude",
+      "plane": "xy",
+      "role": "void",
+      "cuts": [
+        "shell"
+      ],
+      "profile": {
+        "shape": "rect",
+        "u": [
+          "-width/2 + wall_t",
+          "width/2 - wall_t"
+        ],
+        "v": [
+          "-depth/2 + wall_t",
+          "depth/2 - wall_t"
+        ]
+      },
+      "range": [
+        "floor_t",
+        "height + 1"
+      ]
+    }
+  ],
+  "plan_symbol": {
+    "default": [
+      {
+        "type": "rect",
+        "u": [
+          "-width/2",
+          "width/2"
+        ],
+        "v": [
+          "-depth/2",
+          "depth/2"
+        ],
+        "style": "projection"
+      },
+      {
+        "type": "rect",
+        "u": [
+          "-width/2 + wall_t",
+          "width/2 - wall_t"
+        ],
+        "v": [
+          "-depth/2 + wall_t",
+          "depth/2 - wall_t"
+        ],
+        "style": "projection"
+      }
+    ],
+    "1:200": [
+      {
+        "type": "rect",
+        "u": [
+          "-width/2",
+          "width/2"
+        ],
+        "v": [
+          "-depth/2",
+          "depth/2"
+        ],
+        "style": "projection"
+      }
+    ]
+  }
+}

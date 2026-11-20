@@ -16,6 +16,7 @@ import zlib
 from math import isfinite, sqrt
 from typing import Callable, NamedTuple
 
+from dobim_core import roofpoly as RP
 from dobim_core import solids as SO
 from dobim_core import wallcut as WC
 from dobim_core import walltop as WT
@@ -839,7 +840,7 @@ def elevator_door_edge(p):
 
 
 # ---------------------------------------------------------------- 경사 지붕 (kinds "roof", 설계: elements-design.md 16절)
-ROOF_FORMS = ("gable", "hip", "shed")   # 박공(맞배)·모임(우진각)·외쪽
+ROOF_FORMS = ("gable", "hip", "shed", "poly")   # 박공(맞배)·모임(우진각)·외쪽·다각형 외곽(변마다 물매 또는 박공, W1 1-F 4차)
 ROOF_PITCH_MAX = 75.0       # 물매 각도 상한(도)
 ROOF_OVERHANG_MAX = 3000.0  # 처마 내밀기 상한 mm
 ROOF_SIDE_MIN = 500.0       # 외곽 직사각형의 최소 변 길이 mm
@@ -863,13 +864,41 @@ def roof_rect_problem(b) -> str | None:
     return None
 
 
+def _slope_ok(v) -> bool:
+    return num_ok(v) and 0 <= v <= ROOF_PITCH_MAX
+
+
+def roof_tans(slopes) -> list:
+    """변마다 물매(도)의 tan(0 = 박공 변). sincos_deg 로 계산한다(도면·IFC 가 같은 값)."""
+    out = []
+    for s in slopes:
+        if s <= 0:
+            out.append(0.0)
+        else:
+            sn, cs = sincos_deg(float(s))
+            out.append(sn / cs)
+    return out
+
+
 def _roof_params(p):
-    err = _check_opt("roof", p, {"name": _name, "boundary": lambda v: isinstance(v, list) and len(v) == 4 and all(_pt_ok(q) for q in v), "form": lambda v: v in ROOF_FORMS,
+    err = _check_opt("roof", p, {"name": _name, "boundary": lambda v: isinstance(v, list) and 3 <= len(v) <= RP.POLY_PTS_MAX and all(_pt_ok(q) for q in v),
+                                 "form": lambda v: v in ROOF_FORMS,
                                  "pitch": lambda v: _pos(v) and v <= ROOF_PITCH_MAX, "overhang": lambda v: num_ok(v) and 0 <= v <= ROOF_OVERHANG_MAX,
                                  "base_offset": num_ok, "thickness": _pos},
-                     {"ridge": lambda v: v == "short", "dir": num_ok})
+                     {"ridge": lambda v: v == "short", "dir": num_ok,
+                      "slopes": lambda v: isinstance(v, list) and len(v) == len(p.get("boundary", ())) and all(_slope_ok(x) for x in v)})
     if err is not None:
         return err
+    if p["form"] == "poly":
+        if "slopes" not in p:
+            return "roof: 다각형 외곽 지붕(poly)은 변마다 물매 slopes 가 필요하다"
+        if "ridge" in p or "dir" in p:
+            return "roof.ridge·roof.dir 은 다각형 외곽 지붕(poly)에 둘 수 없다"
+        if why := RP.problem(p["boundary"], p["slopes"], roof_tans(p["slopes"]), p["overhang"], ROOF_SIDE_MIN):
+            return f"roof.boundary: {why}"
+        return None
+    if "slopes" in p:
+        return "roof.slopes 는 다각형 외곽 지붕(poly)에만 둘 수 있다"
     if why := roof_rect_problem(p["boundary"]):
         return f"roof.boundary: {why}"
     if p["form"] == "shed" and "dir" not in p:
@@ -931,7 +960,10 @@ def roof_geom(p) -> dict:
     박공·모임은 용마루가 외곽의 긴 변 방향(박공의 ridge="short" 는 짧은 변 방향)이고 경사면의 물매가 같다. 외쪽은 dir(물이 흐르는 방향 도) 한 면이다.
       {"faces": [[(x,y,z), ...] 윗면 다각형(위에서 볼 때 반시계)], "ridges": [(p, q)] 용마루, "hips": [(p, q)] 추녀마루, "perimeter": [(x,y,z), ...] 윗면 바깥 둘레,
        "arrows": [((cx,cy),(dx,dy))] 경사면마다 무게중심과 물이 흐르는 단위 방향, "outline": [(x,y)] 처마를 내민 외곽(반시계), "planes": [(a,b,c)] 면마다 z=ax+by+c,
-       "zlow": 둘레의 가장 낮은 z, "ztop": 가장 높은 z}"""
+       "zlow": 둘레의 가장 낮은 z, "ztop": 가장 높은 z, "valleys": 골(직사각형은 없음), "pieces": [(볼록 다각형, 평면)] 면의 볼록 조각, "fpitch": 면마다 물매 도}
+    form "poly"(다각형 외곽, 변마다 물매 slopes, 0 = 박공 변)는 roofpoly.geom 이 같은 꼴로 만든다."""
+    if p["form"] == "poly":   # 다각형 외곽: 변마다 경사면(roofpoly). faces 는 오목할 수 있고 볼록 조각은 pieces, 골은 valleys
+        return RP.geom(p["boundary"], p["slopes"], roof_tans(p["slopes"]), p["overhang"], p["base_offset"])
     b = p["boundary"]
     t_s, t_c = sincos_deg(float(p["pitch"]))
     t = t_s / t_c
@@ -989,7 +1021,8 @@ def roof_geom(p) -> dict:
         arrows = [((cx, cy), n)]
     planes = [_plane_of(fc) for fc in faces]
     outline = [(q[0], q[1]) for q in (W(-L, -S, 0), W(L, -S, 0), W(L, S, 0), W(-L, S, 0))]
-    return {"faces": faces, "ridges": ridges, "hips": hips, "perimeter": perim, "arrows": arrows, "outline": outline, "planes": planes,
+    return {"faces": faces, "ridges": ridges, "hips": hips, "valleys": [], "perimeter": perim, "arrows": arrows, "outline": outline, "planes": planes,
+            "pieces": list(zip(faces, planes)), "fpitch": [float(p["pitch"])] * len(faces),
             "zlow": min(q[2] for q in perim), "ztop": max(q[2] for fc in faces for q in fc)}
 
 

@@ -1,0 +1,319 @@
+{
+  "schema": "dobim.family/1",
+  "id": "door.double",
+  "version": 1,
+  "name": "양여닫이문",
+  "description": "벽에 호스팅되는 양여닫이문. 문틀(스윕)과 같은 폭 문짝 둘(압출), 평면에 두 문짝 선과 열림 호.",
+  "ifc": {
+    "class": "IfcDoor",
+    "type_class": "IfcDoorType",
+    "predefined": "DOOR",
+    "type_attrs": {
+      "OperationType": "DOUBLE_DOOR_SINGLE_SWING",
+      "ParameterTakesPrecedence": false
+    },
+    "attrs": {
+      "OverallWidth": {
+        "expr": "width"
+      },
+      "OverallHeight": {
+        "expr": "height"
+      },
+      "OperationType": "DOUBLE_DOOR_SINGLE_SWING"
+    }
+  },
+  "host": {
+    "kinds": [
+      "wall"
+    ],
+    "cut": {
+      "x": [
+        "left",
+        "right"
+      ],
+      "z": [
+        0,
+        "height"
+      ]
+    }
+  },
+  "params": {
+    "width": {
+      "kind": "type",
+      "default": 1800,
+      "unit": "mm",
+      "description": "개구부 폭(문틀 바깥)",
+      "min": 1000,
+      "max": 3600
+    },
+    "height": {
+      "kind": "type",
+      "default": 2100,
+      "unit": "mm",
+      "description": "개구부 높이",
+      "min": 1800,
+      "max": 3600
+    },
+    "frame_w": {
+      "kind": "type",
+      "default": 50,
+      "unit": "mm",
+      "description": "문틀 단면 폭",
+      "min": 30,
+      "max": 100
+    },
+    "leaf_t": {
+      "kind": "type",
+      "default": 40,
+      "unit": "mm",
+      "description": "문짝 두께",
+      "min": 30,
+      "max": 60
+    },
+    "is_external": {
+      "kind": "type",
+      "default": false,
+      "type": "bool",
+      "description": "외부 문 여부"
+    }
+  },
+  "derived": {
+    "leaf_w": "(width - 2*frame_w)/2",
+    "leaf_h": "height - frame_w",
+    "fx0": "-width/2 + frame_w/2",
+    "fx1": "width/2 - frame_w/2",
+    "fz1": "height - frame_w/2",
+    "hx_l": "-width/2 + frame_w",
+    "hx_r": "width/2 - frame_w"
+  },
+  "refs": {
+    "left": {
+      "axis": "x",
+      "at": "-width/2"
+    },
+    "right": {
+      "axis": "x",
+      "at": "width/2"
+    }
+  },
+  "constraints": [
+    {
+      "expr": "leaf_w >= 400",
+      "message": "문짝 한 장의 폭이 400mm 미만이다(width 를 키우세요)"
+    },
+    {
+      "expr": "host_thickness >= leaf_t + 20",
+      "message": "벽이 문짝 두께보다 20mm 이상 두꺼워야 한다"
+    }
+  ],
+  "solids": [
+    {
+      "id": "frame",
+      "op": "sweep",
+      "normal": "y",
+      "closed": false,
+      "path": [
+        [
+          "fx0",
+          0,
+          0
+        ],
+        [
+          "fx0",
+          0,
+          "fz1"
+        ],
+        [
+          "fx1",
+          0,
+          "fz1"
+        ],
+        [
+          "fx1",
+          0,
+          0
+        ]
+      ],
+      "profile": {
+        "shape": "rect",
+        "w": "frame_w",
+        "h": "host_thickness"
+      }
+    },
+    {
+      "id": "leaf_l",
+      "op": "extrude",
+      "plane": "xz",
+      "profile": {
+        "shape": "rect",
+        "u": [
+          "hx_l + 2",
+          "hx_l + leaf_w - 2"
+        ],
+        "v": [
+          0,
+          "leaf_h"
+        ]
+      },
+      "range": [
+        "-leaf_t/2",
+        "leaf_t/2"
+      ]
+    },
+    {
+      "id": "leaf_r",
+      "op": "extrude",
+      "plane": "xz",
+      "profile": {
+        "shape": "rect",
+        "u": [
+          "hx_r - leaf_w + 2",
+          "hx_r - 2"
+        ],
+        "v": [
+          0,
+          "leaf_h"
+        ]
+      },
+      "range": [
+        "-leaf_t/2",
+        "leaf_t/2"
+      ]
+    }
+  ],
+  "plan_symbol": {
+    "default": [
+      {
+        "type": "rect",
+        "u": [
+          "left",
+          "left + frame_w"
+        ],
+        "v": [
+          "-host_thickness/2",
+          "host_thickness/2"
+        ],
+        "style": "cut"
+      },
+      {
+        "type": "rect",
+        "u": [
+          "right - frame_w",
+          "right"
+        ],
+        "v": [
+          "-host_thickness/2",
+          "host_thickness/2"
+        ],
+        "style": "cut"
+      },
+      {
+        "type": "line",
+        "from": [
+          "hx_l",
+          0
+        ],
+        "to": [
+          "hx_l",
+          "leaf_w"
+        ],
+        "style": "projection"
+      },
+      {
+        "type": "line",
+        "from": [
+          "hx_r",
+          0
+        ],
+        "to": [
+          "hx_r",
+          "leaf_w"
+        ],
+        "style": "projection"
+      },
+      {
+        "type": "arc",
+        "center": [
+          "hx_l",
+          0
+        ],
+        "radius": "leaf_w",
+        "start": 0,
+        "end": 90,
+        "style": "projection"
+      },
+      {
+        "type": "arc",
+        "center": [
+          "hx_r",
+          0
+        ],
+        "radius": "leaf_w",
+        "start": 90,
+        "end": 180,
+        "style": "projection"
+      }
+    ],
+    "1:200": [
+      {
+        "type": "line",
+        "from": [
+          "hx_l",
+          0
+        ],
+        "to": [
+          "hx_l",
+          "leaf_w"
+        ],
+        "style": "projection"
+      },
+      {
+        "type": "line",
+        "from": [
+          "hx_r",
+          0
+        ],
+        "to": [
+          "hx_r",
+          "leaf_w"
+        ],
+        "style": "projection"
+      },
+      {
+        "type": "arc",
+        "center": [
+          "hx_l",
+          0
+        ],
+        "radius": "leaf_w",
+        "start": 0,
+        "end": 90,
+        "style": "projection"
+      },
+      {
+        "type": "arc",
+        "center": [
+          "hx_r",
+          0
+        ],
+        "radius": "leaf_w",
+        "start": 90,
+        "end": 180,
+        "style": "projection"
+      }
+    ]
+  },
+  "psets": {
+    "Pset_DoorCommon": {
+      "on": "type",
+      "props": {
+        "IsExternal": {
+          "expr": "is_external"
+        },
+        "HandicapAccessible": {
+          "expr": "leaf_w >= 800"
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,250 @@
+{
+  "schema": "dobim.family/1",
+  "id": "chair.basic",
+  "version": 1,
+  "name": "의자",
+  "description": "등받이 의자(IfcFurniture CHAIR). 앉음판·네 다리·등받이(뒤 = -y).",
+  "ifc": {
+    "class": "IfcFurniture",
+    "type_class": "IfcFurnitureType",
+    "predefined": "CHAIR"
+  },
+  "params": {
+    "seat_t": {
+      "kind": "type",
+      "default": 40,
+      "unit": "mm",
+      "description": "앉음판 두께",
+      "min": 20,
+      "max": 80
+    },
+    "leg": {
+      "kind": "type",
+      "default": 40,
+      "unit": "mm",
+      "description": "다리 단면 한 변",
+      "min": 25,
+      "max": 80
+    },
+    "back_t": {
+      "kind": "type",
+      "default": 30,
+      "unit": "mm",
+      "description": "등받이 두께",
+      "min": 15,
+      "max": 60
+    },
+    "width": {
+      "kind": "instance",
+      "default": 450,
+      "unit": "mm",
+      "min": 380,
+      "max": 700
+    },
+    "depth": {
+      "kind": "instance",
+      "default": 500,
+      "unit": "mm",
+      "min": 400,
+      "max": 700
+    },
+    "seat_h": {
+      "kind": "instance",
+      "default": 450,
+      "unit": "mm",
+      "description": "앉음판 윗면 높이",
+      "min": 380,
+      "max": 520
+    },
+    "back_h": {
+      "kind": "instance",
+      "default": 850,
+      "unit": "mm",
+      "description": "등받이 윗면 높이",
+      "min": 750,
+      "max": 1200
+    }
+  },
+  "derived": {
+    "height": "seat_h",
+    "top_t": "seat_t"
+  },
+  "constraints": [
+    {
+      "expr": "back_h > seat_h + 200",
+      "message": "등받이가 앉음판보다 200mm 이상 높아야 한다"
+    }
+  ],
+  "solids": [
+    {
+      "id": "seat",
+      "op": "extrude",
+      "plane": "xy",
+      "profile": {
+        "shape": "rect",
+        "u": [
+          "-width/2",
+          "width/2"
+        ],
+        "v": [
+          "-depth/2",
+          "depth/2"
+        ]
+      },
+      "range": [
+        "seat_h - seat_t",
+        "seat_h"
+      ]
+    },
+    {
+      "id": "leg1",
+      "op": "extrude",
+      "plane": "xy",
+      "profile": {
+        "shape": "rect",
+        "u": [
+          "-width/2",
+          "-width/2 + leg"
+        ],
+        "v": [
+          "-depth/2",
+          "-depth/2 + leg"
+        ]
+      },
+      "range": [
+        0,
+        "height - top_t"
+      ]
+    },
+    {
+      "id": "leg2",
+      "op": "extrude",
+      "plane": "xy",
+      "profile": {
+        "shape": "rect",
+        "u": [
+          "width/2 - leg",
+          "width/2"
+        ],
+        "v": [
+          "-depth/2",
+          "-depth/2 + leg"
+        ]
+      },
+      "range": [
+        0,
+        "height - top_t"
+      ]
+    },
+    {
+      "id": "leg3",
+      "op": "extrude",
+      "plane": "xy",
+      "profile": {
+        "shape": "rect",
+        "u": [
+          "width/2 - leg",
+          "width/2"
+        ],
+        "v": [
+          "depth/2 - leg",
+          "depth/2"
+        ]
+      },
+      "range": [
+        0,
+        "height - top_t"
+      ]
+    },
+    {
+      "id": "leg4",
+      "op": "extrude",
+      "plane": "xy",
+      "profile": {
+        "shape": "rect",
+        "u": [
+          "-width/2",
+          "-width/2 + leg"
+        ],
+        "v": [
+          "depth/2 - leg",
+          "depth/2"
+        ]
+      },
+      "range": [
+        0,
+        "height - top_t"
+      ]
+    },
+    {
+      "id": "back",
+      "op": "extrude",
+      "plane": "xy",
+      "profile": {
+        "shape": "rect",
+        "u": [
+          "-width/2",
+          "width/2"
+        ],
+        "v": [
+          "-depth/2",
+          "-depth/2 + back_t"
+        ]
+      },
+      "range": [
+        "seat_h",
+        "back_h"
+      ]
+    }
+  ],
+  "plan_symbol": {
+    "default": [
+      {
+        "type": "rect",
+        "u": [
+          "-width/2",
+          "width/2"
+        ],
+        "v": [
+          "-depth/2",
+          "depth/2"
+        ],
+        "style": "projection"
+      },
+      {
+        "type": "line",
+        "from": [
+          "-width/2",
+          "-depth/2 + back_t"
+        ],
+        "to": [
+          "width/2",
+          "-depth/2 + back_t"
+        ],
+        "style": "projection"
+      }
+    ],
+    "1:200": [
+      {
+        "type": "rect",
+        "u": [
+          "-width/2",
+          "width/2"
+        ],
+        "v": [
+          "-depth/2",
+          "depth/2"
+        ],
+        "style": "projection"
+      }
+    ]
+  },
+  "psets": {
+    "Pset_FurnitureTypeCommon": {
+      "on": "type",
+      "props": {
+        "IsBuiltIn": false
+      }
+    }
+  }
+}

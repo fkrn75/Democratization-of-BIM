@@ -1,0 +1,181 @@
+{
+  "schema": "dobim.family/1",
+  "id": "bed.double",
+  "version": 1,
+  "name": "침대",
+  "description": "침대(IfcFurniture BED). 받침·매트리스·머리판(머리 = -y). length 는 y 방향 길이다.",
+  "ifc": {
+    "class": "IfcFurniture",
+    "type_class": "IfcFurnitureType",
+    "predefined": "BED"
+  },
+  "params": {
+    "base_h": {
+      "kind": "type",
+      "default": 300,
+      "unit": "mm",
+      "description": "받침 높이",
+      "min": 150,
+      "max": 400
+    },
+    "mattress_t": {
+      "kind": "type",
+      "default": 250,
+      "unit": "mm",
+      "description": "매트리스 두께",
+      "min": 150,
+      "max": 350
+    },
+    "head_t": {
+      "kind": "type",
+      "default": 60,
+      "unit": "mm",
+      "description": "머리판 두께",
+      "min": 30,
+      "max": 120
+    },
+    "head_h": {
+      "kind": "type",
+      "default": 1000,
+      "unit": "mm",
+      "description": "머리판 윗면 높이",
+      "min": 900,
+      "max": 1400
+    },
+    "width": {
+      "kind": "instance",
+      "default": 1500,
+      "unit": "mm",
+      "min": 900,
+      "max": 2000
+    },
+    "length": {
+      "kind": "instance",
+      "default": 2000,
+      "unit": "mm",
+      "min": 1900,
+      "max": 2200
+    }
+  },
+  "derived": {
+    "depth": "length + head_t"
+  },
+  "constraints": [
+    {
+      "expr": "head_h > base_h + mattress_t",
+      "message": "머리판이 매트리스보다 낮다"
+    }
+  ],
+  "solids": [
+    {
+      "id": "base",
+      "op": "extrude",
+      "plane": "xy",
+      "profile": {
+        "shape": "rect",
+        "u": [
+          "-width/2",
+          "width/2"
+        ],
+        "v": [
+          "-depth/2 + head_t",
+          "depth/2"
+        ]
+      },
+      "range": [
+        0,
+        "base_h"
+      ]
+    },
+    {
+      "id": "mattress",
+      "op": "extrude",
+      "plane": "xy",
+      "profile": {
+        "shape": "rect",
+        "u": [
+          "-width/2 + 10",
+          "width/2 - 10"
+        ],
+        "v": [
+          "-depth/2 + head_t + 10",
+          "depth/2 - 10"
+        ]
+      },
+      "range": [
+        "base_h",
+        "base_h + mattress_t"
+      ]
+    },
+    {
+      "id": "head",
+      "op": "extrude",
+      "plane": "xy",
+      "profile": {
+        "shape": "rect",
+        "u": [
+          "-width/2",
+          "width/2"
+        ],
+        "v": [
+          "-depth/2",
+          "-depth/2 + head_t"
+        ]
+      },
+      "range": [
+        0,
+        "head_h"
+      ]
+    }
+  ],
+  "plan_symbol": {
+    "default": [
+      {
+        "type": "rect",
+        "u": [
+          "-width/2",
+          "width/2"
+        ],
+        "v": [
+          "-depth/2",
+          "depth/2"
+        ],
+        "style": "projection"
+      },
+      {
+        "type": "line",
+        "from": [
+          "-width/2",
+          "-depth/2 + head_t + 500"
+        ],
+        "to": [
+          "width/2",
+          "-depth/2 + head_t + 500"
+        ],
+        "style": "projection"
+      }
+    ],
+    "1:200": [
+      {
+        "type": "rect",
+        "u": [
+          "-width/2",
+          "width/2"
+        ],
+        "v": [
+          "-depth/2",
+          "depth/2"
+        ],
+        "style": "projection"
+      }
+    ]
+  },
+  "psets": {
+    "Pset_FurnitureTypeCommon": {
+      "on": "type",
+      "props": {
+        "IsBuiltIn": false
+      }
+    }
+  }
+}

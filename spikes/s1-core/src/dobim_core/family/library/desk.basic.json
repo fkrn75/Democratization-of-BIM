@@ -1,0 +1,171 @@
+{
+  "schema": "dobim.family/1",
+  "id": "desk.basic",
+  "version": 1,
+  "name": "책상",
+  "description": "양옆 판 다리 책상(IfcFurniture DESK). 상판·옆판 둘·뒤 가림판.",
+  "ifc": {
+    "class": "IfcFurniture",
+    "type_class": "IfcFurnitureType",
+    "predefined": "DESK"
+  },
+  "params": {
+    "top_t": {
+      "kind": "type",
+      "default": 30,
+      "unit": "mm",
+      "description": "상판 두께",
+      "min": 18,
+      "max": 50
+    },
+    "panel_t": {
+      "kind": "type",
+      "default": 25,
+      "unit": "mm",
+      "description": "옆판·가림판 두께",
+      "min": 18,
+      "max": 40
+    },
+    "width": {
+      "kind": "instance",
+      "default": 1400,
+      "unit": "mm",
+      "min": 800,
+      "max": 2400
+    },
+    "depth": {
+      "kind": "instance",
+      "default": 700,
+      "unit": "mm",
+      "min": 500,
+      "max": 900
+    },
+    "height": {
+      "kind": "instance",
+      "default": 740,
+      "unit": "mm",
+      "min": 650,
+      "max": 800
+    }
+  },
+  "solids": [
+    {
+      "id": "top",
+      "op": "extrude",
+      "plane": "xy",
+      "profile": {
+        "shape": "rect",
+        "u": [
+          "-width/2",
+          "width/2"
+        ],
+        "v": [
+          "-depth/2",
+          "depth/2"
+        ]
+      },
+      "range": [
+        "height - top_t",
+        "height"
+      ]
+    },
+    {
+      "id": "side_l",
+      "op": "extrude",
+      "plane": "xy",
+      "profile": {
+        "shape": "rect",
+        "u": [
+          "-width/2",
+          "-width/2 + panel_t"
+        ],
+        "v": [
+          "-depth/2 + 20",
+          "depth/2 - 20"
+        ]
+      },
+      "range": [
+        0,
+        "height - top_t"
+      ]
+    },
+    {
+      "id": "side_r",
+      "op": "extrude",
+      "plane": "xy",
+      "profile": {
+        "shape": "rect",
+        "u": [
+          "width/2 - panel_t",
+          "width/2"
+        ],
+        "v": [
+          "-depth/2 + 20",
+          "depth/2 - 20"
+        ]
+      },
+      "range": [
+        0,
+        "height - top_t"
+      ]
+    },
+    {
+      "id": "modesty",
+      "op": "extrude",
+      "plane": "xy",
+      "profile": {
+        "shape": "rect",
+        "u": [
+          "-width/2 + panel_t",
+          "width/2 - panel_t"
+        ],
+        "v": [
+          "-depth/2 + 40",
+          "-depth/2 + 40 + panel_t"
+        ]
+      },
+      "range": [
+        "height - top_t - 350",
+        "height - top_t"
+      ]
+    }
+  ],
+  "plan_symbol": {
+    "default": [
+      {
+        "type": "rect",
+        "u": [
+          "-width/2",
+          "width/2"
+        ],
+        "v": [
+          "-depth/2",
+          "depth/2"
+        ],
+        "style": "projection"
+      }
+    ],
+    "1:200": [
+      {
+        "type": "rect",
+        "u": [
+          "-width/2",
+          "width/2"
+        ],
+        "v": [
+          "-depth/2",
+          "depth/2"
+        ],
+        "style": "projection"
+      }
+    ]
+  },
+  "psets": {
+    "Pset_FurnitureTypeCommon": {
+      "on": "type",
+      "props": {
+        "IsBuiltIn": false
+      }
+    }
+  }
+}

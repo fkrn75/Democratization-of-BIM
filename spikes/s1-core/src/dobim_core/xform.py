@@ -139,6 +139,9 @@ def roof(p: dict, xf: Xf) -> dict:
     q = dict(p, boundary=_pts(xf, p["boundary"]))
     if "dir" in p:
         q["dir"] = xf.ang(p["dir"])
+    if "slopes" in p and xf.mirror:   # 대칭이면 외곽을 뒤집는다: 뒤집은 외곽의 변 j = 원래 변 n-2-j
+        n = len(p["slopes"])
+        q["slopes"] = [p["slopes"][(n - 2 - j) % n] for j in range(n)]
     return q
 
 
