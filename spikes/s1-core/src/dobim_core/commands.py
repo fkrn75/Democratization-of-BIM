@@ -3806,7 +3806,8 @@ def site_north(ctx) -> float:
 
 
 # 인쇄 설정(W1 1-F 5차, IO-17): 다 만든 시트를 인쇄 용지에 옮길 때의 여백·축척 맞춤. 시트 배치·표기 축척은 그대로다.
-# (클래스 설명 문장은 커맨드 describe 에 실리므로 주석으로 둔다: sheet.export describe 크기)
+# sheet.render 의 선택 인자다(sheet.export 인자에는 넣지 않는다: sheet.export describe 가 C-4 응답 크기 측정의 가장 큰 describe 가 되지 않게).
+# 클래스 설명 문장은 describe 에 실리므로 주석으로 둔다.
 class PrintSetup(A):
     paper: Paper | None = Field(None, description="인쇄 용지(생략=시트 용지)")
     margin: Annotated[float, Field(ge=0.0, le=50.0, allow_inf_nan=False)] = Field(5.0, description="네 변 여백 mm")
@@ -3835,7 +3836,6 @@ class SheetExport(SheetFrame):
     detail: bool = Field(False, description="참이면 큰 축척(1:50 이하) 뷰에 상세 표현을 더한다(재료가 있는 벽의 마감선·문짝 두께·문턱선). 1:100 이상의 작은 축척 뷰는 그대로")
     profile: SheetProfile | None = Field(None, description="별도 작성기준 프로파일: 문자 높이·치수 형식(소수·천단위 쉼표)·기호 크기. 생략하면 기본 체계(시트는 이전과 바이트까지 같다)")
     viewports: list[SheetViewport] | None = Field(None, min_length=1, max_length=12, description="뷰포트(위치·상세 번호·제목). 생략=이전과 같다")
-    print_: PrintSetup | None = Field(None, alias="print", description="인쇄 설정(SVG·PDF·PNG). 생략=시트 용지 그대로")
     max_px: PngMaxPx = 1600
     crop: PngCrop | None = None
 
@@ -3889,7 +3889,7 @@ def sheet_export(ctx, a: SheetExport):
     return export_sheet(ctx, a)
 
 
-def export_sheet(ctx, a: SheetExport, sheet_id=None):
+def export_sheet(ctx, a: SheetExport, sheet_id=None, print_setup: PrintSetup | None = None):
     """sheet.export·sheet.render 의 본체. sheet_id = 저장된 시트(그 시트를 싣는 리비전을 개정란에 적는다)."""
     from dobim_core import pdf_font as PF
     from dobim_core import sheet as SH
@@ -3897,11 +3897,11 @@ def export_sheet(ctx, a: SheetExport, sheet_id=None):
     p, ext = _view_export_target(ctx, a)
     sh, spec = build_sheet_for(ctx, a, sheet_id)
     pinfo = None
-    if a.print_ is not None:   # 인쇄 설정(IO-17): 시트를 인쇄 용지로 옮긴다(주지 않으면 이전과 같은 파일)
+    if print_setup is not None:   # 인쇄 설정(IO-17, sheet.render): 시트를 인쇄 용지로 옮긴다(주지 않으면 이전과 같은 파일)
         if ext == ".dxf":
             raise DobimError("CONSTRAINT", "DXF 는 용지 mm 1:1 로 내므로 인쇄 설정(print)을 받지 않는다", path="/print", hint="SVG·PDF·PNG 로 내보내세요")
         try:
-            sh, pinfo = SH.print_layout(sh, a.print_.paper or a.paper, float(a.print_.margin), a.print_.fit)
+            sh, pinfo = SH.print_layout(sh, print_setup.paper or a.paper, float(print_setup.margin), print_setup.fit)
         except SH.SheetError as ex:
             raise DobimError("CONSTRAINT", str(ex), path="/print") from None
         if abs(pinfo["zoom"] - 100.0) > 1e-9:

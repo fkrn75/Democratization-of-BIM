@@ -2,7 +2,7 @@
 """W1 1-F 5차: 내장 패밀리 30종(FAM-13), 사용자 레시피 폴더 불러오기(FAM-01), 인쇄 여백·축척 맞춤(IO-17).
 - 새 7종(문 3·창 3·설비 1)은 레시피 검증(full) 오류·경고 0, 배치·평면 기호·IFC4/IFC2x3 스키마 검증, 기존 23종은 그대로
 - family.load_dir: id 마다 version 하나(지정 또는 가장 높은 것), 잘못된 레시피는 파일마다 이유와 함께 거절, 기본 라이브러리와 같은 id 규칙
-- sheet.export·sheet.render print: 인쇄 용지·여백·축척 맞춤, 주지 않으면 이전과 같은 파일
+- sheet.render print: 인쇄 용지·여백·축척 맞춤, 주지 않으면 이전과 같은 파일
 합성 데이터만 쓴다."""
 import json
 import re
@@ -301,7 +301,7 @@ def test_IFC_왕복은_해시가_같다(tmp_path):
         b.close()
 
 
-# ================================================================ IO-17 인쇄 여백·축척 맞춤
+# ================================================================ IO-17 인쇄 여백·축척 맞춤(sheet.render print)
 @pytest.fixture
 def sheet(base):
     s = base
@@ -311,7 +311,8 @@ def sheet(base):
     return s
 
 
-SHEET_ARGS = {"views": [F.V1], "paper": "A3", "project_name": "예시", "sheet_number": "A-101", "date": "2026-01-01", "overwrite": True}
+def _render(s, path, pr=None, **kw):
+    return _destructive(s, "sheet.render", {"id": F.SH1, "path": path, "overwrite": True, **kw} | ({"print": pr} if pr is not None else {}))
 
 
 def _svg_size(p):
@@ -322,18 +323,17 @@ def _svg_size(p):
 
 def test_인쇄_설정이_없으면_시트_파일은_이전과_같다(sheet):
     s = sheet
-    ok(_destructive(s, "sheet.export", SHEET_ARGS | {"path": "a.svg"}))
-    r = ok(_destructive(s, "sheet.export", SHEET_ARGS | {"path": "b.svg", "print": {"paper": "A3", "margin": 0, "fit": False}}))
+    assert "print" not in ok(_render(s, "a.svg"))
+    r = ok(_render(s, "b.svg", {"paper": "A3", "margin": 0, "fit": False}))
     assert r["print"] == {"paper": "A3", "margin": 0.0, "fit": False, "zoom": 100.0, "origin": [0.0, 0.0]}
     a, b = (s.path.parent / "a.svg").read_text(encoding="utf-8"), (s.path.parent / "b.svg").read_text(encoding="utf-8")
     body = lambda t: [ln for ln in t.splitlines() if not ln.startswith(("<g id=\"print\"", "</g>"))]   # noqa: E731
     assert body(a) == body(b)                                                       # 100%·여백 0 이면 그림은 같고 그룹 표지만 더해진다
-    assert "print" not in ok(_destructive(s, "sheet.export", SHEET_ARGS | {"path": "c.svg"}))
 
 
 def test_축척_맞춤은_인쇄_용지_여백_안에_시트를_가운데_맞춘다(sheet):
     s = sheet
-    r = _destructive(s, "sheet.export", SHEET_ARGS | {"path": "a4.svg", "print": {"paper": "A4", "margin": 5}})
+    r = _render(s, "a4.svg", {"paper": "A4", "margin": 5})
     pr = ok(r)["print"]
     k = min((297 - 10) / 420, (210 - 10) / 297)
     assert pr["paper"] == "A4" and pr["fit"] is True and pr["zoom"] == pytest.approx(k * 100, abs=1e-3)
@@ -344,32 +344,31 @@ def test_축척_맞춤은_인쇄_용지_여백_안에_시트를_가운데_맞춘
     v = ok(r)["views"][0]
     assert v["x"] >= 5 and v["x"] + v["w"] <= 292 and v["y"] >= 5 and v["y"] + v["h"] <= 205
     # 큰 용지로 확대도 한다(A3 -> A1 세로), PDF·PNG 도 인쇄 용지 크기다
-    r = ok(_destructive(s, "sheet.export", SHEET_ARGS | {"path": "a1.pdf", "print": {"paper": "A1P", "margin": 10}}))
+    r = ok(_render(s, "a1.pdf", {"paper": "A1P", "margin": 10}))
     assert r["print"]["zoom"] > 100 and r["paper"] == "A3"
     pdf = (s.path.parent / "a1.pdf").read_bytes()
     mb = re.search(rb"/MediaBox \[0 0 ([\d.]+) ([\d.]+)\]", pdf)
     assert float(mb.group(1)) == pytest.approx(594 * 72 / 25.4, abs=0.01) and float(mb.group(2)) == pytest.approx(841 * 72 / 25.4, abs=0.01)
-    r = ok(_destructive(s, "sheet.export", SHEET_ARGS | {"path": "p.png", "max_px": 600, "print": {"paper": "A4P"}}))
+    r = ok(_render(s, "p.png", {"paper": "A4P"}, max_px=600))
     assert r["pixels"][1] > r["pixels"][0]                                         # 세로 용지
 
 
 def test_실제_크기_인쇄는_여백_안에_들어가지_않으면_거절한다(sheet):
     s = sheet
-    e = err(_destructive(s, "sheet.export", SHEET_ARGS | {"path": "x.svg", "print": {"margin": 5, "fit": False}}))
+    e = err(_render(s, "x.svg", {"margin": 5, "fit": False}))
     assert e["path"] == "/print" and "fit" in e["message"]
-    r = ok(_destructive(s, "sheet.export", SHEET_ARGS | {"path": "x.svg", "print": {"paper": "A2", "margin": 20, "fit": False}}))
+    r = ok(_render(s, "x.svg", {"paper": "A2", "margin": 20, "fit": False}))
     assert r["print"]["zoom"] == 100.0 and r["print"]["origin"] == [round((594 - 420) / 2, 3), round((420 - 297) / 2, 3)]
-    e = err(_destructive(s, "sheet.export", SHEET_ARGS | {"path": "x.dxf", "print": {"paper": "A4"}}))
+    e = err(_render(s, "x.dxf", {"paper": "A4"}))
     assert e["path"] == "/print"
-    err(s.run("sheet.export", SHEET_ARGS | {"path": "x.svg", "print": {"margin": 60}}), "SCHEMA_INVALID")
+    err(s.run("sheet.render", {"id": F.SH1, "path": "x.svg", "print": {"margin": 60}}), "SCHEMA_INVALID")
 
 
-def test_저장된_시트_render_도_인쇄_설정을_받고_시트_정의에는_저장하지_않는다(sheet):
+def test_인쇄_설정은_시트_정의에_저장하지_않고_sheet_export_image_인자는_그대로다(sheet):
     s = sheet
     before = json.dumps(s.eng.st.el[F.SH1]["params"], sort_keys=True)
-    r = ok(_destructive(s, "sheet.render", {"id": F.SH1, "path": "r.svg", "overwrite": True, "print": {"paper": "A4"}}))
-    assert r["print"]["paper"] == "A4"
-    w, h, _t = _svg_size(s.path.parent / "r.svg")
-    assert (w, h) == (297.0, 210.0)
+    ok(_render(s, "r.svg", {"paper": "A4"}))
     assert json.dumps(s.eng.st.el[F.SH1]["params"], sort_keys=True) == before
     err(s.run("sheet.define", {"id": F.SH1, "name": "A-101", "views": [F.V1], "print": {"paper": "A4"}}), "SCHEMA_INVALID")
+    err(s.run("sheet.export", {"views": [F.V1], "path": "e.svg", "print": {"paper": "A4"}}), "SCHEMA_INVALID")
+    err(s.run("sheet.image", {"id": F.SH1, "print": {"paper": "A4"}}), "SCHEMA_INVALID")
