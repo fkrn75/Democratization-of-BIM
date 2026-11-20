@@ -601,7 +601,8 @@ def pset_set_many(ctx, a: PsetSetMany):
     if a.pset == RESERVED_PSET:
         raise DobimError("CONSTRAINT", f"{RESERVED_PSET} 는 투영이 소유한 예약 속성셋이다", path="/pset")
     ids = _targets(ctx, a)
-    return _bulk_ans(ids, _each(ids, lambda e: ctx.set_prop(e, a.pset, a.prop, a.value)))
+    d = C.pparam_of(ctx.st, a.pset, a.prop)   # 프로젝트 매개변수(DATA-03): 정의가 있으면 종류·형식 검사
+    return _bulk_ans(ids, _each(ids, lambda e: (C.pparam_check(ctx, d, e, a.value), ctx.set_prop(e, a.pset, a.prop, a.value))[1]))
 
 
 class MaterialSetMany(Bulk):

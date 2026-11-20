@@ -608,6 +608,14 @@ def _pdf_ascii(s: str) -> tuple[str, bool]:
 def render_sheet_pdf(sh: Sheet, spec: dict, font: PdfFont | None = None) -> tuple[bytes, bool]:
     """벡터 PDF 한 쪽. font 가 있으면 한글을 포함한 모든 글을 그 글꼴로 내장해 쓴다. 반환: (바이트, 글자를 '?' 로 바꿨는지)"""
     k = 72.0 / 25.4
+    body, dropped = _pdf_page_body(sh, font)
+    return _pdf_one_page(sh, spec, font, body, k), dropped
+
+
+def _pdf_page_body(sh: Sheet, font: PdfFont | None) -> tuple[str, bool]:
+    """시트 한 장의 PDF 콘텐츠 스트림(글꼴 GID 로 바꾸기 전 문자열)과 글자를 '?' 로 바꿨는지.
+    글꼴이 있으면 쓴 글자를 font 에 모은다(부분집합은 모든 쪽 본문을 만든 뒤 한 번 만든다)."""
+    k = 72.0 / 25.4
     H = sh.h
     dropped = False
     c: list[str] = ["q 1 J 1 j"]
@@ -676,7 +684,11 @@ def render_sheet_pdf(sh: Sheet, spec: dict, font: PdfFont | None = None) -> tupl
             tx_, ty_ = x + ox * cos(a), y + ox * sin(a)
             c.append(f"BT /F1 {size * k:.2f} Tf {cos(a):.5f} {-sin(a):.5f} {sin(a):.5f} {cos(a):.5f} {X(tx_)} {Y(ty_)} Tm {shown} Tj ET")      # 굵게(bold)는 SVG 에서만 적용한다(굵은 글꼴을 따로 내장하지 않는다)
     c.append("Q")
-    body = "\n".join(c)
+    return "\n".join(c), dropped
+
+
+def _pdf_one_page(sh: Sheet, spec: dict, font: PdfFont | None, body: str, k: float) -> bytes:
+    """한 쪽 PDF 파일(이전 render_sheet_pdf 의 뒷부분 그대로: 객체 번호·바이트가 같다)."""
     content = font.finalize_stream(body) if font is not None else body.encode("ascii")
     comp = zlib.compress(content, 9)
     objs = [b"<< /Type /Catalog /Pages 2 0 R >>", b"<< /Type /Pages /Kids [3 0 R] /Count 1 >>", None,
@@ -702,6 +714,52 @@ def render_sheet_pdf(sh: Sheet, spec: dict, font: PdfFont | None = None) -> tupl
     for o in offs:
         buf += f"{o:010d} 00000 n \n".encode()
     buf += f"trailer\n<< /Size {len(objs) + 1} /Root 1 0 R /Info 5 0 R >>\nstartxref\n{xref}\n%%EOF\n".encode()
+    return bytes(buf)
+
+
+def _pdf_text(s: str) -> str:
+    """PDF 글 문자열(UTF-16BE 16진, 책갈피·문서 제목용)."""
+    return "<FEFF" + s.encode("utf-16-be").hex().upper() + ">"
+
+
+def render_sheets_pdf(pages: list[tuple[Sheet, dict]], font: PdfFont | None = None, title: str | None = None) -> tuple[bytes, bool]:
+    """여러 시트를 한 PDF 로(DOC-14 일괄 출력). 쪽마다 자기 용지 크기를 쓰고, 시트마다 책갈피(도면번호 도면명)를 단다.
+    글꼴은 모든 쪽이 하나를 같이 쓴다(쓴 글자 전체의 부분집합 하나). 반환: (바이트, 글자를 '?' 로 바꿨는지)"""
+    k = 72.0 / 25.4
+    bodies = [_pdf_page_body(sh, font) for sh, _ in pages]          # 먼저 모든 쪽의 글자를 모은 뒤 부분집합 글꼴을 만든다
+    dropped = any(d for _, d in bodies)
+    contents = [font.finalize_stream(b) if font is not None else b.encode("ascii") for b, _ in bodies]
+    n = len(pages)
+    # 객체 번호: 1 Catalog, 2 Pages, 3 Info, 4 Outlines, 5.. 글꼴, 그다음 쪽마다 (Page, Contents, 책갈피 항목)
+    if font is not None:
+        fobjs, t0 = font.objects(5)
+    else:
+        fobjs, t0 = [b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>"], 5
+    first = 5 + len(fobjs)
+    page_id = [first + 3 * i for i in range(n)]
+    objs: list[bytes] = [
+        b"<< /Type /Catalog /Pages 2 0 R /Outlines 4 0 R /PageMode /UseOutlines >>",
+        f"<< /Type /Pages /Kids [{' '.join(f'{x} 0 R' for x in page_id)}] /Count {n} >>".encode(),
+        ("<< /Title " + _pdf_text(title or "") + " /Creator (Democratization of BIM) >>").encode("ascii"),
+        f"<< /Type /Outlines /First {page_id[0] + 2} 0 R /Last {page_id[-1] + 2} 0 R /Count {n} >>".encode(),
+    ] + fobjs
+    res = f"/Font << /F1 {t0} 0 R >>"
+    for i, ((sh, spec), comp) in enumerate(zip(pages, (zlib.compress(c, 9) for c in contents))):
+        pid = page_id[i]
+        objs.append(f"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 {sh.w * k:.2f} {sh.h * k:.2f}] /Resources << {res} >> /Contents {pid + 1} 0 R >>".encode())
+        objs.append(f"<< /Length {len(comp)} /Filter /FlateDecode >>\nstream\n".encode() + comp + b"\nendstream")
+        link = (f" /Prev {page_id[i - 1] + 2} 0 R" if i else "") + (f" /Next {page_id[i + 1] + 2} 0 R" if i + 1 < n else "")
+        objs.append(("<< /Title " + _pdf_text(f"{spec['number']} {spec['title']}") + f" /Parent 4 0 R{link} /Dest [{pid} 0 R /Fit] >>").encode("ascii"))
+    buf = bytearray(b"%PDF-1.5\n")
+    offs = []
+    for i, o in enumerate(objs, 1):
+        offs.append(len(buf))
+        buf += f"{i} 0 obj\n".encode() + o + b"\nendobj\n"
+    xref = len(buf)
+    buf += f"xref\n0 {len(objs) + 1}\n0000000000 65535 f \n".encode()
+    for o in offs:
+        buf += f"{o:010d} 00000 n \n".encode()
+    buf += f"trailer\n<< /Size {len(objs) + 1} /Root 1 0 R /Info 3 0 R >>\nstartxref\n{xref}\n%%EOF\n".encode()
     return bytes(buf), dropped
 
 

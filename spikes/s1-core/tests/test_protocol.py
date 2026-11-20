@@ -129,6 +129,11 @@ def test_mcp_도구_8개_어노테이션_text와_structured_동일(ws):
                 assert len(json.dumps(t.input_schema)) < 2500, t.name
             r = await c.call_tool("dobim_query", {"command": "project.info", "project": "p.dobim"})
             assert not r.is_error and json.loads(r.content[0].text) == r.structured_content
+            # 큰 스키마는 요약 + 부분(section)으로 나눠 받는다(W1 연장, 도구 응답 8,000토큰 이내)
+            r = await c.call_tool("dobim_command_describe", {"name": "solid.create"})
+            assert not r.is_error and "def:MemberSection" in r.structured_content["result"]["split"]["sections"]
+            r = await c.call_tool("dobim_command_describe", {"name": "solid.create", "section": "def:MemberSection"})
+            assert not r.is_error and r.structured_content["result"]["schema"]["properties"]["shape"]
             r = await c.call_tool("dobim_execute", {"command": "level.create", "args": {"name": "1F", "elevation": 0},
                                                     "project": "p.dobim", "dry_run": True})
             assert r.structured_content["dry_run"] and not r.is_error

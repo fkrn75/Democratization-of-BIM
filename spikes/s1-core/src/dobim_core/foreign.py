@@ -647,6 +647,16 @@ def _restore_defs(f, rows: dict, rels: set, taken: set, plan: "ImportPlan") -> N
                 skip(eid, "리비전이 싣는 시트가 되살린 시트가 아니다")
             else:
                 ok[eid] = parsed[eid]
+    # 프로젝트 매개변수(W1 연장, DATA-03): 속성셋.속성이 겹치면 어느 쪽이 원본인지 알 수 없다
+    pkeys: dict = {}
+    for eid in sorted(e for e, d in parsed.items() if d["kind"] == "pparam"):
+        pkeys.setdefault((parsed[eid]["params"]["pset"], parsed[eid]["params"]["name"]), []).append(eid)
+    for ids in pkeys.values():
+        for eid in ids:
+            if len(ids) > 1:
+                skip(eid, "같은 속성셋.속성의 프로젝트 매개변수가 더 있다")
+            else:
+                ok[eid] = parsed[eid]
     for eid, d in ok.items():
         rows[eid] = {"kind": d["kind"], "ifc_class": "", "origin": "authored", "family_id": d["family_id"], "params": d["params"],
                      "projection_hash": None}

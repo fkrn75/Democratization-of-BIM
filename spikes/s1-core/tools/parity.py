@@ -41,6 +41,7 @@ _RF1 = ("roof.create", {"id": F.RF1, "level": F.LV2, "boundary": [[0, 0], [6000,
 _RL1 = ("railing.create", {"id": F.RL1, "level": F.LV1, "path": [[0, 0], [3000, 0]], "height": 1100})
 _SP1 = ("space.create", {"id": F.SP1, "level": F.LV1, "boundary": [[0, 0], [6000, 0], [6000, 4000], [0, 4000]], "name": "사무실", "category": "사무실"})
 _SH1 = ("sheet.define", {"id": F.SH1, "name": "A-101 1층 평면", "views": [F.V1], "paper": "A3", "project_name": "예시 프로젝트", "sheet_number": "A-101", "date": "2026-01-01"})
+_PP1 = ("param.define", {"pset": "Pset_ProjectCommon", "name": "Zone", "type": "text", "kinds": ["door", "wall"]})   # 프로젝트 매개변수 예시의 준비(DATA-03)
 _SI1 = ("site.create", {"id": F.SI1, "boundary": [[-6000, -6000], [18000, -6000], [18000, 14000], [-6000, 14000]], "name": "대지"})
 _SO1 = ("solid.create", {"id": F.SO1, "level": F.LV1, "category": "buttress", "form": "prism", "polygon": [[0, -900], [600, -900], [600, -100], [0, -100]], "z0": 0, "z1": 2400})   # 일반 솔리드 예시의 준비(18단계)
 _LB1 = ("solid.create", {"id": F.SO1, "level": F.LV1, "category": "beam", "form": "member", "start": [1000, 0, 2400], "end": [2000, 0, 2400], "section": {"shape": "rect", "width": 200, "depth": 300}})   # 벽 잘라내기 예시의 준비(23단계): W1 문 위 인방
@@ -73,7 +74,7 @@ PRE = {**_DRAFT_PRE, "history.redo": [("history.undo", {})], "ifc.restore": [_EX
        "elevator.set": [_EL1], "elevator.move": [_EL1], "elevator.delete": [_EL1], "elevator.cut_slabs": [_EL1, _S2],
        "space.set": [_SP1], "space.move": [_SP1], "space.delete": [_SP1], "space.from_walls": [_W4],
        "site.set": [_SI1], "site.delete": [_SI1],
-       "sheet.export": [_V1], "sheet.define": [_V1], "sheet.delete": [_V1, _SH1], "sheet.list": [_V1, _SH1], "sheet.render": [_V1, _SH1],
+       "sheet.export": [_V1], "sheet.define": [_V1], "sheet.delete": [_V1, _SH1], "sheet.list": [_V1, _SH1], "sheet.render": [_V1, _SH1], "sheet.render_set": [_V1, _SH1],
        "view.image": [_V1], "sheet.image": [_V1], "drawing.check": [_V1, _SH1],
        "solid.set": [_SO1], "solid.move": [_SO1], "solid.delete": [_SO1],
        "grid.set": [_GR1], "grid.move": [_GR1], "grid.delete": [_GR1],
@@ -83,7 +84,8 @@ PRE = {**_DRAFT_PRE, "history.redo": [("history.undo", {})], "ifc.restore": [_EX
        "view.vg.set": [_V1], "view.vg.get": [_V1], "view.filter.set": [_V1], "view.filter.delete": [_V1, _VF1],
        "view.template.set": [_VT1], "view.template.delete": [_VT1], "view.template.apply": [_V1, _VT1],
        "view.callout": [_V1], "sheet.viewport.set": [_V1, _SH1], "view.refs": [_V1, _SH1],
-       "view.areas": [("view.area_plan", {"id": F.VA1, "name": "1F 바닥면적", "level": F.LV1, "scheme": "gross"})]}
+       "view.areas": [("view.area_plan", {"id": F.VA1, "name": "1F 바닥면적", "level": F.LV1, "scheme": "gross"})],
+       "param.delete": [_PP1], "param.list": [_PP1]}
 ERROR_CASES = [
     ("없는 커맨드", "no.such.command", {}, {}),
     ("스키마 오류(타입)", "wall.move", {"id": F.W1, "dx": "abc"}, {}),
@@ -359,6 +361,11 @@ async def run_parity(work: Path | None = None) -> dict:
             e2, _ = await mcp.call("commands.describe", {"name": name})
             if norm(e1) != norm(e2):
                 mismatches.append(f"describe {name} 불일치")
+            for sec in (e1.get("result") or {}).get("split", {}).get("sections", []):   # 나눈 부분(큰 스키마)도 양쪽이 같아야 한다
+                s1, _ = cli.call("commands.describe", {"name": name, "section": sec})
+                s2, _ = await mcp.call("commands.describe", {"name": name, "section": sec})
+                if norm(s1) != norm(s2) or not s1["ok"]:
+                    mismatches.append(f"describe {name} {sec} 불일치")
         # commands.search 는 응답 상한(6,000B) 때문에 한 쪽에 일부만 돌려준다: 커맨드가 늘면 첫 쪽만으로는 레지스트리 전체와 비교할 수 없다.
         # 양쪽(CLI·MCP)을 쪽 번호표(next_cursor)로 끝까지 넘기며 모아서, 쪽마다 봉투가 같고 모은 이름이 레지스트리와 같은지 본다.
         pages, search_same = 0, True

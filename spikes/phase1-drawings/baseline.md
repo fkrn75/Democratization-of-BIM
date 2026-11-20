@@ -1603,3 +1603,42 @@ W1 게이트 전 남은 1-E 두 항목 ANA-05(건축법 도면·납품 기준 �
 - 기준선 `run_baseline.py --sheets`: main 300f8e7 과 코드 커밋 31fa504 에서 각각 뽑아 183 파일 바이트 같음(work/·run.json 제외).
 - 새 시험 `tests/test_w1e2_drawcheck.py`(12건): 규칙마다 근거 조항과 legal 표시, 템플릿만이면 허가 위반(배치도·종횡단면), 조회가 모델을 바꾸지 않음과 종료 코드 3, 허가 기준을 모두 채우면 위반·경고 0, 착공 각층·지붕 평면, 같은 방향 단면만이면 위반, 한 방향 입면·마감 표기·외벽 재료, 배치도·1층 평면 없음, 표제란·도면번호·축척은 경고·정보까지만, 없는 시트 NOT_FOUND·시트 없으면 해당 없음, 쪽 나눔과 상세 끄기, 세움터 규칙 목록의 basis.
 - 결과(코드 커밋 31fa504, 도중 수정 없음): s1-core 전체(test_slow 제외) 1546 통과·40 건너뜀·실패 0(새 시험 12건 포함). test_slow 8 통과. parity: 커맨드 179 전부 예시 실행(예시 221·오류 사례 49), 불일치 0, parity C 100%. parity_g: 통과(동작 73, 오류·경고 0).
+
+## 47. W1 연장 첫 PR: 게이트 결정 U-2·U-3 반영, 일괄 PDF(DOC-14), 프로젝트 매개변수(DATA-03) (2026-11-20, 브랜치 phase1/w1x-1)
+
+W1 게이트 점검(조건부 통과 권고) 뒤 사용자가 W1 연장을 정했다. 이 PR 은 게이트 결정 두 개(U-2·U-3)를 문서·코드에 넣고, 1-D 잔여 중 작은 두 항목 DOC-14·DATA-03 을 닫는다. 새 커맨드 4개(`sheet.render_set`, `param.define`·`param.list`·`param.delete`, 179 -> 183), 새 요소 종류 1개(`pparam`, 비 IFC 의도 요소), `commands.describe` 에 선택 인자 `section`. 레지스트리를 거쳐 CLI·MCP 가 같고(parity C), GUI 동작 2개(시트 일괄 PDF, 프로젝트 매개변수 패널)를 actions.json 에 더했다(parity G).
+
+### 47.1 C-1 합격 규칙(U-2)
+- 결정: C-1(S11 LLM 경유 RA-01 동등)은 **결과 동등만** 본다(최종 model.hash·내보낸 IFC 의미 비교·일괄 인자). 호출 순서는 기록만 하고 판정에 넣지 않는다.
+- 반영: `docs/roadmap.md` S11 합격 기준 '결과 동등' 행, `spikes/s11-clients/report.md` 10-3·10-5, `docs/g2-gate.md` C-1 갱신 문단. 이 규칙으로 10-3 은 두 클라이언트 모두 통과다(코드 변경 없음, 재측정 없음).
+
+### 47.2 describe 나눔(U-3)
+- 문제: S11 크기 기준은 "도구 응답 8,000토큰 이내"인데, C-4 기준값(`results/c4_baseline.json` full.s11)이 8,000토큰을 넘는 describe 3개(solid.create·sheet.export·sheet.image, 최대 o200k 8,714)를 그대로 고정하고 있었다. #60·#62 에서는 설명 문구를 깎아 넘김을 막았다.
+- 방식: `commands.describe` 결과 JSON 이 `DESCRIBE_MAX_BYTES`(9,000바이트)를 넘으면 요약을 준다. 요약 = 전체와 같은 키(name·kind·risk·summary·examples 등) + `input_schema` 에서 정의(`$defs`)를 뺀 것 + `split{reason, how, sections}`. 정의를 빼도 넘으면 가장 큰 인자 스키마부터 형식·짧은 설명·`section` 이름만 남긴 자리표로 바꾼다. 뺀 부분은 `{"name", "section": "def:<정의>" | "property:<인자>"}` 로 하나씩 받는다(응답 `{name, section, schema}`, 인자면 `required` 도). MCP `dobim_command_describe(name, section?)`, CLI `dobim schema <name> --section ...`.
+- 기준 9,000바이트: MCP 는 같은 봉투를 text 와 structuredContent 에 한 벌씩 싣는다. describe 실측 토큰/바이트 최대 0.40(cl100k) 기준 9,000 x 2 x 0.40 ≈ 7,200 + 봉투 뼈대.
+- 하위 호환: 기준 안의 커맨드(178개)는 응답이 이전과 바이트까지 같다(시험으로 확인). 나뉘는 커맨드는 5개: solid.create(정의 3 + 인자 category), solid.set(정의 3), site.set(정의 7), sheet.export·sheet.image(정의 6). `Command.describe()`(파이썬)는 그대로 전체를 준다.
+- 크기(측정: 봉투 두 벌, tiktoken cl100k·o200k 중 큰 값): 전후 최대 9,590(solid.create, o200k 8,690·바이트/3 8,802) -> 6,526(o200k 5,956·바이트/3 6,007)(site.create 기본 응답, 나뉘지 않음). 나뉜 커맨드의 요약·부분 중 최대 6,074(solid.create 요약).
+- C-4 기준값 갱신: size_probe(대형 모델, 실제 MCP 선) 재측정으로 full.s11 만 바꿨다. `over_8000_by_tiktoken` [solid.create, sheet.export, sheet.image, solid.create] -> [], 최대 o200k 8,714 -> 5,956, 최대 바이트/3 추정 8,824 -> 6,008. 갱신 이유는 c4_baseline.json history 에 남겼다. 다른 항목(퍼즈 해시·실행 취소·T0·S10 시험 수·분기 금지)은 바꾸지 않았고 test_slow 가 그대로 대조한다.
+- 다시 깨지지 않게: `tests/test_registry.py` 에 (1) 모든 커맨드의 기본 응답과 나눈 부분 하나하나가 봉투 두 벌 기준 8,000 이하(바이트/3 항상, tiktoken 있으면 cl100k·o200k 실측)인지, (2) 요약 + 부분을 다시 모으면 전체 스키마와 같고 기준 안 커맨드는 이전 응답과 같은지를 본다. 새 커맨드·긴 설명이 생기면 나눔이 자동으로 따라오고, 그래도 넘으면 시험이 실패한다. parity 도 나눈 부분을 CLI·MCP 로 비교한다.
+
+### 47.3 일괄 PDF `sheet.render_set`(DOC-14)
+`{ids, path(.pdf), overwrite?, print?}`. 저장된 시트 정의(sheet.define)를 ids 순서로 sheet.render 와 같은 방식(같은 인자 변환 `_export_args`, 같은 `build_sheet_for`)으로 한 장씩 만들어 여러 쪽 PDF 하나로 쓴다. 쪽마다 자기 용지 크기, 시트마다 책갈피(도면번호 도면명, 쪽 맞춤), 문서 제목 "첫 도면번호 도면명 외 n장". 한글 글꼴은 모든 쪽이 부분집합 하나를 같이 쓴다(모든 쪽 글자를 먼저 모은 뒤 부분집합을 한 번 만든다). `print`(IO-17 인쇄 설정)를 주면 모든 쪽에 같이 걸린다. view.export·sheet.render 와 같은 확인 토큰·덮어쓰기 스냅숏 절차. 같은 시트 두 번·.pdf 아닌 경로는 거절.
+- 구현: sheet.py 의 한 쪽 PDF 작성기를 본문 생성(`_pdf_page_body`)과 파일 조립(`_pdf_one_page`)으로 나누고, 여러 쪽 조립(`render_sheets_pdf`)을 더했다. 한 쪽 PDF 는 이전과 같은 객체 번호·바이트다(기준 도면 183 파일 바이트 동일로 확인). export_sheet 의 인쇄 배치 부분은 도움 함수 `print_sheet` 로 옮겨 sheet.render·sheet.render_set 이 같이 쓴다(동작 같음).
+- 시험 `tests/test_sheet_set.py`(3건): 쪽 수·순서·용지·책갈피, 쪽마다 그림 명령이 sheet.render 한 장 PDF 와 같음(글꼴 GID 만 뺌), 같은 입력이면 같은 바이트, 인쇄 설정이 모든 쪽에, 거절(중복·확장자·없는 시트·빈 목록·덮어쓰기 동의 없음).
+- 한계: PDF 만(SVG·PNG·DXF 묶음 없음). 색인 시트(sheet.index)는 모델에 저장되지 않아 묶음에 넣지 못한다.
+
+### 47.4 프로젝트 매개변수 `param.*`(DATA-03)
+Revit 의 프로젝트 매개변수에 해당한다. 정의 = 속성셋.속성 하나 + 값 형식(text·number·integer·bool) + 묶을 요소 종류(속성셋을 가지는 IFC 종류: wall·door·slab·space·finst 등 13종) + 설명. 키는 속성셋.속성(결정적 id).
+- `param.define`: 만들거나 통째로 바꾼다. 응답에 묶인 요소 수·채운 수·형식이 어긋난 수(어긋나면 경고). 예약 속성셋 DoBIM_Intent 거절, 정의 500개 상한.
+- `param.list`: 정의마다 묶인 수·채운 수·빈 수·형식 어긋난 수와 빈·어긋난 요소 id 앞 10개. 응답 상한 쪽 나눔(limit·cursor).
+- `param.delete`: 정의만 지운다(요소에 쓴 값은 남는다).
+- 검사: 정의가 있는 속성셋.속성을 `pset.set`·`pset.set_many` 로 쓸 때 요소 종류가 묶은 종류인지, 값이 형식에 맞는지 본다(아니면 CONSTRAINT, set_many 는 전체 실패). 정의가 없으면 이전과 같다(검사 없음).
+- 저장: 새 비 IFC 의도 요소 `pparam`(kinds.py 파라미터 검사). 리비전·키노트처럼 DoBIM_Defs 로 IFC 를 왕복하고 실행 취소·병합을 탄다. 가져오기는 같은 속성셋.속성 정의가 둘이면 둘 다 되살리지 않는다. 정의가 없는 모델의 저장 형식·해시·IFC 는 그대로다.
+- 시험 `tests/test_project_param.py`(4건): 정의·목록·값 쓰기 검사·실행 취소, 형식 바꿈 경고와 지워도 값이 남음, IFC 왕복(해시 3종·목록·두 번 내보낸 IFC 바이트 같음, 가져온 쪽에서도 검사), 목록 쪽 나눔.
+- 한계: 기본값 자동 채우기 없음. 일람표(schedule.table) 필드로 아직 고를 수 없다(param.list·element.get 으로 본다). 타입·인스턴스 매개변수 구분 없음.
+
+### 47.5 기존 출력 불변·시험·parity·bench
+- 바뀐 코드: `commands.py`(describe 나눔, pset.set 검사, print_sheet 도움 함수, import 한 줄), `commands_sheet.py`(sheet.render_set), `commands_param.py`(새 모듈), `commands_edit.py`(pset.set_many 검사), `sheet.py`(PDF 작성기 나눔 + 여러 쪽), `kinds.py`·`viewdefs.py`·`foreign.py`(pparam 종류·정의 왕복·가져오기), `mcp_server.py`·`cli.py`(section 인자), `tools/parity.py`(나눈 describe 비교, 준비 두 줄), `results/c4_baseline.json`(s11), `s12-gui/gui/actions.json`, 시험. 뷰 생성·선분 계산(drawing.py·queries.py)은 건드리지 않았다.
+- 기준선 `run_baseline.py --sheets`: main 788f3df 과 코드 커밋 dc4b6de 에서 각각 뽑아 183 파일 바이트 같음(work/·run.json 제외).
+- 결과(코드 커밋 dc4b6de): s1-core 전체(test_slow 제외) 1555 통과·40 건너뜀·실패 0(새 시험 9건 포함). test_slow 8 통과(C-4 코퍼스 대조 포함). parity: 커맨드 183 전부 예시 실행, 오류 사례 49, 불일치 0, parity C 100%(나눈 describe 부분 비교 포함). parity_g: 통과(동작 75, 오류·경고 0).
+- bench: 시트 PDF 작성기를 나눴으므로 5만 요소 bench 를 main 788f3df 과 번갈아 각 3회 쟀다(같은 노트북, 다른 run-all 없음). 중앙값 main -> 브랜치: 평면 8.02 -> 7.85초(-2.1%), 단면 16.11 -> 15.91초(-1.2%), 입면 22.97 -> 23.02초(+0.2%), 반사 천장 7.58 -> 7.49초(-1.1%). 회차 편차 최대 3.6%, 최댓값 23.13초(30초 기준 여유 6.9초), 선분 수·SVG 바이트 양쪽 같음. 한도 +10% 안.
