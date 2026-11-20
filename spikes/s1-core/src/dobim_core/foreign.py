@@ -327,8 +327,9 @@ def _parse_intent(kind: str, text: str) -> dict:
         if why:
             raise ValueError(f"난간이 올바르지 않다({why})")
     elif kind == "roof":
-        if (set(p) - {"ridge", "dir"} != {"name", "boundary", "form", "pitch", "overhang", "base_offset", "thickness"} or not isinstance(p["boundary"], list) or len(p["boundary"]) != 4
-                or any(not isinstance(q, list) or len(q) != 2 for q in p["boundary"])):
+        if (set(p) - {"ridge", "dir", "slopes"} != {"name", "boundary", "form", "pitch", "overhang", "base_offset", "thickness"} or not isinstance(p["boundary"], list)
+                or not 3 <= len(p["boundary"]) <= 32 or any(not isinstance(q, list) or len(q) != 2 for q in p["boundary"])
+                or ("slopes" in p and (not isinstance(p["slopes"], list) or len(p["slopes"]) != len(p["boundary"])))):
             raise ValueError("지붕 params 가 다르다")
         out = {"name": _name(p["name"]), "boundary": [[_num(q[0]), _num(q[1])] for q in p["boundary"]], "form": p["form"], "pitch": _num(p["pitch"], pos=True),
                "overhang": _num(p["overhang"], nonneg=True), "base_offset": _num(p["base_offset"]), "thickness": _num(p["thickness"], pos=True)}
@@ -336,6 +337,8 @@ def _parse_intent(kind: str, text: str) -> dict:
             out["ridge"] = p["ridge"]
         if "dir" in p:
             out["dir"] = _num(p["dir"])
+        if "slopes" in p:   # 다각형 외곽 지붕(W1 1-F 4차)의 변마다 물매
+            out["slopes"] = [_num(v, nonneg=True) for v in p["slopes"]]
         why = K.row_params_error("roof", out)
         if why:
             raise ValueError(f"지붕이 올바르지 않다({why})")

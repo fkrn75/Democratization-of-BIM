@@ -1,0 +1,129 @@
+{
+  "schema": "dobim.family/1",
+  "id": "sanitary.basin",
+  "version": 1,
+  "name": "세면대",
+  "description": "벽걸이 세면대(IfcSanitaryTerminal WASHHANDBASIN). 몸통 판에 둥근 볼(공극), 벽 쪽 = -y.",
+  "ifc": {
+    "class": "IfcSanitaryTerminal",
+    "type_class": "IfcSanitaryTerminalType",
+    "predefined": "WASHHANDBASIN"
+  },
+  "params": {
+    "body_t": {
+      "kind": "type",
+      "default": 160,
+      "unit": "mm",
+      "description": "몸통 높이(두께)",
+      "min": 100,
+      "max": 250
+    },
+    "width": {
+      "kind": "instance",
+      "default": 600,
+      "unit": "mm",
+      "min": 400,
+      "max": 1200
+    },
+    "depth": {
+      "kind": "instance",
+      "default": 450,
+      "unit": "mm",
+      "min": 350,
+      "max": 600
+    },
+    "height": {
+      "kind": "instance",
+      "default": 850,
+      "unit": "mm",
+      "description": "윗면 높이",
+      "min": 700,
+      "max": 950
+    }
+  },
+  "derived": {
+    "bowl_r": "min(width, depth)*0.35"
+  },
+  "solids": [
+    {
+      "id": "body",
+      "op": "extrude",
+      "plane": "xy",
+      "profile": {
+        "shape": "rect",
+        "u": [
+          "-width/2",
+          "width/2"
+        ],
+        "v": [
+          "-depth/2",
+          "depth/2"
+        ]
+      },
+      "range": [
+        "height - body_t",
+        "height"
+      ]
+    },
+    {
+      "id": "bowl",
+      "op": "extrude",
+      "plane": "xy",
+      "role": "void",
+      "cuts": [
+        "body"
+      ],
+      "profile": {
+        "shape": "circle",
+        "center": [
+          0,
+          20
+        ],
+        "r": "bowl_r"
+      },
+      "range": [
+        "height - body_t + 30",
+        "height + 1"
+      ]
+    }
+  ],
+  "plan_symbol": {
+    "default": [
+      {
+        "type": "rect",
+        "u": [
+          "-width/2",
+          "width/2"
+        ],
+        "v": [
+          "-depth/2",
+          "depth/2"
+        ],
+        "style": "projection"
+      },
+      {
+        "type": "circle",
+        "center": [
+          0,
+          20
+        ],
+        "radius": "bowl_r",
+        "style": "projection"
+      }
+    ],
+    "1:200": [
+      {
+        "type": "rect",
+        "u": [
+          "-width/2",
+          "width/2"
+        ],
+        "v": [
+          "-depth/2",
+          "depth/2"
+        ],
+        "style": "projection"
+      }
+    ]
+  }
+}

@@ -1,0 +1,163 @@
+{
+  "schema": "dobim.family/1",
+  "id": "sanitary.toilet",
+  "version": 1,
+  "name": "양변기",
+  "description": "양변기(IfcSanitaryTerminal TOILETPAN). 받침·변기 몸통(원통)·물탱크(벽 쪽 = -y).",
+  "ifc": {
+    "class": "IfcSanitaryTerminal",
+    "type_class": "IfcSanitaryTerminalType",
+    "predefined": "TOILETPAN"
+  },
+  "params": {
+    "tank_d": {
+      "kind": "type",
+      "default": 200,
+      "unit": "mm",
+      "description": "물탱크 깊이",
+      "min": 120,
+      "max": 300
+    },
+    "tank_h": {
+      "kind": "type",
+      "default": 780,
+      "unit": "mm",
+      "description": "물탱크 윗면 높이",
+      "min": 600,
+      "max": 1000
+    },
+    "width": {
+      "kind": "instance",
+      "default": 400,
+      "unit": "mm",
+      "min": 340,
+      "max": 500
+    },
+    "depth": {
+      "kind": "instance",
+      "default": 700,
+      "unit": "mm",
+      "min": 600,
+      "max": 800
+    },
+    "seat_h": {
+      "kind": "instance",
+      "default": 400,
+      "unit": "mm",
+      "description": "앉음 높이",
+      "min": 350,
+      "max": 480
+    }
+  },
+  "derived": {
+    "bowl_r": "min(width/2, (depth - tank_d)/2)",
+    "bowl_c": "-depth/2 + tank_d + bowl_r"
+  },
+  "solids": [
+    {
+      "id": "tank",
+      "op": "extrude",
+      "plane": "xy",
+      "profile": {
+        "shape": "rect",
+        "u": [
+          "-width/2",
+          "width/2"
+        ],
+        "v": [
+          "-depth/2",
+          "-depth/2 + tank_d"
+        ]
+      },
+      "range": [
+        "seat_h - 50",
+        "tank_h"
+      ]
+    },
+    {
+      "id": "pedestal",
+      "op": "extrude",
+      "plane": "xy",
+      "profile": {
+        "shape": "rect",
+        "u": [
+          "-width/4",
+          "width/4"
+        ],
+        "v": [
+          "-depth/2 + tank_d",
+          "bowl_c"
+        ]
+      },
+      "range": [
+        0,
+        "seat_h - 50"
+      ]
+    },
+    {
+      "id": "bowl",
+      "op": "extrude",
+      "plane": "xy",
+      "profile": {
+        "shape": "circle",
+        "center": [
+          0,
+          "bowl_c"
+        ],
+        "r": "bowl_r"
+      },
+      "range": [
+        "seat_h - 300",
+        "seat_h"
+      ]
+    }
+  ],
+  "plan_symbol": {
+    "default": [
+      {
+        "type": "rect",
+        "u": [
+          "-width/2",
+          "width/2"
+        ],
+        "v": [
+          "-depth/2",
+          "-depth/2 + tank_d"
+        ],
+        "style": "projection"
+      },
+      {
+        "type": "circle",
+        "center": [
+          0,
+          "bowl_c"
+        ],
+        "radius": "bowl_r",
+        "style": "projection"
+      }
+    ],
+    "1:200": [
+      {
+        "type": "rect",
+        "u": [
+          "-width/2",
+          "width/2"
+        ],
+        "v": [
+          "-depth/2",
+          "-depth/2 + tank_d"
+        ],
+        "style": "projection"
+      },
+      {
+        "type": "circle",
+        "center": [
+          0,
+          "bowl_c"
+        ],
+        "radius": "bowl_r",
+        "style": "projection"
+      }
+    ]
+  }
+}

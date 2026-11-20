@@ -1,0 +1,279 @@
+{
+  "schema": "dobim.family/1",
+  "id": "window.sliding",
+  "version": 1,
+  "name": "미서기창",
+  "description": "벽에 호스팅되는 미서기창. 창틀(압출 - 공극)과 앞뒤로 엇갈린 창짝 둘(겹침 50mm), 평면에 창짝 두 선.",
+  "ifc": {
+    "class": "IfcWindow",
+    "type_class": "IfcWindowType",
+    "predefined": "WINDOW",
+    "type_attrs": {
+      "PartitioningType": "DOUBLE_PANEL_VERTICAL",
+      "ParameterTakesPrecedence": false
+    },
+    "attrs": {
+      "OverallWidth": {
+        "expr": "width"
+      },
+      "OverallHeight": {
+        "expr": "height"
+      }
+    }
+  },
+  "host": {
+    "kinds": [
+      "wall"
+    ],
+    "cut": {
+      "x": [
+        "left",
+        "right"
+      ],
+      "z": [
+        "z0",
+        "z1"
+      ]
+    }
+  },
+  "params": {
+    "width": {
+      "kind": "type",
+      "default": 1800,
+      "unit": "mm",
+      "min": 800,
+      "max": 3600
+    },
+    "height": {
+      "kind": "type",
+      "default": 1200,
+      "unit": "mm",
+      "min": 600,
+      "max": 2400
+    },
+    "frame_w": {
+      "kind": "type",
+      "default": 60,
+      "unit": "mm",
+      "description": "창틀 단면 폭",
+      "min": 30,
+      "max": 120
+    },
+    "sash_t": {
+      "kind": "type",
+      "default": 40,
+      "unit": "mm",
+      "description": "창짝 두께",
+      "min": 25,
+      "max": 60
+    },
+    "u_value": {
+      "kind": "type",
+      "default": 1.8,
+      "unit": "none",
+      "description": "열관류율 W/m2K",
+      "min": 0.5,
+      "max": 5.0
+    },
+    "is_external": {
+      "kind": "type",
+      "default": true,
+      "type": "bool"
+    },
+    "sill": {
+      "kind": "instance",
+      "default": 900,
+      "unit": "mm",
+      "description": "바닥에서 창 하단까지",
+      "min": 0,
+      "max": 1500
+    }
+  },
+  "derived": {
+    "z0": "sill",
+    "z1": "sill + height",
+    "sash_w": "(width - 2*frame_w)/2 + 25",
+    "frame_d": "min(host_thickness, 150)"
+  },
+  "refs": {
+    "left": {
+      "axis": "x",
+      "at": "-width/2"
+    },
+    "right": {
+      "axis": "x",
+      "at": "width/2"
+    }
+  },
+  "constraints": [
+    {
+      "expr": "sash_w >= 300",
+      "message": "창짝 폭이 300mm 미만이다"
+    },
+    {
+      "expr": "2*sash_t + 10 <= frame_d",
+      "message": "창틀 깊이가 창짝 두 겹보다 얕다"
+    }
+  ],
+  "solids": [
+    {
+      "id": "frame",
+      "op": "extrude",
+      "plane": "xz",
+      "profile": {
+        "shape": "rect",
+        "u": [
+          "left",
+          "right"
+        ],
+        "v": [
+          "z0",
+          "z1"
+        ]
+      },
+      "range": [
+        "-frame_d/2",
+        "frame_d/2"
+      ]
+    },
+    {
+      "id": "frame_hole",
+      "op": "extrude",
+      "plane": "xz",
+      "role": "void",
+      "cuts": [
+        "frame"
+      ],
+      "profile": {
+        "shape": "rect",
+        "u": [
+          "left + frame_w",
+          "right - frame_w"
+        ],
+        "v": [
+          "z0 + frame_w",
+          "z1 - frame_w"
+        ]
+      },
+      "range": [
+        "-frame_d",
+        "frame_d"
+      ]
+    },
+    {
+      "id": "sash_out",
+      "op": "extrude",
+      "plane": "xz",
+      "profile": {
+        "shape": "rect",
+        "u": [
+          "left + frame_w",
+          "left + frame_w + sash_w"
+        ],
+        "v": [
+          "z0 + frame_w",
+          "z1 - frame_w"
+        ]
+      },
+      "range": [
+        "-sash_t - 2",
+        "-2"
+      ]
+    },
+    {
+      "id": "sash_in",
+      "op": "extrude",
+      "plane": "xz",
+      "profile": {
+        "shape": "rect",
+        "u": [
+          "right - frame_w - sash_w",
+          "right - frame_w"
+        ],
+        "v": [
+          "z0 + frame_w",
+          "z1 - frame_w"
+        ]
+      },
+      "range": [
+        "2",
+        "sash_t + 2"
+      ]
+    }
+  ],
+  "plan_symbol": {
+    "default": [
+      {
+        "type": "rect",
+        "u": [
+          "left",
+          "right"
+        ],
+        "v": [
+          "-host_thickness/2",
+          "host_thickness/2"
+        ],
+        "style": "cut"
+      },
+      {
+        "type": "line",
+        "from": [
+          "left + frame_w",
+          "-sash_t/2 - 2"
+        ],
+        "to": [
+          "left + frame_w + sash_w",
+          "-sash_t/2 - 2"
+        ],
+        "style": "projection"
+      },
+      {
+        "type": "line",
+        "from": [
+          "right - frame_w - sash_w",
+          "sash_t/2 + 2"
+        ],
+        "to": [
+          "right - frame_w",
+          "sash_t/2 + 2"
+        ],
+        "style": "projection"
+      }
+    ],
+    "1:200": [
+      {
+        "type": "rect",
+        "u": [
+          "left",
+          "right"
+        ],
+        "v": [
+          "-host_thickness/2",
+          "host_thickness/2"
+        ],
+        "style": "cut"
+      }
+    ]
+  },
+  "psets": {
+    "Pset_WindowCommon": {
+      "on": "type",
+      "props": {
+        "IsExternal": {
+          "expr": "is_external"
+        },
+        "ThermalTransmittance": {
+          "expr": "u_value"
+        }
+      }
+    },
+    "DoBIM_WindowParams": {
+      "on": "instance",
+      "props": {
+        "SillHeight": {
+          "expr": "sill"
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,165 @@
+{
+  "schema": "dobim.family/1",
+  "id": "sanitary.sink",
+  "version": 1,
+  "name": "주방 개수대",
+  "description": "개수대 장(IfcSanitaryTerminal SINK). 몸통 장 위 상판에 사각 개수대(공극), 벽 쪽 = -y.",
+  "ifc": {
+    "class": "IfcSanitaryTerminal",
+    "type_class": "IfcSanitaryTerminalType",
+    "predefined": "SINK"
+  },
+  "params": {
+    "top_t": {
+      "kind": "type",
+      "default": 30,
+      "unit": "mm",
+      "description": "상판 두께",
+      "min": 12,
+      "max": 50
+    },
+    "bowl_d": {
+      "kind": "type",
+      "default": 200,
+      "unit": "mm",
+      "description": "개수대 깊이",
+      "min": 150,
+      "max": 300
+    },
+    "width": {
+      "kind": "instance",
+      "default": 800,
+      "unit": "mm",
+      "min": 600,
+      "max": 1500
+    },
+    "depth": {
+      "kind": "instance",
+      "default": 600,
+      "unit": "mm",
+      "min": 450,
+      "max": 750
+    },
+    "height": {
+      "kind": "instance",
+      "default": 850,
+      "unit": "mm",
+      "description": "상판 윗면 높이",
+      "min": 750,
+      "max": 950
+    }
+  },
+  "derived": {
+    "bowl_w": "width - 200",
+    "bowl_l": "depth - 150"
+  },
+  "solids": [
+    {
+      "id": "body",
+      "op": "extrude",
+      "plane": "xy",
+      "profile": {
+        "shape": "rect",
+        "u": [
+          "-width/2",
+          "width/2"
+        ],
+        "v": [
+          "-depth/2",
+          "depth/2"
+        ]
+      },
+      "range": [
+        0,
+        "height - top_t"
+      ]
+    },
+    {
+      "id": "top",
+      "op": "extrude",
+      "plane": "xy",
+      "profile": {
+        "shape": "rect",
+        "u": [
+          "-width/2",
+          "width/2"
+        ],
+        "v": [
+          "-depth/2",
+          "depth/2"
+        ]
+      },
+      "range": [
+        "height - top_t",
+        "height"
+      ]
+    },
+    {
+      "id": "bowl",
+      "op": "extrude",
+      "plane": "xy",
+      "role": "void",
+      "cuts": [
+        "top",
+        "body"
+      ],
+      "profile": {
+        "shape": "rect",
+        "u": [
+          "-bowl_w/2",
+          "bowl_w/2"
+        ],
+        "v": [
+          "-bowl_l/2",
+          "bowl_l/2"
+        ]
+      },
+      "range": [
+        "height - bowl_d",
+        "height + 1"
+      ]
+    }
+  ],
+  "plan_symbol": {
+    "default": [
+      {
+        "type": "rect",
+        "u": [
+          "-width/2",
+          "width/2"
+        ],
+        "v": [
+          "-depth/2",
+          "depth/2"
+        ],
+        "style": "projection"
+      },
+      {
+        "type": "rect",
+        "u": [
+          "-bowl_w/2",
+          "bowl_w/2"
+        ],
+        "v": [
+          "-bowl_l/2",
+          "bowl_l/2"
+        ],
+        "style": "projection"
+      }
+    ],
+    "1:200": [
+      {
+        "type": "rect",
+        "u": [
+          "-width/2",
+          "width/2"
+        ],
+        "v": [
+          "-depth/2",
+          "depth/2"
+        ],
+        "style": "projection"
+      }
+    ]
+  }
+}

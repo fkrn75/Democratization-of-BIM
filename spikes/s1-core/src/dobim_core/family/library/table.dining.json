@@ -1,0 +1,197 @@
+{
+  "schema": "dobim.family/1",
+  "id": "table.dining",
+  "version": 1,
+  "name": "식탁",
+  "description": "자립형 사각 식탁(IfcFurniture TABLE). 상판과 네 다리, 치수는 인스턴스 매개변수.",
+  "ifc": {
+    "class": "IfcFurniture",
+    "type_class": "IfcFurnitureType",
+    "predefined": "TABLE"
+  },
+  "params": {
+    "top_t": {
+      "kind": "type",
+      "default": 30,
+      "unit": "mm",
+      "description": "상판 두께",
+      "min": 18,
+      "max": 60
+    },
+    "leg": {
+      "kind": "type",
+      "default": 60,
+      "unit": "mm",
+      "description": "다리 단면 한 변",
+      "min": 40,
+      "max": 120
+    },
+    "width": {
+      "kind": "instance",
+      "default": 1600,
+      "unit": "mm",
+      "min": 700,
+      "max": 3000
+    },
+    "depth": {
+      "kind": "instance",
+      "default": 800,
+      "unit": "mm",
+      "min": 600,
+      "max": 1200
+    },
+    "height": {
+      "kind": "instance",
+      "default": 720,
+      "unit": "mm",
+      "min": 600,
+      "max": 800
+    }
+  },
+  "constraints": [
+    {
+      "expr": "leg*3 < min(width, depth)",
+      "message": "다리 단면이 상판에 비해 너무 크다"
+    }
+  ],
+  "solids": [
+    {
+      "id": "top",
+      "op": "extrude",
+      "plane": "xy",
+      "profile": {
+        "shape": "rect",
+        "u": [
+          "-width/2",
+          "width/2"
+        ],
+        "v": [
+          "-depth/2",
+          "depth/2"
+        ]
+      },
+      "range": [
+        "height - top_t",
+        "height"
+      ]
+    },
+    {
+      "id": "leg1",
+      "op": "extrude",
+      "plane": "xy",
+      "profile": {
+        "shape": "rect",
+        "u": [
+          "-width/2",
+          "-width/2 + leg"
+        ],
+        "v": [
+          "-depth/2",
+          "-depth/2 + leg"
+        ]
+      },
+      "range": [
+        0,
+        "height - top_t"
+      ]
+    },
+    {
+      "id": "leg2",
+      "op": "extrude",
+      "plane": "xy",
+      "profile": {
+        "shape": "rect",
+        "u": [
+          "width/2 - leg",
+          "width/2"
+        ],
+        "v": [
+          "-depth/2",
+          "-depth/2 + leg"
+        ]
+      },
+      "range": [
+        0,
+        "height - top_t"
+      ]
+    },
+    {
+      "id": "leg3",
+      "op": "extrude",
+      "plane": "xy",
+      "profile": {
+        "shape": "rect",
+        "u": [
+          "width/2 - leg",
+          "width/2"
+        ],
+        "v": [
+          "depth/2 - leg",
+          "depth/2"
+        ]
+      },
+      "range": [
+        0,
+        "height - top_t"
+      ]
+    },
+    {
+      "id": "leg4",
+      "op": "extrude",
+      "plane": "xy",
+      "profile": {
+        "shape": "rect",
+        "u": [
+          "-width/2",
+          "-width/2 + leg"
+        ],
+        "v": [
+          "depth/2 - leg",
+          "depth/2"
+        ]
+      },
+      "range": [
+        0,
+        "height - top_t"
+      ]
+    }
+  ],
+  "plan_symbol": {
+    "default": [
+      {
+        "type": "rect",
+        "u": [
+          "-width/2",
+          "width/2"
+        ],
+        "v": [
+          "-depth/2",
+          "depth/2"
+        ],
+        "style": "projection"
+      }
+    ],
+    "1:200": [
+      {
+        "type": "rect",
+        "u": [
+          "-width/2",
+          "width/2"
+        ],
+        "v": [
+          "-depth/2",
+          "depth/2"
+        ],
+        "style": "projection"
+      }
+    ]
+  },
+  "psets": {
+    "Pset_FurnitureTypeCommon": {
+      "on": "type",
+      "props": {
+        "IsBuiltIn": false
+      }
+    }
+  }
+}

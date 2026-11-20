@@ -1,0 +1,130 @@
+{
+  "schema": "dobim.family/1",
+  "id": "appliance.washer",
+  "version": 1,
+  "name": "세탁기",
+  "description": "드럼 세탁기(IfcElectricAppliance WASHINGMACHINE). 몸통 상자와 앞(+y) 둥근 문.",
+  "ifc": {
+    "class": "IfcElectricAppliance",
+    "type_class": "IfcElectricApplianceType",
+    "predefined": "WASHINGMACHINE"
+  },
+  "params": {
+    "door_r": {
+      "kind": "type",
+      "default": 200,
+      "unit": "mm",
+      "description": "문 반지름",
+      "min": 120,
+      "max": 240
+    },
+    "width": {
+      "kind": "instance",
+      "default": 600,
+      "unit": "mm",
+      "min": 550,
+      "max": 700
+    },
+    "depth": {
+      "kind": "instance",
+      "default": 650,
+      "unit": "mm",
+      "min": 500,
+      "max": 800
+    },
+    "height": {
+      "kind": "instance",
+      "default": 850,
+      "unit": "mm",
+      "min": 800,
+      "max": 1000
+    }
+  },
+  "constraints": [
+    {
+      "expr": "door_r*2 < width - 60",
+      "message": "문이 몸통 폭보다 크다"
+    }
+  ],
+  "solids": [
+    {
+      "id": "body",
+      "op": "extrude",
+      "plane": "xy",
+      "profile": {
+        "shape": "rect",
+        "u": [
+          "-width/2",
+          "width/2"
+        ],
+        "v": [
+          "-depth/2",
+          "depth/2 - 30"
+        ]
+      },
+      "range": [
+        0,
+        "height"
+      ]
+    },
+    {
+      "id": "door",
+      "op": "extrude",
+      "plane": "xz",
+      "profile": {
+        "shape": "circle",
+        "center": [
+          0,
+          "height*0.45"
+        ],
+        "r": "door_r"
+      },
+      "range": [
+        "depth/2 - 30",
+        "depth/2"
+      ]
+    }
+  ],
+  "plan_symbol": {
+    "default": [
+      {
+        "type": "rect",
+        "u": [
+          "-width/2",
+          "width/2"
+        ],
+        "v": [
+          "-depth/2",
+          "depth/2"
+        ],
+        "style": "projection"
+      },
+      {
+        "type": "line",
+        "from": [
+          "-door_r",
+          "depth/2 - 30"
+        ],
+        "to": [
+          "door_r",
+          "depth/2 - 30"
+        ],
+        "style": "projection"
+      }
+    ],
+    "1:200": [
+      {
+        "type": "rect",
+        "u": [
+          "-width/2",
+          "width/2"
+        ],
+        "v": [
+          "-depth/2",
+          "depth/2"
+        ],
+        "style": "projection"
+      }
+    ]
+  }
+}

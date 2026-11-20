@@ -894,12 +894,23 @@ def scope_fams(g, v):
     return g.q(all_free_fams)
 
 
+# 절단면 아래에 다 들어가도 평면 기호를 투영선으로 그리는 자립형 패밀리 클래스(가구·위생기구·가전). 기둥 같은 구조 요소는 절단 높이 범위 안일 때만 그린다
+BELOW_CUT_CLASSES = ("IfcFurniture", "IfcSanitaryTerminal", "IfcElectricAppliance")
+
+
 def plan_fam_parts(g, v, e):
     """평면의 자립형 요소: (선분들, 채움 다각형들). 절단 높이가 요소 높이 범위에 들 때만 그린다(기둥 단면 + 기호)."""
     cfg = g.q(view_cfg, v)
     ff = g.q(free_fam, e)
     if ff is not None and is_rcp(cfg) and cfg[2] + EPS < ff[3] <= cfg[2] + cfg[3]:   # 반사 천장 평면: 절단면 위에 매단 요소(조명 등)는 평면 기호를 투영선으로
         return (tuple(("proj",) + x[1:] for x in _plan_items(ff[5], _free_world(ff))), ())
+    if (ff is not None and cfg[0] == "plan" and not is_rcp(cfg) and cfg[1] is not None and ff[4] + EPS < cfg[2]
+            and (Q.el(g, e) or {}).get("ifc_class") in BELOW_CUT_CLASSES):
+        # 절단면 아래에 다 들어가는 요소(가구·위생기구·가전, W1 1-F 4차): 레벨 위에 서 있으면 평면 기호를 투영선으로(절단 선 모양은 투영선, 숨은선은 그대로)
+        lv_z = g.q(Q.level_info, cfg[1])[1]
+        if ff[3] + EPS < lv_z:
+            return ((), ())
+        return (tuple((("proj",) + x[1:]) if x[0] == "cut" else x for x in _plan_items(ff[5], _free_world(ff))), ())
     if ff is None or cfg[0] != "plan" or not (ff[3] - EPS <= cfg[2] <= ff[4] + EPS):
         return ((), ())
     fills: list = []
@@ -2166,7 +2177,10 @@ def roof_info(g, r):
     return {"faces": tuple(tuple(up(q) for q in fc) for fc in gm["faces"]), "ridges": tuple((up(a), up(b)) for a, b in gm["ridges"]),
             "hips": tuple((up(a), up(b)) for a, b in gm["hips"]), "perimeter": tuple(up(q) for q in gm["perimeter"]), "arrows": tuple(gm["arrows"]),
             "outline": tuple(gm["outline"]), "boundary": tuple(tuple(q) for q in p["boundary"]), "planes": tuple((a, b, c + lv) for a, b, c in gm["planes"]),
-            "zlow": gm["zlow"] + lv, "ztop": gm["ztop"] + lv, "t": p["thickness"], "pitch": p["pitch"], "form": p["form"]}
+            "zlow": gm["zlow"] + lv, "ztop": gm["ztop"] + lv, "t": p["thickness"], "pitch": p["pitch"], "form": p["form"],
+            # 다각형 외곽(W1 1-F 4차): 골, 면의 볼록 조각(가림·절단 띠는 볼록 조각으로 계산한다), 면마다 물매. 직사각형은 조각 = 면이라 값이 같다
+            "valleys": tuple((up(a), up(b)) for a, b in gm["valleys"]), "fpitch": tuple(gm["fpitch"]),
+            "pieces": tuple((tuple(up(q) for q in fc), (a, b, c + lv)) for fc, (a, b, c) in gm["pieces"])}
 
 
 def all_roofs(g):
@@ -2212,6 +2226,12 @@ def roof_slices(g, r):
     out = []
     for i in range(ROOF_SLICES):
         z0, z1 = zl + (zt - zl) * i / ROOF_SLICES, zl + (zt - zl) * (i + 1) / ROOF_SLICES
+        if info["form"] == "poly":   # 다각형 외곽은 외곽이 오목할 수 있어 볼록 조각마다 자른다(조각 수만큼 기둥 조각)
+            for fc, (a, b, c) in info["pieces"]:
+                poly = _clip_half([(q[0], q[1]) for q in fc], a, b, c - z1)
+                if len(poly) >= 3 and abs(_area2(poly)) > 2 * EPS:
+                    out.append((z0, z1, tuple(poly)))
+            continue
         poly = list(info["outline"])
         for a, b, c in info["planes"]:
             poly = _clip_half(poly, a, b, c - z1)
@@ -2248,7 +2268,7 @@ def roof_solid_slices(g, r):
         return ()
     t = info["t"]
     out = []
-    for fc, (a, b, c) in zip(info["faces"], info["planes"]):
+    for fc, (a, b, c) in info["pieces"]:   # 면의 볼록 조각(직사각형 지붕은 면 그대로)
         tops = [q[2] for q in fc]
         zb, zt = min(tops) - t, max(tops)                 # 이 면의 판이 차지하는 높이 범위
         n = max(1, int((zt - zb) / ROOF_SOLID_PIECE_MM + 1.0 - 1e-9))   # 올림(math.ceil 대신: 이 모듈은 sqrt 만 쓴다)
@@ -2312,7 +2332,7 @@ def roof_cut_rects(g, v, r):
         return ()
     near = cfg[7]
     out = []
-    for fc in info["faces"]:
+    for fc, _pl in info["pieces"]:   # 볼록 조각마다 띠 하나(직사각형 지붕은 면 그대로)
         pts = [(_sw(cfg, q), q[2]) for q in fc]
         xs = []
         n = len(pts)
@@ -2341,13 +2361,13 @@ def roof_plan_parts(g, v, r):
     for ring in (info["outline"], info["boundary"]):   # 처마를 내민 윤곽과 외곽(처마 선)
         n = len(ring)
         segs += [("proj", ring[i][0], ring[i][1], ring[(i + 1) % n][0], ring[(i + 1) % n][1]) for i in range(n)]
-    for a, b in info["ridges"] + info["hips"]:
+    for a, b in info["ridges"] + info["hips"] + info["valleys"]:   # 골(다각형 외곽의 오목 꼭짓점)도 같은 투영선
         segs.append(("proj", a[0], a[1], b[0], b[1]))
     if info["ridges"]:
         a, b = info["ridges"][0]
         labels.append((round((a[0] + b[0]) / 2.0, 3), round((a[1] + b[1]) / 2.0 + 0.6 * sc, 3), "용마루", LABEL_SUB_H, "middle"))
     bc, bs = ROOF_ARROW_BARB
-    for fc, ((cx, cy), (dx, dy)) in zip(info["faces"], info["arrows"]):
+    for fc, ((cx, cy), (dx, dy)), pitch in zip(info["faces"], info["arrows"], info["fpitch"]):
         xs, ys = [q[0] for q in fc], [q[1] for q in fc]
         ln = min(ROOF_ARROW_LEN * sc, 0.4 * min(max(xs) - min(xs), max(ys) - min(ys)))
         if ln <= SEG_MIN:
@@ -2358,8 +2378,8 @@ def roof_plan_parts(g, v, r):
         for sg in (1.0, -1.0):   # 화살촉: 진행 방향 뒤로 +-20도 벌어진 두 선
             ux, uy = -dx, -dy
             segs.append(("symbol", head[0], head[1], head[0] + (ux * bc - sg * uy * bs) * hl, head[1] + (sg * ux * bs + uy * bc) * hl))
-        pn, pc = K.sincos_deg(info["pitch"])   # 물매 표기: 각도와 가로 10 에 대한 세로(관행 "물매 5/10")
-        txt = f"물매 {info['pitch']:g}°({pn / pc * 10:.1f}/10)"
+        pn, pc = K.sincos_deg(pitch)   # 물매 표기: 각도와 가로 10 에 대한 세로(관행 "물매 5/10"). 면마다(다각형 외곽은 변마다 다를 수 있다)
+        txt = f"물매 {pitch:g}°({pn / pc * 10:.1f}/10)"
         lx, ly = _arrow_label_pos(cx, cy, dx, dy, txt, sc)
         labels.append((lx, ly, txt, LABEL_SUB_H, "middle"))
     return (tuple(segs), tuple(labels))

@@ -1,0 +1,169 @@
+{
+  "schema": "dobim.family/1",
+  "id": "sanitary.shower",
+  "version": 1,
+  "name": "샤워 부스",
+  "description": "샤워 부스(IfcSanitaryTerminal SHOWER). 받침판과 앞(+y)·오른쪽(+x) 유리벽, 평면에 배수 대각선.",
+  "ifc": {
+    "class": "IfcSanitaryTerminal",
+    "type_class": "IfcSanitaryTerminalType",
+    "predefined": "SHOWER"
+  },
+  "params": {
+    "tray_h": {
+      "kind": "type",
+      "default": 80,
+      "unit": "mm",
+      "description": "받침판 높이(0 이면 없음)",
+      "min": 0,
+      "max": 150
+    },
+    "glass_t": {
+      "kind": "type",
+      "default": 10,
+      "unit": "mm",
+      "description": "유리 두께",
+      "min": 6,
+      "max": 12
+    },
+    "glass_h": {
+      "kind": "type",
+      "default": 2000,
+      "unit": "mm",
+      "description": "유리벽 높이",
+      "min": 1800,
+      "max": 2400
+    },
+    "width": {
+      "kind": "instance",
+      "default": 900,
+      "unit": "mm",
+      "min": 700,
+      "max": 1600
+    },
+    "depth": {
+      "kind": "instance",
+      "default": 900,
+      "unit": "mm",
+      "min": 700,
+      "max": 1600
+    }
+  },
+  "solids": [
+    {
+      "id": "tray",
+      "op": "extrude",
+      "plane": "xy",
+      "when": "tray_h > 0",
+      "profile": {
+        "shape": "rect",
+        "u": [
+          "-width/2",
+          "width/2"
+        ],
+        "v": [
+          "-depth/2",
+          "depth/2"
+        ]
+      },
+      "range": [
+        0,
+        "tray_h"
+      ]
+    },
+    {
+      "id": "glass_front",
+      "op": "extrude",
+      "plane": "xy",
+      "profile": {
+        "shape": "rect",
+        "u": [
+          "-width/2",
+          "width/2"
+        ],
+        "v": [
+          "depth/2 - glass_t",
+          "depth/2"
+        ]
+      },
+      "range": [
+        "tray_h",
+        "tray_h + glass_h"
+      ]
+    },
+    {
+      "id": "glass_side",
+      "op": "extrude",
+      "plane": "xy",
+      "profile": {
+        "shape": "rect",
+        "u": [
+          "width/2 - glass_t",
+          "width/2"
+        ],
+        "v": [
+          "-depth/2",
+          "depth/2 - glass_t"
+        ]
+      },
+      "range": [
+        "tray_h",
+        "tray_h + glass_h"
+      ]
+    }
+  ],
+  "plan_symbol": {
+    "default": [
+      {
+        "type": "rect",
+        "u": [
+          "-width/2",
+          "width/2"
+        ],
+        "v": [
+          "-depth/2",
+          "depth/2"
+        ],
+        "style": "projection"
+      },
+      {
+        "type": "line",
+        "from": [
+          "-width/2",
+          "-depth/2"
+        ],
+        "to": [
+          "width/2",
+          "depth/2"
+        ],
+        "style": "projection"
+      },
+      {
+        "type": "line",
+        "from": [
+          "-width/2",
+          "depth/2"
+        ],
+        "to": [
+          "width/2",
+          "-depth/2"
+        ],
+        "style": "projection"
+      }
+    ],
+    "1:200": [
+      {
+        "type": "rect",
+        "u": [
+          "-width/2",
+          "width/2"
+        ],
+        "v": [
+          "-depth/2",
+          "depth/2"
+        ],
+        "style": "projection"
+      }
+    ]
+  }
+}

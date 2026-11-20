@@ -1,0 +1,158 @@
+{
+  "schema": "dobim.family/1",
+  "id": "appliance.fridge",
+  "version": 1,
+  "name": "냉장고",
+  "description": "냉장고(IfcElectricAppliance REFRIGERATOR). 몸통 상자와 앞(+y) 문짝 둘(위 냉동·아래 냉장).",
+  "ifc": {
+    "class": "IfcElectricAppliance",
+    "type_class": "IfcElectricApplianceType",
+    "predefined": "REFRIGERATOR"
+  },
+  "params": {
+    "door_t": {
+      "kind": "type",
+      "default": 50,
+      "unit": "mm",
+      "description": "문짝 두께",
+      "min": 30,
+      "max": 80
+    },
+    "split": {
+      "kind": "type",
+      "default": 0.35,
+      "unit": "none",
+      "description": "위 문짝 높이 비율",
+      "min": 0.2,
+      "max": 0.5
+    },
+    "width": {
+      "kind": "instance",
+      "default": 900,
+      "unit": "mm",
+      "min": 500,
+      "max": 1000
+    },
+    "depth": {
+      "kind": "instance",
+      "default": 750,
+      "unit": "mm",
+      "min": 600,
+      "max": 900
+    },
+    "height": {
+      "kind": "instance",
+      "default": 1800,
+      "unit": "mm",
+      "min": 1400,
+      "max": 2000
+    }
+  },
+  "derived": {
+    "zs": "height*(1 - split)"
+  },
+  "solids": [
+    {
+      "id": "body",
+      "op": "extrude",
+      "plane": "xy",
+      "profile": {
+        "shape": "rect",
+        "u": [
+          "-width/2",
+          "width/2"
+        ],
+        "v": [
+          "-depth/2",
+          "depth/2 - door_t"
+        ]
+      },
+      "range": [
+        0,
+        "height"
+      ]
+    },
+    {
+      "id": "door_low",
+      "op": "extrude",
+      "plane": "xz",
+      "profile": {
+        "shape": "rect",
+        "u": [
+          "-width/2",
+          "width/2"
+        ],
+        "v": [
+          0,
+          "zs - 5"
+        ]
+      },
+      "range": [
+        "depth/2 - door_t",
+        "depth/2"
+      ]
+    },
+    {
+      "id": "door_high",
+      "op": "extrude",
+      "plane": "xz",
+      "profile": {
+        "shape": "rect",
+        "u": [
+          "-width/2",
+          "width/2"
+        ],
+        "v": [
+          "zs + 5",
+          "height"
+        ]
+      },
+      "range": [
+        "depth/2 - door_t",
+        "depth/2"
+      ]
+    }
+  ],
+  "plan_symbol": {
+    "default": [
+      {
+        "type": "rect",
+        "u": [
+          "-width/2",
+          "width/2"
+        ],
+        "v": [
+          "-depth/2",
+          "depth/2"
+        ],
+        "style": "projection"
+      },
+      {
+        "type": "line",
+        "from": [
+          "-width/2",
+          "depth/2 - door_t"
+        ],
+        "to": [
+          "width/2",
+          "depth/2 - door_t"
+        ],
+        "style": "projection"
+      }
+    ],
+    "1:200": [
+      {
+        "type": "rect",
+        "u": [
+          "-width/2",
+          "width/2"
+        ],
+        "v": [
+          "-depth/2",
+          "depth/2"
+        ],
+        "style": "projection"
+      }
+    ]
+  }
+}

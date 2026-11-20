@@ -81,7 +81,7 @@ def _place(sess, eid, host, offset, type_values=None, values=None, rotation=0):
 # ---------------------------------------------------------------- 라이브러리
 def test_기본_라이브러리에_창틀_창이_더해졌고_기존_레시피는_그대로다():
     ids = library.ids()
-    assert set(ids) == set(PINNED) | {"window.framed", "window.storefront"}   # 24단계: 복합 창호
+    assert set(ids) >= set(PINNED) | {"window.framed", "window.storefront"}   # 24단계: 복합 창호(W1 1-F 4차부터 내장 패밀리가 더 있다: 상위집합)
     for fid, h in PINNED.items():
         assert FS.recipe_hash_of(library.load(fid)) == h, f"{fid} 레시피가 바뀌었다(기존 타입 id 가 달라진다)"
     res = validate_recipe(library.load("window.framed"), "full")
