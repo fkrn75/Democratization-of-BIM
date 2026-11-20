@@ -461,7 +461,7 @@ ifcedit의 `list`·`docs`·`run` 구조와 같은 형태다. 350개 이상의 AP
 | 도구 | 어노테이션 | 역할 |
 |---|---|---|
 | `dobim_commands_search` | read-only | 키워드·그룹 검색, 이름과 한 줄 설명 반환 |
-| `dobim_command_describe` | read-only | 커맨드 하나의 스키마와 예시 |
+| `dobim_command_describe` | read-only | 커맨드 하나의 스키마와 예시. 큰 스키마는 요약과 부분 목록(`split.sections`)으로 오고, `section` 을 주면 그 부분 상세(응답 8,000토큰 기준, 2026-11-20) |
 | `dobim_query` | read-only | `risk=read` 커맨드 실행 |
 | `dobim_execute` | write | `risk=write` 커맨드 또는 원자적 배치 실행, `dry_run` 지원 |
 | `dobim_execute_destructive` | destructive | `risk=destructive` 실행, 확인 토큰 필요 |
