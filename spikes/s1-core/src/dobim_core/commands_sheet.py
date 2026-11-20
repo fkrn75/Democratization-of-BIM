@@ -247,7 +247,7 @@ def stored_params(d: dict) -> dict:
     return dict(d, viewports=[{k: v for k, v in x.items() if v is not None} for x in d["viewports"]])
 
 
-NOT_STORED = ("path", "overwrite", "profile", "detail", "dims", "max_px", "crop")   # 파일을 낼 때만 받는 입력(저장하는 시트 정의에는 넣지 않는다: 저장된 정의의 해시·형식은 그대로)
+NOT_STORED = ("path", "overwrite", "profile", "detail", "dims", "max_px", "crop", "print_")   # 파일을 낼 때만 받는 입력(저장하는 시트 정의에는 넣지 않는다: 저장된 정의의 해시·형식은 그대로)
 _DEF_FIELDS = {n: (f.annotation, f) for n, f in C.SheetExport.model_fields.items() if n not in NOT_STORED}
 SheetDef = create_model(
     "SheetDef", __base__=A, __validators__={"_chk": model_validator(mode="after")(_sheet_def_check)},
@@ -333,6 +333,7 @@ class SheetRender(A):
     overwrite: bool = Field(False, description="거짓이면 이미 있는 파일을 덮어쓰지 않는다. 참이면 덮어쓰며 덮어쓰기 전에 자동 스냅숏을 남긴다(확인 토큰 필요)")
     max_px: C.PngMaxPx = 1600
     crop: C.PngCrop | None = None
+    print_: C.PrintSetup | None = Field(None, alias="print", description="인쇄 설정(SVG·PDF·PNG). 생략=시트 용지 그대로")
 
 
 def _export_args(ctx, a: SheetRender):
@@ -341,7 +342,8 @@ def _export_args(ctx, a: SheetRender):
     missing = [v for v in [*p["views"], *([p["key_plan"]] if p.get("key_plan") else [])] if v not in ctx.st.el or ctx.st.el[v]["kind"] != "view"]
     if missing:
         raise DobimError("CONSTRAINT", f"시트가 올린 뷰가 없다: {', '.join(sorted(set(missing)))}", path="/id", hint="sheet.define 으로 시트를 고치세요")
-    return C.SheetExport.model_validate({**p, "path": a.path, "overwrite": a.overwrite, "max_px": a.max_px, **({"crop": a.crop} if a.crop is not None else {})})
+    return C.SheetExport.model_validate({**p, "path": a.path, "overwrite": a.overwrite, "max_px": a.max_px, **({"crop": a.crop} if a.crop is not None else {}),
+                                         **({"print": a.print_} if a.print_ is not None else {})})
 
 
 def _render_preview(ctx, a: SheetRender):
@@ -351,7 +353,8 @@ def _render_preview(ctx, a: SheetRender):
 @command("sheet.render", kind="session", risk="destructive", group="view",
          summary="저장된 시트 정의로 SVG·PDF·PNG·DXF 내보내기",
          args=SheetRender, since="0.4", preview=_render_preview,
-         examples=[{"id": F.SH1, "path": "sheet-saved-example.svg", "overwrite": True}])
+         examples=[{"id": F.SH1, "path": "sheet-saved-example.svg", "overwrite": True},
+                   {"id": F.SH1, "path": "sheet-print-example.svg", "overwrite": True, "print": {"paper": "A4", "margin": 5}}])   # 인쇄 설정(W1 1-F 5차)
 def sheet_render(ctx, a: SheetRender):
     """저장된 시트 정의를 sheet.export 와 같은 방식으로 파일에 낸다."""
     return C.export_sheet(ctx, _export_args(ctx, a), a.id)
@@ -384,7 +387,7 @@ def view_image(ctx, a: ViewImage):
     return _image_result(ctx, rr, {"id": a.id, "name": r["params"]["name"], "type": r["params"]["type"]})
 
 
-_IMG_SKIP = {"path", "overwrite", "views"}
+_IMG_SKIP = {"path", "overwrite", "views", "print_"}   # 인쇄 설정(W1 1-F 5차)은 파일 내보내기(sheet.export·sheet.render)에만 받는다
 _IMG_FIELDS = {n: (f.annotation, f) for n, f in C.SheetExport.model_fields.items() if n not in _IMG_SKIP}
 SheetImageBase = create_model(
     "SheetImageBase", __base__=A,

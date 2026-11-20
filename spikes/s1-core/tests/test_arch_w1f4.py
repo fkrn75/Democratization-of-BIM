@@ -207,7 +207,7 @@ def test_벽_상단_붙이기와_일람표_면적(base):
 # ================================================================ 내장 패밀리
 def test_내장_패밀리는_23종이고_새_16종은_모두_검증을_통과한다():
     ids = library.ids()
-    assert len(ids) == 23 and set(NEW_FAMILIES) <= set(ids)
+    assert len(ids) >= 23 and set(NEW_FAMILIES) <= set(ids)   # W1 1-F 5차부터 30종(상위집합)
     for fid in NEW_FAMILIES:
         res = validate_recipe(library.load(fid), "full")
         assert res["ok"] and not res["errors"] and not res["warnings"], (fid, res["errors"][:2], res["warnings"][:2])

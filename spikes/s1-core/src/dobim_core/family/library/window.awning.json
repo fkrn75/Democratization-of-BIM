@@ -1,0 +1,334 @@
+{
+  "schema": "dobim.family/1",
+  "id": "window.awning",
+  "version": 1,
+  "name": "들창",
+  "description": "벽에 호스팅되는 들창(위 경첩, 아래가 바깥 -y 로 열림). 창틀(압출 - 공극)과 창짝(울거미 + 유리) 하나, 평면에 바깥으로 내민 열림 선.",
+  "ifc": {
+    "class": "IfcWindow",
+    "type_class": "IfcWindowType",
+    "predefined": "WINDOW",
+    "type_attrs": {
+      "PartitioningType": "SINGLE_PANEL",
+      "ParameterTakesPrecedence": false
+    },
+    "attrs": {
+      "OverallWidth": {
+        "expr": "width"
+      },
+      "OverallHeight": {
+        "expr": "height"
+      }
+    },
+    "panels": [
+      {
+        "operation": "TOPHUNG",
+        "position": "MIDDLE"
+      }
+    ]
+  },
+  "host": {
+    "kinds": [
+      "wall"
+    ],
+    "cut": {
+      "x": [
+        "left",
+        "right"
+      ],
+      "z": [
+        "z0",
+        "z1"
+      ]
+    }
+  },
+  "params": {
+    "width": {
+      "kind": "type",
+      "default": 900,
+      "unit": "mm",
+      "min": 450,
+      "max": 1800
+    },
+    "height": {
+      "kind": "type",
+      "default": 600,
+      "unit": "mm",
+      "min": 400,
+      "max": 1500
+    },
+    "frame_w": {
+      "kind": "type",
+      "default": 60,
+      "unit": "mm",
+      "description": "창틀 단면 폭",
+      "min": 30,
+      "max": 80
+    },
+    "sash_w": {
+      "kind": "type",
+      "default": 50,
+      "unit": "mm",
+      "description": "창짝 울거미 폭",
+      "min": 30,
+      "max": 70
+    },
+    "glass_t": {
+      "kind": "type",
+      "default": 24,
+      "unit": "mm",
+      "description": "유리 두께",
+      "min": 6,
+      "max": 40
+    },
+    "u_value": {
+      "kind": "type",
+      "default": 1.6,
+      "unit": "none",
+      "description": "열관류율 W/m2K",
+      "min": 0.5,
+      "max": 5.0
+    },
+    "is_external": {
+      "kind": "type",
+      "default": true,
+      "type": "bool"
+    },
+    "throw": {
+      "kind": "type",
+      "default": 150,
+      "unit": "mm",
+      "description": "평면에 그리는 열림 내밀기",
+      "min": 50,
+      "max": 300
+    },
+    "sill": {
+      "kind": "instance",
+      "default": 1500,
+      "unit": "mm",
+      "description": "바닥에서 창 하단까지",
+      "min": 0,
+      "max": 2400
+    }
+  },
+  "derived": {
+    "z0": "sill",
+    "z1": "sill + height",
+    "frame_d": "min(host_thickness, 150)",
+    "ix0": "left + frame_w",
+    "ix1": "right - frame_w",
+    "iz0": "z0 + frame_w",
+    "iz1": "z1 - frame_w",
+    "iw": "width - 2*frame_w - 4 - 2*sash_w",
+    "ih": "height - 2*frame_w - 4 - 2*sash_w",
+    "glass_ratio": "iw*ih/(width*height)"
+  },
+  "refs": {
+    "left": {
+      "axis": "x",
+      "at": "-width/2"
+    },
+    "right": {
+      "axis": "x",
+      "at": "width/2"
+    }
+  },
+  "constraints": [
+    {
+      "expr": "iw >= 150 and ih >= 100",
+      "message": "유리 자리가 너무 작다(울거미·창틀을 줄이세요)"
+    },
+    {
+      "expr": "glass_t + 10 <= frame_d",
+      "message": "창틀 깊이가 창짝보다 얕다"
+    }
+  ],
+  "solids": [
+    {
+      "id": "frame",
+      "op": "extrude",
+      "plane": "xz",
+      "profile": {
+        "shape": "rect",
+        "u": [
+          "left",
+          "right"
+        ],
+        "v": [
+          "z0",
+          "z1"
+        ]
+      },
+      "range": [
+        "-frame_d/2",
+        "frame_d/2"
+      ]
+    },
+    {
+      "id": "frame_hole",
+      "op": "extrude",
+      "plane": "xz",
+      "role": "void",
+      "cuts": [
+        "frame"
+      ],
+      "profile": {
+        "shape": "rect",
+        "u": [
+          "ix0",
+          "ix1"
+        ],
+        "v": [
+          "iz0",
+          "iz1"
+        ]
+      },
+      "range": [
+        "-frame_d",
+        "frame_d"
+      ]
+    },
+    {
+      "id": "sash",
+      "op": "extrude",
+      "plane": "xz",
+      "profile": {
+        "shape": "rect",
+        "u": [
+          "ix0 + 2",
+          "ix1 - 2"
+        ],
+        "v": [
+          "iz0 + 2",
+          "iz1 - 2"
+        ]
+      },
+      "range": [
+        "-frame_d/2",
+        "-frame_d/2 + glass_t + 10"
+      ]
+    },
+    {
+      "id": "sash_hole",
+      "op": "extrude",
+      "plane": "xz",
+      "role": "void",
+      "cuts": [
+        "sash"
+      ],
+      "profile": {
+        "shape": "rect",
+        "u": [
+          "ix0 + 2 + sash_w",
+          "ix1 - 2 - sash_w"
+        ],
+        "v": [
+          "iz0 + 2 + sash_w",
+          "iz1 - 2 - sash_w"
+        ]
+      },
+      "range": [
+        "-frame_d",
+        "frame_d"
+      ]
+    },
+    {
+      "id": "sash_glass",
+      "op": "extrude",
+      "plane": "xz",
+      "profile": {
+        "shape": "rect",
+        "u": [
+          "ix0 + 2 + sash_w",
+          "ix1 - 2 - sash_w"
+        ],
+        "v": [
+          "iz0 + 2 + sash_w",
+          "iz1 - 2 - sash_w"
+        ]
+      },
+      "range": [
+        "(-frame_d/2 + -frame_d/2 + glass_t + 10)/2 - glass_t/2",
+        "(-frame_d/2 + -frame_d/2 + glass_t + 10)/2 + glass_t/2"
+      ]
+    }
+  ],
+  "plan_symbol": {
+    "default": [
+      {
+        "type": "rect",
+        "u": [
+          "left",
+          "right"
+        ],
+        "v": [
+          "-host_thickness/2",
+          "host_thickness/2"
+        ],
+        "style": "cut"
+      },
+      {
+        "type": "line",
+        "from": [
+          "ix0",
+          0
+        ],
+        "to": [
+          "ix1",
+          0
+        ],
+        "style": "projection"
+      },
+      {
+        "type": "line",
+        "from": [
+          "ix0",
+          "-frame_d/2"
+        ],
+        "to": [
+          "ix1",
+          "-frame_d/2 - throw"
+        ],
+        "style": "projection"
+      }
+    ],
+    "1:200": [
+      {
+        "type": "rect",
+        "u": [
+          "left",
+          "right"
+        ],
+        "v": [
+          "-host_thickness/2",
+          "host_thickness/2"
+        ],
+        "style": "cut"
+      }
+    ]
+  },
+  "psets": {
+    "Pset_WindowCommon": {
+      "on": "type",
+      "props": {
+        "IsExternal": {
+          "expr": "is_external"
+        },
+        "ThermalTransmittance": {
+          "expr": "u_value"
+        },
+        "GlazingAreaFraction": {
+          "expr": "round(glass_ratio, 3)"
+        }
+      }
+    },
+    "DoBIM_WindowParams": {
+      "on": "instance",
+      "props": {
+        "SillHeight": {
+          "expr": "sill"
+        }
+      }
+    }
+  }
+}

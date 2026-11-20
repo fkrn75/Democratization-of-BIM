@@ -427,6 +427,45 @@ def build_sheet(spec: dict, views: list[dict]) -> Sheet:
     return sh
 
 
+# ---------------------------------------------------------------- 인쇄 설정(W1 1-F 5차, IO-17): 여백·축척 맞춤
+def print_layout(sh: Sheet, paper: str, margin: float, fit: bool) -> tuple[Sheet, dict]:
+    """다 만든 시트를 인쇄 용지 paper 에 옮긴다. 시트 배치는 그대로 두고 그림 전체를 한 배율 k 로 바꾼다(선 굵기·글 크기·파선도 같은 배율).
+    fit 참: 네 변 여백 margin 안에 시트 전체가 들어가는 가장 큰 배율(확대도 한다). 거짓: 실제 크기(k = 1)이고 여백 안에 들어가지 않으면 SheetError.
+    어느 쪽이든 여백 안 영역의 가운데에 놓는다. 돌려주는 정보: 인쇄 용지·여백·배율(%)·놓인 위치."""
+    pw, ph = PAPERS[paper]
+    aw, ah = pw - 2 * margin, ph - 2 * margin
+    if aw <= 0 or ah <= 0:
+        raise SheetError(f"여백 {margin:g}mm 가 {paper} 용지보다 크다")
+    k = min(aw / sh.w, ah / sh.h) if fit else 1.0
+    if not fit and (sh.w > aw + 1e-6 or sh.h > ah + 1e-6):
+        raise SheetError(f"{sh.paper} 시트({sh.w:g}x{sh.h:g}mm)가 {paper} 용지의 여백 {margin:g}mm 안({aw:g}x{ah:g}mm)에 실제 크기로 들어가지 않는다. "
+                         "fit 을 켜거나(축척 맞춤) 더 큰 용지·작은 여백을 쓰세요")
+    ox, oy = margin + (aw - k * sh.w) / 2.0, margin + (ah - k * sh.h) / 2.0
+    out = Sheet(paper)
+    out.placed = [dict(q, x=round(ox + k * q["x"], 2), y=round(oy + k * q["y"], 2), w=round(k * q["w"], 2), h=round(k * q["h"], 2)) for q in sh.placed]
+    X, Y = (lambda v: ox + k * v), (lambda v: oy + k * v)
+    info = {"paper": paper, "margin": margin, "fit": fit, "zoom": round(k * 100.0, 3), "origin": [round(ox, 3), round(oy, 3)]}
+    out.prims.append(("g", "print", {"data-sheet-paper": sh.paper, "data-zoom": f"{info['zoom']:g}"}))
+    for p in sh.prims:
+        t = p[0]
+        if t == "line":
+            _, x0, y0, x1, y1, w, c, dash = p
+            out.prims.append(("line", X(x0), Y(y0), X(x1), Y(y1), w * k, c, (dash[0] * k, dash[1] * k) if dash else None))
+        elif t == "poly":
+            _, pts, fill, w, c = p
+            out.prims.append(("poly", [(X(x), Y(y)) for x, y in pts], fill, w * k, c))
+        elif t == "circle":
+            _, cx, cy, r, w, c, fill = p
+            out.prims.append(("circle", X(cx), Y(cy), r * k, w * k, c, fill))
+        elif t == "text":
+            _, x, y, size, s, anchor, c, ang, bold = p
+            out.prims.append(("text", X(x), Y(y), size * k, s, anchor, c, ang, bold))
+        else:   # 그룹 표지("g", "/g")는 그대로
+            out.prims.append(p)
+    out.prims.append(("/g",))
+    return out, info
+
+
 def view_title(sh: Sheet, x, y, number: str, title: str, scale, h: float = 4.0):
     """번호가 있는 뷰 제목(W1 1-C 2차, DOC-02): 상세 번호 원 + 제목(굵게) + 밑줄 + 축척. (x, y) = 뷰 틀의 왼쪽 아래(용지 mm)."""
     r = 4.5
