@@ -1708,3 +1708,34 @@ Revit 의 연속(체인) 치수·기준선 치수에 해당하는 모델 연관 
 - 기준선 `run_baseline.py --sheets`: main 3b61e78 과 코드 커밋 ec78d61 에서 각각 뽑아 183 파일 바이트 같음(work/·run.json 제외).
 - 결과(코드 커밋 ec78d61): s1-core 전체(test_slow 제외) 1571 통과·실패 0·건너뜀 40(새 시험 10건 포함). test_slow 8 통과. parity: 커맨드 188 전부 예시 실행, 불일치 0. parity_g: 통과(동작 77, 오류·경고 0). 새 커맨드 describe 응답 약 3,000토큰(MCP 봉투 두 벌 기준, 나눔 없음).
 - bench(치수 그림 경로를 건드려서 했다): 5만 요소 합성 모델, main 3b61e78 과 번갈아 각 3회 중앙값. 평면 8.01 -> 7.89초(-1.5%), 단면 16.11 -> 15.85초(-1.6%), 입면 23.17 -> 22.75초(-1.8%), 반사 천장 평면 7.61 -> 7.42초(-2.6%). 모두 30초 안, +10% 한도 안. 선분 수·SVG 바이트는 양쪽 같음. 합성 모델에는 치수 주석이 없어 새 분기는 타지 않는다(차이는 측정 잡음 범위).
+
+## 50. W1 연장 4번째 PR: 제도 뷰(VIEW-07), 외래 IFC 도면 3차 문 호·창 기호(IO-04) (2026-11-21, 브랜치 phase1/w1x-4)
+
+Revit 의 제도 뷰(Drafting View)에 해당하는 뷰 종류와, 외래 IFC 문·창의 평면 기호를 넣었다. 새 커맨드 1개(`view.drafting`, 188 -> 189). 새 요소 종류는 없다(뷰 종류 하나, 그래프 입력 하나). 레지스트리를 거쳐 CLI·MCP 가 같고(parity C), GUI 동작 1개(제도 뷰 만들기)를 actions.json 에 더했다(parity G).
+
+### 50.1 제도 뷰(VIEW-07)
+- `view.drafting {id?, name, scale=20}`: 뷰 종류 `drafting`. 저장은 이름·축척뿐이고(선택 키 없음) DoBIM_Defs 로 IFC 를 왕복한다. kinds.py·viewdefs 검사가 다른 키를 거절한다.
+- 모델을 자르거나 투영하지 않는다(view_cfg = None, 범례 뷰와 같은 자리). 그리는 것은 그 뷰의 2D 작도(draft.*: 선·폴리선·호·원·문자·채움·마스킹·구름·치수 계열)뿐이다. 레벨 기준선을 긋지 않고, 제목 종류명은 "상세도"다.
+- 시트·뷰포트(sheet.define·sheet.viewport.set·view.refs)·SVG/PDF/PNG/DXF 내보내기·view.set(이름·축척)·view.delete 는 다른 뷰와 같은 경로다. view.list 의 종류 거르기에 legend·drafting 을 더했다.
+- 다른 뷰의 작도는 기존 draft.copy 의 to_view 로 옮겨 온다(좌표 그대로).
+- 거절: 모델 치수(annot.dim.create·annot.dim.chain·annot.dim.heights, 범례 뷰도 같이)·태그·가시성·필터·템플릿·콜아웃·평면 전용 설정. 표고·좌표 기호(spot_elev·spot_coord)는 모델 좌표가 없어 text 를 직접 받는다(경사 기호는 기존 규칙대로 평면과 같다).
+- GUI 장면(view.scene): 모델이 없는 뷰도 작도 항목을 낸다. 예전에는 범례 뷰에서 바로 돌아가 작도가 장면에서 빠졌다(범례 뷰에 작도가 없으면 결과는 이전과 같다).
+- 한계: Revit 의 "제도 뷰로 저장"(뷰의 모델 선을 2D 선으로 굳혀 옮기기)과 다른 프로젝트의 제도 뷰 가져오기는 없다.
+
+### 50.2 외래 IFC 도면 3차: 문 호·창 기호(IO-04)
+- 새 그래프 입력 `("fopen", id)`(foreign_geom.opening): 외래 IfcDoor·IfcWindow 의 여닫이 방식, 배치 원점·국소 x·y 축(수평), OverallWidth(mm). 문 방식은 요소 OperationType(IFC4)이 정해져 있으면 그것, 아니면 유형(IfcDoorType·IFC2x3 IfcDoorStyle). 창은 PartitioningType(요소, 없으면 유형, IFC2x3 IfcWindowStyle.OperationType)과 유형의 IfcWindowPanelProperties.OperationType. 외래 형상처럼 바뀌지 않는 입력이라 한 번만 계산해 둔다.
+- 새 순수 모듈 `foreign_symbols.py`: 국소 좌표(u = 폭, w = 두께)에서 기호를 만들고 배치 축으로 세계 좌표에 놓는다. 문짝은 +w 쪽으로 열리고 왼쪽·오른쪽은 +w 방향을 볼 때의 왼쪽(IfcDoorTypeOperationEnum 규약). 문짝 폭은 OverallWidth 를 메시 폭 가운데에 둔다(없거나 메시보다 넓으면 메시 폭), 여는 면은 메시의 +w 쪽 면이다.
+  - 문: 외여닫이(좌·우), 양방향(DOUBLE_SWING_*), 쌍여닫이(같은 쪽·양방향·반대 방향 OPPOSITE_LEFT/RIGHT), 여닫이 + 고정 문짝(SWING_FIXED_*), 미닫이(SLIDING_TO_*·DOUBLE_DOOR_SLIDING: 문짝 선 + 가는 쪽 화살). 문짝 선 + 1/4 호(유리식 매개화, ARC_N 8).
+  - 창: 창틀 양면 선 + 유리선. 창짝에 SLIDINGHORIZONTAL 이 있으면 겹친 유리선 둘(미서기), 세로 칸 나눔(DOUBLE/TRIPLE_PANEL_VERTICAL 등)은 칸막이 선.
+  - 모르는 방식(NOTDEFINED·USERDEFINED·없음, 접이·회전·말아 올림 등 지원하지 않는 방식): 기본 기호(문 = 왼쪽 외여닫이, 창 = 칸 하나)를 그리고 _render_view 가 "외래 문·창 N개의 여닫이 방식을 몰라 기본 기호로 그렸다" 경고를 낸다.
+- 적용 범위: 평면(반사 천장 평면 제외)에서 절단 높이가 그 문·창 메시의 높이 범위 안일 때만, 그 요소의 형상 선(절단선·투영선) 대신 기호를 그린다(저작 문·창과 같은 관행). 단면·입면, 절단 높이가 범위 밖인 평면, 배치가 기울어진 문·창은 이전처럼 형상 그대로다. 가림(_f_occ)·채움은 바꾸지 않았다.
+- 한계: IFC 의 Plan/FootPrint 2D 표현(Revit 이 내보내는 평면 기호 곡선)은 아직 읽지 않는다. 외래 계단 오름 화살표, 4차(외래 요소가 저작 선 가리기·대형 가림 성능)는 남는다.
+
+### 50.3 외래 표본 기준선 변경(의도한 변경, 별도 커밋)
+corpus/baseline.json 을 `foreign_corpus.py --write-baseline` 로 다시 썼다. **바뀐 것은 문·창이 있는 표본의 평면 6장뿐**이고 입면·단면과 BA·BS(문·창 없음) 표본은 선분·SVG 해시가 그대로다.
+
+| 표본 | 바뀐 뷰 | 이유 |
+|---|---|---|
+| RA01 (ifcopenshell.api) | plan-0, plan-1 | 문 SINGLE_SWING_LEFT(유형 값)·창 SINGLE_PANEL 이 형상 절단선 대신 문짝 호·창 기호로 그려진다 |
+| RA01-bonsai | plan-0, plan-1 | 같은 IFC 내용(위와 같은 해시) |
+| RA01-revit(로컬 전용) | plan-0, plan-1 | 문 OperationType·창 칸 나눔이 NOTDEFINED 라 기본 기호 + 경고(1층 7개, 2층 6개). 로컬 기준선은 저장소 밖에 새로 썼다 |
