@@ -69,6 +69,7 @@
     {"id": "edit.redo", "label": "다시 실행", "command": "history.redo"},
     {"id": "props.show", "label": "속성 패널 읽기", "command": "element.get"},
     {"id": "check.model", "label": "모델 품질 점검(겹친 벽·중복·고아·열린 공간 경계)", "command": "model.check"},
+    {"id": "check.drawings", "label": "건축법 도면 기준 대조(허가·착공 필수 도면·축척·방위·표제란)", "command": "drawing.check"},
     {"id": "canvas.pan", "exempt": true},
     {"id": "canvas.zoom", "exempt": true},
     {"id": "canvas.hover", "exempt": true},

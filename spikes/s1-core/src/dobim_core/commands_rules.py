@@ -53,7 +53,9 @@ def _rule_rows(profile: str) -> list[dict]:
         fns[seumteo.PACKAGE_CHECK[0]] = seumteo.PACKAGE_CHECK[1]
         for cid, (mode, sev, _reqs, olds) in catalog.SEUMTEO_CHECKS.items():
             row = {"id": cid, "mode": mode, "severity": sev, "scope": "seumteo", "title": runner._seu_title(fns[cid]),
-                   "in_profile": True}
+                   "in_profile": True, "basis": "public" if cid in profiles.SEU_PUBLIC else "draft"}   # 근거 공개 확인 여부(W1 1-E, DATA-09)
+            if cid in profiles.SEU_PUBLIC:
+                row["public_ref"] = profiles.SEU_PUBLIC[cid]
             if olds:
                 row["replaces"] = list(olds)
             rows.append(row)
@@ -101,6 +103,7 @@ def rules_list(env, a: RulesList):
                                              **({"seumteo": len(catalog.SEUMTEO_CHECKS)} if a.profile == "seumteo" else {})}}
     if a.profile == "seumteo":
         base["draft_warning"] = profiles.DRAFT_WARNING
+        base["public_source"] = profiles.SEU_PUBLIC_SOURCE   # basis=public 규칙이 기댄 공개 문서(W1 1-E, DATA-09)
     return _page_of(rows, a, base)
 
 

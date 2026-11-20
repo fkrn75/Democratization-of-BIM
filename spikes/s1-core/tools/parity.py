@@ -74,7 +74,7 @@ PRE = {**_DRAFT_PRE, "history.redo": [("history.undo", {})], "ifc.restore": [_EX
        "space.set": [_SP1], "space.move": [_SP1], "space.delete": [_SP1], "space.from_walls": [_W4],
        "site.set": [_SI1], "site.delete": [_SI1],
        "sheet.export": [_V1], "sheet.define": [_V1], "sheet.delete": [_V1, _SH1], "sheet.list": [_V1, _SH1], "sheet.render": [_V1, _SH1],
-       "view.image": [_V1], "sheet.image": [_V1],
+       "view.image": [_V1], "sheet.image": [_V1], "drawing.check": [_V1, _SH1],
        "solid.set": [_SO1], "solid.move": [_SO1], "solid.delete": [_SO1],
        "grid.set": [_GR1], "grid.move": [_GR1], "grid.delete": [_GR1],
        "wall.attach_top": [_RF1], "wall.cut_by": [_LB1],
