@@ -41,6 +41,7 @@ _RF1 = ("roof.create", {"id": F.RF1, "level": F.LV2, "boundary": [[0, 0], [6000,
 _RL1 = ("railing.create", {"id": F.RL1, "level": F.LV1, "path": [[0, 0], [3000, 0]], "height": 1100})
 _SP1 = ("space.create", {"id": F.SP1, "level": F.LV1, "boundary": [[0, 0], [6000, 0], [6000, 4000], [0, 4000]], "name": "사무실", "category": "사무실"})
 _SH1 = ("sheet.define", {"id": F.SH1, "name": "A-101 1층 평면", "views": [F.V1], "paper": "A3", "project_name": "예시 프로젝트", "sheet_number": "A-101", "date": "2026-01-01"})
+_LA1 = ("area.define", {"id": F.LA1, "name": "발코니", "rule": "119-1-3-나", "level": F.LV1, "boundary": [[0, 4000], [6000, 4000], [6000, 5500], [0, 5500]], "contact_length": 6000})   # 법정 면적 객체 예시의 준비(ARC-36)
 _PP1 = ("param.define", {"pset": "Pset_ProjectCommon", "name": "Zone", "type": "text", "kinds": ["door", "wall"]})   # 프로젝트 매개변수 예시의 준비(DATA-03)
 _SI1 = ("site.create", {"id": F.SI1, "boundary": [[-6000, -6000], [18000, -6000], [18000, 14000], [-6000, 14000]], "name": "대지"})
 _SO1 = ("solid.create", {"id": F.SO1, "level": F.LV1, "category": "buttress", "form": "prism", "polygon": [[0, -900], [600, -900], [600, -100], [0, -100]], "z0": 0, "z1": 2400})   # 일반 솔리드 예시의 준비(18단계)
@@ -85,7 +86,8 @@ PRE = {**_DRAFT_PRE, "history.redo": [("history.undo", {})], "ifc.restore": [_EX
        "view.template.set": [_VT1], "view.template.delete": [_VT1], "view.template.apply": [_V1, _VT1],
        "view.callout": [_V1], "sheet.viewport.set": [_V1, _SH1], "view.refs": [_V1, _SH1],
        "view.areas": [("view.area_plan", {"id": F.VA1, "name": "1F 바닥면적", "level": F.LV1, "scheme": "gross"})],
-       "param.delete": [_PP1], "param.list": [_PP1]}
+       "param.delete": [_PP1], "param.list": [_PP1],
+       "area.delete": [_LA1], "area.list": [_LA1], "area.legal": [_W4, _SI1, _LA1]}
 ERROR_CASES = [
     ("없는 커맨드", "no.such.command", {}, {}),
     ("스키마 오류(타입)", "wall.move", {"id": F.W1, "dx": "abc"}, {}),

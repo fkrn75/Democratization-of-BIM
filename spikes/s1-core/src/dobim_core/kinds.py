@@ -1389,6 +1389,27 @@ def _pparam_params(p):
         "desc": lambda v: text_ok(v, 0, PPARAM_DESC_MAX)})
 
 
+# ---------------------------------------------------------------- 법정 면적 객체(W1 연장, ARC-36·ANA-04)
+# larea = Revit 의 면적 계획 속 면적(Area)에 해당한다: 건축법 시행령 119조의 산입·불산입을 근거 코드와 함께 그린 다각형.
+#         대상(대지·건축·바닥면적)과 효과(더함·뺌·용적률만 뺌·노대)는 근거 코드가 정한다(manual 만 사용자가 고른다). 비 IFC 의도 요소라 DoBIM_Defs 로 왕복한다
+def _larea_params(p):
+    from dobim_core import legal_area as LA
+    err = _check_opt("larea", p, {"name": _name, "target": lambda v: v in LA.TARGETS, "rule": lambda v: v in LA.RULES, "effect": lambda v: v in LA.EFFECTS,
+                                  "boundary": _poly_pts_ok, "note": lambda v: text_ok(v, 0, LA.NOTE_MAX)},
+                     {"level": id_ok, "contact_length": _pos})
+    if err:
+        return err
+    if not LA.rule_fits(p["rule"], p["target"], p["effect"]):
+        return "larea 의 근거(rule)와 대상·효과가 맞지 않는다"
+    if ("level" in p) != (p["target"] == "floor"):
+        return "larea.level 은 바닥면적(floor) 대상에만, 반드시 둔다"
+    if ("contact_length" in p) != (p["effect"] == "balcony"):
+        return "larea.contact_length 는 노대(119-1-3-나)에만, 반드시 둔다"
+    if p["rule"] == LA.MANUAL and not p["note"].strip():
+        return "larea 사용자 조정(manual)은 근거를 note 에 적는다"
+    return None
+
+
 # 태그 대상 종류(annot.TAG_FIELDS 와 같다: 가져오기가 복원한 태그 대상을 이 종류로 검사한다)
 TAG_TARGET_KINDS = ("wall", "door", "slab", "space", "stair", "finst", "roof", "railing")
 
@@ -1446,6 +1467,8 @@ ELEMENT_KINDS: dict[str, ElementKind] = {k.name: k for k in (
     ElementKind("keynote", False, None, False, 6, _keynote_params),
     # 프로젝트 매개변수(W1 연장, DATA-03): 리비전·키노트처럼 비 IFC 의도 요소다
     ElementKind("pparam", False, None, False, 6, _pparam_params),
+    # 법정 면적 객체(W1 연장, ARC-36): 바닥면적 대상만 레벨을 가리킨다(평면 뷰의 level 과 같은 참조)
+    ElementKind("larea", False, None, False, 6, _larea_params, refs=(("level", "id", None),), ref_kinds=(("level", ("level",)),)),
 )}
 
 NON_IFC_KINDS = frozenset(k for k, v in ELEMENT_KINDS.items() if not v.ifc)      # 신원·속성셋·재료가 없는 의도 요소(뷰 정의, 치수·태그)

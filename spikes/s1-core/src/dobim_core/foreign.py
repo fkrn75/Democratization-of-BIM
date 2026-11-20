@@ -657,6 +657,14 @@ def _restore_defs(f, rows: dict, rels: set, taken: set, plan: "ImportPlan") -> N
                 skip(eid, "같은 속성셋.속성의 프로젝트 매개변수가 더 있다")
             else:
                 ok[eid] = parsed[eid]
+    # 법정 면적 객체(W1 연장, ARC-36): 바닥면적 대상은 가리키는 레벨이 저작 레벨이어야 한다(평면 뷰와 같은 규칙). 레벨이 파일에 없으면 고아로 되살린다
+    for eid in sorted(e for e, d in parsed.items() if d["kind"] == "larea"):
+        lv = parsed[eid]["params"].get("level")
+        st = None if lv is None else state(lv)
+        if st is not None and (K.ref_kind_error("larea", "level", st[0]) or st[1] != "authored"):
+            skip(eid, "법정 면적 객체가 가리키는 레벨이 저작이 아니다(분리·외래·다른 종류)")
+        else:
+            ok[eid] = parsed[eid]
     for eid, d in ok.items():
         rows[eid] = {"kind": d["kind"], "ifc_class": "", "origin": "authored", "family_id": d["family_id"], "params": d["params"],
                      "projection_hash": None}
