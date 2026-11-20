@@ -28,6 +28,19 @@ SKIP_REASONS = {
     "KR-CODE-12": "세움터 사본은 TM 좌표계만 언급하고 구체 투영·원점을 지정하지 않음(REQ-041·051, 근거 없음)",
     "KR-CODE-13": "세움터 공종분류는 약식 코드 목록만 있고 결합·물량 구문이 없음(REQ-024, 근거 없음)",
 }
+# 세움터 프로파일 근거의 공개 확인(W1 1-E, DATA-09). 설계기준서·업무지침서·검토기준서 원본은 세움터 로그인 뒤 BIM가이드에서만
+# 열람할 수 있어 여전히 공개 원문으로 확인하지 못했다. 공개 자료로 확인한 것은 아래 한 문서뿐이다.
+#   민원인 매뉴얼(BIM) Rev 1.5(클라우드 기반 건축행정시스템, 46쪽), buildingSMART Korea 자료실 게시 2022-10-05
+#   (sha256 58eb3c9a867942d7067ead54f1da351394ea5ace1205def2c8fe7be08a1760af)
+# 매뉴얼이 확인해 주는 것은 "무엇이 모델에 있어야 하는가"뿐이고 IFC 엔티티·Pset 위치는 여전히 없다. 그래서 판정 수준(fail·warn·info)은 바꾸지 않는다.
+# 여기 없는 KR-SEU-* 는 비공식 사본(설계기준서 v1.0(안))에만 근거한다(rules.list 의 basis=draft).
+SEU_PUBLIC_SOURCE = "민원인 매뉴얼(BIM) Rev 1.5(buildingSMART Korea 자료실 게시 2022-10-05)"
+SEU_PUBLIC = {
+    "KR-SEU-04": "p.25: 공간명은 BIM 모델에서 작성되어야 조회 가능(IFC 위치는 없음)",
+    "KR-SEU-09": "p.14~15: BIM 서식입력이 제출 IFC 에서 면적 정보를 추출(면적 객체의 IFC 위치·분류코드 값은 없음)",
+    "KR-SEU-10": "p.37: 건폐율 검토 때 건폐율 계산 관련 면적을 명칭과 함께 3D 에 표시(면적 객체가 모델에 있음을 시사, IFC 위치는 없음)",
+    "KR-SEU-15": "p.31: 계단실 공간 속성 AIS_피난계단 값 \"True\"(AIS_ 접두 속성 이름·참거짓 값 형태 확인)",
+}
 # 세움터 전용 KR-SEU-* 가 대신 판정하는 조달청 규칙(catalog.SEUMTEO_CHECKS 의 네 번째 칸에서 뒤집어 만든다)
 REPLACED_BY = {old: seu for seu, (_, _, _, olds) in catalog.SEUMTEO_CHECKS.items() for old in olds}
 

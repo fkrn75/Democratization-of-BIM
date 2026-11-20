@@ -5039,4 +5039,5 @@ from dobim_core import commands_viewref  # noqa: E402,F401
 from dobim_core import commands_viewplans  # noqa: E402,F401
 from dobim_core import commands_edit  # noqa: E402,F401
 from dobim_core import commands_check  # noqa: E402,F401
+from dobim_core import commands_drawcheck  # noqa: E402,F401
 from dobim_core import commands_arch  # noqa: E402,F401
