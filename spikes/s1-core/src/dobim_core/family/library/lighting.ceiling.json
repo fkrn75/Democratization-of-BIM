@@ -1,0 +1,215 @@
+{
+  "schema": "dobim.family/1",
+  "id": "lighting.ceiling",
+  "version": 1,
+  "name": "천장 조명",
+  "description": "천장 조명(IfcLightFixture). 원점은 천장 면이고 몸통이 아래로 내려온다(배치 elevation = 천장 높이). 사각 평판 또는 원형 다운라이트.",
+  "ifc": {
+    "class": "IfcLightFixture",
+    "type_class": "IfcLightFixtureType",
+    "predefined": "POINTSOURCE"
+  },
+  "params": {
+    "shape": {
+      "kind": "type",
+      "default": "panel",
+      "type": "enum",
+      "values": [
+        "panel",
+        "round"
+      ],
+      "description": "평판(panel) 또는 원형 다운라이트(round)"
+    },
+    "body_h": {
+      "kind": "type",
+      "default": 60,
+      "unit": "mm",
+      "description": "몸통 높이(천장 아래로)",
+      "min": 20,
+      "max": 200
+    },
+    "watts": {
+      "kind": "type",
+      "default": 40,
+      "unit": "none",
+      "description": "소비 전력 W",
+      "min": 3,
+      "max": 200
+    },
+    "width": {
+      "kind": "instance",
+      "default": 600,
+      "unit": "mm",
+      "description": "평판 폭 또는 다운라이트 지름",
+      "min": 100,
+      "max": 1200
+    },
+    "depth": {
+      "kind": "instance",
+      "default": 600,
+      "unit": "mm",
+      "description": "평판 깊이(round 는 쓰지 않음)",
+      "min": 100,
+      "max": 1200
+    }
+  },
+  "derived": {
+    "r": "width/2"
+  },
+  "solids": [
+    {
+      "id": "panel",
+      "op": "extrude",
+      "plane": "xy",
+      "when": "shape == 'panel'",
+      "profile": {
+        "shape": "rect",
+        "u": [
+          "-width/2",
+          "width/2"
+        ],
+        "v": [
+          "-depth/2",
+          "depth/2"
+        ]
+      },
+      "range": [
+        "-body_h",
+        0
+      ]
+    },
+    {
+      "id": "round",
+      "op": "extrude",
+      "plane": "xy",
+      "profile": {
+        "shape": "circle",
+        "center": [
+          0,
+          0
+        ],
+        "r": "r"
+      },
+      "range": [
+        "-body_h",
+        0
+      ],
+      "when": "shape == 'round'"
+    }
+  ],
+  "plan_symbol": {
+    "default": [
+      {
+        "type": "rect",
+        "u": [
+          "-width/2",
+          "width/2"
+        ],
+        "v": [
+          "-depth/2",
+          "depth/2"
+        ],
+        "style": "projection",
+        "when": "shape == 'panel'"
+      },
+      {
+        "type": "line",
+        "from": [
+          "-width/2",
+          "-depth/2"
+        ],
+        "to": [
+          "width/2",
+          "depth/2"
+        ],
+        "when": "shape == 'panel'",
+        "style": "projection"
+      },
+      {
+        "type": "line",
+        "from": [
+          "-width/2",
+          "depth/2"
+        ],
+        "to": [
+          "width/2",
+          "-depth/2"
+        ],
+        "when": "shape == 'panel'",
+        "style": "projection"
+      },
+      {
+        "type": "circle",
+        "center": [
+          0,
+          0
+        ],
+        "radius": "r",
+        "style": "projection",
+        "when": "shape == 'round'"
+      },
+      {
+        "type": "line",
+        "from": [
+          "-r",
+          0
+        ],
+        "to": [
+          "r",
+          0
+        ],
+        "when": "shape == 'round'",
+        "style": "projection"
+      },
+      {
+        "type": "line",
+        "from": [
+          0,
+          "-r"
+        ],
+        "to": [
+          0,
+          "r"
+        ],
+        "when": "shape == 'round'",
+        "style": "projection"
+      }
+    ],
+    "1:200": [
+      {
+        "type": "rect",
+        "u": [
+          "-width/2",
+          "width/2"
+        ],
+        "v": [
+          "-depth/2",
+          "depth/2"
+        ],
+        "style": "projection",
+        "when": "shape == 'panel'"
+      },
+      {
+        "type": "circle",
+        "center": [
+          0,
+          0
+        ],
+        "radius": "r",
+        "style": "projection",
+        "when": "shape == 'round'"
+      }
+    ]
+  },
+  "psets": {
+    "Pset_LightFixtureTypeCommon": {
+      "on": "type",
+      "props": {
+        "TotalWattage": {
+          "expr": "watts"
+        },
+        "NumberOfSources": 1
+      }
+    }
+  }
+}

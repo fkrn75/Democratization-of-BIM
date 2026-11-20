@@ -1,8 +1,9 @@
 # SPDX-License-Identifier: MPL-2.0
-"""S4 패밀리 커맨드: family.list / validate / register / place / set / preview.
+"""S4 패밀리 커맨드: family.list / validate / register / load_dir / place / set / preview.
 
 레시피(JSON, ADR-0008)를 요소 저장소에 올리는 경로는 이렇다.
   family.register : 레시피 + 타입 매개변수 값 → 타입 요소(ftype, IfcXxxType 로 투영). 타입 수준 속성셋을 IFC 에 쓴다.
+  family.load_dir : 사용자 레시피 폴더(W1 1-F 5차, FAM-01) → id 마다 version 하나를 골라 기본 타입 값으로 register 한다.
   family.place    : 타입(또는 패밀리 id + 타입 값) + 인스턴스 값 + 호스트/레벨 → 인스턴스 요소(finst). 개구부·속성셋 포함.
 이 모듈은 ifcopenshell 을 import 하지 않는다(무거운 검증은 family.validate 안에서 지연 import).
 """
@@ -422,6 +423,124 @@ def family_register(ctx, a: FamilyRegister):
     _warn_same_id(ctx, r, rhash)
     _make_type(ctx, tid, data, r, plan, tv, a.name)
     return {"id": tid, "family": r.id, "created": True}
+
+
+# ---------------------------------------------------------------- family.load_dir (W1 1-F 5차, FAM-01)
+DIR_FILES_MAX = 64        # 한 폴더에서 읽는 레시피 파일 상한(*.json, 하위 폴더는 보지 않는다)
+REASON_MAX = 200          # 거절 이유 문장 길이 상한(응답 크기)
+
+
+class FamilyLoadDir(A):
+    path: str = Field(max_length=260, description="작업 폴더 안의 사용자 레시피 폴더. 그 바로 아래 *.json 만 읽는다(64개 이하, 파일마다 64KB 이하)")
+    versions: Annotated[dict[FamilyId, Annotated[int, Field(ge=1, le=9999)]], Field(max_length=64)] = Field(
+        default_factory=dict, description="id 마다 쓸 version. 생략한 id 는 폴더에서 가장 높은 version")
+    builtin: Literal["skip", "override"] = Field(
+        "skip", description="기본 라이브러리와 같은 id 인데 내용이 다른 레시피: skip=거절(기본), override=올린다(family 로 배치하면 이 프로젝트에 올린 쪽이 우선)")
+
+
+def _reject(out: list, file: str | None, code: str, reason: str, **kw) -> None:
+    row = {"file": file} if file is not None else {}
+    out.append(row | kw | {"code": code, "reason": limits.clip_chars(reason, REASON_MAX)})
+
+
+def _read_dir_recipes(folder, rejected: list) -> dict:
+    """폴더의 *.json 을 이름순으로 읽어 검사한다. 통과한 것은 {id: {version: [(파일, 레시피, 해시), ...]}}, 실패는 rejected 에 이유와 함께 넣는다."""
+    files = sorted((p for p in folder.iterdir() if p.suffix.lower() == ".json" and p.is_file()), key=lambda p: p.name)
+    if len(files) > DIR_FILES_MAX:
+        raise DobimError("CONSTRAINT", f"폴더에 레시피(*.json)가 {len(files)}개다({DIR_FILES_MAX}개 이하)", path="/path",
+                         hint="폴더를 나눠 여러 번 불러오세요")
+    root = folder.resolve()
+    found: dict[str, dict[int, list]] = {}
+    for p in files:
+        if p.resolve().parent != root:   # 심볼릭 링크로 폴더 밖 파일을 가리키면 읽지 않는다
+            _reject(rejected, p.name, "outside", "폴더 밖을 가리키는 링크라 읽지 않았다")
+            continue
+        if p.stat().st_size > MAX_RECIPE_FILE:
+            _reject(rejected, p.name, "too_large", f"파일이 {MAX_RECIPE_FILE // 1024}KB 를 넘는다")
+            continue
+        try:
+            data = load_json_text(p.read_text(encoding="utf-8"))
+            r, _ = FE.load_recipe(data)
+        except UnicodeDecodeError:
+            _reject(rejected, p.name, "invalid", "UTF-8 이 아니다")
+            continue
+        except FamilyError as ex:
+            first = ex.issues[0]
+            _reject(rejected, p.name, "invalid", f"{first.message}" + (f" ({first.path})" if first.path else ""))
+            continue
+        found.setdefault(r.id, {}).setdefault(r.version, []).append((p.name, data, FS.recipe_hash_of(data)))
+    return found
+
+
+@command("family.load_dir", kind="mutation", risk="write", group="family",
+         summary="사용자 레시피 폴더를 불러와 패밀리 타입을 만든다(id 마다 version 하나)",
+         args=FamilyLoadDir, since="0.14",
+         examples=[{"path": "user-families"}, {"path": "user-families", "versions": {"user.stool": 1}}])
+def family_load_dir(ctx, a: FamilyLoadDir):
+    """규칙:
+    - 폴더 바로 아래 *.json 을 이름순으로 읽는다. 크기 초과·UTF-8 아님·JSON 오류·레시피 검사 실패는 파일마다 이유와 함께 rejected 에 넣고 나머지는 계속한다
+    - 같은 id 가 여럿이면 versions 로 준 version, 없으면 가장 높은 version 하나를 고른다. 같은 version 에 내용이 다른 파일이 둘 이상이면 그 id 는 모호해 거절한다
+      (내용이 같은 파일은 하나로 본다). versions 에 준 version 이 폴더에 없으면 그 id 를 거절한다
+    - 기본 라이브러리와 id 가 같고 내용이 다르면 builtin=skip(기본)은 거절, override 는 올린다. 내용까지 같으면 그대로 올린다(기본 라이브러리와 같은 타입)
+    - 고른 레시피는 기본 타입 값으로 family.register 와 같은 타입을 만든다(이미 있으면 created=false). 이후 family.place family=<id> 가 이 타입의 레시피를 쓴다"""
+    from dobim_core.family import library
+    from types import SimpleNamespace
+    folder = resolve_in_workspace(ctx.eng.workspace, a.path, must_exist=True)
+    if not folder.is_dir():
+        raise DobimError("CONSTRAINT", "폴더가 아니다", path="/path", hint="레시피 파일 하나는 family.register path 로 올리세요")
+    rejected: list[dict] = []
+    found = _read_dir_recipes(folder, rejected)
+    for fid in sorted(set(a.versions) - set(found)):
+        _reject(rejected, None, "version_not_found", "폴더에 이 id 의 레시피가 없다", id=fid, version=a.versions[fid])
+    builtin_ids = set(library.ids())
+    loaded = []
+    plain = SimpleNamespace(type_values={}, transoms=None, bays=None, cols=None)
+    for fid in sorted(found):
+        by_ver = found[fid]
+        avail = sorted(by_ver)
+        ver = a.versions.get(fid, avail[-1])
+        if ver not in by_ver:
+            _reject(rejected, None, "version_not_found", f"version {ver} 이 폴더에 없다(있는 version {avail})", id=fid, version=ver)
+            continue
+        variants = {h: (name, data) for name, data, h in by_ver[ver]}
+        files = [name for name, _, _ in by_ver[ver]]
+        if len(variants) > 1:
+            _reject(rejected, files[0], "ambiguous_version", f"version {ver} 에 내용이 다른 레시피가 {len(variants)}개다({', '.join(files[:4])})",
+                    id=fid, version=ver)
+            continue
+        rhash, (name, data) = next(iter(variants.items()))
+        override = fid in builtin_ids and rhash != FS.recipe_hash_of(library.load(fid))
+        if override and a.builtin == "skip":
+            _reject(rejected, name, "builtin_id", "기본 라이브러리와 같은 id 인데 내용이 다르다(id 를 바꾸거나 builtin=override)", id=fid, version=ver)
+            continue
+        r, plan = FE.load_recipe(data)
+        try:
+            tv, _ = FE.resolve_values(r, _expand_type(r, plain), None)
+            _check_type(r, plan, tv, plain)
+            FE.evaluate(r, plan, tv, None, None)
+        except FamilyError as ex:
+            _reject(rejected, name, "invalid", f"기본 타입 값으로 평가하지 못했다: {ex.issues[0].message}", id=fid, version=ver)
+            continue
+        except DobimError as ex:
+            _reject(rejected, name, "invalid", f"기본 타입 값으로 평가하지 못했다: {ex.message}", id=fid, version=ver)
+            continue
+        tid = _content_tid(ctx, rhash, tv)
+        created = tid not in ctx.st.el
+        if created:
+            _warn_same_id(ctx, r, rhash)
+            _make_type(ctx, tid, data, r, plan, tv, None)
+        elif ctx.st.el[tid]["kind"] != "ftype":
+            _reject(rejected, name, "invalid", f"타입 id {tid} 가 다른 요소로 차 있다", id=fid, version=ver)
+            continue
+        row = {"id": fid, "version": ver, "file": name, "type": tid, "created": created}
+        if len(avail) > 1:
+            row["versions"] = avail
+        if override:
+            row["override"] = True
+        loaded.append(row)
+    if not loaded and not rejected:
+        ctx.warn("폴더에 레시피(*.json)가 없다")
+    return {"loaded": loaded, "rejected": rejected}
 
 
 # ---------------------------------------------------------------- family.place / set

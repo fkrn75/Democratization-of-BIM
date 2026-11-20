@@ -73,7 +73,7 @@ PRE = {**_DRAFT_PRE, "history.redo": [("history.undo", {})], "ifc.restore": [_EX
        "elevator.set": [_EL1], "elevator.move": [_EL1], "elevator.delete": [_EL1], "elevator.cut_slabs": [_EL1, _S2],
        "space.set": [_SP1], "space.move": [_SP1], "space.delete": [_SP1], "space.from_walls": [_W4],
        "site.set": [_SI1], "site.delete": [_SI1],
-       "sheet.define": [_V1], "sheet.delete": [_V1, _SH1], "sheet.list": [_V1, _SH1], "sheet.render": [_V1, _SH1],
+       "sheet.export": [_V1], "sheet.define": [_V1], "sheet.delete": [_V1, _SH1], "sheet.list": [_V1, _SH1], "sheet.render": [_V1, _SH1],
        "view.image": [_V1], "sheet.image": [_V1],
        "solid.set": [_SO1], "solid.move": [_SO1], "solid.delete": [_SO1],
        "grid.set": [_GR1], "grid.move": [_GR1], "grid.delete": [_GR1],
@@ -286,6 +286,15 @@ async def run_parity(work: Path | None = None) -> dict:
         shutil.copy(other_src, w / "other.dobim")
     for w in (wa, wb):
         shutil.copy(work / "import-example.ifc", w / "import-example.ifc")
+    # family.load_dir 예시(W1 1-F 5차)의 사용자 레시피 폴더: 같은 id 의 version 1·2 와 잘못된 파일 하나. 양쪽 작업 폴더에 같은 파일을 둔다
+    from dobim_core.family import library
+    for w in (wa, wb):
+        uf = w / "user-families"
+        uf.mkdir(exist_ok=True)
+        for v in (1, 2):
+            rec = dict(library.load("chair.basic"), id="user.stool", version=v, name=f"스툴 v{v}")
+            (uf / f"stool-v{v}.json").write_text(json.dumps(rec, ensure_ascii=False), encoding="utf-8")
+        (uf / "broken.json").write_text("{not json", encoding="utf-8")
     cli = CliSide(wa)
     results, mismatches = [], []
     cmds = registry.load()

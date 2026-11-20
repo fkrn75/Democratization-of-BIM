@@ -1,0 +1,343 @@
+{
+  "schema": "dobim.family/1",
+  "id": "door.glass",
+  "version": 1,
+  "name": "외여닫이 유리문",
+  "description": "벽에 호스팅되는 외여닫이 유리문. 문틀(스윕), 울거미 문짝(압출에서 유리 자리 공극), 유리판. 경첩 쪽(L/R)에 따라 열림 호.",
+  "ifc": {
+    "class": "IfcDoor",
+    "type_class": "IfcDoorType",
+    "predefined": "DOOR",
+    "type_attrs": {
+      "OperationType": "NOTDEFINED",
+      "ParameterTakesPrecedence": false
+    },
+    "attrs": {
+      "OverallWidth": {
+        "expr": "width"
+      },
+      "OverallHeight": {
+        "expr": "height"
+      },
+      "OperationType": {
+        "expr": "'SINGLE_SWING_LEFT' if swing == 'L' else 'SINGLE_SWING_RIGHT'"
+      }
+    }
+  },
+  "host": {
+    "kinds": [
+      "wall"
+    ],
+    "cut": {
+      "x": [
+        "left",
+        "right"
+      ],
+      "z": [
+        0,
+        "height"
+      ]
+    }
+  },
+  "params": {
+    "width": {
+      "kind": "type",
+      "default": 1000,
+      "unit": "mm",
+      "description": "개구부 폭(문틀 바깥)",
+      "min": 800,
+      "max": 1500
+    },
+    "height": {
+      "kind": "type",
+      "default": 2100,
+      "unit": "mm",
+      "description": "개구부 높이",
+      "min": 1800,
+      "max": 3000
+    },
+    "frame_w": {
+      "kind": "type",
+      "default": 50,
+      "unit": "mm",
+      "description": "문틀 단면 폭",
+      "min": 30,
+      "max": 100
+    },
+    "leaf_t": {
+      "kind": "type",
+      "default": 50,
+      "unit": "mm",
+      "description": "문짝 두께",
+      "min": 40,
+      "max": 70
+    },
+    "stile": {
+      "kind": "type",
+      "default": 100,
+      "unit": "mm",
+      "description": "울거미 폭",
+      "min": 50,
+      "max": 150
+    },
+    "glass_t": {
+      "kind": "type",
+      "default": 10,
+      "unit": "mm",
+      "description": "유리 두께",
+      "min": 6,
+      "max": 24
+    },
+    "is_external": {
+      "kind": "type",
+      "default": true,
+      "type": "bool",
+      "description": "외부 문 여부"
+    },
+    "swing": {
+      "kind": "instance",
+      "default": "L",
+      "type": "enum",
+      "values": [
+        "L",
+        "R"
+      ],
+      "description": "경첩 위치(L=왼쪽)"
+    }
+  },
+  "derived": {
+    "fx0": "-width/2 + frame_w/2",
+    "fx1": "width/2 - frame_w/2",
+    "fz1": "height - frame_w/2",
+    "leaf_w": "width - 2*frame_w",
+    "leaf_h": "height - frame_w",
+    "hinge_x": "(-width/2 + frame_w) if swing == 'L' else (width/2 - frame_w)",
+    "gx": "leaf_w/2 - stile",
+    "gz0": "stile*1.5",
+    "gz1": "leaf_h - stile",
+    "glass_ratio": "(2*gx)*(gz1 - gz0)/(width*height)"
+  },
+  "refs": {
+    "left": {
+      "axis": "x",
+      "at": "-width/2"
+    },
+    "right": {
+      "axis": "x",
+      "at": "width/2"
+    }
+  },
+  "constraints": [
+    {
+      "expr": "gx >= 150 and gz1 - gz0 >= 600",
+      "message": "유리 자리가 너무 작다(stile 을 줄이거나 문을 키우세요)"
+    },
+    {
+      "expr": "glass_t + 10 <= leaf_t",
+      "message": "유리가 문짝 두께에 비해 두껍다"
+    },
+    {
+      "expr": "host_thickness >= leaf_t + 20",
+      "message": "벽이 문짝 두께보다 20mm 이상 두꺼워야 한다"
+    }
+  ],
+  "solids": [
+    {
+      "id": "frame",
+      "op": "sweep",
+      "normal": "y",
+      "closed": false,
+      "path": [
+        [
+          "fx0",
+          0,
+          0
+        ],
+        [
+          "fx0",
+          0,
+          "fz1"
+        ],
+        [
+          "fx1",
+          0,
+          "fz1"
+        ],
+        [
+          "fx1",
+          0,
+          0
+        ]
+      ],
+      "profile": {
+        "shape": "rect",
+        "w": "frame_w",
+        "h": "host_thickness"
+      }
+    },
+    {
+      "id": "leaf",
+      "op": "extrude",
+      "plane": "xz",
+      "profile": {
+        "shape": "rect",
+        "u": [
+          "-leaf_w/2",
+          "leaf_w/2"
+        ],
+        "v": [
+          0,
+          "leaf_h"
+        ]
+      },
+      "range": [
+        "-leaf_t/2",
+        "leaf_t/2"
+      ]
+    },
+    {
+      "id": "lite",
+      "op": "extrude",
+      "plane": "xz",
+      "role": "void",
+      "cuts": [
+        "leaf"
+      ],
+      "profile": {
+        "shape": "rect",
+        "u": [
+          "-gx",
+          "gx"
+        ],
+        "v": [
+          "gz0",
+          "gz1"
+        ]
+      },
+      "range": [
+        "-leaf_t",
+        "leaf_t"
+      ]
+    },
+    {
+      "id": "glass",
+      "op": "extrude",
+      "plane": "xz",
+      "profile": {
+        "shape": "rect",
+        "u": [
+          "-gx",
+          "gx"
+        ],
+        "v": [
+          "gz0",
+          "gz1"
+        ]
+      },
+      "range": [
+        "-glass_t/2",
+        "glass_t/2"
+      ]
+    }
+  ],
+  "plan_symbol": {
+    "default": [
+      {
+        "type": "rect",
+        "u": [
+          "left",
+          "left + frame_w"
+        ],
+        "v": [
+          "-host_thickness/2",
+          "host_thickness/2"
+        ],
+        "style": "cut"
+      },
+      {
+        "type": "rect",
+        "u": [
+          "right - frame_w",
+          "right"
+        ],
+        "v": [
+          "-host_thickness/2",
+          "host_thickness/2"
+        ],
+        "style": "cut"
+      },
+      {
+        "type": "line",
+        "from": [
+          "hinge_x",
+          0
+        ],
+        "to": [
+          "hinge_x",
+          "leaf_w"
+        ],
+        "style": "projection"
+      },
+      {
+        "type": "arc",
+        "center": [
+          "hinge_x",
+          0
+        ],
+        "radius": "leaf_w",
+        "start": "0 if swing == 'L' else 90",
+        "end": "90 if swing == 'L' else 180",
+        "style": "projection"
+      }
+    ],
+    "1:200": [
+      {
+        "type": "line",
+        "from": [
+          "hinge_x",
+          0
+        ],
+        "to": [
+          "hinge_x",
+          "leaf_w"
+        ],
+        "style": "projection"
+      },
+      {
+        "type": "arc",
+        "center": [
+          "hinge_x",
+          0
+        ],
+        "radius": "leaf_w",
+        "start": "0 if swing == 'L' else 90",
+        "end": "90 if swing == 'L' else 180",
+        "style": "projection"
+      }
+    ]
+  },
+  "psets": {
+    "Pset_DoorCommon": {
+      "on": "type",
+      "props": {
+        "IsExternal": {
+          "expr": "is_external"
+        },
+        "HandicapAccessible": {
+          "expr": "leaf_w >= 850"
+        },
+        "GlazingAreaFraction": {
+          "expr": "round(glass_ratio, 3)"
+        }
+      }
+    },
+    "DoBIM_DoorParams": {
+      "on": "instance",
+      "props": {
+        "Swing": {
+          "expr": "swing"
+        }
+      }
+    }
+  }
+}

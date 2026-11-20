@@ -333,6 +333,7 @@ class SheetRender(A):
     overwrite: bool = Field(False, description="거짓이면 이미 있는 파일을 덮어쓰지 않는다. 참이면 덮어쓰며 덮어쓰기 전에 자동 스냅숏을 남긴다(확인 토큰 필요)")
     max_px: C.PngMaxPx = 1600
     crop: C.PngCrop | None = None
+    print_: C.PrintSetup | None = Field(None, alias="print", description="인쇄 설정(SVG·PDF·PNG, W1 1-F 5차). 생략=시트 용지 그대로")
 
 
 def _export_args(ctx, a: SheetRender):
@@ -351,10 +352,11 @@ def _render_preview(ctx, a: SheetRender):
 @command("sheet.render", kind="session", risk="destructive", group="view",
          summary="저장된 시트 정의로 SVG·PDF·PNG·DXF 내보내기",
          args=SheetRender, since="0.4", preview=_render_preview,
-         examples=[{"id": F.SH1, "path": "sheet-saved-example.svg", "overwrite": True}])
+         examples=[{"id": F.SH1, "path": "sheet-saved-example.svg", "overwrite": True},
+                   {"id": F.SH1, "path": "sheet-print-example.svg", "overwrite": True, "print": {"paper": "A4", "margin": 5}}])   # 인쇄 설정(W1 1-F 5차)
 def sheet_render(ctx, a: SheetRender):
     """저장된 시트 정의를 sheet.export 와 같은 방식으로 파일에 낸다."""
-    return C.export_sheet(ctx, _export_args(ctx, a), a.id)
+    return C.export_sheet(ctx, _export_args(ctx, a), a.id, a.print_)
 
 
 # ================================================================ 이미지로 보기 (16단계 dobim_render): 파일을 쓰지 않는 읽기 커맨드
