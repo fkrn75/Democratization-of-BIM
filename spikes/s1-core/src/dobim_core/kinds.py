@@ -134,6 +134,14 @@ def _level_params(p):
     return _check_fields("level", p, {"name": _name, "elevation": num_ok})
 
 
+WALL_TEE_ENDS = ("start", "end")
+
+
+def tee_ok(v) -> bool:
+    """벽의 T 조인 줄기 끝(W1 1-F 3차): ["start"], ["end"], ["start", "end"] 중 하나. 그 끝이 조인 상대 벽의 중간에 닿는다."""
+    return isinstance(v, list) and v in (["start"], ["end"], ["start", "end"])
+
+
 def _wall_params(p):
     def axis(v):   # 벽 길이 1mm 이상(wall.create 의 규칙)
         return (isinstance(v, list) and len(v) == 4 and all(num_ok(x) for x in v)
@@ -141,7 +149,8 @@ def _wall_params(p):
     err = _check_opt("wall", p, {"name": _name, "axis": axis, "thickness": _pos, "height": _pos}, {"layers": layers_ok, "openings": lambda v: isinstance(v, list), "top_profile": lambda v: isinstance(v, list),
                                                                                                          "base_offset": lambda v: num_ok(v) and abs(v) <= WT.BASE_OFFSET_MAX,
                                                                                                          "cuts": lambda v: WC.cuts_problem(v) is None,   # 벽 잘라내기(23단계)
-                                                                                                         "top_level": id_ok, "top_offset": lambda v: num_ok(v) and v != 0})
+                                                                                                         "top_level": id_ok, "top_offset": lambda v: num_ok(v) and v != 0,
+                                                                                                         "tee": tee_ok})   # T 조인 줄기 끝(W1 1-F 3차)
     if err is None and "top_offset" in p and "top_level" not in p:   # 상단 구속(24단계): 오프셋은 상단 레벨과 함께만
         return "wall.top_offset 은 top_level 과 함께만 둔다"
     if err is None and "top_level" in p and "top_profile" in p:

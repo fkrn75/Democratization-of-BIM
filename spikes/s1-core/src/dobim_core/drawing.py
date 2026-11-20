@@ -4520,8 +4520,15 @@ def scope_solids(g, v):
         if cfg[1] is None or is_rcp(cfg):   # 반사 천장 평면(W1 1-C 3차)은 아직 그리지 않는다
             return ()
         c, lo = cfg[2], cfg[2] - cfg[3]
-        return tuple(e for e in g.q(all_solids) if (bb := g.q(solid_info, e)[4])[2] <= c + EPS and bb[5] >= lo - EPS)
+        return tuple(e for e in g.q(all_solids) if (bb := g.q(solid_info, e)[4])[2] <= c + EPS and bb[5] >= _plan_lo(g, cfg, e, lo) - EPS)
     return g.q(all_solids)
+
+
+def _plan_lo(g, cfg, e, lo):
+    """평면이 솔리드를 보는 아래 끝. 경사로(W1 1-F 3차)는 계단처럼 보이는 깊이와 상관없이 뷰 레벨 바닥까지 본다."""
+    if Q.el(g, e)["params"]["category"] != "ramp":
+        return lo
+    return min(lo, g.q(Q.level_info, cfg[1])[1])
 
 
 def _solid_vpieces(g, v, e):
@@ -4612,7 +4619,7 @@ def solid_lines(g, v, e):
     verts, faces, edges, nrm, _bb = info
     out = []
     if cfg[0] == "plan":
-        c, lo = cfg[2], cfg[2] - cfg[3]
+        c, lo = cfg[2], _plan_lo(g, cfg, e, cfg[2] - cfg[3])
         for a, b in SO.plane_section(verts, faces, nrm, (0.0, 0.0, 1.0), c):
             if sqrt((b[0] - a[0]) ** 2 + (b[1] - a[1]) ** 2) > SEG_MIN:
                 out.append(("cut", a[0], a[1], b[0], b[1]))
@@ -4639,6 +4646,9 @@ def solid_lines(g, v, e):
             bx, by = a[0] + (b[0] - a[0]) * t1, a[1] + (b[1] - a[1]) * t1
             if sqrt((bx - ax) ** 2 + (by - ay) ** 2) > SEG_MIN:
                 out.append(("proj", ax, ay, bx, by))
+        p = Q.el(g, e)["params"]
+        if p["category"] == "ramp" and p["form"] == "panel":   # 경사로(W1 1-F 3차): 걸음선 오름 화살표
+            out.extend(ramp_arrow(p))
         return tuple(out)
     d = (cfg[3], cfg[4], 0.0)
     idx = g.q(_occ_index, v)
@@ -4664,6 +4674,28 @@ def solid_lines(g, v, e):
         for t0, t1 in _vis(e0, e1, occ):
             out.append(("proj", e0[0] + t0 * (e1[0] - e0[0]), e0[2] + t0 * (e1[2] - e0[2]), e0[0] + t1 * (e1[0] - e0[0]), e0[2] + t1 * (e1[2] - e0[2])))
     return tuple(out)
+
+
+RAMP_ARROW = 0.3   # 경사로 화살촉 길이 = 폭 x 이 값(상한 400mm, 걸음선 길이의 반)
+
+
+def ramp_arrow(p):
+    """경사로 판(panel)의 걸음선(판 기준선) 오름 화살표: 낮은 끝에서 높은 끝으로, 높은 끝에 화살촉(20도). 끝은 걸음선 길이의 5% 들인다."""
+    x1, y1, ux, uy, ln = SO.panel_frame(p["line"])
+    prof = p["profile"]
+    z0 = max(q[1] for q in prof if q[0] <= 1e-6)
+    z1 = max(q[1] for q in prof if q[0] >= ln - 1e-6)
+    if z1 < z0:
+        x1, y1, ux, uy = x1 + ln * ux, y1 + ln * uy, -ux, -uy
+    a, b = 0.05 * ln, 0.95 * ln
+    hl = min(p["thickness"] * RAMP_ARROW, 400.0, (b - a) * 0.5)
+    tx, ty = x1 + b * ux, y1 + b * uy
+    bc, bs = ROOF_ARROW_BARB
+    out = [("symbol", x1 + a * ux, y1 + a * uy, tx, ty)]
+    for sg in (1.0, -1.0):
+        dx, dy = -(ux * bc - sg * uy * bs), -(uy * bc + sg * ux * bs)
+        out.append(("symbol", tx, ty, tx + hl * dx, ty + hl * dy))
+    return out
 
 
 def _solid_wall_occ(g, v, w):

@@ -153,7 +153,7 @@ def _parse_intent(kind: str, text: str) -> dict:
             raise ValueError("레벨 params 키가 다르다")
         out = {"name": _name(p["name"]), "elevation": _num(p["elevation"])}
     elif kind == "wall":
-        if set(p) - {"layers", "openings", "top_profile", "base_offset", "cuts", "top_level", "top_offset"} != {"name", "axis", "thickness", "height"} or not isinstance(p["axis"], list) or len(p["axis"]) != 4:
+        if set(p) - {"layers", "openings", "top_profile", "base_offset", "cuts", "top_level", "top_offset", "tee"} != {"name", "axis", "thickness", "height"} or not isinstance(p["axis"], list) or len(p["axis"]) != 4:
             raise ValueError("벽 params 가 다르다")
         axis = [_num(x) for x in p["axis"]]
         if (axis[2] - axis[0]) ** 2 + (axis[3] - axis[1]) ** 2 < 1.0:
@@ -185,6 +185,10 @@ def _parse_intent(kind: str, text: str) -> dict:
             out["top_offset"] = _num(p["top_offset"])
             if out["top_offset"] == 0.0:
                 raise ValueError("벽 상단 오프셋 0 은 키 없음으로 적는다")
+        if "tee" in p:   # T 조인 줄기 끝(W1 1-F 3차)
+            if not K.tee_ok(p["tee"]):
+                raise ValueError("벽 T 조인 표식이 올바르지 않다")
+            out["tee"] = list(p["tee"])
         if "openings" in p or "top_profile" in p or "base_offset" in p or "cuts" in p or "top_level" in p or "top_offset" in p:
             why = K.row_params_error("wall", out)
             if why:

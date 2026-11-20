@@ -617,12 +617,64 @@ def join_set(ctx, a: JoinArgs):
 def join_clear(ctx, a: JoinArgs):
     _, _, lo, hi = _join_pair(ctx, a)
     ctx.rel("joins", lo, hi, False)
+    for w, o in ((lo, hi), (hi, lo)):   # T 조인 표식(W1 1-F 3차)도 뗀다: 그 끝이 이 상대와의 조인 지점일 때만
+        _tee_mark(ctx, w, o, False)
     return {"cleared": [lo, hi]}
+
+
+def _tee_mark(ctx, stem, host, on: bool):
+    """줄기 벽 stem 의 params.tee 에 host 와의 조인 지점 쪽 끝을 넣거나 뺀다. 넣을 끝을 못 찾으면 None, 아니면 끝 이름."""
+    r = ctx.st.el[stem]
+    sp, hp = r["params"], ctx.st.el[host]["params"]
+    pt = _join_pt(stem, sp["axis"], host, hp["axis"])
+    if pt is None:
+        return None
+    side = Q.tee_end_at(_frame_of(sp["axis"]), list(K.WALL_TEE_ENDS), pt)
+    if side is None:
+        return None
+    cur = list(sp.get("tee", ()))
+    new = sorted(set(cur) | {side}) if on else [x for x in cur if x != side]
+    if new != cur:
+        np_ = dict(sp)
+        if new:
+            np_["tee"] = new
+        else:
+            np_.pop("tee", None)
+        ctx.put_el(stem, dict(r, params=np_))
+    return side
+
+
+class JoinTee(A):
+    stem: Id = Field(description="끝이 몸통 벽 중간에 닿는 줄기 벽")
+    host: Id = Field(description="몸통 벽(자르지 않는다)")
+
+
+@command("join.tee", kind="mutation", risk="write", group="model.join",
+         summary="T 조인: 줄기 벽 끝을 몸통 벽 면에서 멈추고 몸통은 자르지 않는다. 평면은 맞닿는 선을 지운다",
+         args=JoinTee, since="0.13", examples=[{"stem": "1" + "0" * 20 + "5", "host": F.W1}])   # 줄기 벽은 parity 준비가 만든다(x=4500 세로 벽)
+def join_tee(ctx, a: JoinTee):
+    _, _, lo, hi = _join_pair(ctx, JoinArgs(a=a.stem, b=a.host))
+    if ctx.rels_out("on_level", lo) != ctx.rels_out("on_level", hi):
+        raise DobimError("CONSTRAINT", "다른 레벨의 벽은 조인할 수 없다", path="/host")
+    sp, hp = ctx.st.el[a.stem]["params"], ctx.st.el[a.host]["params"]
+    pt = _join_pt(a.stem, sp["axis"], a.host, hp["axis"])
+    if pt is None:
+        raise DobimError("CONSTRAINT", "나란한 벽은 T 조인할 수 없다", path="/host")
+    hx, hy, hc, hs, hl = _frame_of(hp["axis"])
+    th = (pt[0] - hx) * hc + (pt[1] - hy) * hs
+    if not -Q.JOIN_MAX_EXT <= th <= hl + Q.JOIN_MAX_EXT:
+        raise DobimError("CONSTRAINT", "줄기 벽 축선이 몸통 벽 근처를 지나지 않는다", path="/host")
+    side = _tee_mark(ctx, a.stem, a.host, True)
+    if side is None:
+        raise DobimError("CONSTRAINT", f"줄기 벽 끝이 몸통 벽 축선에서 {Q.JOIN_MAX_EXT:g}mm 안에 있지 않다", path="/stem")
+    ctx.rel("joins", lo, hi, True)
+    return {"stem": a.stem, "host": a.host, "end": side}
 
 
 class JoinAuto(A):
     level: Id = Field(description="이 레벨의 벽끼리만 본다")
     tol: Annotated[float, Field(ge=0, le=500, allow_inf_nan=False)] = Field(50.0, description="두 벽 축선 교점이 각 벽 끝에서 (상대 벽 두께/2 + tol) 안이면 L 조인으로 본다(mm)")
+    tee: bool = Field(False, description="참이면 T 조인도 잇는다(한 벽 끝만 교점 가까이, 교점이 상대 벽 안: join.tee 와 같다)")
 
 
 @command("join.auto", kind="mutation", risk="write", group="model.join",
@@ -636,7 +688,7 @@ def join_auto(ctx, a: JoinAuto):
         x1, y1, x2, y2 = ctx.st.el[w]["params"]["axis"]
         ln = sqrt((x2 - x1) ** 2 + (y2 - y1) ** 2)
         info[w] = (x1, y1, (x2 - x1) / ln, (y2 - y1) / ln, ln, ctx.st.el[w]["params"]["thickness"])
-    joined = []
+    joined, tees = [], []
     for i, wa in enumerate(walls):
         xa, ya, ca, sa, la, ta = info[wa]
         for wb in walls[i + 1:]:
@@ -648,10 +700,19 @@ def join_auto(ctx, a: JoinAuto):
             u = ((xb - xa) * sa - (yb - ya) * ca) / det
             ea = min(abs(t), abs(t - la))
             eb = min(abs(u), abs(u - lb))
-            if ea <= tb / 2.0 + a.tol and eb <= ta / 2.0 + a.tol and wb not in ctx.rels_out("joins", wa):
+            if wb in ctx.rels_out("joins", wa):
+                continue
+            if ea <= tb / 2.0 + a.tol and eb <= ta / 2.0 + a.tol:
                 ctx.rel("joins", wa, wb, True)
                 joined.append([wa, wb])
-    return {"joined": joined, "count": len(joined)}
+            elif a.tee:   # T 조인(W1 1-F 3차): 한쪽 끝만 교점 가까이 있고 교점이 상대 벽 축선 안(양 끝에서 상대 두께/2 + tol 넘게 안쪽)
+                for stem, host, e_s, pos, lh, t_s, t_h in ((wa, wb, ea, u, lb, ta, tb), (wb, wa, eb, t, la, tb, ta)):
+                    if e_s <= t_h / 2.0 + a.tol and t_s / 2.0 + a.tol < pos < lh - t_s / 2.0 - a.tol:
+                        if _tee_mark(ctx, stem, host, True) is not None:
+                            ctx.rel("joins", wa, wb, True)
+                            tees.append([stem, host])
+                        break
+    return {"joined": joined, "count": len(joined), **({"tees": tees} if a.tee else {})}
 
 
 # ================================================================ 벽 분할 (S5: 안정 참조의 규칙을 시험하려고 코어에 더한 모델링 커맨드)
@@ -674,13 +735,15 @@ def _join_pt(wa, axa, wb, axb):
     return (x1 + t * c1, y1 + t * s1)
 
 
-def _trim_raw(wid, axis, partners):
-    """queries.wall_trim 과 같은 규칙으로 (시작, 끝)을 원시 축선에서 계산한다. partners = [(상대 id, 상대 축선)]."""
+def _trim_raw(wid, axis, partners, tees=None):
+    """queries.wall_trim 과 같은 규칙으로 (시작, 끝)을 원시 축선에서 계산한다. partners = [(상대 id, 상대 축선)], tees = {상대 id: 상대 params.tee}."""
     x, y, c, s, length = _frame_of(axis)
     start, end = 0.0, length
     for oid, oax in sorted(partners):
         p = _join_pt(wid, axis, oid, oax)
         if p is None:
+            continue
+        if tees and tees.get(oid) and Q.tee_end_at(_frame_of(oax), tees[oid], p):
             continue
         t = (p[0] - x) * c + (p[1] - y) * s
         if abs(t) <= abs(t - length):
@@ -763,9 +826,10 @@ def wall_split(ctx, a: WallSplit):
         pt = _join_pt(a.id, p["axis"], o, oax)
         t = None if pt is None else (pt[0] - x1) * c + (pt[1] - y1) * s
         (to_n if t is not None and t >= a.at else keep_w).append((o, oax))
-    b0, b1 = _trim_raw(a.id, p["axis"], pax)
-    w0, w1 = _trim_raw(a.id, ax_w, keep_w)
-    n0, n1 = _trim_raw(nid, ax_n, to_n)
+    otee = {o: ctx.st.el[o]["params"].get("tee") for o in partners}
+    b0, b1 = _trim_raw(a.id, p["axis"], pax, otee)
+    w0, w1 = _trim_raw(a.id, ax_w, keep_w, otee)
+    n0, n1 = _trim_raw(nid, ax_n, to_n, otee)
     tol = 1e-6
     if abs(w0 - b0) > tol or abs(w1 - a.at) > tol or abs(n0) > tol or abs(n1 - (b1 - a.at)) > tol:
         raise DobimError("CONSTRAINT", "이 위치에서 나누면 조인 정리(trim)가 달라진다", path="/at",
@@ -781,6 +845,12 @@ def wall_split(ctx, a: WallSplit):
             raise DobimError("CONSTRAINT", "분할 위치가 모양 개구부를 가로지른다", path="/at")
     name = (p["name"][:62] + "-b")
     pw = dict(p, axis=ax_w)
+    tee_n = "end" in p.get("tee", ())   # T 조인 줄기 끝(W1 1-F 3차): 시작 끝은 W, 끝 쪽 끝은 새 벽이 가진다
+    if "tee" in p:
+        if "start" in p["tee"]:
+            pw["tee"] = ["start"]
+        else:
+            pw.pop("tee")
     top_n = None
     if "top_profile" in p:   # 상단 윤곽(21단계)은 분할점에서 둘로 나눈다(끝 쪽은 s 를 당긴다)
         pw["top_profile"], top_n = WT.split(p["top_profile"], a.at, length)
@@ -811,6 +881,8 @@ def wall_split(ctx, a: WallSplit):
         np_["openings"] = ops_n
     if top_n is not None:
         np_["top_profile"] = top_n
+    if tee_n:
+        np_["tee"] = ["end"]
     ctx.put_el(nid, row("wall", "IfcWall", "wall.basic", np_))
     ctx.rel("on_level", nid, ctx.rels_out("on_level", a.id)[0], True)
     for d in doors_n:
@@ -2441,10 +2513,10 @@ class MemberSection(A):
 class SolidGeom(A):
     form: Literal["prism", "loft", "panel", "sweep", "mesh", "member", "plate"] | None = Field(None, description="prism 수직 돌출, loft 단면 잇기(각뿔·첨탑), panel 수직면 위 윤곽 판(+개구부), sweep 평면 경로를 따른 단면(띠돌림), mesh 다면체, member 3D 축선을 따른 곧은 부재(보·가새·관·덕트), plate 기운 평면 위 윤곽 판(+구멍: 지붕판·경사 슬래브)")
     polygon: SoPoly | None = Field(None, description="prism·plate: 평면 윤곽 [[x,y],...] (3~256)")
-    holes: Annotated[list[SoPoly], Field(min_length=0, max_length=64)] | None = Field(None, description="plate: 구멍 윤곽 목록(윤곽 안, 서로 겹치지 않음). 빈 목록이면 뗀다")
+    holes: Annotated[list[SoPoly], Field(min_length=0, max_length=64)] | None = Field(None, description="plate: 구멍 윤곽 목록(빈 목록이면 뗀다)")
     base: SoPt3 | None = Field(None, description="plate: 윗면 위의 한 점 [x,y,z] (z 는 레벨 기준)")
     pitch: Annotated[float, Field(ge=0, le=80, allow_inf_nan=False)] | None = Field(None, description="plate: 물매(도). 0 이면 수평 판")
-    dir: Annotated[float, Field(ge=-360, le=360, allow_inf_nan=False)] | None = Field(None, description="plate: 물이 흐르는(내려가는) 방향, +x 에서 반시계 도")
+    dir: Annotated[float, Field(ge=-360, le=360, allow_inf_nan=False)] | None = Field(None, description="plate: 내려가는 방향(+x 에서 반시계 도)")
     z0: SoCoord | None = Field(None, description="prism: 아랫면 z mm(레벨 기준)")
     z1: SoCoord | None = Field(None, description="prism: 윗면 z mm(레벨 기준)")
     sections: Annotated[list[LoftSection], Field(min_length=2, max_length=32)] | None = Field(None, description="loft: 아래에서 위로 단면 목록(꼭짓점 수가 같아야 한다)")
@@ -2515,6 +2587,8 @@ def _solid_geom(a: SolidGeom, base: dict | None) -> dict:
     if form == "plate":
         out.setdefault("pitch", 0.0)
         out.setdefault("dir", 0.0)
+        if base and base.get("form") == "plate" and "grid" in base:   # 천장 격자(W1 1-F 3차)는 ceiling.set 이 고친다
+            out["grid"] = base["grid"]
     return out
 
 
@@ -4902,3 +4976,4 @@ from dobim_core import commands_viewref  # noqa: E402,F401
 from dobim_core import commands_viewplans  # noqa: E402,F401
 from dobim_core import commands_edit  # noqa: E402,F401
 from dobim_core import commands_check  # noqa: E402,F401
+from dobim_core import commands_arch  # noqa: E402,F401

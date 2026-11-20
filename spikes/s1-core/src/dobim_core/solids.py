@@ -86,6 +86,8 @@ SOLID_CATEGORIES = {
     "bath": ("IfcSanitaryTerminal", "BATH", None),                   # 욕조
     "shower": ("IfcSanitaryTerminal", "SHOWER", None),               # 샤워
     "cistern": ("IfcSanitaryTerminal", "CISTERN", None),             # 수조·하이탱크
+    # 경사로(W1 1-F 3차): ramp.create 가 걸음선을 따라 옆 윤곽을 세운 수직 판(panel)으로 만든다. 평면에 오름 화살표를 더한다
+    "ramp": ("IfcRamp", None, None),
 }
 SANITARY_CATEGORIES = ("sanitary_terminal", "toilet", "urinal", "bidet", "washbasin", "sink", "bath", "shower", "cistern")
 
@@ -299,7 +301,7 @@ def solid_problem(p) -> str | None:
             "plate": {"polygon", "thickness", "base", "pitch", "dir"}}.get(form)
     if keys is None:
         return f"solid.form 은 {'/'.join(SOLID_FORMS)} 중 하나다"
-    opt = {"openings"} if form == "panel" else {"holes"} if form == "plate" else set()
+    opt = {"openings"} if form == "panel" else {"holes", "grid"} if form == "plate" else set()
     base = {"name", "category", "form"} | keys
     if not base <= set(p) or set(p) - base - opt:
         return f"solid({form}) 의 파라미터 이름이 다르다"
@@ -378,7 +380,7 @@ def solid_problem(p) -> str | None:
         if why:
             return why
     elif form == "plate":
-        why = plate_problem(p)
+        why = plate_problem(p) or (grid_problem(p) if "grid" in p else None)
         if why:
             return why
     else:
@@ -835,6 +837,21 @@ def plate_problem(p) -> str | None:
                         return "solid.holes 가 윤곽이나 다른 구멍과 겹친다"
         if i > 0 and any(point_in(q, ccw(loops[j])) == 1 for j in range(1, len(loops)) if j != i for q in loops[i][:1]):
             return "solid.holes 가 다른 구멍 안에 있다"
+    return None
+
+
+CEIL_GRID_MIN, CEIL_GRID_MAX = 100.0, 5000.0   # 천장 격자 간격 범위 mm(W1 1-F 3차)
+
+
+def grid_problem(p) -> str | None:
+    """천장 격자(W1 1-F 3차): 범주 ceiling 의 수평 판에만 둔다. {"size": [x 간격, y 간격], "origin": [x, y]}."""
+    gd = p["grid"]
+    if p["category"] != "ceiling" or p["pitch"] != 0:
+        return "solid.grid 는 범주 ceiling 의 수평 판(pitch 0)에만 둔다"
+    if not isinstance(gd, dict) or set(gd) != {"size", "origin"} or not _pt2(gd["size"]) or not _pt2(gd["origin"]):
+        return "solid.grid 는 {size: [x, y], origin: [x, y]} 이다"
+    if not all(CEIL_GRID_MIN <= v <= CEIL_GRID_MAX for v in gd["size"]):
+        return f"solid.grid 간격은 {CEIL_GRID_MIN:g}~{CEIL_GRID_MAX:g}mm 다"
     return None
 
 

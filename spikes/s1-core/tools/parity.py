@@ -54,6 +54,8 @@ _RV1 = ("revision.create", {"id": F.RV1, "date": "2026-02-01", "desc": "1층 평
 _KN1 = ("keynote.set", {"key": "03.30.00", "text": "현장타설 콘크리트"})                           # 키노트 예시의 준비(W1 1-B 3차)
 _VT1 = ("view.template.create", {"id": F.VT1, "name": "평면 1:100 기본", "scale": 100})            # 뷰 템플릿 예시의 준비(W1 1-C)
 _VF1 = ("view.filter.set", {"id": F.V1, "name": "두꺼운 벽", "cats": ["wall"], "rules": [{"field": "thickness", "op": "ge", "value": "200"}], "color": "#0050c0"})
+_W5 = ("wall.create", {"id": "1" + "0" * 20 + "5", "level": F.LV1, "axis": [4500, 0, 4500, 3000], "thickness": 200, "height": 3000})   # T 조인 예시의 준비(W1 1-F 3차): W1 중간에 닿는 줄기 벽
+_CL1 = ("ceiling.create", {"id": F.SO1, "level": F.LV1, "boundary": [[0, 0], [6000, 0], [6000, 4000], [0, 4000]], "height": 2400})   # 천장 고치기 예시의 준비(W1 1-F 3차)
 _DRAFT_PRE = {"draft.create": [_V1], "draft.set": [_V1, _DR1], "draft.move": [_V1, _DR1], "draft.copy": [_V1, _DR1], "draft.rotate": [_V1, _DR1],
               "draft.mirror": [_V1, _DR1], "draft.delete": [_V1, _DR1], "draft.offset": [_V1, _DR1], "draft.trim": [_V1, _DR1, _DR2],
               "draft.extend": [_V1, _DR1, _DR3], "draft.group": [_V1, _DR1], "draft.list": [_V1, _DR1], "draft.layer.delete": [_DRL],
@@ -64,7 +66,7 @@ PRE = {**_DRAFT_PRE, "history.redo": [("history.undo", {})], "ifc.restore": [_EX
        "view.scene": [_V1], "view.pick": [_V1], "geom.snap": [_V1],   # GUI 조회(B1): 뷰가 있어야 한다
        "annot.dim.create": [_V1], "annot.tag.create": [_V1], "annot.tag.all": [_V1], "annot.rebind": [_V1, _A1], "annot.delete": [_V1, _A1],
        "annot.list": [_V1, _A1], "annot.check": [_V1, _A1],
-       "family.set": [_FAMILY_PRE], "annot.dim.heights": [_V2], "slab.set": [_S1], "slab.move": [_S1], "slab.delete": [_S1], "slab.layers": [_S1],
+       "family.set": [_FAMILY_PRE], "family.set_type": [_FAMILY_PRE], "join.tee": [_W5], "ceiling.set": [_CL1], "annot.dim.heights": [_V2], "slab.set": [_S1], "slab.move": [_S1], "slab.delete": [_S1], "slab.layers": [_S1],
        "stair.set": [_ST1], "stair.move": [_ST1], "stair.delete": [_ST1],
        "railing.set": [_RL1], "railing.move": [_RL1], "railing.delete": [_RL1], "railing.from_stair": [_ST1], "railing.from_slab": [_S1],
        "roof.set": [_RF1], "roof.move": [_RF1], "roof.delete": [_RF1],
