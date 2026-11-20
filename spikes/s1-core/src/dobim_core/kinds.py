@@ -1356,6 +1356,39 @@ def _keynote_params(p):
     return _check_fields("keynote", p, {"name": keynote_key_ok, "text": lambda v: text_ok(v, 0, KEYNOTE_TEXT_MAX)})
 
 
+# ---------------------------------------------------------------- 프로젝트 매개변수(W1 연장, DATA-03)
+# pparam = Revit 의 프로젝트 매개변수: 속성셋.속성 하나를 값 형식과 묶을 요소 종류(범주)로 정의한다. 값은 요소의 속성셋에 그대로 두고(pset.set·pset.set_many),
+#          정의가 있으면 그 속성을 쓸 때 형식·종류를 검사한다. 정의는 비 IFC 의도 요소라 DoBIM_Defs 로 IFC 를 왕복한다.
+PPARAM_TYPES = ("text", "number", "integer", "bool")
+PPARAMS_MAX = 500            # 프로젝트 매개변수 정의 수 상한
+PPARAM_DESC_MAX = 255
+_PSET_NAME_OK = lambda v: (isinstance(v, str) and 1 <= len(v) <= 64 and v[0].isascii() and v[0].isalpha()   # noqa: E731
+                           and all(c.isascii() and (c.isalnum() or c == "_") for c in v))
+
+
+def pparam_kinds() -> tuple:
+    """프로젝트 매개변수를 묶을 수 있는 종류: 속성셋을 가지는 IFC 종류(외래 요소 제외)."""
+    return tuple(sorted(k for k, v in ELEMENT_KINDS.items() if v.ifc and k != "foreign"))
+
+
+def pparam_value_ok(t: str, v) -> bool:
+    """값 v 가 형식 t 에 맞는가. number 는 정수·실수(참·거짓 제외), integer 는 정수만."""
+    if t == "bool":
+        return type(v) is bool
+    if t == "integer":
+        return type(v) is int
+    if t == "number":
+        return type(v) in (int, float)
+    return isinstance(v, str)
+
+
+def _pparam_params(p):
+    return _check_fields("pparam", p, {
+        "name": lambda v: _PSET_NAME_OK(v) and v != "id", "pset": _PSET_NAME_OK, "type": lambda v: v in PPARAM_TYPES,
+        "kinds": lambda v: isinstance(v, list) and 1 <= len(v) and v == sorted(set(v)) and all(k in pparam_kinds() for k in v),
+        "desc": lambda v: text_ok(v, 0, PPARAM_DESC_MAX)})
+
+
 # 태그 대상 종류(annot.TAG_FIELDS 와 같다: 가져오기가 복원한 태그 대상을 이 종류로 검사한다)
 TAG_TARGET_KINDS = ("wall", "door", "slab", "space", "stair", "finst", "roof", "railing")
 
@@ -1411,6 +1444,8 @@ ELEMENT_KINDS: dict[str, ElementKind] = {k.name: k for k in (
     # 리비전·키노트(W1 1-B 3차): 시트처럼 비 IFC 의도 요소다. 리비전이 싣는 시트는 목록이라 관계로 묻지 않는다(지운 시트는 일정표에서 빠진다)
     ElementKind("revision", False, None, False, 9, _revision_params, refs=(("sheets", "ids", None),)),
     ElementKind("keynote", False, None, False, 6, _keynote_params),
+    # 프로젝트 매개변수(W1 연장, DATA-03): 리비전·키노트처럼 비 IFC 의도 요소다
+    ElementKind("pparam", False, None, False, 6, _pparam_params),
 )}
 
 NON_IFC_KINDS = frozenset(k for k, v in ELEMENT_KINDS.items() if not v.ifc)      # 신원·속성셋·재료가 없는 의도 요소(뷰 정의, 치수·태그)

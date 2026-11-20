@@ -268,16 +268,64 @@ def commands_search(env, a: Search):
 
 class Describe(A):
     name: str = Field(max_length=64)
+    section: str | None = Field(None, max_length=96, description="나눠 받는 상세 한 부분(응답 split.sections 의 이름): def:<정의> 또는 property:<인자>")
 
 
-@command("commands.describe", kind="query", risk="read", group="system", summary="커맨드 스키마·예시",
-         args=Describe, needs_project=False, idempotent=True, examples=[{"name": "wall.move"}])
+# describe 응답 나눔(W1 연장, S11 크기 기준 '도구 응답 8,000토큰 이내'): MCP 는 같은 봉투를 text 와 structuredContent 에 한 벌씩 싣는다.
+# 결과 JSON 이 이 바이트를 넘는 커맨드는 요약(정의 $defs 와 큰 인자 스키마를 뺀 것)만 주고, 뺀 부분은 section 으로 하나씩 받게 한다.
+# 9,000바이트 x 두 벌 = 실측 토큰/바이트 최대 0.40(cl100k) 기준 약 7,200토큰 + 봉투 뼈대. 넘지 않는 커맨드의 응답은 이전과 같다(하위 호환).
+DESCRIBE_MAX_BYTES = 9_000
+
+
+def _desc_size(x) -> int:
+    return len(json.dumps(x, ensure_ascii=False).encode("utf-8"))
+
+
+def describe_parts(c) -> tuple[dict, dict[str, dict]]:
+    """커맨드 describe 의 (기본 응답, 나눈 부분 이름 -> 그 부분 스키마). 응답이 작으면 부분은 비어 있고 기본 응답은 전체다."""
+    full = c.describe()
+    if _desc_size(full) <= DESCRIBE_MAX_BYTES:
+        return full, {}
+    import copy
+    sch = copy.deepcopy(full["input_schema"])
+    parts: dict[str, dict] = {f"def:{k}": v for k, v in sorted(sch.pop("$defs", {}).items())}
+    props = sch.get("properties", {})
+    out = dict(full, input_schema=sch, split={
+        "reason": f"전체 스키마가 {DESCRIBE_MAX_BYTES}바이트를 넘어 나눴다(도구 응답 크기 기준)",
+        "how": "commands.describe 에 section 을 주면 그 부분의 전체 스키마를 돌려준다. $ref '#/$defs/X' 는 section 'def:X' 다",
+        "sections": sorted(parts)})
+    # 정의를 뺀 뒤에도 크면 가장 큰 인자 스키마부터 형식·짧은 설명만 남긴 자리표로 바꾼다(같은 크기면 이름 순)
+    while _desc_size(out) > DESCRIBE_MAX_BYTES:
+        left = [(-_desc_size(v), k) for k, v in props.items() if f"property:{k}" not in parts]
+        if not left:
+            break
+        _, k = min(left)
+        parts[f"property:{k}"] = props[k]
+        d = str(props[k].get("description", ""))
+        props[k] = {**({"type": props[k]["type"]} if "type" in props[k] else {}),
+                    "description": d if len(d) <= 60 else d[:60] + "…", "section": f"property:{k}"}
+        out["split"]["sections"] = sorted(parts)
+    return out, parts
+
+
+@command("commands.describe", kind="query", risk="read", group="system", summary="커맨드 스키마·예시(큰 스키마는 요약과 부분별 상세)",
+         args=Describe, needs_project=False, idempotent=True, examples=[{"name": "wall.move"}, {"name": "solid.create", "section": "def:MemberSection"}])
 def commands_describe(env, a: Describe):
     c = registry.load().get(a.name)
     if c is None:
         raise DobimError("UNKNOWN_COMMAND", f"없는 커맨드: {a.name}", path="/name",
                          hint="commands.search 로 찾으세요")
-    return c.describe()
+    head, parts = describe_parts(c)
+    if a.section is None:
+        return head
+    if a.section not in parts:
+        raise DobimError("NOT_FOUND", f"나눈 부분이 없다: {a.section}", path="/section",
+                         hint=("이 커맨드의 부분: " + ", ".join(sorted(parts))) if parts else "이 커맨드는 나누지 않았다(section 없이 전체가 온다)")
+    kind, _, key = a.section.partition(":")
+    out = {"name": c.name, "section": a.section, "schema": parts[a.section]}
+    if kind == "property":
+        out["required"] = key in head["input_schema"].get("required", [])
+    return out
 
 
 # ================================================================ 모델링
@@ -2980,7 +3028,29 @@ def pset_set(ctx, a: PsetSet):
     ctx.row(a.id)
     if a.pset == RESERVED_PSET:
         raise DobimError("CONSTRAINT", f"{RESERVED_PSET} 는 투영이 소유한 예약 속성셋이다", path="/pset")
+    pparam_check(ctx, pparam_of(ctx.st, a.pset, a.prop), a.id, a.value)
     return {"changed": ctx.set_prop(a.id, a.pset, a.prop, a.value)}
+
+
+def pparam_of(st, pset: str, prop: str) -> dict | None:
+    """속성셋.속성에 걸린 프로젝트 매개변수 정의(DATA-03). 없으면 None(검사 없이 이전과 같다)."""
+    for i in st.by_kind.get("pparam", ()):
+        p = st.el[i]["params"]
+        if p["pset"] == pset and p["name"] == prop:
+            return p
+    return None
+
+
+def pparam_check(ctx, d: dict | None, eid: str, value) -> None:
+    """프로젝트 매개변수가 정의된 속성을 쓸 때: 묶은 종류의 요소에만, 정의한 형식의 값만."""
+    if d is None:
+        return
+    kind = ctx.st.el[eid]["kind"]
+    if kind not in d["kinds"]:
+        raise DobimError("CONSTRAINT", f"프로젝트 매개변수 {d['pset']}.{d['name']} 는 {', '.join(d['kinds'])} 에만 쓴다({kind})", path="/id",
+                         hint="param.define 으로 묶을 종류를 바꾸세요")
+    if not K.pparam_value_ok(d["type"], value):
+        raise DobimError("CONSTRAINT", f"프로젝트 매개변수 {d['pset']}.{d['name']} 의 형식은 {d['type']} 다", path="/value")
 
 
 class PsetDelete(A):
@@ -3889,6 +3959,22 @@ def sheet_export(ctx, a: SheetExport):
     return export_sheet(ctx, a)
 
 
+def print_sheet(ctx, sh, paper, ext, print_setup: PrintSetup | None, label: str = ""):
+    """인쇄 설정(IO-17, sheet.render·sheet.render_set): 시트를 인쇄 용지로 옮긴다(주지 않으면 그대로). 반환: (시트, 인쇄 정보 또는 None)"""
+    if print_setup is None:
+        return sh, None
+    from dobim_core import sheet as SH
+    if ext == ".dxf":
+        raise DobimError("CONSTRAINT", "DXF 는 용지 mm 1:1 로 내므로 인쇄 설정(print)을 받지 않는다", path="/print", hint="SVG·PDF·PNG 로 내보내세요")
+    try:
+        sh, pinfo = SH.print_layout(sh, print_setup.paper or paper, float(print_setup.margin), print_setup.fit)
+    except SH.SheetError as ex:
+        raise DobimError("CONSTRAINT", f"{label}{ex}", path="/print") from None
+    if abs(pinfo["zoom"] - 100.0) > 1e-9:
+        ctx.warn(f"{label}축척 맞춤으로 {pinfo['zoom']:g}% 로 인쇄했다: 도면의 축척 표기와 축척 막대는 시트 용지 기준이라 인쇄물의 실제 축척과 다르다")
+    return sh, pinfo
+
+
 def export_sheet(ctx, a: SheetExport, sheet_id=None, print_setup: PrintSetup | None = None):
     """sheet.export·sheet.render 의 본체. sheet_id = 저장된 시트(그 시트를 싣는 리비전을 개정란에 적는다)."""
     from dobim_core import pdf_font as PF
@@ -3896,16 +3982,7 @@ def export_sheet(ctx, a: SheetExport, sheet_id=None, print_setup: PrintSetup | N
     from dobim_core import sheet_extras as SE
     p, ext = _view_export_target(ctx, a)
     sh, spec = build_sheet_for(ctx, a, sheet_id)
-    pinfo = None
-    if print_setup is not None:   # 인쇄 설정(IO-17, sheet.render): 시트를 인쇄 용지로 옮긴다(주지 않으면 이전과 같은 파일)
-        if ext == ".dxf":
-            raise DobimError("CONSTRAINT", "DXF 는 용지 mm 1:1 로 내므로 인쇄 설정(print)을 받지 않는다", path="/print", hint="SVG·PDF·PNG 로 내보내세요")
-        try:
-            sh, pinfo = SH.print_layout(sh, print_setup.paper or a.paper, float(print_setup.margin), print_setup.fit)
-        except SH.SheetError as ex:
-            raise DobimError("CONSTRAINT", str(ex), path="/print") from None
-        if abs(pinfo["zoom"] - 100.0) > 1e-9:
-            ctx.warn(f"축척 맞춤으로 {pinfo['zoom']:g}% 로 인쇄했다: 도면의 축척 표기와 축척 막대는 시트 용지 기준이라 인쇄물의 실제 축척과 다르다")
+    sh, pinfo = print_sheet(ctx, sh, a.paper, ext, print_setup)
     dropped, font_name, px, dxf = False, None, None, None
     if ext == ".svg":
         blob = SH.render_sheet_svg(sh, spec)
@@ -5038,6 +5115,7 @@ from dobim_core import commands_viewvg  # noqa: E402,F401
 from dobim_core import commands_viewref  # noqa: E402,F401
 from dobim_core import commands_viewplans  # noqa: E402,F401
 from dobim_core import commands_edit  # noqa: E402,F401
+from dobim_core import commands_param  # noqa: E402,F401
 from dobim_core import commands_check  # noqa: E402,F401
 from dobim_core import commands_drawcheck  # noqa: E402,F401
 from dobim_core import commands_arch  # noqa: E402,F401

@@ -359,6 +359,64 @@ def sheet_render(ctx, a: SheetRender):
     return C.export_sheet(ctx, _export_args(ctx, a), a.id, a.print_)
 
 
+# ================================================================ 일괄 PDF (DOC-14): 저장된 시트 여러 장을 한 PDF 로
+class SheetRenderSet(A):
+    ids: list[Id] = Field(min_length=1, max_length=100, description="저장된 시트 정의 id 목록. 이 순서로 한 쪽씩 낸다(같은 시트는 한 번만)")
+    path: str = Field(max_length=260, description="작업 폴더 안의 .pdf 경로. 쪽마다 자기 용지 크기, 시트마다 책갈피(도면번호 도면명)")
+    overwrite: bool = Field(False, description="거짓이면 이미 있는 파일을 덮어쓰지 않는다. 참이면 덮어쓰며 덮어쓰기 전에 자동 스냅숏을 남긴다(확인 토큰 필요)")
+    print_: C.PrintSetup | None = Field(None, alias="print", description="인쇄 설정(모든 쪽에 같이). 생략=시트마다 자기 용지 그대로")
+
+
+def _set_target(ctx, a: SheetRenderSet):
+    if len(set(a.ids)) != len(a.ids):
+        raise DobimError("CONSTRAINT", "같은 시트를 두 번 넣을 수 없다", path="/ids")
+    p, ext = C._view_export_target(ctx, a)
+    if ext != ".pdf":
+        raise DobimError("PATH_DENIED", f"일괄 출력은 .pdf 로만 낸다: {p.name}", path="/path", hint="한 장씩 다른 형식은 sheet.render")
+    args = [_export_args(ctx, SheetRender.model_validate({"id": sid, "path": a.path, "overwrite": a.overwrite})) for sid in a.ids]
+    return p, args
+
+
+def _render_set_preview(ctx, a: SheetRenderSet):
+    p, args = _set_target(ctx, a)
+    C._snap_dir(p, ctx.eng.workspace)
+    return {"will_write": p.name, "format": "pdf", "pages": len(args), "sheets": [x.sheet_number for x in args],
+            "overwrites": p.exists(), "snapshot_before_overwrite": p.exists()}
+
+
+@command("sheet.render_set", kind="session", risk="destructive", group="view",
+         summary="저장된 시트 여러 장을 한 PDF 로 내보내기(일괄 출력)",
+         args=SheetRenderSet, since="0.5", preview=_render_set_preview,
+         examples=[{"ids": [F.SH1], "path": "sheet-set-example.pdf", "overwrite": True}])
+def sheet_render_set(ctx, a: SheetRenderSet):
+    """저장된 시트를 sheet.render 와 같은 방식으로 한 장씩 만들어 여러 쪽 PDF 하나에 담는다. 쪽 순서 = ids 순서."""
+    from dobim_core import pdf_font as PF
+    from dobim_core import sheet as SH
+    p, args = _set_target(ctx, a)
+    pages, info = [], []
+    for sid, x in zip(a.ids, args):
+        sh, spec = C.build_sheet_for(ctx, x, sid)
+        sh, pinfo = C.print_sheet(ctx, sh, x.paper, ".pdf", a.print_, f"{x.sheet_number}: ")
+        pages.append((sh, spec))
+        info.append({"id": sid, "sheet_number": x.sheet_number, "paper": (pinfo or {}).get("paper", x.paper), "views": sh.placed})
+    font = PF.load_pdf_font()
+    first = pages[0][1]
+    title = f"{first['number']} {first['title']}" + (f" 외 {len(pages) - 1}장" if len(pages) > 1 else "")
+    blob, dropped = SH.render_sheets_pdf(pages, font, title)
+    if font is None:
+        ctx.warn("한글 글꼴(Noto Sans KR·나눔고딕)을 찾지 못해 PDF 의 한글이 '?' 로 나왔다. 글꼴을 설치하거나 환경 변수 DOBIM_PDF_FONT 에 .ttf 경로를 주세요")
+    elif font.missing:
+        ctx.warn(f"글꼴에 없는 글자 {len(font.missing)}개는 빈칸으로 나왔다: {''.join(font.missing[:20])}")
+    snap = C._snapshot_existing(p, ctx.eng.workspace)
+    try:
+        C._replace(p, lambda tmp: tmp.write_bytes(blob))
+    except BaseException:
+        C._drop_snapshot(p, snap, ctx.eng.workspace)
+        raise
+    return {"path": p.name, "bytes": len(blob), "format": "pdf", "pages": info, "font_embedded": font.name if font else None,
+            "non_ascii_dropped": dropped, "rev": ctx.eng.rev, "snapshot": snap}
+
+
 # ================================================================ 이미지로 보기 (16단계 dobim_render): 파일을 쓰지 않는 읽기 커맨드
 # view.image·sheet.image 는 PNG 를 만들어 결과의 비공개 키(_png)에 싣는다. dispatch 가 그 키를 봉투 밖으로 빼므로 봉투에는 크기·해시 같은 요약만 남는다
 # (CLI·dobim_query 는 요약만, MCP dobim_render 는 같은 PNG 를 ImageContent 로 돌려준다). 파일로 받으려면 view.export·sheet.export·sheet.render 에 .png 경로를 준다.

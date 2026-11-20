@@ -98,6 +98,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     p = sub.add_parser("schema", help="커맨드 스키마와 예시")
     p.add_argument("name")
+    p.add_argument("--section", default=None, help="큰 스키마를 나눈 부분 하나(def:<정의> 또는 property:<인자>)")
 
     p = sub.add_parser("run", help="커맨드 실행")
     p.add_argument("name")
@@ -163,7 +164,7 @@ def main(argv: list[str] | None = None) -> int:
         if ns.cmd == "list":
             env_out = dispatch.run(env, "commands.search", {"query": ns.query, "group": ns.group, "risk": ns.risk})
         elif ns.cmd == "schema":
-            env_out = dispatch.run(env, "commands.describe", {"name": ns.name})
+            env_out = dispatch.run(env, "commands.describe", {"name": ns.name, **({"section": ns.section} if ns.section else {})})
         elif ns.cmd == "job":
             env_out = dispatch.err_env(DobimError("NOT_FOUND", f"작업이 없다: {ns.id}", path="/id",
                                                   hint="S1 에는 장시간 작업 커맨드가 없다"))

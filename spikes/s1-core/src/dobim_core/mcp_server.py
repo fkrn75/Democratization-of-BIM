@@ -45,9 +45,10 @@ def build(env: dispatch.Env) -> MCPServer:
         return _result(dispatch.run(env, "commands.search", {"query": query, "group": group, "risk": risk,
                                                              "limit": limit, "cursor": cursor}))
 
-    @srv.tool(name="dobim_command_describe", annotations=ro, description="커맨드 하나의 입력 스키마와 예시")
-    async def dobim_command_describe(name: str) -> CallToolResult:
-        return _result(dispatch.run(env, "commands.describe", {"name": name}))
+    @srv.tool(name="dobim_command_describe", annotations=ro,
+              description="커맨드 하나의 입력 스키마와 예시. 큰 스키마는 요약과 split.sections 로 오고, section 을 주면 그 부분 상세")
+    async def dobim_command_describe(name: str, section: str | None = None) -> CallToolResult:
+        return _result(dispatch.run(env, "commands.describe", {"name": name, **({"section": section} if section is not None else {})}))
 
     @srv.tool(name="dobim_query", annotations=ro, description="risk=read 커맨드를 실행한다(프로젝트를 바꾸지 않음)")
     async def dobim_query(command: str, args: dict[str, Any] | None = None, project: Proj = None) -> CallToolResult:

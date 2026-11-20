@@ -17,6 +17,12 @@
       "mode": "full",
       "commit": "eb869f5",
       "reason": "S10 시험 수 집계 수정(addopts -q 와 겹쳐 요약 줄이 없던 것) 뒤 S10 항목만 다시 잼"
+    },
+    {
+      "date": "2026-11-20",
+      "mode": "full",
+      "commit": "phase1/w1x-1(788f3df 위 코드 커밋)",
+      "reason": "S11 크기 항목만 갱신(W1 게이트 결정 U-3): commands.describe 를 요약 + section 으로 나눠 8,000토큰 초과 describe(solid.create·sheet.export·sheet.image)가 없어졌다. over_8000_by_tiktoken ['commands.describe solid.create', 'commands.describe sheet.export', 'commands.describe sheet.image', 'commands.describe solid.create'] -> [], 최대 o200k 8714 -> 5956. 다른 항목(퍼즈·실행 취소·T0·S10·분기 금지)은 그대로(baseline 47절)"
     }
   ],
   "quick": {
@@ -150,15 +156,10 @@
       "lint_exit": 0,
       "lint_pass": true,
       "size_exit": 0,
-      "over_8000_by_tiktoken": [
-        "commands.describe solid.create",
-        "commands.describe sheet.export",
-        "commands.describe sheet.image",
-        "commands.describe solid.create"
-      ],
-      "_max_est_tokens": 8824,
-      "_max_tiktoken_o200k": 8714,
-      "_slowest_ms": 10207.4
+      "over_8000_by_tiktoken": [],
+      "_max_est_tokens": 6008,
+      "_max_tiktoken_o200k": 5956,
+      "_slowest_ms": 6886.2
     }
   }
 }
