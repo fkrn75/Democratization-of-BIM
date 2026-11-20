@@ -1739,3 +1739,14 @@ corpus/baseline.json 을 `foreign_corpus.py --write-baseline` 로 다시 썼다.
 | RA01 (ifcopenshell.api) | plan-0, plan-1 | 문 SINGLE_SWING_LEFT(유형 값)·창 SINGLE_PANEL 이 형상 절단선 대신 문짝 호·창 기호로 그려진다 |
 | RA01-bonsai | plan-0, plan-1 | 같은 IFC 내용(위와 같은 해시) |
 | RA01-revit(로컬 전용) | plan-0, plan-1 | 문 OperationType·창 칸 나눔이 NOTDEFINED 라 기본 기호 + 경고(1층 7개, 2층 6개). 로컬 기준선은 저장소 밖에 새로 썼다 |
+
+### 50.4 시험
+- `tests/test_drafting_view.py`(7건): 2D 작도만 그림(모델 선·레벨 기준선 없음, 제목 상세도·축척), SVG·PDF·PNG·DXF, GUI 장면의 작도 항목, 빈 제도 뷰(축척 기본 1:20), draft.copy to_view 로 옮겨 오기·시트·뷰포트 번호·제목·view.refs·시트 SVG/PDF, 시트가 쓰는 뷰 삭제 거절, 모델 전용 설정·치수·태그·가시성·템플릿·콜아웃 거절과 표고·좌표 글, 되돌리기·다시 하기 SVG 바이트 같음, IFC 왕복(해시 3종·작도·두 번 내보낸 IFC 바이트 같음), 변조 정의 거절 6가지. 통합 시험(test_integration_g1)에 제도 뷰 한 줄.
+- `tests/test_foreign_openings.py`(14건): RA-01 표본의 문·창 입력 값(방식·원점·축·폭), 평면 기호(문짝 선·호 반지름 = 문짝 폭·경첩 쪽, 창 3선·폭 1200), 형상 선 대신 기호, 단면·입면은 기호 없음, 절단 높이가 문 위·반사 천장 평면이면 기호 없음, 증분 = 전체, 외래 문·창이 없으면 빈 값, 순수 함수 방식별 기호(외여닫이 좌우, 양방향, 쌍여닫이, 반대 방향, 쌍 양방향, 미닫이, 쌍미닫이, 고정 문짝, 모르는 방식 = 기본), 창 칸 나눔·미서기·모르는 방식, 배치 축 변환.
+
+### 50.5 기존 출력 불변·시험·parity·bench
+- 바뀐 코드: `commands_viewplans.py`(view.drafting), `kinds.py`(뷰 종류 drafting 검사), `drawing.py`(view_cfg, 외래 문·창 기호 질의 foreign_opening_symbol·foreign_symbol_defaults, foreign_lines 의 평면 분기), `foreign_symbols.py`(새 순수 모듈), `foreign_geom.py`(opening), `engine.py`·`queries.py`(입력 fopen), `commands.py`(모델 없는 뷰 치수 거절, 기본 기호 경고, view.set·view.list), `commands_draft.py`·`commands_viewvg.py`·`foreign.py`(제도 뷰 규칙), `scene.py`(모델 없는 뷰의 작도 항목), `drawing_export.py`(제목·기준선), `fixture.py`, `pyproject.toml`(import-linter 순수 모듈 목록), `s12-gui/gui/actions.json`, 시험.
+- 기준선 `run_baseline.py --sheets`: main b13b9c6 과 최종 커밋 36712e0 에서 각각 뽑아 183 파일 바이트 같음(work/·run.json 제외). 기준선 모델에는 외래 요소·제도 뷰가 없다.
+- 외래 표본: 50.3 의 4장(저장소)·2장(로컬)만 바뀌고 나머지 뷰 해시는 그대로. 저장소 표본 재생성 = 새 기준선, 로컬 Revit 표본도 저장소 밖 새 기준선과 같다(외래 도면 시험 전부 통과).
+- 결과(최종 커밋 36712e0): s1-core 전체(test_slow 제외) 1592 통과·실패 0·건너뜀 40(새 시험 21건 포함). test_slow 8 통과. parity: 커맨드 189 전부 예시 실행, 불일치 0. parity_g: 통과(동작 78, 오류·경고 0). 새 커맨드 describe 응답 약 1KB(나눔 없음).
+- bench(평면 도면 경로를 건드려서 했다): 5만 요소 합성 모델, main b13b9c6 과 번갈아 각 3회 중앙값. 평면 12.78 -> 12.36초(-3.3%), 단면 26.00 -> 25.44초(-2.2%), 입면 37.60 -> 37.07초(-1.4%), 반사 천장 평면 12.33 -> 11.75초(-4.7%). +10% 한도 안이고 선분 수·SVG 바이트는 양쪽 같다. 합성 모델에는 외래 요소·제도 뷰가 없어 새 분기는 타지 않는다. 이번 측정은 같은 노트북이 49절 때보다 전반적으로 느렸다(같은 main 코드의 프로젝트 열기 6.4 -> 10.1초, 입면 23.2 -> 37.6초): 입면은 main·브랜치 모두 30초를 넘었으므로 한가한 상태에서 다시 재야 한다(브랜치 차이 때문이 아니다).
