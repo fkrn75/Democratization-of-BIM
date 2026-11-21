@@ -632,6 +632,13 @@ def plan_pieces(g, v, w):
     return (tuple(cut), tuple(proj))
 
 
+def _proj_top(sol, cfg):
+    """상단 윤곽 벽의 평면 투영 구간(윗면이 절단 높이 아래 보이는 깊이 안)에서 가장 높은 윗면 z. 구간이 없으면 절단 높이."""
+    zs = [z for a, b in WT.ivs_between(sol[11], max(sol[7], cfg[2] - cfg[3]) - EPS, cfg[2] - EPS)
+          for u0, z0, u1, z1 in WT.segments(WT.clip(sol[11], a, b)) for z in (z0, z1)]
+    return min(max(zs), cfg[2]) if zs else cfg[2]
+
+
 def plan_bbox(g, v, w):
     cut, proj = g.q(plan_pieces, v, w)
     pts = [p for q in cut + proj for p in q]
@@ -1018,7 +1025,11 @@ def fam_lines(g, v, e):
     if cfg is None:
         return ()
     if cfg[0] == "plan":
-        return g.q(plan_fam_parts, v, e)[0]
+        segs = g.q(plan_fam_parts, v, e)[0]
+        ff = g.q(free_fam, e)
+        if ff is not None and not is_rcp(cfg) and ff[4] + EPS < cfg[2]:   # 절단면 아래 요소(가구 등)의 기호: 외래 요소가 위에서 가린다(IO-04 5차, 윗면 높이)
+            return _fplan(g, v, segs, ff[4])
+        return segs
     mine = list(g.q(_fam_vpieces, v, e))
     occ = mine + list(g.q(vfam_nbr_pieces, v, e))
     lines = []
@@ -1513,7 +1524,11 @@ def slab_lines(g, v, s):
     if cfg is None:
         return ()
     if cfg[0] == "plan":
-        return g.q(plan_slab_parts, v, s)[0]
+        segs = g.q(plan_slab_parts, v, s)[0]
+        info = g.q(slab_info, s)
+        if info is not None and not is_rcp(cfg) and cfg[2] > info[1] + EPS:   # 절단면 아래 슬래브(윗면 높이): 외래 요소가 위에서 가린다(IO-04 5차). 파라펫 절단선은 그대로
+            return _fplan(g, v, segs, info[1])
+        return segs
     mine = list(g.q(_slab_vpieces, v, s))
     nb = g.q(slab_nbr_walls, v, s)
     occ = mine[:]
@@ -1863,7 +1878,11 @@ def stair_lines(g, v, s):
     if cfg is None:
         return ()
     if cfg[0] == "plan":
-        return g.q(plan_stair_parts, v, s)[0]
+        segs = g.q(plan_stair_parts, v, s)[0]
+        info = g.q(stair_info, s)
+        if info is not None and not is_rcp(cfg):   # 외래 요소가 위에서 가린다(IO-04 5차): 보이는 가장 높은 곳(계단 위 끝 또는 절단 높이)에 있는 것으로 본다
+            return _fplan(g, v, segs, min(info[1], cfg[2]))
+        return segs
     mine = list(g.q(_stair_vpieces, v, s))
     nb = g.q(stair_nbr_walls, v, s)
     occ = mine[:]
@@ -1941,6 +1960,7 @@ def railing_lines(g, v, r):
     if cfg[0] == "plan":
         out = []
         c = cfg[2]
+        fo = g.q(_fview, v) if surf else None   # 외래 요소가 없으면 None 이라 값은 이전과 같다
         for i in range(len(surf) - 1):
             (x0, y0, z0), (x1, y1, z1) = surf[i], surf[i + 1]
             if z0 > c + EPS and z1 > c + EPS:
@@ -1954,7 +1974,10 @@ def railing_lines(g, v, r):
                     lo = t
             ax, ay, bx, by = x0 + (x1 - x0) * lo, y0 + (y1 - y0) * lo, x0 + (x1 - x0) * hi, y0 + (y1 - y0) * hi
             if sqrt((bx - ax) ** 2 + (by - ay) ** 2) > SEG_MIN:
-                out.append(("proj", ax, ay, bx, by))
+                if fo is None:
+                    out.append(("proj", ax, ay, bx, by))
+                else:   # 외래 요소가 위에서 가린다(IO-04 5차): 끝점마다의 높이로
+                    out.extend(_fplan_seg(fo, ("proj", ax, ay, bx, by), c - (z0 + (z1 - z0) * lo), c - (z0 + (z1 - z0) * hi)))
         return tuple(out)
     raw = []
     for i in range(len(top) - 1):
@@ -2399,7 +2422,20 @@ def roof_lines(g, v, r):
     if cfg is None or info is None:
         return ()
     if cfg[0] == "plan":
-        return g.q(roof_plan_parts, v, r)[0]
+        segs = g.q(roof_plan_parts, v, r)[0]
+        fo = g.q(_fview, v) if segs else None
+        if fo is None:
+            return segs
+        # 외래 요소가 위에서 가린다(IO-04 5차): 용마루·추녀·골은 끝점 높이로, 처마 윤곽·물매 화살표는 지붕 꼭대기 높이(덜 가리는 쪽)로 본다
+        c = cfg[2]
+        z3 = {}
+        for a, b in info["ridges"] + info["hips"] + info["valleys"]:
+            z3[(a[0], a[1], b[0], b[1])] = (a[2], b[2])
+        out = []
+        for ln in segs:
+            za, zb = z3.get(ln[1:], (info["ztop"], info["ztop"]))
+            out.extend(_fplan_seg(fo, ln, c - za, c - zb))
+        return tuple(out)
     mine = list(g.q(_roof_vpieces, v, r))
     occ = mine[:]
     for w in g.q(scope_walls, v):
@@ -2754,7 +2790,9 @@ def plan_wall_lines(g, v, w):
             lines += [("cut", a[0], a[1], b[0], b[1]) for a, b in outline_edges(list(cut), others, w)]
         if proj:
             others = [(o, q) for o in nb for q in g.q(plan_pieces, v, o)[1]]
-            lines += [("proj", a[0], a[1], b[0], b[1]) for a, b in outline_edges(list(proj), others, w)]
+            pl = [("proj", a[0], a[1], b[0], b[1]) for a, b in outline_edges(list(proj), others, w)]
+            # 외래 요소가 위에서 가린다(IO-04 5차): 윗면 높이. 상단 윤곽이면 투영 구간의 가장 높은 윗면(덜 가리는 쪽)으로 본다
+            lines += _fplan(g, v, pl, sol[8] if sol[11] is None else _proj_top(sol, cfg))
     if (cut or sol[7] - EPS <= cfg[2] <= sol[8] + EPS) and not is_rcp(cfg):   # 20단계: 개구부가 벽 길이를 다 차지해 절단 조각이 없어도 기호는 그린다
         for op in g.q(wall_door_openings, w):
             if op[2] <= cfg[2] + EPS and cfg[2] <= op[3] + EPS:   # 절단면이 문 개구부 높이 안에 있을 때만(문 위를 자르면 벽이 이어져 문이 안 보인다)
@@ -4813,6 +4851,7 @@ def solid_lines(g, v, e):
     out = []
     if cfg[0] == "plan":
         c, lo = cfg[2], _plan_lo(g, cfg, e, cfg[2] - cfg[3])
+        fo = g.q(_fview, v)   # 외래 요소가 위에서 가린다(IO-04 5차). 외래 요소가 없으면 None 이라 값은 이전과 같다
         for a, b in SO.plane_section(verts, faces, nrm, (0.0, 0.0, 1.0), c):
             if sqrt((b[0] - a[0]) ** 2 + (b[1] - a[1]) ** 2) > SEG_MIN:
                 out.append(("cut", a[0], a[1], b[0], b[1]))
@@ -4838,7 +4877,10 @@ def solid_lines(g, v, e):
             ax, ay = a[0] + (b[0] - a[0]) * t0, a[1] + (b[1] - a[1]) * t0
             bx, by = a[0] + (b[0] - a[0]) * t1, a[1] + (b[1] - a[1]) * t1
             if sqrt((bx - ax) ** 2 + (by - ay) ** 2) > SEG_MIN:
-                out.append(("proj", ax, ay, bx, by))
+                if fo is None:
+                    out.append(("proj", ax, ay, bx, by))
+                else:
+                    out.extend(_fplan_seg(fo, ("proj", ax, ay, bx, by), c - (a[2] + dz * t0), c - (a[2] + dz * t1)))
         p = Q.el(g, e)["params"]
         if p["category"] == "ramp" and p["form"] == "panel":   # 경사로(W1 1-F 3차): 걸음선 오름 화살표
             out.extend(ramp_arrow(p))
@@ -5264,7 +5306,11 @@ def forget_views(g, vids) -> int:
 #     절단면에서 잘린 몸체 안(절단 영역: 단면 선분 묶음의 짝홀 규칙)도 그 뒤를 가린다(잘린 몸체 뚜껑).
 #   가림(저작 요소가 외래 선을): 단면·입면에서 기존 가림 조각(_occ_index)이 가린다.
 #   가림(외래 요소가 저작 선을, IO-04 4차): 단면·입면에서 저작 요소의 보이는 구간(visible_parts 등)에서 외래 면·절단 영역이 앞에서 덮는 구간을 뺀다(_fvis).
-#     판정은 외래끼리의 가림과 같은 _f_hidden 이다. 평면(절단면 아래 투영선)은 아직 가리지 않는다(다음 차수). 숨은 선(vwall_hidden)도 같은 판정의 여집합이다.
+#     판정은 외래끼리의 가림과 같은 _f_hidden 이다. 숨은 선(vwall_hidden)도 같은 판정의 여집합이다.
+#   가림(외래 요소가 저작 선을, 평면, IO-04 5차): 절단면 아래 저작 선(낮은 벽 윗면 윤곽·슬래브 구멍·가구 기호·계단·난간·경사 지붕·솔리드 투영선)을
+#     그 선이 놓인 높이 z 의 점 (x, y, 절단 높이 - z) 로 보고 같은 _f_hidden 으로 가린다(_fplan·_fplan_seg): 위의 외래 면, 절단면에서 잘린 외래 몸체 속.
+#     난간·솔리드·지붕 용마루·추녀·골은 끝점 높이, 그 밖은 요소의 윗면(계단·상단 윤곽 벽·지붕 처마는 보이는 가장 높은 곳: 덜 가리는 쪽)이다.
+#     절단선·문·창 기호·방화 표시·승강기(절단면을 지나는 샤프트)는 가리지 않는다. 반사 천장 평면은 외래를 그리지 않아(scope_foreign 이 빈 값) 그대로다.
 #   외래 요소가 없으면 모든 함수가 빈 값이라 기존 도면은 바이트 그대로다.
 FOREIGN_CUT_CLS = {"heavy": "cut", "medium": "symbol", "light": "proj"}
 F_TOL = 1.0       # 가림 깊이 허용(mm): 같은 면에 놓인 모서리가 자기 면에 가려지지 않게
@@ -5603,10 +5649,10 @@ def _f_complement(vis) -> list:
 
 
 def _fview(g, v):
-    """단면·입면에서 저작 요소의 선을 가릴 외래 가림 자료(_f_occ 값) 또는 None(IO-04 4차).
-    평면·배치도이거나 뷰가 그리는 외래 요소가 없거나 가릴 면·절단 영역이 하나도 없으면 None 이다: 저작 전용 뷰는 값이 이전과 같다."""
+    """저작 요소의 선을 가릴 외래 가림 자료(_f_occ 값) 또는 None. 단면·입면(IO-04 4차)과 평면(5차. 반사 천장 평면은 외래를 그리지 않아 scope_foreign 이 비어 None).
+    배치도이거나 뷰가 그리는 외래 요소가 없거나 가릴 면·절단 영역이 하나도 없으면 None 이다: 저작 전용 뷰는 값이 이전과 같다."""
     cfg = g.q(view_cfg, v)
-    if cfg is None or cfg[0] not in ("sec", "elev") or not g.q(scope_foreign, v):
+    if cfg is None or cfg[0] not in ("sec", "elev", "plan") or not g.q(scope_foreign, v):
         return None
     occ = g.q(_f_occ, v)
     return occ if occ[0] or occ[3] else None
@@ -5629,6 +5675,44 @@ def _fvis(fo, e0, e1, vis) -> list:
             if hi - lo > 1e-9:
                 out.append((lo, hi))
     return out
+
+
+def _fplan_seg(fo, ln, da, db) -> list:
+    """평면 저작 선분 ln(등급, x0, y0, x1, y1) 하나에서 외래 면·외래 절단 영역이 위에서 가리는 부분을 뺀 조각들(IO-04 5차).
+    da·db 는 두 끝점의 깊이(절단 높이 - 세계 z). 판정은 외래끼리의 가림(_f_hidden)과 같다: 뷰 좌표 (a, b, d) = (x, y, 절단 높이 - z) 에서
+    선분 점보다 F_TOL 넘게 위(d 가 작은)에 있는 외래 면, 또는 절단면에서 잘린 외래 몸체 속(절단 영역)이 덮으면 숨는다. 가려진 곳이 없으면 [ln]."""
+    cls, x0, y0, x1, y1 = ln
+    hid = _f_hidden(fo, (x0, y0, da), (x1, y1, db))
+    if not hid:
+        return [ln]
+    out = []
+    for a, b in _f_visible(hid):
+        p0, q0 = x0 + a * (x1 - x0), y0 + a * (y1 - y0)
+        p1, q1 = x0 + b * (x1 - x0), y0 + b * (y1 - y0)
+        if sqrt((p1 - p0) ** 2 + (q1 - q0) ** 2) > SEG_MIN:
+            out.append((cls, p0, q0, p1, q1))
+    return out
+
+
+def _fplan(g, v, lines, z):
+    """평면(IO-04 5차): 저작 요소 하나의 선분들 중 절단선이 아닌 것(투영선·기호)을 높이 z(세계, 그 선들이 놓인 높이)에 있는 것으로 보고
+    외래 요소가 위에서 가리는 부분을 뺀다(_fplan_seg). 절단선(cut·cutn)은 절단면 위의 선이라 가리지 않는다.
+    뷰에 외래 요소가 없거나(_fview 가 None) z 가 절단 높이에서 F_TOL 안이면(위에 가릴 것이 있을 수 없다) lines 를 그대로 돌려준다: 값이 이전과 같다."""
+    if not lines:
+        return lines
+    fo = g.q(_fview, v)
+    if fo is None:
+        return lines
+    d = g.q(view_cfg, v)[2] - z
+    if d <= F_TOL:
+        return lines
+    out = []
+    for ln in lines:
+        if ln[0] in ("cut", "cutn"):
+            out.append(ln)
+        else:
+            out.extend(_fplan_seg(fo, ln, d, d))
+    return tuple(out)
 
 
 def foreign_omitted(g, ids) -> int:
