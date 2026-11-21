@@ -10,6 +10,7 @@
 """
 from __future__ import annotations
 
+import binascii
 import hashlib
 import json
 import math
@@ -377,9 +378,27 @@ def closure_diff(a: dict, b: dict) -> list[str]:
     return out
 
 
+_NS_BYTES = _NS.bytes
+# IFC GlobalId 22자는 128비트 수를 6비트씩(첫 글자는 위 2비트) IFC 자모로 적은 것이다. 앞에 0 4비트·뒤에 0 12비트를 붙인 18바이트를
+# 표준 base64 로 적으면 앞 22자가 같은 6비트 묶음이 되므로, 자모만 바꿔 끼운다
+_GUID64 = bytes.maketrans(b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/",
+                          b"0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz_$")
+
+
+def _guid5(name: str) -> str:
+    """ifcopenshell.guid.compress(uuid.uuid5(_NS, name).hex) 와 같은 값을 UUID 객체·정규식 없이 바로 계산한다.
+    프로젝트를 열 때 벽마다 부속 이름표 수십 개의 GlobalId 를 맞춰 보므로(수십만 회) 이 경로가 열기 시간의 큰 몫이었다.
+    같음은 tests/test_guid5.py 가 원래 식과 대조해 지킨다."""
+    h = bytearray(hashlib.sha1(_NS_BYTES + name.encode("utf-8")).digest()[:16])
+    h[6] = (h[6] & 0x0F) | 0x50   # 판 5
+    h[8] = (h[8] & 0x3F) | 0x80   # RFC 4122 변형
+    b = (int.from_bytes(h, "big") << 12).to_bytes(18, "big")
+    return binascii.b2a_base64(b, newline=False)[:22].translate(_GUID64).decode("ascii")
+
+
 def part_guid(eid: str, label: str) -> str:
     """투영이 소유하는 부속(꺾인 계단의 단 묶음·층참, 슬래브 구멍)의 GlobalId: 요소 id 와 이름표만의 결정적 함수다(opening_guid 와 같은 이유)."""
-    return ifcopenshell.guid.compress(uuid.uuid5(_NS, f"part:{eid}:{label}").hex)
+    return _guid5(f"part:{eid}:{label}")
 
 
 def opening_guid(door_id: str) -> str:
