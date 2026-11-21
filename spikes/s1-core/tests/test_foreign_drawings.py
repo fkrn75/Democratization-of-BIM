@@ -167,7 +167,7 @@ def test_외래_요소가_없으면_새_질의는_빈_값이다(base):
     from dobim_core import fixture as F
     assert base.run("view.create", {"id": F.V1, "name": "1F", "type": "plan", "level": F.LV1})["ok"]
     g = base.eng.g
-    assert g.q(D.scope_foreign, F.V1) == () and g.q(D._f_occ, F.V1) == ((), (), {}, ())
+    assert g.q(D.scope_foreign, F.V1) == () and g.q(D._f_occ, F.V1) == ((), (), {}, (), {})
     assert g.q(D.view_omitted, F.V1) == {"foreign": 0, "detached": 0}
 
 
