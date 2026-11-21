@@ -3559,13 +3559,130 @@ def building_outline(g):
     return outline_of(g.q(building_polys))
 
 
-def outline_of(polys):
-    """반시계 다각형들의 합집합 바깥 선분(building_outline 의 계산, 면적 평면도 쓴다). 선분은 원래 변의 방향(반시계)을 지킨다."""
+GRID_PAD = 1.0      # 격자 색인에 변·상자를 넣을 때 둘레 여유(mm): 교점 반올림 오차보다 훨씬 크게 잡아 후보를 넉넉히 고른다
+
+
+class _Grid:
+    """균일 격자 색인(outline_of 전용). 항목 경계 상자(+GRID_PAD)가 걸치는 칸마다 항목 번호를 넣는다.
+    질의는 답이 될 수 있는 항목을 모두 포함하는 후보만 돌려주고, 판정은 부르는 쪽이 원래 식 그대로 한다(결과는 전수 검사와 같다)."""
+
+    def __init__(self, boxes, pad=GRID_PAD):
+        n = max(1, len(boxes))
+        x0 = min(b[0] for b in boxes) - pad - 1.0
+        y0 = min(b[1] for b in boxes) - pad - 1.0
+        x1 = max(b[2] for b in boxes) + pad + 1.0
+        y1 = max(b[3] for b in boxes) + pad + 1.0
+        w, h = x1 - x0, y1 - y0
+        cs = max(sqrt(w * h / n), 1.0)       # 칸 하나에 항목 하나 꼴
+        self.x0, self.y0, self.cs = x0, y0, cs
+        self.nx, self.ny = int(w / cs) + 1, int(h / cs) + 1
+        self.cells: dict = {}
+        for i, b in enumerate(boxes):
+            for cx in range(self._ix(b[0] - pad), self._ix(b[2] + pad) + 1):
+                for cy in range(self._iy(b[1] - pad), self._iy(b[3] + pad) + 1):
+                    self.cells.setdefault((cx, cy), []).append(i)
+
+    def _ix(self, x):
+        return min(max(int((x - self.x0) // self.cs), 0), self.nx - 1)
+
+    def _iy(self, y):
+        return min(max(int((y - self.y0) // self.cs), 0), self.ny - 1)
+
+    def box(self, b, pad):
+        """경계 상자 b(+pad)가 걸치는 칸들의 항목 번호(중복 없음, 오름차순)."""
+        out = set()
+        for cx in range(self._ix(b[0] - pad), self._ix(b[2] + pad) + 1):
+            for cy in range(self._iy(b[1] - pad), self._iy(b[3] + pad) + 1):
+                out.update(self.cells.get((cx, cy), ()))
+        return sorted(out)
+
+    def ray(self, p, dx, dy):
+        """점 p 에서 (dx, dy) 로 무한히 나가는 반직선이 지나는 칸들의 항목 번호 목록을 가까운 줄부터 차례로 낸다.
+        주축(|dx|, |dy| 중 큰 쪽)으로 한 줄씩 나가며, 그 줄 안에서 반직선이 덮는 부축 범위의 위아래로 한 칸씩 더 본다(넉넉한 덮기)."""
+        cs = self.cs
+        if abs(dx) >= abs(dy):
+            a0, b0, da, db, na, nb, lo_a, lo_b, ia = p[0], p[1], dx, dy, self.nx, self.ny, self.x0, self.y0, self._ix
+            swap = False
+        else:
+            a0, b0, da, db, na, nb, lo_a, lo_b, ia = p[1], p[0], dy, dx, self.ny, self.nx, self.y0, self.x0, self._iy
+            swap = True
+        step = 1 if da > 0 else -1
+        k = db / da
+        c = ia(a0)
+        while 0 <= c < na:
+            ca, cb = lo_a + c * cs, lo_a + (c + 1) * cs     # 이 줄의 주축 범위 중 반직선이 지나는 부분
+            s0, s1 = (max(ca, a0), cb) if step > 0 else (ca, min(cb, a0))
+            v0, v1 = b0 + (s0 - a0) * k, b0 + (s1 - a0) * k
+            r0 = int((min(v0, v1) - lo_b) // cs) - 1
+            r1 = int((max(v0, v1) - lo_b) // cs) + 1
+            if r1 >= 0 and r0 < nb:
+                for r in range(max(r0, 0), min(r1, nb - 1) + 1):
+                    got = self.cells.get((r, c) if swap else (c, r))
+                    if got:
+                        yield got
+            c += step
+
+
+def _blocks(p, dx, dy, a, b) -> bool:
+    """_escapes 의 한 변 판정(식은 그대로): 점 p 에서 (dx, dy) 로 나가는 반직선이 변 a-b 에 부딪히는가."""
+    if (dx > 0 and max(a[0], b[0]) < p[0]) or (dx < 0 and min(a[0], b[0]) > p[0]) or (dy > 0 and max(a[1], b[1]) < p[1]) or (dy < 0 and min(a[1], b[1]) > p[1]):
+        return False
+    ex, ey = b[0] - a[0], b[1] - a[1]
+    den = dx * ey - dy * ex
+    if abs(den) < 1e-12:
+        return False
+    qx, qy = a[0] - p[0], a[1] - p[1]
+    t = (qx * ey - qy * ex) / den
+    u = (qx * dy - qy * dx) / den
+    return t > 1e-9 and 0.0 <= u <= 1.0
+
+
+def _escapes_grid(p, edges, grid) -> bool:
+    """_escapes 와 같은 답을 격자 색인으로 낸다. 반직선이 지나는 칸의 변만 같은 식(_blocks)으로 판정한다.
+    부딪히는 변은 교점이 그 변의 경계 상자 안에 있으므로 반드시 후보에 들고, 막힘 여부는 변 순서와 무관하다."""
+    for dx, dy in ESCAPE_DIRS:
+        blocked = False
+        seen = set()
+        for ids in grid.ray(p, dx, dy):
+            for i in ids:
+                if i in seen:
+                    continue
+                seen.add(i)
+                a, b = edges[i]
+                if _blocks(p, dx, dy, a, b):
+                    blocked = True
+                    break
+            if blocked:
+                break
+        if not blocked:
+            return True
+    return False
+
+
+def outline_of(polys, brute=False):
+    """반시계 다각형들의 합집합 바깥 선분(building_outline 의 계산, 면적 평면도 쓴다). 선분은 원래 변의 방향(반시계)을 지킨다.
+    이웃 다각형 고르기와 바깥 탈출 판정은 격자 색인으로 후보만 골라 같은 식으로 검사한다(W1 연장 7: 5만 요소 면적 평면에서 전수 검사가 병목).
+    brute 가 참이면 예전처럼 전수 검사한다(결과 동등 시험용)."""
     boxes = [_poly_bbox(p) for p in polys]
     edges = [(P[k], P[(k + 1) % len(P)]) for P in polys for k in range(len(P))]
+    if brute or not polys:
+        def near(i):
+            return [j for j in range(len(polys)) if j != i and _bb_hit(boxes[i], boxes[j])]
+
+        def esc(q):
+            return _escapes(q, edges)
+    else:
+        pgrid = _Grid(boxes)
+        egrid = _Grid([(min(a[0], b[0]), min(a[1], b[1]), max(a[0], b[0]), max(a[1], b[1])) for a, b in edges])
+
+        def near(i):   # 같은 집합을 번호 오름차순으로(전수 검사와 같은 순서)
+            return [j for j in pgrid.box(boxes[i], NBR_PAD + 1.0) if j != i and _bb_hit(boxes[i], boxes[j])]
+
+        def esc(q):
+            return _escapes_grid(q, edges, egrid)
     out = []
     for i, P in enumerate(polys):
-        others = [polys[j] for j in range(len(polys)) if j != i and _bb_hit(boxes[i], boxes[j])]
+        others = [polys[j] for j in near(i)]
         n = len(P)
         for k in range(n):
             a, b = P[k], P[(k + 1) % n]
@@ -3587,7 +3704,7 @@ def outline_of(polys):
                 probe = (a[0] + tm * dx + nx * SITE_PAD, a[1] + tm * dy + ny * SITE_PAD)
                 if any(_in_poly(probe, Qp) for Qp in others):
                     continue
-                if not _escapes(probe, edges):
+                if not esc(probe):
                     continue
                 out.append((a[0] + t0 * dx, a[1] + t0 * dy, a[0] + t1 * dx, a[1] + t1 * dy))
     return tuple(out)
