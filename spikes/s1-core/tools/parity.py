@@ -87,7 +87,7 @@ PRE = {**_DRAFT_PRE, "history.redo": [("history.undo", {})], "ifc.restore": [_EX
        "view.callout": [_V1], "sheet.viewport.set": [_V1, _SH1], "view.refs": [_V1, _SH1],
        "view.areas": [("view.area_plan", {"id": F.VA1, "name": "1F 바닥면적", "level": F.LV1, "scheme": "gross"})],
        "param.delete": [_PP1], "param.list": [_PP1],
-       "area.delete": [_LA1], "area.list": [_LA1], "area.legal": [_W4, _SI1, _LA1]}
+       "area.delete": [_LA1], "area.list": [_LA1], "area.legal": [_W4, _SI1, _LA1], "area.export": [_W4, _SI1, _LA1]}
 ERROR_CASES = [
     ("없는 커맨드", "no.such.command", {}, {}),
     ("스키마 오류(타입)", "wall.move", {"id": F.W1, "dx": "abc"}, {}),

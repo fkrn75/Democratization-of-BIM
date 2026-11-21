@@ -5,6 +5,7 @@ area.define : 법정 면적 객체(larea)를 만들거나 바꾼다. 건축법 �
 area.delete : 법정 면적 객체를 지운다.
 area.list   : 법정 면적 객체 목록(면적·산입 면적).
 area.legal  : 법정 면적표: 대지면적·층별 바닥면적·건축면적·연면적·용적률 산정용 연면적·건폐율·용적률(한도를 주면 적합 여부).
+area.export : 법정 면적표를 CSV(UTF-8 BOM·CRLF)로 내보낸다(요약·층별·면적 객체, W1 연장 5번째 PR). 도면은 view.area_plan scheme legal.
 자동 판정은 벽 중심선 영역(바닥면적·건축면적)과 지하층(법 2조1항5호, 지표면 수평 가정)뿐이다. 나머지 산입·불산입은 면적 객체로 사용자가 넣고,
 판정하지 못하는 것은 응답의 unverified(확인 필요)로 알린다. 근거 원문은 legal_area 모듈 머리말. 이 모듈은 ifcopenshell 을 import 하지 않는다.
 """
@@ -12,7 +13,7 @@ from __future__ import annotations
 
 from typing import Annotated, Literal
 
-from pydantic import Field
+from pydantic import Field, model_validator
 
 from dobim_core import commands as C
 from dobim_core import fixture as F
@@ -136,34 +137,33 @@ def area_list(ctx, a: AreaList):
 
 # ---------------------------------------------------------------- 법정 면적표
 def _wall_polys(ctx, lv: str) -> list:
-    """레벨의 저작 벽 중심선으로 닫힌 영역들(반시계 다각형). space.from_walls 와 같은 면 찾기(막다른 벽은 걷어낸다)."""
-    from dobim_core import regions as RG
+    """레벨의 저작 벽 중심선으로 닫힌 영역들(반시계 다각형). 면적 평면 legal 과 같은 면 찾기(viewplans.faces_of)."""
+    from dobim_core import viewplans as VP
     walls = []
     for w in sorted(ctx.rels_in("on_level", lv)):
         r = ctx.st.el[w]
         if r["kind"] == "wall" and r["origin"] == "authored":
             x1, y1, x2, y2 = r["params"]["axis"]
             walls.append((w, (x1, y1), (x2, y2), r["params"]["thickness"]))
-    return [tuple(f["center"]) for f in RG.find_faces(walls)] if walls else []
+    return VP.faces_of(walls)
 
 
 def _union_mm2(polys: list) -> float:
-    """반시계 다각형들의 합집합 면적(mm2). 면적 평면(gross)과 같은 합집합 바깥선 계산을 쓴다."""
-    if not polys:
-        return 0.0
-    from dobim_core import drawing as D
+    """반시계 다각형들의 합집합 면적(mm2). 면적 평면(gross·legal)과 같은 합집합 바깥선 계산을 쓴다."""
     from dobim_core import viewplans as VP
-    segs = VP._union_directed(D.outline_of(tuple(polys)))
-    return max(0.0, sum(x0 * y1 - x1 * y0 for x0, y0, x1, y1 in segs) / 2.0)
+    return VP.union_mm2(polys)
 
 
-class AreaLegal(A):
+class _LegalArgs(A):
     site: Id | None = Field(None, description="대지 id. 생략하면 저작 대지가 하나일 때 그것")
     site_area_m2: float | None = Field(None, gt=0, le=1e8, description="대지면적(제외 전) ㎡ 를 직접 준다(대지 경계 대신)")
     ground: float = Field(0.0, ge=-1e6, le=1e6, description="지표면 표고 mm(레벨 표고와 같은 기준, 수평 가정). 지하층·건축면적 판정에 쓴다")
     basement_levels: Annotated[list[Id], Field(max_length=200)] | None = Field(None, description="지하층으로 볼 레벨 id 목록. 주면 자동 판정 대신 이것을 쓴다")
     coverage_max: float | None = Field(None, gt=0, le=100, description="건폐율 한도 %(국토계획법·조례 값, 사용자가 준다)")
     far_max: float | None = Field(None, gt=0, le=10000, description="용적률 한도 %")
+
+
+class AreaLegal(_LegalArgs):
     cursor: str | None = Field(None, max_length=2048, description="층 표(items)의 다음 쪽: 이전 응답의 page.next_cursor")
 
 
@@ -176,6 +176,16 @@ LEVEL_COLUMNS = ["id", "name", "elevation", "height", "basement", "building", "w
 def area_legal(ctx, a: AreaLegal):
     """층 표(items)는 LEVEL_COLUMNS 순서의 행. basement = 지하층(null = 판정 못 함), building = 건축면적에 넣은 층.
     walls_m2 = 벽 중심선 영역, adjust_m2 = 바닥면적 객체 합(더함·노대 산입·뺌), far_m2 = 용적률 산정용(지하층 0, 용적률 제외 객체 뺌)."""
+    result, rows = _legal(ctx, a)
+    start = C._dec_cursor(a.cursor, "int") or 0
+    window = rows[start:]
+    items, cut = C._fit(window, base=result, cursor_of=lambda k: C._enc_cursor(start + k + 1))
+    more = start + len(items) < len(rows)
+    return {**result, "items": items, "page": C._page(C._enc_cursor(start + len(items)) if more else None, len(rows), cut)}
+
+
+def _legal(ctx, a: _LegalArgs) -> tuple:
+    """법정 면적표 계산(area.legal·area.export 공용): (요약 result, LEVEL_COLUMNS 순서의 층 표 rows)."""
     st = ctx.st
     unverified: list = []
     used = {"119-1-2", "119-1-3", "119-1-4", "법-2-1-5"}
@@ -279,8 +289,111 @@ def area_legal(ctx, a: AreaLegal):
         result["limits"] = lim
     result["basis"] = {c: (LA.AUTO_BASIS.get(c) or LA.RULES[c][2]) for c in sorted(used)}
     result["unverified"] = unverified[:20]
-    start = C._dec_cursor(a.cursor, "int") or 0
-    window = rows[start:]
-    items, cut = C._fit(window, base=result, cursor_of=lambda k: C._enc_cursor(start + k + 1))
-    more = start + len(items) < len(rows)
-    return {**result, "items": items, "page": C._page(C._enc_cursor(start + len(items)) if more else None, len(rows), cut)}
+    return result, rows
+
+
+# ---------------------------------------------------------------- 면적표 CSV(W1 연장 5번째 PR)
+EXPORT_TABLES = ("all", "summary", "levels", "objects")
+LEVEL_HEAD = ["레벨", "표고_mm", "층높이_mm", "지하층", "건축면적_산입", "벽중심선_m2", "조정_m2", "바닥면적_m2", "용적률산정_m2"]
+OBJECT_HEAD = ["id", "이름", "대상", "근거", "효과", "레벨", "면적_m2", "산입_m2", "비고"]
+SUMMARY_HEAD = ["항목", "값", "단위", "근거"]
+TARGET_KO = {"site": "대지면적", "building": "건축면적", "floor": "바닥면적"}
+EFFECT_KO = {"add": "더함", "exclude": "뺌", "far": "용적률 산정에서만 뺌", "balcony": "노대(면적 - 접한 길이 x 1.5m)"}
+
+
+class AreaExport(_LegalArgs):
+    path: str = Field(max_length=260, description="작업 폴더 안의 .csv 경로(UTF-8 BOM·CRLF, 엑셀이 한글을 읽는다)")
+    table: Literal["all", "summary", "levels", "objects"] = Field(
+        "all", description="all = 요약·층별·면적 객체 세 표를 빈 줄로 나눠 한 파일에, summary = 요약(대지·건축·연면적·건폐율·용적률·확인 필요), "
+                           "levels = 층별 바닥면적, objects = 법정 면적 객체 목록")
+    overwrite: bool = Field(False, description="거짓이면 이미 있는 파일을 덮어쓰지 않는다. 참이면 덮어쓰기 전에 자동 스냅숏을 남긴다(확인 토큰 필요)")
+
+    @model_validator(mode="after")
+    def _csv(self):
+        if not self.path.lower().endswith(".csv"):
+            raise ValueError("path 는 .csv 여야 한다")
+        return self
+
+
+def _export_target(ctx, a: AreaExport):
+    """작업 폴더 안 .csv, 스냅숏 폴더·폴더·대체 데이터 스트림(:) 아님, 덮어쓰기 동의(schedule.export 의 CSV 와 같은 검사)."""
+    from dobim_core.paths import resolve_in_workspace
+    p = resolve_in_workspace(ctx.eng.workspace, a.path)
+    if p.suffix.lower() != ".csv" or C.SNAP_DIR.lower() in [x.lower() for x in p.parts] or p.is_dir() or ":" in p.name:
+        raise DobimError("PATH_DENIED", f"쓸 수 없는 경로다: {p.name}", path="/path")
+    if p.exists() and not a.overwrite:
+        raise DobimError("FILE_EXISTS", f"이미 있는 파일이다: {p.name}", path="/path", hint="overwrite=true 로 덮어쓰거나 다른 이름을 쓰세요")
+    return p
+
+
+def _export_preview(ctx, a: AreaExport):
+    p = _export_target(ctx, a)
+    C._snap_dir(p, ctx.eng.workspace)
+    return {"will_write": p.name, "format": "csv", "table": a.table, "overwrites": p.exists(), "snapshot_before_overwrite": p.exists()}
+
+
+def _summary_rows(result: dict) -> list:
+    site, b = result["site"], result["building"]
+    out = []
+    if site is not None:
+        out += [["대지면적(제외 전)", site["gross_m2"], "㎡", "119-1-1"], ["대지면적 제외", site["excluded_m2"], "㎡", "119-1-1-가·나"],
+                ["대지면적", site["area_m2"], "㎡", "119-1-1"]]
+    out += [["건축면적(벽 중심선)", b["walls_m2"], "㎡", "119-1-2"], ["건축면적 조정", b["adjust_m2"], "㎡", "119-1-2-가·다"],
+            ["건축면적", b["area_m2"], "㎡", "119-1-2"], ["연면적", result["gross_floor_m2"], "㎡", "119-1-4"],
+            ["용적률 산정용 연면적", result["far_floor_m2"], "㎡", "119-1-4-가·나·마·바"],
+            ["건폐율", result["coverage_pct"], "%", "법-55"], ["용적률", result["far_pct"], "%", "법-56"]]
+    lim = result.get("limits", {})
+    if "coverage_max" in lim:
+        out.append(["건폐율 한도", lim["coverage_max"], "%", "적합" if lim["coverage_ok"] else "부적합" if lim["coverage_ok"] is False else "판정 못 함"])
+    if "far_max" in lim:
+        out.append(["용적률 한도", lim["far_max"], "%", "적합" if lim["far_ok"] else "부적합" if lim["far_ok"] is False else "판정 못 함"])
+    out += [["확인 필요", u["message"], "", u["code"]] for u in result["unverified"]]
+    out.append(["근거 법령", result["source"], "", ""])
+    return out
+
+
+def _level_rows(rows: list) -> list:
+    out = [[r[1], r[2], r[3], r[4], r[5], r[6], r[7], r[8], r[9]] for r in rows]
+    out.append(["합계", None, None, None, None, round(sum(r[6] for r in rows), 2), round(sum(r[7] for r in rows), 2),
+                round(sum(r[8] for r in rows), 2), round(sum(r[9] for r in rows), 2)])
+    return out
+
+
+def _object_rows(ctx) -> list:
+    st = ctx.st
+    out = []
+    for i in sorted(st.by_kind.get("larea", ())):
+        p = st.el[i]["params"]
+        lv = p.get("level")
+        lname = st.el[lv]["params"]["name"] if lv in st.el and st.el[lv]["kind"] == "level" else lv
+        c = _counted(p)
+        out.append([i, p["name"], TARGET_KO[p["target"]], p["rule"], EFFECT_KO[p["effect"]], lname, c["area_m2"], c["counted_m2"], p["note"]])
+    return out
+
+
+@command("area.export", kind="session", risk="destructive", group="model.area",
+         summary="법정 면적표를 CSV 로 내보내기(요약·층별·면적 객체)", args=AreaExport, since="0.14", preview=_export_preview,
+         examples=[{"path": "legal-area.csv", "site": F.SI1, "overwrite": True},
+                   {"path": "legal-area-levels.csv", "table": "levels", "site_area_m2": 300, "coverage_max": 60, "far_max": 200, "overwrite": True}])
+def area_export(ctx, a: AreaExport):
+    """값은 area.legal 과 같다(같은 계산). 수는 ㎡·%·mm 그대로, 참거짓은 TRUE/FALSE, 판정 못 한 지하층은 빈 칸.
+    all 은 '[요약]'·'[층별 바닥면적]'·'[법정 면적 객체]' 머리 줄과 빈 줄로 세 표를 나눈다(열 수가 표마다 다르다).
+    파일 쓰기는 schedule.export 와 같은 절차(확인 토큰, 덮어쓰기 전 자동 스냅숏)."""
+    from dobim_core import schedules as S
+    p = _export_target(ctx, a)
+    result, rows = _legal(ctx, a)
+    parts = {"summary": (SUMMARY_HEAD, _summary_rows(result)), "levels": (LEVEL_HEAD, _level_rows(rows)), "objects": (OBJECT_HEAD, _object_rows(ctx))}
+    if a.table == "all":
+        titles = {"summary": "[요약]", "levels": "[층별 바닥면적]", "objects": "[법정 면적 객체]"}
+        text = "\r\n".join(S.csv_text([titles[k]], []) + S.csv_text(*parts[k]) for k in ("summary", "levels", "objects"))
+    else:
+        text = S.csv_text(*parts[a.table])
+    blob = ("\ufeff" + text).encode("utf-8")
+    snap = C._snapshot_existing(p, ctx.eng.workspace)
+    try:
+        C._replace(p, lambda tmp: tmp.write_bytes(blob))
+    except BaseException:
+        C._drop_snapshot(p, snap, ctx.eng.workspace)
+        raise
+    return {"path": p.name, "format": "csv", "table": a.table, "levels": len(rows), "objects": len(parts["objects"][1]),
+            "gross_floor_m2": result["gross_floor_m2"], "unverified": len(result["unverified"]), "bytes": len(blob), "rev": ctx.eng.rev, "snapshot": snap}

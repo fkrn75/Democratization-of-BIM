@@ -3,7 +3,8 @@
 
 view.rcp       : 반사 천장 평면(평면 뷰 + rcp). 절단면에서 위를 본다: 절단선은 평면과 같고, 투영은 절단면 위 보이는 깊이 안의 것만
                  (위층 슬래브 밑면·구멍, 매단 패밀리, 천장 높이가 있는 공간의 천장선과 'CH 높이' 문자). 문·창 기호는 없다.
-view.area_plan : 면적 평면(평면 뷰 + area). gross = 그 층 벽 윤곽 합집합의 바깥선(외벽 바깥면) 면적, rooms = 공간별 면적과 합계.
+view.area_plan : 면적 평면(평면 뷰 + area). gross = 그 층 벽 윤곽 합집합의 바깥선(외벽 바깥면) 면적, rooms = 공간별 면적과 합계,
+                 legal = 법정 바닥면적(벽 중심선 영역 + 그 층 법정 면적 객체 larea, 건축법 시행령 119조, W1 연장 ARC-36).
 view.legend    : 범례 뷰(뷰 종류 legend). symbols = 모델의 문(폭·높이별)·패밀리 유형 기호, materials = 벽·슬래브 재료 해치 견본.
 view.drafting  : 제도 뷰(뷰 종류 drafting, W1 연장 VIEW-07). 모델 없이 2D 작도(draft.*)만 담는다. 시트에 올리는 법은 다른 뷰와 같다.
 view.areas     : 면적 평면의 면적 목록·합계.
@@ -54,7 +55,8 @@ class ViewAreaPlan(A):
     id: Id | None = None
     name: Name
     level: Id = Field(description="레벨 id")
-    scheme: Literal["gross", "rooms"] = Field(description="gross = 바닥면적(벽 윤곽 바깥선), rooms = 공간별 면적")
+    scheme: Literal["gross", "rooms", "legal"] = Field(description="gross = 바닥면적(벽 윤곽 바깥선), rooms = 공간별 면적, "
+                                                       "legal = 법정 바닥면적(벽 중심선 영역 + 그 층 법정 면적 객체, area.define)")
     cut_height: C.VCoord = 1200.0
     view_depth: C.VCoord = Field(300.0, ge=0)
     scale: C.Scale = 100
@@ -63,7 +65,10 @@ class ViewAreaPlan(A):
 @command("view.area_plan", kind="mutation", risk="write", group="view", summary="면적 평면을 만든다",
          args=ViewAreaPlan, since="0.10", examples=[{"id": F.VA1, "name": "1F 바닥면적", "level": F.LV1, "scheme": "gross"}])
 def view_area_plan(ctx, a: ViewAreaPlan):
-    """평면 그림 위에 면적 경계·해치·면적 문자를 얹는다. 값은 view.areas 로 읽는다."""
+    """평면 그림 위에 면적 경계·해치·면적 문자를 얹는다. 값은 view.areas 로 읽는다.
+    legal 은 건축법 시행령 119조 1항 3호 바닥면적(저작 벽 중심선으로 닫힌 영역 합집합, area.legal 층 표와 같은 값)과 그 층의 바닥면적 대상
+    법정 면적 객체(이름·근거·산입 면적, 더함·노대는 45도, 뺌·용적률 제외는 135도 해치)를 그리고 아래에 층 바닥면적 합계를 쓴다.
+    대지·건축면적 대상 객체는 레벨이 없어 그리지 않는다(area.legal·area.export 의 표에는 있다)."""
     return _plan(ctx, a, {"area": a.scheme})
 
 
@@ -109,10 +114,21 @@ class ViewAreas(A):
 @command("view.areas", kind="query", risk="read", group="view", summary="면적 평면의 면적 목록·합계",
          args=ViewAreas, idempotent=True, examples=[{"id": F.VA1}])
 def view_areas(ctx, a: ViewAreas):
-    """면적은 ㎡(소수 둘째 자리)."""
+    """면적은 ㎡(소수 둘째 자리). legal 은 항목마다 근거·효과·면적·산입 면적(빼는 것은 음수)을 주고, total_m2 는 층 바닥면적
+    (벽 중심선 + 용적률 제외가 아닌 객체의 산입 면적, 0 미만은 0), far_excluded_m2 는 용적률 제외 객체 합이다(지하층 판정은 area.legal)."""
     p = ctx.row(a.id, "view")["params"]
     if "area" not in p:
         raise DobimError("CONSTRAINT", "면적 평면이 아니다(view.area_plan 으로 만든다)", path="/id")
+    if p["area"] == "legal":
+        its = ctx.g.q(VP.legal_items, a.id)
+        walls, adj, fl, far = ctx.g.q(VP.legal_totals, a.id)
+        rows = [{"id": it[0], "name": it[1], "rule": it[2], "effect": it[3], "area_m2": round(it[5] / 1.0e6, 2), "counted_m2": round(it[6] / 1.0e6, 2)}
+                for it in its]
+        rows, cut = C._fit(rows)
+        out = {"id": a.id, "scheme": "legal", "items": rows, "walls_m2": walls, "adjust_m2": adj, "total_m2": fl, "far_excluded_m2": far}
+        if cut:
+            out["page"] = C._page(None, len(its), cut)
+        return out
     items = ctx.g.q(VP.area_items, a.id)
     return {"id": a.id, "scheme": p["area"], "items": [{"name": n, "area_m2": round(ar / 1.0e6, 2)} for n, _e, ar, _at in items],
             "total_m2": round(sum(it[2] for it in items) / 1.0e6, 2)}
