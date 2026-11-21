@@ -4736,9 +4736,29 @@ SNAP_DIR = ".dobim-snapshots"
 _FORBIDDEN_SUFFIX = (".dobim", ".dobim-wal", ".dobim-shm", ".dobim-journal", ".tmp", "-wal", "-shm", "-journal")
 
 
+SEU_USE_CODE = r"^A[0-9]{5}$"   # 세움터 용도구획 AIS_분류코드 형식(A+5자리, krules/seumteo.py). 코드 표 자체는 근거에 없어 형식만 본다
+
+
+class LevelUseCode(A):
+    level: Id = Field(description="레벨 id")
+    code: str = Field(pattern=SEU_USE_CODE, description="그 층 용도구획의 AIS_분류코드(A+5자리, 사용자가 준다: 코드 표 대조 안 함, 확인 필요)")
+
+
+class SeumteoAreas(A):
+    use_code: str = Field(pattern=SEU_USE_CODE, description="용도구획 기본 AIS_분류코드(A+5자리 용도 코드). 세움터 용도 코드 표는 근거 문서에 없어 "
+                                                            "사용자가 준 값을 그대로 싣고 확인 필요로 표시한다")
+    level_use_codes: Annotated[list[LevelUseCode], Field(max_length=200)] | None = Field(None, description="레벨별 용도구획 코드(없는 레벨은 use_code)")
+    site: Id | None = Field(None, description="대지 id(area.legal 과 같음). 생략하면 저작 대지가 하나일 때 그것")
+    site_area_m2: float | None = Field(None, gt=0, le=1e8, description="대지면적 ㎡ 를 직접 준다(대지 경계 대신, 이때 대지면적 객체는 형상 없음)")
+    ground: float = Field(0.0, ge=-1e6, le=1e6, description="지표면 표고 mm(area.legal 과 같음)")
+    basement_levels: Annotated[list[Id], Field(max_length=200)] | None = Field(None, description="지하층으로 볼 레벨 id 목록(area.legal 과 같음)")
+
+
 class IfcExport(A):
     path: str = Field(max_length=260, description="작업 폴더 안의 .ifc 경로. 기존 파일은 덮어쓰며, 덮어쓰기 전에 자동 스냅숏을 남긴다")
     schema_: Literal["IFC4", "IFC2X3"] = Field("IFC4", alias="schema", description="IFC4(기본, 정본 투영 그대로) 또는 IFC2X3(TC1, 세움터 등 제출용: IFC4 투영을 스키마 변환하고 손실 항목을 losses 로 알린다)")
+    seumteo_areas: SeumteoAreas | None = Field(None, description="세움터 제출용 면적 객체(용도구획 A·건축면적 B·대지면적 S)를 IfcSpace + AIS_ 속성으로 더한다"
+                                                                 "(값은 area.legal 과 같은 계산). 생략하면 정본 투영 그대로(기존과 같은 바이트)")
 
 
 def _target(ctx, raw: str):
@@ -4998,23 +5018,47 @@ def _export_preview(ctx, a: IfcExport):
 
 @command("ifc.export", kind="session", risk="destructive", group="io",
          summary="IFC4·IFC2x3 내보내기",
-         args=IfcExport, preview=_export_preview, examples=[{"path": "export-example.ifc"}, {"path": "export-example-2x3.ifc", "schema": "IFC2X3"}])
+         args=IfcExport, preview=_export_preview, examples=[{"path": "export-example.ifc"}, {"path": "export-example-2x3.ifc", "schema": "IFC2X3"},
+                                                     {"path": "export-example-seumteo.ifc", "seumteo_areas": {"use_code": "A00000"}}])   # A00000: 형식만 맞춘 자리표시 값
 def ifc_export(ctx, a: IfcExport):
     p = _target(ctx, a.path)
     ctx.eng.flush_ifc()   # 투영한 요소 수는 프로세스 상태(캐시 유무)에 따라 달라 결과에 넣지 않는다(패리티 C)
+    seu = None
+    src = ctx.eng.ifc.f
+    if a.seumteo_areas is not None:   # 세움터 면적 객체: 정본의 사본에만 더한다(옵션을 끄면 이 길을 타지 않아 출력 바이트 그대로)
+        from dobim_core import commands_area as CA
+        from dobim_core import seumteo_ifc as SI
+        plan = CA.seumteo_plan(ctx, a.seumteo_areas)   # 레벨·대지 id 오류는 스냅숏을 만들기 전에 낸다
+        src = SI.copy_file(src)
+        seu = {"objects": SI.add_areas(src, ctx.eng.ifc, plan["objects"]), "use_codes": plan["use_codes"],
+               "building_m2": plan["legal"]["building"]["area_m2"], "site_m2": (plan["legal"]["site"] or {}).get("area_m2"),
+               "gross_floor_m2": plan["legal"]["gross_floor_m2"], "unverified": plan["unverified"][:20]}
     snap = _snapshot_existing(p, ctx.eng.workspace)
     losses = None
     if a.schema_ == "IFC2X3":   # IFC4 투영을 복사해 내린다(정본 투영·IFC4 출력은 그대로)
         from dobim_core import __version__
         from dobim_core import ifc2x3 as X2
         try:
-            f2, losses = X2.to_ifc2x3(ctx.eng.ifc.f, __version__, 0)   # 작성 시각 0: IFC4 출력처럼 같은 모델이면 같은 내용(시계에 기대지 않는다)
+            f2, losses = X2.to_ifc2x3(src, __version__, 0)   # 작성 시각 0: IFC4 출력처럼 같은 모델이면 같은 내용(시계에 기대지 않는다)
         except Exception as ex:
             _drop_snapshot(p, snap, ctx.eng.workspace)
             raise DobimError("CONSTRAINT", f"IFC2x3 로 바꾸지 못했다({type(ex).__name__}: {str(ex)[:200]})", path="/schema")
+        if seu is not None:
+            SI.fix_2x3(f2)
         writer = f2.write
+        out_f = f2
+    elif seu is not None:
+        writer = src.write
+        out_f = src
     else:
         writer = ctx.eng.ifc.write
+        out_f = None
+    if seu is not None:   # 내보낼 파일을 저장소 krules 세움터 검사(면적 객체 4종)로 다시 본다
+        try:
+            seu["self_check"] = SI.self_check(out_f)
+        except BaseException:
+            _drop_snapshot(p, snap, ctx.eng.workspace)
+            raise
     try:
         _replace(p, lambda tmp: writer(str(tmp)))
     except BaseException:   # DobimError 만이 아니다: ifc.write 가 라이브러리 예외로 실패해도 스냅숏이 쌓이지 않게
@@ -5027,6 +5071,9 @@ def ifc_export(ctx, a: IfcExport):
         out["losses_total"] = len(losses)
         if losses:
             ctx.warn(f"IFC2x3 에 담지 못한 항목 {len(losses)}종(클래스 대체·PredefinedType 등): losses 를 보세요. 원래 분류는 ObjectType 에 남겼다")
+    if seu is not None:   # 옵션을 켰을 때만 붙인다(끄면 응답도 이전과 같다)
+        out["seumteo_areas"] = seu
+        ctx.warn("세움터 면적 객체: 용도 코드·IFC 위치·제외 플래그는 근거 문서로 확인하지 못했다(seumteo_areas.unverified, 확인 필요)")
     return out
 
 
