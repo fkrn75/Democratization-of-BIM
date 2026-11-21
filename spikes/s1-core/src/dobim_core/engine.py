@@ -666,8 +666,12 @@ class Engine:
         """IFC 쪽 정본(속성셋·재료)은 로그의 효과를 순서대로 접어 최종값만 한 번에 만든다."""
         psets: dict[tuple, Any] = {}
         mats: dict[str, Any] = {}
-        for _, _, _, inv in log:
-            for e in invert(json.loads(inv)):
+        gen_eff = None   # 시작 상태 기록(seq 0)의 역효과를 뒤집은 것: 아래 타입·정의 집합에도 쓰므로 한 번만 푼다(큰 가져오기에선 수십 MB JSON)
+        for seq, _, op, inv in log:
+            eff = invert(json.loads(inv))
+            if gen_eff is None and seq == 0 and op == GENESIS_OP:
+                gen_eff = eff
+            for e in eff:
                 if e[0] == "pset":
                     psets[(e[1], e[2], e[3])] = e[5]
                 elif e[0] == "mat":
@@ -678,12 +682,11 @@ class Engine:
                 self.ifc.create_identity(eid, self.st.el[eid]["kind"], self.st.el[eid]["ifc_class"])
         if base:
             # 시작 상태 기록(seq 0)에 패밀리 타입으로 들어 있던 id: 지금 요소가 아니면 가져온 뒤 지워진 타입이다(제품과 달리 타입은 색인으로 알 수 없다)
-            gen = [row for row in log if row[0] == 0 and row[2] == GENESIS_OP]
-            types = {e[1] for e in invert(json.loads(gen[0][3])) if e[0] == "el" and e[3] is not None and e[3]["kind"] == "ftype"} if gen else set()
+            types = {e[1] for e in gen_eff if e[0] == "el" and e[3] is not None and e[3]["kind"] == "ftype"} if gen_eff is not None else set()
             self.ifc.prune(types)
             # 시작 상태 기록(seq 0)에 정의(뷰·치수·태그)로 들어 있던 id: 그 속성은 이 프로젝트가 소유한다(지금 요소가 아니면 가져온 뒤 지워졌으니 내보낼 때 지운다).
             # 되살리지 못한 정의(손상·참조 불일치)는 여기 없으니 파일에 그대로 남는다(ADR-0015)
-            owned = {e[1] for e in invert(json.loads(gen[0][3])) if e[0] == "el" and e[3] is not None and e[3]["kind"] in VD.DEF_KINDS} if gen else set()
+            owned = {e[1] for e in gen_eff if e[0] == "el" and e[3] is not None and e[3]["kind"] in VD.DEF_KINDS} if gen_eff is not None else set()
             self.ifc.adopt_defs(owned)
         for (eid, pset, prop), v in sorted(psets.items(), key=lambda kv: kv[0]):
             # 외래 기반에는 가져온 속성이 이미 있으므로 삭제(None)도 적용한다. 빈 파일에서 시작하는 일반 프로젝트는 건너뛴다
