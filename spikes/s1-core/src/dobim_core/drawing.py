@@ -18,7 +18,6 @@ queries.py 와 같은 규칙을 따른다: 순수 함수, 시각·난수·파일
 from __future__ import annotations
 
 import hashlib
-import heapq
 import json
 from math import sqrt
 
@@ -4738,6 +4737,26 @@ def _occ_index(g, v):
     return (tuple(pieces), tuple(boxes), {k: tuple(sorted(x)) for k, x in bins.items()})
 
 
+def _fronts(cells):
+    """앞(첫 값)부터 정렬된 비지 않은 목록들을 하나로 합쳐 작은 것부터 하나씩 낸다(필요한 만큼만 꺼낸다).
+    도면 모듈은 순수해야 해서(허용 import 밖의 heapq 를 쓰지 않는다) 목록 머리를 직접 비교한다: 꺼낼 때마다 목록 수만큼 본다."""
+    pos = [0] * len(cells)
+    ends = [len(c) for c in cells]
+    rng = range(len(cells))
+    while True:
+        best, bv = -1, None
+        for j in rng:
+            p = pos[j]
+            if p < ends[j]:
+                h = cells[j][p]
+                if best < 0 or h < bv:
+                    best, bv = j, h
+        if best < 0:
+            return
+        pos[best] += 1
+        yield bv
+
+
 def _occ_near(idx, s0, s1, z0, z1, wmax):
     """색인에서 (s, z) 범위가 겹치고 wmax 보다 앞(작은 w)에 걸친 조각들(앞부터의 순서. 쓰는 쪽 _vis 는 가려진 구간을 정렬하므로 순서와 무관하다).
     s 방향 칸 범위는 예전(s 칸만 쓰던 색인)과 같고 z 방향은 상자 판정의 여유(EPS)까지 본다: 고르는 조각 집합이 예전과 같다."""
@@ -4751,7 +4770,7 @@ def _occ_near_iter(idx, s0, s1, z0, z1, wmax):
              for m in range(int((z0 - EPS) // OCC_BIN), int((z1 + EPS) // OCC_BIN) + 1) if (c := bins.get((k, m)))]
     one = len(cells) == 1
     seen = set()
-    for wf, i in (cells[0] if one else heapq.merge(*cells)):
+    for wf, i in (cells[0] if one else _fronts(cells)):
         if wf >= wmax:
             break   # 칸 목록은 앞부터라 나머지는 모두 wmax 보다 뒤다(예전 판정의 b[2] < wmax)
         if not one:
@@ -5415,7 +5434,7 @@ def _f_covered(hidden) -> bool:
 
 def _f_hidden(occ, A, B) -> list:
     """뷰 좌표 선분 A-B((a, b, d) 두 점) 에서 외래 면·절단 영역에 가려지는 매개변수 구간들 [(t0, t1), ...].
-    후보 면 조각은 선분이 걸치는 칸들에서 앞(가장 앞 d 가 작은)부터 꺼내고, 선분보다 앞에 있을 수 없는 조각에 닿으면 멈춘다.
+    후보 면 조각은 선분이 걸치는 칸들에서 앞(가장 앞 d 가 작은)부터 꺼내고(_fronts), 선분보다 앞에 있을 수 없는 조각에 닿으면 멈춘다.
     도중에 가려진 구간이 선분 전체를 덮으면 바로 돌려준다(뒤의 조각을 더해도 덮인 그대로다: _f_visible 은 합집합만 본다).
     덮이지 않으면 후보 전체를 본 것이라 예전(a 방향 칸만 쓰던 전수 판정)과 같은 구간 집합이다(순서만 다르고 _f_visible 은 정렬한다)."""
     polys, boxes, bins, regions, rbins = occ
@@ -5430,7 +5449,7 @@ def _f_hidden(occ, A, B) -> list:
     ka0, ka1 = int(lo_a // F_BIN), int(hi_a // F_BIN)   # a 방향은 예전 색인과 같은 칸 범위(후보 집합이 같게)
     kb0, kb1 = int((lo_b - EPS) // F_BIN), int((hi_b + EPS) // F_BIN)   # b 방향은 상자 판정의 여유(EPS)까지
     cells = [c for k in range(ka0, ka1 + 1) for m in range(kb0, kb1 + 1) if (c := bins.get((k, m)))]
-    for dmin, i in (cells[0] if len(cells) == 1 else heapq.merge(*cells)):
+    for dmin, i in (cells[0] if len(cells) == 1 else _fronts(cells)):
         if dmin >= dcut:
             break   # 칸 목록은 앞부터라 나머지는 모두 선분보다 뒤다(예전 판정의 bx[4] >= dmax - F_TOL)
         if i in seen:
