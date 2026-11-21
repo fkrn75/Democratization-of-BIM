@@ -397,3 +397,73 @@ def area_export(ctx, a: AreaExport):
         raise
     return {"path": p.name, "format": "csv", "table": a.table, "levels": len(rows), "objects": len(parts["objects"][1]),
             "gross_floor_m2": result["gross_floor_m2"], "unverified": len(result["unverified"]), "bytes": len(blob), "rev": ctx.eng.rev, "snapshot": snap}
+
+
+# ---------------------------------------------------------------- 세움터 면적 객체(W1 연장 6번째 PR, ARC-36 마무리)
+# ifc.export 의 seumteo_areas 옵션이 쓴다. 여기서는 무엇을 내보낼지(순수 값)만 정하고 IFC 엔티티는 seumteo_ifc 모듈이 만든다.
+# 형태는 저장소 krules 의 세움터 검사(KR-SEU-09·10·11·13, krules/seumteo.py 가정 1·2)가 면적 객체로 알아보는 그대로다:
+#   용도구획 = AIS_분류코드 'A'+5자리 + 전용 속성(AIS_연면적제외·AIS_용적률제외·AIS_바닥면적제외), 건축면적 = 'B', 대지면적 = 'S',
+#   셋 다 면적 값 속성 '면적'(㎡). 세움터가 실제로 읽는 IFC 엔티티·Pset 이름과 플래그 값의 뜻은 근거 문서에 없어 '확인 필요'로 남긴다.
+SEU_UNVERIFIED = [
+    {"code": "AIS_분류코드", "message": "용도구획 코드(A+5자리)는 사용자가 준 값 그대로다: 세움터 용도 코드 표와 대조하지 않았다"},
+    {"code": "IFC 위치", "message": "세움터가 면적 객체를 읽는 IFC 엔티티·Pset 이름은 근거 문서에 없다: IfcSpace + Pset DoBIM_AIS 로 냈다(krules 세움터 가정 1·2 와 같은 해석)"},
+    {"code": "제외 플래그", "message": "AIS_연면적제외·AIS_용적률제외·AIS_바닥면적제외 를 참거짓으로 두고 법정 면적 객체의 효과(뺌·용적률 제외)와 지하층으로 정했다: 값 형태와 대응은 해석이다"},
+    {"code": "겹침", "message": "뺌·용적률 제외 객체의 용도구획은 층 벽 영역 용도구획 위에 겹쳐 놓았다(잘라 내지 않음, 속성 겹침=참): 세움터의 합산 방식은 확인 필요"},
+    {"code": "방화구획", "message": "방화구획(F)은 모델에 정보가 없어 내보내지 않는다"},
+]
+SEU_FLAG_NAMES = ("AIS_연면적제외", "AIS_용적률제외", "AIS_바닥면적제외")
+# 법정 면적 객체의 효과 -> (연면적 제외, 용적률 제외, 바닥면적 제외). 층 벽 영역 용도구획은 지하층이면 용적률 제외(119-1-4-가)
+_EFFECT_FLAGS = {"add": (False, False, False), "balcony": (False, False, False),
+                 "exclude": (True, True, True), "far": (False, True, False)}
+
+
+def seumteo_plan(ctx, o) -> dict:
+    """세움터 면적 객체 목록(순수 값). o = commands.SeumteoAreas. 면적 값은 area.legal 과 같은 계산이다.
+    용도구획(A): 레벨마다 벽 중심선으로 닫힌 영역 하나에 하나(바닥면적 3호 본문과 같은 입력) + 그 층 바닥면적 대상 법정 면적 객체 하나에 하나
+                 (노대는 면적 값이 산입 면적, 나머지는 다각형 면적). 뺌·용적률 제외 객체는 벽 영역 위에 겹쳐 놓는다(overlay):
+                 연면적 = 겹침 아닌 용도구획 합 - 겹침 중 바닥면적 제외, 용적률 산정용 = 겹침·용적률 제외 아닌 합 - 겹침 중 용적률 제외.
+                 지하층 위의 겹침 객체는 이 셈에서 두 번 빠질 수 있다(area.legal 은 지하층 용적률 산정 면적을 0 으로 둔다).
+    건축면적(B): 하나, 값 = area.legal 건축면적(조정 포함), 형상 = 건축면적에 넣은 층 벽 중심선 영역의 합집합 바깥선(선분 묶음).
+    대지면적(S): 대지면적이 있으면 하나, 값 = area.legal 대지면적(제외 뒤), 형상 = 대지 경계(site_area_m2 로 주면 형상 없음)."""
+    from dobim_core import viewplans as VP
+    la = _LegalArgs(**{k: getattr(o, k) for k in ("site", "site_area_m2", "ground", "basement_levels") if getattr(o, k) is not None})
+    result, rows = _legal(ctx, la)
+    st = ctx.st
+    codes = {}
+    for x in o.level_use_codes or ():
+        ctx.row(x.level, "level")
+        codes[x.level] = x.code
+    objs: list = []
+    bpolys: list = []
+    names: dict = {}
+    for r in rows:
+        lv, name, base, inb = r[0], r[1], bool(r[4]), r[5]   # 지하층 판정 못 함(None)은 area.legal 처럼 지상으로 셈
+        names[lv] = name
+        polys = _wall_polys(ctx, lv)
+        if inb:
+            bpolys += polys
+        for k, poly in enumerate(polys):
+            objs.append({"kind": "A", "label": f"A/{lv}/{k + 1}", "parent": lv, "name": f"{name} 용도구획 {k + 1}", "code": codes.get(lv, o.use_code),
+                         "area_m2": _m2(abs(LA.area2(poly)) / 2.0), "boundary": [list(p) for p in poly], "outline": None,
+                         "flags": (False, base, False), "overlay": False, "basis": "119-1-4-가" if base else "119-1-3", "source": lv})
+    for i in sorted(st.by_kind.get("larea", ())):
+        p = st.el[i]["params"]
+        lv = p.get("level")
+        if p["target"] != "floor" or lv not in names:
+            continue   # 대지·건축면적 대상 객체는 S·B 값에 이미 들었다. 레벨이 저작 레벨이 아니면 area.legal 처럼 뺀다
+        c = _counted(p)
+        objs.append({"kind": "A", "label": f"A/{i}", "parent": lv, "name": p["name"], "code": codes.get(lv, o.use_code),
+                     "area_m2": c["counted_m2"] if p["effect"] == "balcony" else c["area_m2"],
+                     "boundary": [list(q) for q in p["boundary"]], "outline": None, "flags": _EFFECT_FLAGS[p["effect"]],
+                     "overlay": p["effect"] in ("exclude", "far"), "basis": p["rule"], "source": i})
+    b = result["building"]
+    objs.append({"kind": "B", "label": "B", "parent": None, "name": "건축면적", "code": "B", "area_m2": b["area_m2"], "boundary": None,
+                 "outline": [list(s) for s in VP.union_segs(bpolys)], "flags": None, "overlay": False, "basis": "119-1-2", "source": None})
+    site = result["site"]
+    if site is not None:
+        bnd = st.el[site["id"]]["params"]["boundary"] if site["id"] is not None else None
+        objs.append({"kind": "S", "label": "S", "parent": None, "name": "대지면적", "code": "S", "area_m2": site["area_m2"], "boundary": None,
+                     "outline": None if bnd is None else [[*bnd[k], *bnd[(k + 1) % len(bnd)]] for k in range(len(bnd))],
+                     "flags": None, "overlay": False, "basis": "119-1-1", "source": site["id"]})
+    return {"objects": objs, "legal": result, "unverified": SEU_UNVERIFIED + result["unverified"],
+            "use_codes": {names[lv]: codes.get(lv, o.use_code) for lv in names}}
