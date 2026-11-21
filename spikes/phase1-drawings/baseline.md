@@ -1750,3 +1750,35 @@ corpus/baseline.json 을 `foreign_corpus.py --write-baseline` 로 다시 썼다.
 - 외래 표본: 50.3 의 4장(저장소)·2장(로컬)만 바뀌고 나머지 뷰 해시는 그대로. 저장소 표본 재생성 = 새 기준선, 로컬 Revit 표본도 저장소 밖 새 기준선과 같다(외래 도면 시험 전부 통과).
 - 결과(최종 커밋 36712e0): s1-core 전체(test_slow 제외) 1592 통과·실패 0·건너뜀 40(새 시험 21건 포함). test_slow 8 통과. parity: 커맨드 189 전부 예시 실행, 불일치 0. parity_g: 통과(동작 78, 오류·경고 0). 새 커맨드 describe 응답 약 1KB(나눔 없음).
 - bench(평면 도면 경로를 건드려서 했다): 5만 요소 합성 모델, main b13b9c6 과 번갈아 각 3회 중앙값. 평면 12.78 -> 12.36초(-3.3%), 단면 26.00 -> 25.44초(-2.2%), 입면 37.60 -> 37.07초(-1.4%), 반사 천장 평면 12.33 -> 11.75초(-4.7%). +10% 한도 안이고 선분 수·SVG 바이트는 양쪽 같다. 합성 모델에는 외래 요소·제도 뷰가 없어 새 분기는 타지 않는다. 이번 측정은 같은 노트북이 49절 때보다 전반적으로 느렸다(같은 main 코드의 프로젝트 열기 6.4 -> 10.1초, 입면 23.2 -> 37.6초): 입면은 main·브랜치 모두 30초를 넘었으므로 한가한 상태에서 다시 재야 한다(브랜치 차이 때문이 아니다).
+
+## 51. W1 연장 5번째 PR: 법정 면적 평면·면적표 CSV(ARC-36 나머지) (2026-11-21, 브랜치 phase1/w1x-5)
+
+48절 법정 면적 체계의 남은 몫 중 도면 표시와 면적표 CSV 를 넣었다. Revit 의 면적 계획에 딸린 면적 평면(Area Plan)과 면적 일람표 내보내기에 해당한다. 새 커맨드 1개(`area.export`, 189 -> 190), 면적 평면의 scheme 값 하나(`legal`). 새 요소 종류는 없다. 레지스트리를 거쳐 CLI·MCP 가 같고(parity C), GUI 동작 1개(법정 면적표 CSV 내보내기)를 actions.json 에 더했다(parity G). 세움터 면적 객체 IFC 내보내기(IfcSpace + AIS_분류코드)는 다음 PR 로 나눴다.
+
+### 51.1 법정 면적 평면(view.area_plan scheme legal)
+- `view.area_plan {..., scheme: "legal"}`: 평면 그림 위에 건축법 시행령 119조 1항 3호 바닥면적 경계(그 층 저작 벽 중심선으로 닫힌 영역의 합집합 바깥선, symbol 선)와 그 층의 바닥면적 대상 법정 면적 객체(larea) 경계를 얹는다. 객체는 해치를 넣는다(더함·노대 45도, 뺌·용적률 제외 135도).
+- 문자: 벽 영역은 "바닥면적(벽 중심선)"과 면적, 객체는 이름과 "근거 효과 산입 면적"(예: `119-1-3-나 노대 산입 +3.00㎡`, `119-1-4-나 용적률 제외 -20.00㎡`), 아래에 층 합계 "바닥면적 N㎡"(용적률 제외 객체가 있으면 "(용적률 산정 제외 N㎡)" 덧붙임).
+- 값은 area.legal 층 표와 같은 계산이다. 벽 중심선 면 찾기·합집합(`viewplans.faces_of`·`union_mm2`)을 area.legal 이 함께 쓰도록 옮겼고(area.legal 결과는 그대로), 반올림도 같다(객체마다 ㎡ 둘째 자리). 지하층 판정·용적률 산정용 연면적은 지표면(ground) 입력이 필요해 면적 평면에서는 하지 않는다(area.legal 몫).
+- `view.areas`: legal 이면 항목마다 id·이름·근거·효과·면적·산입 면적, `walls_m2`·`adjust_m2`·`total_m2`(층 바닥면적)·`far_excluded_m2`.
+- 시트·SVG/PDF/PNG/DXF·GUI 장면(view.scene)은 다른 면적 평면과 같은 경로다. 뷰 정의 키 `area: "legal"` 은 DoBIM_Defs 로 IFC 를 왕복한다(kinds.AREA_SCHEMES 에 값 하나).
+- 대지·건축면적 대상 객체는 레벨이 없어 이 평면에 그리지 않는다(표와 CSV 에는 있다).
+
+### 51.2 면적표 CSV(area.export)
+- `area.export {path(.csv), table, overwrite, + area.legal 인자(site·site_area_m2·ground·basement_levels·coverage_max·far_max)}`: area.legal 과 같은 계산으로 CSV(UTF-8 BOM·CRLF)를 쓴다.
+- table: `summary`(대지면적 제외 전·제외·대지면적, 건축면적 벽 중심선·조정·건축면적, 연면적, 용적률 산정용 연면적, 건폐율·용적률, 한도와 적합·부적합, 확인 필요, 근거 법령), `levels`(층별: 레벨·표고·층높이·지하층·건축면적 산입·벽 중심선·조정·바닥면적·용적률 산정용 + 합계 행), `objects`(법정 면적 객체: id·이름·대상·근거·효과·레벨·면적·산입 면적·비고), `all`(세 표를 "[요약]"·"[층별 바닥면적]"·"[법정 면적 객체]" 머리 줄과 빈 줄로 나눠 한 파일, 기본값).
+- 파일 쓰기는 schedule.export 의 CSV 와 같은 절차다: 되돌릴 수 없는 커맨드라 확인 토큰, 작업 폴더 안, 이미 있으면 overwrite 필요, 덮어쓰기 전 자동 스냅숏. 확장자가 .csv 가 아니면 스키마 오류.
+
+### 51.3 시험
+`tests/test_legal_area_plan.py`(4건): 법정 면적 평면 값 = area.legal 층 표(1층 81㎡·2층 79㎡, 벽 중심선 80㎡, 용적률 제외 -20㎡, 노대 3㎡), SVG 문자·symbol·해치 선, 벽 중심선 경계가 벽 축 위, 대지·건축면적 객체는 그리지 않음, 벽 없는 층은 항목 없음 / 객체 바꾸기·지우기·벽 옮기기·실행 취소를 따라가고 되돌리면 SVG 바이트가 같으며 증분 그림 = 새로 연 프로젝트의 그림, gross 면적 평면·일반 평면은 객체가 생겨도 바이트 그대로 / PNG·PDF·DXF·GUI 장면·시트, IFC 왕복(해시 3종·view.areas·두 번 내보낸 IFC 바이트 같음) / CSV 네 표의 값 = area.legal, BOM·CRLF, 확인 토큰·FILE_EXISTS·스냅숏·확장자·경로 거절. `test_registry` 의 되돌릴 수 없는 커맨드 목록에 area.export.
+
+### 51.4 한계(다음 몫)
+- 세움터 면적 객체(IfcSpace + `AIS_분류코드` B 건축면적·S 대지면적·A+5자리 용도구획, `AIS_연면적제외` 등)로 IFC 내보내기는 다음 PR. krules/seumteo.py KR-SEU-09·10·11 이 찾는 형태에 맞추고, 용도구획 A 뒤 5자리 코드 표는 근거 문서(설계기준서 부속서)를 확보하기 전에는 지어내지 않고 확인 필요로 둔다.
+- 대지·건축면적 대상 객체와 건축면적 바깥선(지표 1m 위 층 합집합)을 그리는 평면(건축면적도·대지 평면)은 없다. 면적표를 시트 표로 그리는 것도 없다(CSV 와 area.legal 응답만).
+- 객체끼리·벽 영역과의 겹침은 자르지 않고 더하고 빼기만 한다(48.5 와 같다).
+
+### 51.5 기존 출력 불변·시험·parity·bench
+- 바뀐 코드: `viewplans.py`(법정 면적 평면 질의 legal_items·legal_totals·legal_lines·legal_labels, 벽 중심선 면 찾기·합집합 faces_of·union_mm2), `commands_viewplans.py`(scheme legal, view.areas), `commands_area.py`(area.export, area.legal 계산을 _legal 로 나눔), `kinds.py`(AREA_SCHEMES 에 legal), `tools/parity.py`(준비 한 줄), `s12-gui/gui/actions.json`, 시험. drawing.py·scene.py·내보내기 모듈은 바꾸지 않았다(면적 평면이 이미 viewplans 를 부르는 자리에서 scheme 으로 갈린다).
+- 기준선 `run_baseline.py --sheets`: main 78abd96 과 코드 커밋 2be77bb 에서 각각 뽑아 183 파일 바이트 같음(work/·run.json 제외). 기준선 모델에는 법정 면적 평면·객체가 없다. 면적 평면 기준 도면은 바뀌지 않아 기준선 갱신 커밋은 없다.
+- 결과(코드 커밋 2be77bb): s1-core 전체(test_slow 제외) 1596 통과·실패 0·건너뜀 40(새 시험 4건 포함). test_slow 8 통과. parity: 커맨드 190 전부 예시 실행, 불일치 0. parity_g: 통과(동작 79, 오류·경고 0). describe 응답 area.export 3,092바이트·view.area_plan 1,737바이트(나눔 없음).
+- bench(면적 평면 경로를 건드려서 했다): 5만 요소 합성 모델, main 78abd96 과 번갈아 각 3회 중앙값. 평면 9.33 -> 9.15초(-1.9%), 단면 18.82 -> 18.46초(-1.9%), 입면 27.07 -> 26.66초(-1.5%), 반사 천장 평면 8.82 -> 8.48초(-3.9%), 면적 평면 gross 31.14 -> 30.60초(-1.7%). 선분 수·SVG 바이트는 양쪽 같다. 법정 면적 평면 legal(브랜치에만, 1층 + 객체 20개)은 11.24초. 면적 평면 gross 는 main 도 30초를 넘는다(이번에 처음 잼, 브랜치 차이 아님): 벽 수천 개의 바닥 윤곽 합집합(outline_of)이 원인으로 보이며 다음 성능 몫으로 남긴다. legal 은 벽 중심선 면 찾기라 gross 보다 빠르다.
+- 50절 bench 정정: PR #67 의 입면 37.6초는 남은 python 프로세스 탓이었고, 정리 후 재측정은 입면 26.5초(main 26.1초)로 통과.
