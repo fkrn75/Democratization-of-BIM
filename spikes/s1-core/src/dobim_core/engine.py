@@ -38,7 +38,8 @@ from dobim_core import kinds as K
 from dobim_core.kinds import EFFECTS, ELEMENT_KINDS, PROJECTED_KINDS, REL_KINDS, layers_label
 from dobim_core.registry import Command
 
-SCHEMA_VERSION = "1"
+SCHEMA_VERSION = "2"   # 2: 외래 형상 저장 캐시 테이블 foreign_mesh(ADR-0017). 1 은 그 테이블이 없을 뿐 그대로 열린다
+READABLE_VERSIONS = ("1", "2")
 GENESIS_OP = "ifc.import"   # 가져온 시작 상태를 담는 로그 항목(seq 0). 되돌리기 대상이 아니고 리비전(rev)에 세지 않는다
 DDL = """
 CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
@@ -56,6 +57,11 @@ CREATE TABLE foreign_base (id INTEGER PRIMARY KEY CHECK (id = 1), schema TEXT NO
   sha256 TEXT NOT NULL, data BLOB NOT NULL);
 CREATE TABLE import_spec (id TEXT PRIMARY KEY, spec_hash TEXT NOT NULL);
 """
+# 외래 형상 저장 캐시(ADR-0017): 가져올 때 계산한 외래 요소의 정리 메시(foreign_geom.pack). 파생물이라 로그·리비전과 무관하고,
+# cache_key(원본 sha256·ifcopenshell 판·설정·정리 규칙 판)가 지금과 다르거나 다이제스트가 맞지 않으면 쓰지 않고 다시 계산한다.
+FMESH_DDL = """CREATE TABLE IF NOT EXISTS foreign_mesh (id INTEGER PRIMARY KEY CHECK (id = 1), cache_key TEXT NOT NULL,
+  ids BLOB NOT NULL, counts BLOB NOT NULL, verts BLOB NOT NULL, tris BLOB NOT NULL, digest TEXT NOT NULL)"""
+DDL += FMESH_DDL + ";\n"
 
 
 # ---------------------------------------------------------------- 효과
@@ -174,6 +180,8 @@ class _Inputs:
         if t == "mat":
             return ifc.get_material(key[1]) if key[1] in ifc.ents else None
         if t == "fgeom":   # 외래 요소의 IFC 형상(1단계 외래 도면 경로). 외래 형상은 바뀌지 않아 이 입력을 건드리는 효과는 없다(kinds._keys_el)
+            if self.eng.has_base and getattr(ifc, FG._STORE, None) is None:
+                self.eng.fmesh_prepare()   # 첫 형상 요청: 저장 캐시를 붙이거나, 없으면 전체를 계산해 붙이고 저장해 둔다(ADR-0017)
             return FG.load(ifc, st.el.get(key[1]), key[1], lambda: sorted(st.by_kind.get("foreign", ())))   # 첫 요청 때 외래 전체를 미리 계산(4차)
         if t == "fopen":   # 외래 문·창의 여닫이 방식·배치(외래 도면 3차). fgeom 과 같이 바뀌지 않는 입력이다
             return FG.opening(ifc, st.el.get(key[1]), key[1])
@@ -405,6 +413,9 @@ class Engine:
         self.eager_t0 = eager_t0
         self.workspace = Path.cwd()
         self.timing: dict[str, float] = {}
+        self._busy_ms = int(busy_ms)
+        self._base_sha: str | None = None   # 외래 기반 원본의 sha256(저장 캐시 키)
+        self.fmesh_source: str | None = None   # 외래 형상을 어디서 얻었나: "stored"(저장 캐시) / "computed"(이 세션에서 계산)
         self._tainted: str | None = None   # IFC 투영이 로그와 어긋났을 수 있는 이유(복구되면 None)
         self.conn = sqlite3.connect(self.path, isolation_level=None, timeout=busy_ms / 1000.0)
         self.conn.execute(f"PRAGMA busy_timeout={int(busy_ms)}")
@@ -433,7 +444,7 @@ class Engine:
         if p.exists():
             raise DobimError("FILE_EXISTS", f"이미 있는 파일이다: {p.name}", path="/path")
         try:
-            return cls(p, actor, create=True, guid=guid, seed=(data, plan), **kw)
+            eng = cls(p, actor, create=True, guid=guid, seed=(data, plan), **kw)
         except BaseException:
             for suffix in ("", "-wal", "-shm", "-journal"):   # 반쯤 만든 프로젝트 파일을 남기지 않는다
                 try:
@@ -441,6 +452,12 @@ class Engine:
                 except OSError:
                     pass
             raise
+        # 외래 형상 저장 캐시(ADR-0017): 가져올 때 한 번 계산해 담는다. 실패해도 가져오기는 그대로다(뷰가 그때 계산한다: 지금까지와 같다)
+        try:
+            eng.fmesh_prepare(wait=True)
+        except Exception:
+            eng.timing.pop("fmesh", None)
+        return eng
 
     def _seed_import(self, data: bytes, plan) -> None:
         """생성 트랜잭션 안에서 외래 기반 원본과 분류 결과를 적는다. 가져온 상태는 프로젝트의 시작 상태(rev 0)다.
@@ -489,9 +506,10 @@ class Engine:
         try:
             c.execute("BEGIN")
             meta = dict(c.execute("SELECT key, value FROM meta"))
-            if meta.get("schema_version") != SCHEMA_VERSION:
+            if meta.get("schema_version") not in READABLE_VERSIONS:
                 raise DobimError("USAGE", "지원하지 않는 프로젝트 형식이다")
             self.project_guid_uuid = meta["project_uuid"]
+            self.schema_version = meta["schema_version"]
             self.confirm_secret = meta["confirm_secret"]
             self.st = State()
             for eid, kind, ifc_class, origin, fam, params in c.execute(
@@ -504,8 +522,9 @@ class Engine:
             base = None
             self._import_spec: dict[str, str] = {}
             if c.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='foreign_base'").fetchone():
-                row = c.execute("SELECT data FROM foreign_base WHERE id=1").fetchone()
+                row = c.execute("SELECT data, sha256 FROM foreign_base WHERE id=1").fetchone()
                 base = zlib.decompress(row[0]) if row else None
+                self._base_sha = row[1] if row else None
                 if c.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='import_spec'").fetchone():
                     self._import_spec = dict(c.execute("SELECT id, spec_hash FROM import_spec"))
             c.execute("COMMIT")
@@ -530,6 +549,58 @@ class Engine:
         self._defs_cache: dict[str, tuple] = {}   # 뷰·주석 id -> (행 객체, IFC 에 적을 정의 텍스트). 행은 불변이라 같은 객체면 텍스트도 같다
         self._dead_views: set = set()   # 지워진 뷰: 그래프에 남은 그 뷰의 노드를 다음 갱신 때 정리한다
         self.g = Graph(_Inputs(self))
+
+    # ------------------------------------------------------------ 외래 형상 저장 캐시(ADR-0017)
+    def fmesh_prepare(self, *, wait: bool = False) -> str:
+        """지금 IFC 모델에 외래 정리 메시를 붙인다. 저장 캐시가 지금 키와 같고 온전하면 그것("stored"), 아니면 뷰가 요청할 때와 같은 길로
+        전체를 계산해 붙이고("computed") 저장을 시도한다(잠겨 있거나 트랜잭션 안이거나 읽기 전용이면 건너뛴다: 다음에 다시 계산할 뿐이다)."""
+        t0 = time.perf_counter()
+        key = FG.cache_key(self._base_sha or "")
+        store = self._fmesh_read(key)
+        if store is not None:
+            FG.attach(self.ifc, store)
+            self.fmesh_source = "stored"
+        else:
+            meshes = FG.compute_all(self.ifc, sorted(self.st.by_kind.get("foreign", ())))
+            FG.attach(self.ifc, meshes)
+            self.fmesh_source = "computed"
+            self.fmesh_write(key, meshes, wait=wait)
+        self.timing["fmesh"] = time.perf_counter() - t0
+        return self.fmesh_source
+
+    def _fmesh_read(self, key: str):
+        try:
+            row = self.conn.execute("SELECT cache_key, ids, counts, verts, tris, digest FROM foreign_mesh WHERE id=1").fetchone()
+        except sqlite3.Error:   # 테이블이 없다(형식 1 파일)
+            return None
+        if row is None or row[0] != key:
+            return None
+        return FG.unpack(*row[1:])
+
+    def fmesh_write(self, key: str, meshes: dict, *, wait: bool = False) -> bool:
+        """정리 메시를 저장 캐시로 쓴다. 형식 1 파일이면 테이블을 만들고 형식 번호를 2 로 올린다(같은 트랜잭션).
+        wait=False 면 잠금을 기다리지 않는다(뷰를 그리는 도중의 저장은 덤이다). 썼으면 True."""
+        c = self.conn
+        if c.in_transaction:
+            return False
+        cols = FG.pack(meshes)
+        if not wait:
+            c.execute("PRAGMA busy_timeout=0")
+        try:
+            c.execute("BEGIN IMMEDIATE")
+            c.execute(FMESH_DDL)
+            c.execute("INSERT OR REPLACE INTO foreign_mesh (id, cache_key, ids, counts, verts, tris, digest) VALUES (1,?,?,?,?,?,?)", (key,) + cols)
+            c.execute("INSERT OR REPLACE INTO meta VALUES ('schema_version', ?)", (SCHEMA_VERSION,))
+            c.execute("COMMIT")
+            self.schema_version = SCHEMA_VERSION
+            return True
+        except sqlite3.Error:   # 잠김·읽기 전용·디스크 부족: 캐시는 파생물이라 쓰지 못해도 결과는 같다
+            if c.in_transaction:
+                c.execute("ROLLBACK")
+            return False
+        finally:
+            if not wait:
+                c.execute(f"PRAGMA busy_timeout={self._busy_ms}")
 
     def _rejudge_import(self, data: bytes) -> None:
         """해시 형식(CLOSURE_FORMAT)이 바뀌었으면 가져온 프로젝트를 다시 판정한다. 가져올 때 저장한 element.projection_hash 는 그때 형식의

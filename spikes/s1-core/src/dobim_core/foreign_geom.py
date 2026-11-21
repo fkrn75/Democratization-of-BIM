@@ -24,6 +24,9 @@
 미리 계산(IO-04 4차, 대형 외래 모델 성능): 첫 형상 요청 때 그리는 종류의 외래 요소 전체를 ifcopenshell.geom.iterator(여러 스레드)로 한꺼번에
 삼각형화해 둔다(_RAW 속성). 요소 하나의 삼각형화는 스레드와 무관하게 같은 입력·설정의 같은 계산이라 create_shape 와 같은 메시다(표본 기준선으로 확인).
 iterator 가 내지 못한 요소(실패·표현 없음)는 예전처럼 create_shape 로 하나씩 계산한다. 요소가 PREFETCH_MIN 개보다 적으면 미리 계산하지 않는다.
+저장 캐시(ADR-0017): 가져올 때 그리는 외래 요소 전체의 정리 메시(_clean 결과)를 위 길 그대로 한 번 계산해(compute_all) 프로젝트 파일에 담는다(pack).
+열 때 키(원본 IFC sha256·ifcopenshell 판·삼각형화 설정·정리 규칙 판·미리 계산 문턱)가 같고 바이트가 온전하면(unpack) 삼각형화 없이 그 메시를 쓴다(_STORE).
+캐시는 파생물이다: 없거나 키가 다르거나 깨졌으면 지금처럼 계산하고 값은 같다.
 """
 from __future__ import annotations
 
@@ -32,6 +35,9 @@ TRIS_MAX = 200_000         # 요소 하나의 삼각형 상한. 넘으면 그리
 _MEMO = "_fgeom_memo"
 _RAW = "_fgeom_raw"        # 미리 계산한 삼각형화 {GlobalId: (verts, faces)}
 PREFETCH_MIN = 64          # 외래 그리는 요소가 이보다 많을 때만 iterator 로 미리 계산한다(작은 모델은 스레드 준비 비용이 더 크다)
+_STORE = "_fgeom_store"    # 프로젝트 파일에 저장한 정리 메시(Store). 있으면 _mesh 가 삼각형화 대신 쓴다
+SETTINGS = (("use-world-coords", True),)   # 삼각형화 설정(세계 좌표 m). 개구부 불리언 등 나머지는 ifcopenshell 기본값(판 번호가 캐시 키에 든다)
+MESH_FORMAT = "1"          # _clean 의 정리 규칙(반올림·용접·퇴화 제거·정규화·상한)이나 저장 바이트 배치를 바꾸면 올린다(저장 캐시 무효화)
 
 # 범주: 절단선 굵기를 정한다. heavy = 절단선(cut), medium = 기호 굵기(symbol), light = 투영 굵기(proj). 투영선은 모두 proj.
 # 순서대로 처음 맞는 상위 클래스를 쓴다(is_a 는 상속을 따른다). 표에 없는 IfcElement 는 light.
@@ -59,7 +65,8 @@ def category(ent) -> str | None:
 def _settings():
     import ifcopenshell.geom
     s = ifcopenshell.geom.settings()
-    s.set("use-world-coords", True)   # 세계 좌표(m). 개구부 불리언은 기본값대로 적용된다
+    for k, v in SETTINGS:   # 세계 좌표(m). 개구부 불리언은 기본값대로 적용된다
+        s.set(k, v)
     return s
 
 
@@ -83,14 +90,19 @@ def _model_settings(model):
     return st
 
 
+def _drawable(model, ids) -> list:
+    """ids 중 미리 계산·저장 대상: 모델에 있고 그리는 종류(category)이며 표현이 있는 요소(ids 순서)."""
+    ents = [model.ents[i] for i in ids if i in model.ents]
+    return [e for e in ents if category(e) is not None and getattr(e, "Representation", None) is not None]
+
+
 def prefetch(model, ids) -> int:
     """외래 요소 ids 중 그리는 종류(category 가 있는 IfcElement)를 iterator 로 한꺼번에 삼각형화해 _RAW 에 둔다. 미리 계산한 수를 돌려준다.
     이미 했거나 요소가 PREFETCH_MIN 개보다 적거나 iterator 를 시작하지 못하면 아무것도 하지 않는다(_mesh 가 하나씩 계산한다)."""
     if getattr(model, _RAW, None) is not None:
         return 0
     setattr(model, _RAW, {})
-    ents = [model.ents[i] for i in ids if i in model.ents]
-    ents = [e for e in ents if category(e) is not None and getattr(e, "Representation", None) is not None]
+    ents = _drawable(model, ids)
     if len(ents) < PREFETCH_MIN:
         return 0
     import os
@@ -110,17 +122,22 @@ def prefetch(model, ids) -> int:
     return len(raw)
 
 
-def _mesh(model, ent, cat):
+def _raw_geom(model, ent):
+    """요소 하나의 삼각형화 (꼭짓점 m, 면 색인). 미리 계산한 값이 있으면 그것, 없으면 create_shape. 계산하지 못하면 None."""
     import ifcopenshell.geom
     got = (getattr(model, _RAW, None) or {}).get(getattr(ent, "GlobalId", None))
     if got is not None:
-        vs, fs = got
-    else:
-        try:
-            sh = ifcopenshell.geom.create_shape(_model_settings(model), ent)
-        except Exception:   # 표현이 없거나 형상 커널이 못 푸는 요소: 생략으로 센다
-            return None
-        vs, fs = sh.geometry.verts, sh.geometry.faces
+        return got
+    try:
+        sh = ifcopenshell.geom.create_shape(_model_settings(model), ent)
+    except Exception:   # 표현이 없거나 형상 커널이 못 푸는 요소: 생략으로 센다
+        return None
+    return sh.geometry.verts, sh.geometry.faces
+
+
+def _clean(vs, fs):
+    """삼각형화를 도면 입력 메시로 정리한다: mm 로 바꿔 0.01mm 반올림, 같은 좌표 용접, 퇴화 삼각형 제거, 회전 정규화.
+    (꼭짓점들, 정렬한 삼각형들) 또는 None(비었거나 상한 초과). 저장 캐시(MESH_FORMAT)는 이 함수의 결과를 담는다."""
     if not vs or not fs or len(fs) // 3 > TRIS_MAX:
         return None
     index: dict = {}
@@ -144,7 +161,18 @@ def _mesh(model, ent, cat):
         tris.add(t)
     if not tris:
         return None
-    return ("mesh", cat, tuple(verts), tuple(sorted(tris)))
+    return tuple(verts), tuple(sorted(tris))
+
+
+def _mesh(model, ent, cat):
+    store = getattr(model, _STORE, None)
+    gid = getattr(ent, "GlobalId", None)
+    if store is not None and gid in store:   # 저장한 정리 메시(가져올 때 계산했다, 아래 "저장 캐시")
+        g = store.get(gid)
+    else:
+        raw = _raw_geom(model, ent)
+        g = None if raw is None else _clean(*raw)
+    return None if g is None else ("mesh", cat) + g
 
 
 def _text(v) -> str | None:
@@ -291,3 +319,137 @@ def load(model, row, eid, foreign_ids=None):
             val = ("aggregate",)   # 자기 형상 없이 부분(계단참·경사면 등)으로 이루어진 요소: 부분이 그려진다(생략으로 세지 않는다)
     memo[eid] = val
     return val
+
+
+# ---------------------------------------------------------------- 저장 캐시(ADR-0017)
+def cache_key(base_sha256: str) -> str:
+    """저장 캐시의 키. 이 중 하나라도 다르면 저장한 메시를 쓰지 않고 다시 계산한다: 원본 IFC(외래 기반 sha256), ifcopenshell 판(형상 커널 포함),
+    삼각형화 설정, 정리 규칙 판과 그 상수, 미리 계산 문턱(iterator 와 create_shape 중 어느 길로 계산했는지가 갈린다)."""
+    import json
+    import ifcopenshell
+    return json.dumps({"base_sha256": base_sha256, "ifcopenshell": ifcopenshell.version, "settings": [list(kv) for kv in SETTINGS],
+                       "mesh_format": MESH_FORMAT, "round": ROUND, "tris_max": TRIS_MAX, "prefetch_min": PREFETCH_MIN},
+                      sort_keys=True, separators=(",", ":"))
+
+
+def compute_all(model, ids) -> dict:
+    """ids(외래 요소 id 들) 중 저장 대상 요소 전체의 정리 메시 {GlobalId: (꼭짓점들, 삼각형들) 또는 None}. 뷰가 요청할 때와 같은 길이다:
+    먼저 prefetch(문턱 이상이면 iterator), 그다음 요소마다 미리 계산한 값 또는 create_shape 를 _clean 으로 정리한다."""
+    prefetch(model, ids)
+    out = {}
+    for e in _drawable(model, ids):
+        raw = _raw_geom(model, e)
+        out[e.GlobalId] = None if raw is None else _clean(*raw)
+    return out
+
+
+def _le(a) -> bytes:
+    """array 를 리틀 엔디언 바이트로(저장 바이트 배치는 기계와 무관하게 고정)."""
+    import sys
+    if sys.byteorder != "little":
+        a = a.__copy__()
+        a.byteswap()
+    return a.tobytes()
+
+
+def _from_le(code: str, data: bytes):
+    import sys
+    from array import array
+    a = array(code)
+    a.frombytes(data)
+    if sys.byteorder != "little":
+        a.byteswap()
+    return a
+
+
+def _digest(cols) -> str:
+    import hashlib
+    h = hashlib.sha256()
+    for b in cols:
+        h.update(len(b).to_bytes(8, "little"))
+        h.update(b)
+    return h.hexdigest()
+
+
+def pack(meshes: dict) -> tuple:
+    """정리 메시들을 저장 바이트로: (ids, counts, verts, tris, digest). 앞 넷은 zlib 압축이다.
+    ids = GlobalId 를 줄바꿈으로 이은 ASCII(정렬), counts = 요소마다 (꼭짓점 수, 삼각형 수) int64(None 이면 -1, -1),
+    verts = 꼭짓점 좌표 float64(반올림한 값 그대로라 되읽어도 같은 수), tris = 요소 안 꼭짓점 색인 int32. digest = 압축한 넷의 sha256."""
+    import zlib
+    from array import array
+    ids = sorted(meshes)
+    counts, verts, tris = array("q"), array("d"), array("i")
+    for gid in ids:
+        g = meshes[gid]
+        if g is None:
+            counts.extend((-1, -1))
+            continue
+        vs, ts = g
+        counts.extend((len(vs), len(ts)))
+        for p in vs:
+            verts.extend(p)
+        for t in ts:
+            tris.extend(t)
+    cols = tuple(zlib.compress(b, 6) for b in ("\n".join(ids).encode("ascii"), _le(counts), _le(verts), _le(tris)))
+    return cols + (_digest(cols),)
+
+
+class Store:
+    """저장 캐시를 푼 것. 요소 메시는 요청할 때 튜플로 만든다(_clean 의 결과와 같은 값). dict 처럼 in·get 을 쓴다."""
+
+    def __init__(self, index: dict, verts, tris):
+        self._index, self._verts, self._tris = index, verts, tris
+
+    def __contains__(self, gid) -> bool:
+        return gid in self._index
+
+    def __len__(self) -> int:
+        return len(self._index)
+
+    def get(self, gid):
+        ent = self._index.get(gid)
+        if ent is None:
+            return None
+        v0, nv, t0, nt = ent
+        it = iter(self._verts[v0 * 3:(v0 + nv) * 3])
+        verts = tuple(zip(it, it, it))
+        it = iter(self._tris[t0 * 3:(t0 + nt) * 3])
+        return verts, tuple(zip(it, it, it))
+
+
+def unpack(ids_z: bytes, counts_z: bytes, verts_z: bytes, tris_z: bytes, digest: str) -> Store | None:
+    """pack 의 바이트를 푼다. 다이제스트·길이가 하나라도 맞지 않으면 None(캐시가 깨졌다: 부르는 쪽이 다시 계산한다)."""
+    try:
+        if _digest((ids_z, counts_z, verts_z, tris_z)) != digest:
+            return None
+        import zlib
+        raw_ids = zlib.decompress(ids_z).decode("ascii")
+        ids = raw_ids.split("\n") if raw_ids else []
+        counts = _from_le("q", zlib.decompress(counts_z))
+        verts = _from_le("d", zlib.decompress(verts_z))
+        tris = _from_le("i", zlib.decompress(tris_z))
+    except Exception:   # 압축·바이트가 깨졌다
+        return None
+    if len(counts) != 2 * len(ids) or len(set(ids)) != len(ids):
+        return None
+    index: dict = {}
+    v0 = t0 = 0
+    for k, gid in enumerate(ids):
+        nv, nt = counts[2 * k], counts[2 * k + 1]
+        if nv == -1 and nt == -1:
+            index[gid] = None
+            continue
+        if nv <= 0 or nt <= 0:
+            return None
+        index[gid] = (v0, nv, t0, nt)
+        v0 += nv
+        t0 += nt
+    if v0 * 3 != len(verts) or t0 * 3 != len(tris):
+        return None
+    return Store(index, verts, tris)
+
+
+def attach(model, store) -> None:
+    """저장(또는 방금 계산한) 정리 메시를 모델에 붙인다. 저장 대상 요소는 _mesh 가 이것을 쓰므로 미리 계산(_RAW)은 하지 않는다."""
+    setattr(model, _STORE, store)
+    setattr(model, _RAW, {})

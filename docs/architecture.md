@@ -122,7 +122,7 @@ IfcOpenShell은 API 리스너(`add_pre_listener`, `add_post_listener`)와 파일
 
 ### 4.1 외래 IFC 가져오기와 분류 (S2 구현 사실)
 
-`ifc.import {source, path}`는 작업 폴더 안의 IFC4 파일을 **새 프로젝트**(`project.new`와 같다. 기존 프로젝트에 합치지 않는다)로 가져온다. IFC2x3 은 IFC4 로 올린 뒤 가져온다(외래 기반은 올린 IFC4, 경고에 적는다). IFC4X3은 `UNSUPPORTED_SCHEMA`, 읽을 수 없거나 GlobalId가 22자 형식이 아니거나 겹치면 `IMPORT_INVALID`, 실패하면 반쯤 만든 프로젝트 파일을 남기지 않는다. 원본 바이트는 SQLite의 `foreign_base`에 압축해 **외래 기반**으로 보존한다. 가져오기는 로그 항목이 아니라 프로젝트의 시작 상태(rev 0)이고, 이후 편집이 로그에 쌓인다. 프로젝트를 열 때마다 외래 기반을 열고(작업 사본) 로그를 그 위에 재생한다.
+`ifc.import {source, path}`는 작업 폴더 안의 IFC4 파일을 **새 프로젝트**(`project.new`와 같다. 기존 프로젝트에 합치지 않는다)로 가져온다. IFC2x3 은 IFC4 로 올린 뒤 가져온다(외래 기반은 올린 IFC4, 경고에 적는다). IFC4X3은 `UNSUPPORTED_SCHEMA`, 읽을 수 없거나 GlobalId가 22자 형식이 아니거나 겹치면 `IMPORT_INVALID`, 실패하면 반쯤 만든 프로젝트 파일을 남기지 않는다. 원본 바이트는 SQLite의 `foreign_base`에 압축해 **외래 기반**으로 보존한다. 가져오기는 로그 항목이 아니라 프로젝트의 시작 상태(rev 0)이고, 이후 편집이 로그에 쌓인다. 프로젝트를 열 때마다 외래 기반을 열고(작업 사본) 로그를 그 위에 재생한다. 가져올 때 그리는 외래 요소의 정리 메시(삼각형화 결과)도 한 번 계산해 `foreign_mesh` 에 담는다(파생 캐시, 프로젝트 형식 2, ADR-0017). 원본 sha256·ifcopenshell 판·삼각형화 설정·정리 규칙 판이 키이고, 없거나 키가 다르거나 깨졌으면 첫 형상 요청 때 다시 계산한다(값은 같다).
 
 IFC2x3 내보내기(W1, IO-03): `ifc.export {path, schema: "IFC2X3"}`. 정본은 IFC4 투영이고 IFC2x3 은 그 복사본을 ifcopenshell 스키마 이전기로 내린다(IFC4 출력 바이트·응답은 그대로). IFC2x3 에 없는 클래스는 가까운 클래스로 바꾸고(위생기구·조명·소화 단말 → IfcFlowTerminal, 감지기·조작반 → IfcDistributionControlElement, 지형 → IfcBuildingElementProxy, IfcFurniture → IfcFurnishingElement, 문·창 타입 → IfcDoorStyle·IfcWindowStyle 등) 원래 클래스·PredefinedType 을 ObjectType 에 남긴다. 필수 IfcOwnerHistory 는 하나 만들어 모든 IfcRoot 에 붙인다(작성 시각 0, 사용자 신원 없음). 담지 못한 속성·PredefinedType·클래스 대체는 응답 `losses` 와 경고로 알린다. 검증: 스키마·EXPRESS 규칙 검증과 다시 읽은 제품 GlobalId 집합 일치(시험).
 

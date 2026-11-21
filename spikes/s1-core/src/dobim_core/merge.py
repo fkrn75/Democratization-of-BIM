@@ -202,7 +202,7 @@ def genesis_error(g) -> str | None:
 
 def read_log(conn: sqlite3.Connection) -> tuple[str, LogRows]:
     meta = dict(conn.execute("SELECT key, value FROM meta"))
-    if meta.get("schema_version") != "1":
+    if meta.get("schema_version") not in ("1", "2"):   # 2 는 외래 형상 저장 캐시 테이블이 더해졌을 뿐 로그는 같다(ADR-0017)
         raise DobimError("USAGE", "지원하지 않는 프로젝트 형식이다")
     if not isinstance(meta.get("project_uuid"), str):
         raise DobimError("IO_ERROR", "상대 프로젝트에 project_uuid 가 없다", path="/other")
