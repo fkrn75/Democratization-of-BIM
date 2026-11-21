@@ -52,8 +52,20 @@ CATEGORY = (
 SKIP = ("IfcFeatureElement", "IfcVirtualElement")
 
 
+_CAT_MEMO: dict = {}   # {스키마 포함 클래스 이름: 범주}: 범주는 엔터티 클래스(상속)로만 정해진다(속도만)
+
+
 def category(ent) -> str | None:
-    """IFC 엔터티의 선 범주. 그리지 않는 종류면 None."""
+    """IFC 엔터티의 선 범주. 그리지 않는 종류면 None. 같은 스키마·같은 클래스는 값이 같아 클래스마다 한 번만 판정한다."""
+    k = ent.is_a(True)
+    if k in _CAT_MEMO:
+        return _CAT_MEMO[k]
+    val = _category(ent)
+    _CAT_MEMO[k] = val
+    return val
+
+
+def _category(ent) -> str | None:
     if not ent.is_a("IfcElement") or any(ent.is_a(c) for c in SKIP):
         return None
     for cls, cat in CATEGORY:
@@ -289,6 +301,18 @@ def opening(model, row, eid):
     return memo[eid]
 
 
+_KLASS_MEMO: dict = {}   # {스키마 포함 클래스 이름: "storey" | "space" | "spatial" | None}(속도만)
+
+
+def _klass(ent):
+    """load 가 가르는 공간 구조 종류. 엔터티 클래스(상속)로만 정해져 클래스마다 한 번만 판정한다(예전 is_a 순서와 같다)."""
+    k = ent.is_a(True)
+    if k not in _KLASS_MEMO:
+        _KLASS_MEMO[k] = ("storey" if ent.is_a("IfcBuildingStorey") else "space" if ent.is_a("IfcSpace")
+                          else "spatial" if ent.is_a("IfcSpatialElement") else None)
+    return _KLASS_MEMO[k]
+
+
 def load(model, row, eid, foreign_ids=None):
     """그래프 입력 ("fgeom", eid) 의 값. row 는 요소 행(없으면 None). foreign_ids 는 외래 요소 id 들을 돌려주는 함수(첫 요청 때 미리 계산할 대상)."""
     if row is None or row["kind"] != "foreign" or eid not in model.ents:
@@ -302,12 +326,13 @@ def load(model, row, eid, foreign_ids=None):
     if eid in memo:
         return memo[eid]
     ent = model.ents[eid]
-    if ent.is_a("IfcBuildingStorey"):
+    kl = _klass(ent)
+    if kl == "storey":
         z = _storey_z(model, ent)
         val = None if z is None else ("storey", z)
-    elif ent.is_a("IfcSpace"):
+    elif kl == "space":
         val = _space(model, ent)   # 공간: 실명 문자를 놓을 바닥 위치(생략으로 세지 않는다)
-    elif ent.is_a("IfcSpatialElement"):
+    elif kl == "spatial":
         val = ("spatial",)   # 대지·건물·공간·구역: 선으로 그리는 요소가 아니다(생략으로 세지 않는다)
     else:
         cat = category(ent)

@@ -5336,7 +5336,7 @@ def foreign_info(g, e):
         return None
     _, cat, verts, tris = fg
     faces = tuple((t,) for t in tris)
-    edges, nrm = SO.feature_edges(verts, faces)
+    edges, nrm = SO.feature_edges_tris(verts, tris)   # = SO.feature_edges(verts, faces): 삼각형 전용으로 빠르게(값이 같다)
     return (cat, verts, faces, edges, nrm, SO.mesh_bbox(verts))
 
 
@@ -5355,6 +5355,15 @@ def _f_pt(cfg, p):
         return (p[0], p[1], cfg[2] - p[2])
     s, w = _sw(cfg, p)
     return (s, p[2], w)
+
+
+def _f_pts(cfg, verts) -> list:
+    """[_f_pt(cfg, p) for p in verts] 와 같은 값(같은 식·같은 순서의 연산, 함수 호출만 줄였다)."""
+    if cfg[0] == "plan":
+        z = cfg[2]
+        return [(p[0], p[1], z - p[2]) for p in verts]
+    ox, oy, c3, c4, c5, c6 = cfg[1], cfg[2], cfg[3], cfg[4], cfg[5], cfg[6]
+    return [(px * c5 + py * c6, p[2], px * c3 + py * c4) for p in verts for px, py in ((p[0] - ox, p[1] - oy),)]
 
 
 def scope_foreign(g, v):
@@ -5406,12 +5415,18 @@ def _f_occ(g, v):
     polys, boxes, bins, regions, rbins = [], [], {}, [], {}
     for e in g.q(scope_foreign, v):
         _cat, verts, faces, _edges, _nrm, _bb = g.q(foreign_info, e)
-        P = [_f_pt(cfg, p) for p in verts]
+        P = _f_pts(cfg, verts)
         for (tri,) in faces:
             t = [P[i] for i in tri]
-            ds = [q[2] for q in t]
-            if min(ds) > d1 or max(ds) < d0:
-                continue   # 보이는 범위 뒤(가릴 것이 없다) 또는 통째로 앞(평면: 절단 높이 위, 단면: 절단면 앞)
+            if len(t) == 3:   # 삼각형(외래 메시는 모두 이렇다): 내장 min·max 에 같은 순서로 넘겨 같은 값
+                dmn = min(t[0][2], t[1][2], t[2][2])
+                if dmn > d1 or max(t[0][2], t[1][2], t[2][2]) < d0:
+                    continue
+            else:
+                ds = [q[2] for q in t]
+                dmn = min(ds)
+                if dmn > d1 or max(ds) < d0:
+                    continue   # 보이는 범위 뒤(가릴 것이 없다) 또는 통째로 앞(평면: 절단 높이 위, 단면: 절단면 앞)
             ux, uy, ud = t[1][0] - t[0][0], t[1][1] - t[0][1], t[1][2] - t[0][2]
             vx, vy, vd = t[2][0] - t[0][0], t[2][1] - t[0][1], t[2][2] - t[0][2]
             na, nb, nd = uy * vd - ud * vy, ud * vx - ux * vd, ux * vy - uy * vx
@@ -5419,7 +5434,7 @@ def _f_occ(g, v):
                 continue   # 보는 방향과 나란한 면: 넓이가 없어 아무것도 가리지 않는다
             plane = (-na / nd, -nb / nd, t[0][2] + (na * t[0][0] + nb * t[0][1]) / nd)
             poly = t
-            if d0 > -BIG and min(ds) < d0:   # 앞쪽 경계(평면: 절단 높이, 단면: 절단면)로 잘라 앞부분을 버린다
+            if d0 > -BIG and dmn < d0:   # 앞쪽 경계(평면: 절단 높이, 단면: 절단면)로 잘라 앞부분을 버린다
                 out = []
                 for i in range(len(poly)):
                     a, b = poly[i], poly[(i + 1) % len(poly)]
@@ -5439,8 +5454,13 @@ def _f_occ(g, v):
                 p2.reverse()
             i = len(polys)
             polys.append((tuple(p2), plane))
-            a0, a1 = min(q[0] for q in p2), max(q[0] for q in p2)
-            b0, b1, dmin = min(q[1] for q in p2), max(q[1] for q in p2), min(q[2] for q in poly)
+            if len(p2) == 3 and len(poly) == 3:   # 잘리지 않은 삼각형: 같은 순서로 내장 min·max 에 넘긴다(같은 값)
+                (x0, y0), (x1, y1), (x2, y2) = p2
+                a0, a1 = min(x0, x1, x2), max(x0, x1, x2)
+                b0, b1, dmin = min(y0, y1, y2), max(y0, y1, y2), min(poly[0][2], poly[1][2], poly[2][2])
+            else:
+                a0, a1 = min(q[0] for q in p2), max(q[0] for q in p2)
+                b0, b1, dmin = min(q[1] for q in p2), max(q[1] for q in p2), min(q[2] for q in poly)
             boxes.append((a0, a1, b0, b1, dmin))
             for k in range(int(a0 // F_BIN), int(a1 // F_BIN) + 1):
                 for m in range(int(b0 // F_BIN), int(b1 // F_BIN) + 1):
@@ -5478,39 +5498,96 @@ def _f_covered(hidden) -> bool:
     return cur >= 1.0
 
 
+# 마지막으로 본 외래 가림 칸 색인(_f_occ 의 bins 객체)과 그 칸 범위별 합친 후보 목록(IO-04, 속도만: 값과 무관).
+# 같은 뷰의 선분들은 칸 범위가 몇 천 가지뿐이라(혼합 모델 단면은 약 20만 번 호출에 4,784 가지) 칸 목록 합치기(_fronts)와
+# 중복 걸러내기를 칸 범위마다 한 번만 한다. 목록은 필요한 만큼만 늘린다(앞부터 보다가 다 가려지면 멈추므로).
+# bins 를 쥐고 있어 객체 동일성 비교가 안전하다(다른 뷰·바뀐 모델의 색인은 다른 객체라 새로 시작한다).
+_F_MERGE = [None, None, None]   # (bins 객체, {칸 범위: 합친 후보}, {조각 번호: 변 자료})
+_F_COVERED = [None]   # _f_hidden 이 _f_covered 참을 확인하고 돌려준 마지막 목록(객체 동일성으로만 본다, 속도만)
+
+
+def _fronts_uniq(cells):
+    """_fronts 와 같은 순서에서 같은 항목(여러 칸에 걸친 같은 조각)을 한 번만 낸다. 정렬된 합치기라 같은 항목은 이어서 나온다."""
+    last = None
+    for x in _fronts(cells):
+        if x != last:
+            last = x
+            yield x
+
+
+def _f_edges(poly) -> tuple:
+    """볼록 다각형의 변마다 (시작 a, 시작 b, 변 a 성분, 변 b 성분). 예전 자르기 반복이 변마다 계산하던 값과 같다."""
+    n = len(poly)
+    out = []
+    for j in range(n):
+        p, q = poly[j], poly[(j + 1) % n]
+        out.append((p[0], p[1], q[0] - p[0], q[1] - p[1]))
+    return tuple(out)
+
+
+def _f_merged(bins, ka0, ka1, kb0, kb1):
+    """칸 범위(a 칸 ka0~ka1, b 칸 kb0~kb1)의 후보 (가장 앞 d, 번호) 를 앞부터 중복 없이: (이미 꺼낸 목록, 남은 생성기 | None, 항목).
+    예전 _f_hidden 이 칸 목록들을 _fronts 로 합치고 seen 으로 거르던 순서와 같다."""
+    slot = _F_MERGE
+    if slot[0] is not bins:
+        slot[0], slot[1], slot[2] = bins, {}, {}
+    key = (ka0, ka1, kb0, kb1)
+    ent = slot[1].get(key)
+    if ent is None:
+        cells = [c for k in range(ka0, ka1 + 1) for m in range(kb0, kb1 + 1) if (c := bins.get((k, m)))]
+        if len(cells) <= 1:
+            ent = [cells[0] if cells else (), None]   # 칸 하나: 그 목록이 이미 앞부터 정렬돼 있고 중복이 없다
+        else:
+            ent = [[], _fronts_uniq(cells)]
+        slot[1][key] = ent
+    return ent[0], ent[1], ent
+
+
 def _f_hidden(occ, A, B) -> list:
     """뷰 좌표 선분 A-B((a, b, d) 두 점) 에서 외래 면·절단 영역에 가려지는 매개변수 구간들 [(t0, t1), ...].
     후보 면 조각은 선분이 걸치는 칸들에서 앞(가장 앞 d 가 작은)부터 꺼내고(_fronts), 선분보다 앞에 있을 수 없는 조각에 닿으면 멈춘다.
     도중에 가려진 구간이 선분 전체를 덮으면 바로 돌려준다(뒤의 조각을 더해도 덮인 그대로다: _f_visible 은 합집합만 본다).
     덮이지 않으면 후보 전체를 본 것이라 예전(a 방향 칸만 쓰던 전수 판정)과 같은 구간 집합이다(순서만 다르고 _f_visible 은 정렬한다)."""
     polys, boxes, bins, regions, rbins = occ
-    da, db = B[0] - A[0], B[1] - A[1]
-    dd = B[2] - A[2]
-    lo_a, hi_a = min(A[0], B[0]), max(A[0], B[0])
-    lo_b, hi_b = min(A[1], B[1]), max(A[1], B[1])
-    dmax = max(A[2], B[2])
+    ax, ay, ad = A
+    da, db = B[0] - ax, B[1] - ay
+    dd = B[2] - ad
+    lo_a, hi_a = min(ax, B[0]), max(ax, B[0])
+    lo_b, hi_b = min(ay, B[1]), max(ay, B[1])
+    dmax = max(ad, B[2])
     dcut = dmax - F_TOL
     out = []
-    seen = set()
     ka0, ka1 = int(lo_a // F_BIN), int(hi_a // F_BIN)   # a 방향은 예전 색인과 같은 칸 범위(후보 집합이 같게)
     kb0, kb1 = int((lo_b - EPS) // F_BIN), int((hi_b + EPS) // F_BIN)   # b 방향은 상자 판정의 여유(EPS)까지
-    cells = [c for k in range(ka0, ka1 + 1) for m in range(kb0, kb1 + 1) if (c := bins.get((k, m)))]
-    for dmin, i in (cells[0] if len(cells) == 1 else _fronts(cells)):
+    lo_ae, hi_ae, lo_be, hi_be = lo_a - EPS, hi_a + EPS, lo_b - EPS, hi_b + EPS   # 상자 판정 경계(예전과 같은 값을 한 번만 계산)
+    lst, gen, ent = _f_merged(bins, ka0, ka1, kb0, kb1)
+    edat = _F_MERGE[2]   # 이 색인(bins)의 조각별 변 자료
+    ci = 0   # 합친 후보 목록에서 다음에 볼 자리(아래 자르기 반복의 j 와 다른 이름)
+    while True:
+        if ci < len(lst):
+            dmin, i = lst[ci]
+        elif gen is None:
+            break
+        else:
+            nx = next(gen, None)
+            if nx is None:
+                ent[1] = gen = None   # 다 꺼냈다
+                break
+            lst.append(nx)
+            dmin, i = nx
+        ci += 1
         if dmin >= dcut:
             break   # 칸 목록은 앞부터라 나머지는 모두 선분보다 뒤다(예전 판정의 bx[4] >= dmax - F_TOL)
-        if i in seen:
-            continue
-        seen.add(i)
         bx = boxes[i]
-        if bx[0] > hi_a + EPS or bx[1] < lo_a - EPS or bx[2] > hi_b + EPS or bx[3] < lo_b - EPS:
+        if bx[0] > hi_ae or bx[1] < lo_ae or bx[2] > hi_be or bx[3] < lo_be:
             continue
         poly, (pa, pb, pc) = polys[i]
+        ed = edat.get(i)
+        if ed is None:
+            ed = edat[i] = _f_edges(poly)
         t0, t1 = 0.0, 1.0
-        n = len(poly)
-        for j in range(n):
-            p, q = poly[j], poly[(j + 1) % n]
-            ex, ey = q[0] - p[0], q[1] - p[1]
-            num = ex * (A[1] - p[1]) - ey * (A[0] - p[0])
+        for px, py, ex, ey in ed:
+            num = ex * (ay - py) - ey * (ax - px)
             den = ex * db - ey * da
             if abs(den) < 1e-12:
                 if num < 0:
@@ -5519,16 +5596,17 @@ def _f_hidden(occ, A, B) -> list:
                 continue
             t = -num / den
             if den > 0:
-                t0 = max(t0, t)
-            else:
-                t1 = min(t1, t)
+                if t > t0:   # = max(t0, t): 같으면 t0 를 둔다(내장 max 와 같은 값)
+                    t0 = t
+            elif t < t1:   # = min(t1, t)
+                t1 = t
             if t1 - t0 <= 1e-9:
                 break
         if t1 - t0 <= 1e-9:
             continue
         # 모서리 깊이 - 면 깊이 - 허용: 양수면 면이 앞에 있다(선분 위에서 일차식)
-        fa = (A[2] + t0 * dd) - (pa * (A[0] + t0 * da) + pb * (A[1] + t0 * db) + pc) - F_TOL
-        fb = (A[2] + t1 * dd) - (pa * (A[0] + t1 * da) + pb * (A[1] + t1 * db) + pc) - F_TOL
+        fa = (ad + t0 * dd) - (pa * (ax + t0 * da) + pb * (ay + t0 * db) + pc) - F_TOL
+        fb = (ad + t1 * dd) - (pa * (ax + t1 * da) + pb * (ay + t1 * db) + pc) - F_TOL
         if fa > 0 and fb > 0:
             out.append((t0, t1))
         elif fa > 0 or fb > 0:
@@ -5537,6 +5615,7 @@ def _f_hidden(occ, A, B) -> list:
         else:
             continue
         if len(out) in F_PROBE and _f_covered(out):
+            _F_COVERED[0] = out   # 다 덮인 것을 확인한 목록(foreign_lines 가 같은 판정을 다시 하지 않는다)
             return out
     if not regions:
         return out
@@ -5597,7 +5676,7 @@ def foreign_lines(g, v, e):
     d0, d1 = _f_range(cfg)
     occ = g.q(_f_occ, v)
     idx = g.q(_occ_index, v) if cfg[0] != "plan" else None
-    P = [_f_pt(cfg, p) for p in verts]
+    P = _f_pts(cfg, verts)
     for ia, ib, _fl in edges:
         A, B = P[ia], P[ib]
         t0, t1 = 0.0, 1.0
@@ -5626,7 +5705,7 @@ def foreign_lines(g, v, e):
             continue   # 보는 방향과 나란한 모서리(점으로 보인다)
         hid = _f_hidden(occ, A2, B2)
         # 저작 요소의 가림 조각(단면·입면): 기존 _vis 의 보이는 구간의 여집합을 더한다. 외래 면이 이미 다 가렸으면 볼 필요가 없다(4차, 값은 같다)
-        if idx is not None and idx[0] and not (hid and _f_covered(hid)):
+        if idx is not None and idx[0] and not (hid and (hid is _F_COVERED[0] or _f_covered(hid))):
             e0, e1 = (A2[0], A2[2], A2[1]), (B2[0], B2[2], B2[1])   # (s, w, z)
             hid.extend(_f_complement(_vis_near(idx, e0, e1)))
         for a, b in _f_visible(hid):
@@ -5931,6 +6010,9 @@ def foreign_opening_symbol(g, v, e):
 
 def foreign_symbol_defaults(g, v) -> int:
     """뷰에서 여닫이 방식을 몰라 기본 기호로 그린 외래 문·창 수."""
+    cfg = g.q(view_cfg, v)
+    if cfg is None or cfg[0] != "plan" or is_rcp(cfg):
+        return 0   # foreign_opening_symbol 이 모든 요소에 None 인 뷰(단면·입면 등): 요소마다 묻지 않는다(값이 같다)
     n = 0
     for e in g.q(scope_foreign, v):
         s = g.q(foreign_opening_symbol, v, e)
