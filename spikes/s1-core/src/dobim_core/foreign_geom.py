@@ -19,14 +19,19 @@
   창의 칸 나눔은 PartitioningType(IFC4 요소, 없으면 유형) 또는 IFC2x3 IfcWindowStyle.OperationType, 창짝은 유형의 IfcWindowPanelProperties.OperationType.
   배치가 수직으로 서 있지 않은(국소 x·y 축이 수평이 아닌) 문·창, 문·창이 아닌 요소는 None(기호 없이 형상 그대로 그린다).
 
-결정성: 같은 파일·같은 ifcopenshell 판이면 같은 메시다(단일 스레드 create_shape). 좌표는 0.01mm 로 반올림하고 같은 좌표를 한 꼭짓점으로 합친다.
+결정성: 같은 파일·같은 ifcopenshell 판이면 같은 메시다. 좌표는 0.01mm 로 반올림하고 같은 좌표를 한 꼭짓점으로 합친다.
 외래 요소의 형상은 바뀌지 않으므로(속성만 편집, ADR-0005) 값은 IfcModel 하나에 한 번만 계산해 둔다(_MEMO 속성).
+미리 계산(IO-04 4차, 대형 외래 모델 성능): 첫 형상 요청 때 그리는 종류의 외래 요소 전체를 ifcopenshell.geom.iterator(여러 스레드)로 한꺼번에
+삼각형화해 둔다(_RAW 속성). 요소 하나의 삼각형화는 스레드와 무관하게 같은 입력·설정의 같은 계산이라 create_shape 와 같은 메시다(표본 기준선으로 확인).
+iterator 가 내지 못한 요소(실패·표현 없음)는 예전처럼 create_shape 로 하나씩 계산한다. 요소가 PREFETCH_MIN 개보다 적으면 미리 계산하지 않는다.
 """
 from __future__ import annotations
 
 ROUND = 2                  # 꼭짓점 반올림 자릿수(mm 아래 0.01)
 TRIS_MAX = 200_000         # 요소 하나의 삼각형 상한. 넘으면 그리지 않고 생략으로 센다(도면 시간 보호)
 _MEMO = "_fgeom_memo"
+_RAW = "_fgeom_raw"        # 미리 계산한 삼각형화 {GlobalId: (verts, faces)}
+PREFETCH_MIN = 64          # 외래 그리는 요소가 이보다 많을 때만 iterator 로 미리 계산한다(작은 모델은 스레드 준비 비용이 더 크다)
 
 # 범주: 절단선 굵기를 정한다. heavy = 절단선(cut), medium = 기호 굵기(symbol), light = 투영 굵기(proj). 투영선은 모두 proj.
 # 순서대로 처음 맞는 상위 클래스를 쓴다(is_a 는 상속을 따른다). 표에 없는 IfcElement 는 light.
@@ -70,17 +75,52 @@ def _storey_z(model, ent) -> float | None:
     return None
 
 
-def _mesh(model, ent, cat):
-    import ifcopenshell.geom
+def _model_settings(model):
     st = getattr(model, "_fgeom_settings", None)
     if st is None:
         st = _settings()
         model._fgeom_settings = st
+    return st
+
+
+def prefetch(model, ids) -> int:
+    """외래 요소 ids 중 그리는 종류(category 가 있는 IfcElement)를 iterator 로 한꺼번에 삼각형화해 _RAW 에 둔다. 미리 계산한 수를 돌려준다.
+    이미 했거나 요소가 PREFETCH_MIN 개보다 적거나 iterator 를 시작하지 못하면 아무것도 하지 않는다(_mesh 가 하나씩 계산한다)."""
+    if getattr(model, _RAW, None) is not None:
+        return 0
+    setattr(model, _RAW, {})
+    ents = [model.ents[i] for i in ids if i in model.ents]
+    ents = [e for e in ents if category(e) is not None and getattr(e, "Representation", None) is not None]
+    if len(ents) < PREFETCH_MIN:
+        return 0
+    import os
+    import ifcopenshell.geom
+    raw = {}
     try:
-        sh = ifcopenshell.geom.create_shape(st, ent)
-    except Exception:   # 표현이 없거나 형상 커널이 못 푸는 요소: 생략으로 센다
-        return None
-    vs, fs = sh.geometry.verts, sh.geometry.faces
+        it = ifcopenshell.geom.iterator(_model_settings(model), model.f, max(1, os.cpu_count() or 1), include=ents)
+        if it.initialize():
+            while True:
+                sh = it.get()
+                raw[sh.guid] = (tuple(sh.geometry.verts), tuple(sh.geometry.faces))
+                if not it.next():
+                    break
+    except Exception:   # iterator 를 쓸 수 없으면 하나씩 계산하는 예전 길로
+        raw = {}
+    setattr(model, _RAW, raw)
+    return len(raw)
+
+
+def _mesh(model, ent, cat):
+    import ifcopenshell.geom
+    got = (getattr(model, _RAW, None) or {}).get(getattr(ent, "GlobalId", None))
+    if got is not None:
+        vs, fs = got
+    else:
+        try:
+            sh = ifcopenshell.geom.create_shape(_model_settings(model), ent)
+        except Exception:   # 표현이 없거나 형상 커널이 못 푸는 요소: 생략으로 센다
+            return None
+        vs, fs = sh.geometry.verts, sh.geometry.faces
     if not vs or not fs or len(fs) // 3 > TRIS_MAX:
         return None
     index: dict = {}
@@ -221,10 +261,12 @@ def opening(model, row, eid):
     return memo[eid]
 
 
-def load(model, row, eid):
-    """그래프 입력 ("fgeom", eid) 의 값. row 는 요소 행(없으면 None)."""
+def load(model, row, eid, foreign_ids=None):
+    """그래프 입력 ("fgeom", eid) 의 값. row 는 요소 행(없으면 None). foreign_ids 는 외래 요소 id 들을 돌려주는 함수(첫 요청 때 미리 계산할 대상)."""
     if row is None or row["kind"] != "foreign" or eid not in model.ents:
         return None
+    if foreign_ids is not None and getattr(model, _RAW, None) is None:
+        prefetch(model, foreign_ids())
     memo = getattr(model, _MEMO, None)
     if memo is None:
         memo = {}

@@ -174,7 +174,7 @@ class _Inputs:
         if t == "mat":
             return ifc.get_material(key[1]) if key[1] in ifc.ents else None
         if t == "fgeom":   # 외래 요소의 IFC 형상(1단계 외래 도면 경로). 외래 형상은 바뀌지 않아 이 입력을 건드리는 효과는 없다(kinds._keys_el)
-            return FG.load(ifc, st.el.get(key[1]), key[1])
+            return FG.load(ifc, st.el.get(key[1]), key[1], lambda: sorted(st.by_kind.get("foreign", ())))   # 첫 요청 때 외래 전체를 미리 계산(4차)
         if t == "fopen":   # 외래 문·창의 여닫이 방식·배치(외래 도면 3차). fgeom 과 같이 바뀌지 않는 입력이다
             return FG.opening(ifc, st.el.get(key[1]), key[1])
         raise KeyError(key)

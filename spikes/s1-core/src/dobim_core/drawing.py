@@ -18,6 +18,7 @@ queries.py 와 같은 규칙을 따른다: 순수 함수, 시각·난수·파일
 from __future__ import annotations
 
 import hashlib
+import heapq
 import json
 from math import sqrt
 
@@ -1022,9 +1023,10 @@ def fam_lines(g, v, e):
     mine = list(g.q(_fam_vpieces, v, e))
     occ = mine + list(g.q(vfam_nbr_pieces, v, e))
     lines = []
+    fo = g.q(_fview, v)   # 외래 요소가 저작 선을 가린다(IO-04 4차). 뷰에 외래 요소가 없으면 None 이라 값은 이전과 같다
     if occ:
         for e0, e1 in g.q(vfam_edges, v, e):
-            for t0, t1 in visible_parts(e0, e1, occ):
+            for t0, t1 in _fvis(fo, e0, e1, visible_parts(e0, e1, occ)):
                 lines.append(("proj", e0[0] + t0 * (e1[0] - e0[0]), e0[2] + t0 * (e1[2] - e0[2]),
                               e0[0] + t1 * (e1[0] - e0[0]), e0[2] + t1 * (e1[2] - e0[2])))
     if cfg[9]:
@@ -1528,9 +1530,10 @@ def slab_lines(g, v, s):
     for rf in g.q(scope_roofs, v):
         occ.extend(g.q(_roof_solid_vpieces, v, rf))
     lines = []
+    fo = g.q(_fview, v)   # 외래 요소가 저작 선을 가린다(IO-04 4차). 뷰에 외래 요소가 없으면 None 이라 값은 이전과 같다
     if occ:
         for e0, e1 in g.q(slab_vedges, v, s):
-            for t0, t1 in visible_parts(e0, e1, occ):
+            for t0, t1 in _fvis(fo, e0, e1, visible_parts(e0, e1, occ)):
                 lines.append(("proj", e0[0] + t0 * (e1[0] - e0[0]), e0[2] + t0 * (e1[2] - e0[2]),
                               e0[0] + t1 * (e1[0] - e0[0]), e0[2] + t1 * (e1[2] - e0[2])))
     if cfg[9]:
@@ -1877,9 +1880,10 @@ def stair_lines(g, v, s):
     for rf in g.q(scope_roofs, v):
         occ.extend(g.q(_roof_solid_vpieces, v, rf))
     lines = []
+    fo = g.q(_fview, v)   # 외래 요소가 저작 선을 가린다(IO-04 4차). 뷰에 외래 요소가 없으면 None 이라 값은 이전과 같다
     if occ:
         for e0, e1 in g.q(stair_vedges, v, s):
-            for t0, t1 in visible_parts(e0, e1, occ):
+            for t0, t1 in _fvis(fo, e0, e1, visible_parts(e0, e1, occ)):
                 lines.append(("proj", e0[0] + t0 * (e1[0] - e0[0]), e0[2] + t0 * (e1[2] - e0[2]),
                               e0[0] + t1 * (e1[0] - e0[0]), e0[2] + t1 * (e1[2] - e0[2])))
     if cfg[9]:
@@ -1969,6 +1973,7 @@ def railing_lines(g, v, r):
     for rf in g.q(scope_roofs, v):
         occ.extend(g.q(_roof_solid_vpieces, v, rf))
     lines = []
+    fo = g.q(_fview, v)   # 외래 요소가 저작 선을 가린다(IO-04 4차). 뷰에 외래 요소가 없으면 None 이라 값은 이전과 같다
     for a, b in raw:
         pa, pb = _sw(cfg, a), _sw(cfg, b)
         e0, e1 = (pa[0], pa[1], a[2]), (pb[0], pb[1], b[2])
@@ -1978,7 +1983,7 @@ def railing_lines(g, v, r):
         if c is None:
             continue
         e0, e1 = c
-        for t0, t1 in (visible_parts(e0, e1, occ) if occ else [(0.0, 1.0)]):
+        for t0, t1 in _fvis(fo, e0, e1, visible_parts(e0, e1, occ) if occ else [(0.0, 1.0)]):
             lines.append(("proj", e0[0] + t0 * (e1[0] - e0[0]), e0[2] + t0 * (e1[2] - e0[2]), e0[0] + t1 * (e1[0] - e0[0]), e0[2] + t1 * (e1[2] - e0[2])))
     return tuple(lines)
 
@@ -2106,6 +2111,7 @@ def elevator_lines(g, v, e):
     for rf in g.q(scope_roofs, v):   # 경사 지붕 밑에 든 샤프트 선은 지붕이 가린다(없으면 이 반복은 비어 있다)
         occ.extend(g.q(_roof_vpieces, v, rf))
     lines = []
+    fo = g.q(_fview, v)   # 외래 요소가 저작 선을 가린다(IO-04 4차). 뷰에 외래 요소가 없으면 None 이라 값은 이전과 같다
     for a, b in raw:
         pa, pb = _sw(cfg, a), _sw(cfg, b)
         e0, e1 = (pa[0], pa[1], a[2]), (pb[0], pb[1], b[2])
@@ -2117,7 +2123,7 @@ def elevator_lines(g, v, e):
         e0, e1 = c
         if abs(e1[0] - e0[0]) < EPS and abs(e1[2] - e0[2]) < EPS:   # 보는 방향과 나란한 모서리(점으로 보인다)
             continue
-        for t0, t1 in (visible_parts(e0, e1, occ) if occ else [(0.0, 1.0)]):
+        for t0, t1 in _fvis(fo, e0, e1, visible_parts(e0, e1, occ) if occ else [(0.0, 1.0)]):
             lines.append(("proj", e0[0] + t0 * (e1[0] - e0[0]), e0[2] + t0 * (e1[2] - e0[2]), e0[0] + t1 * (e1[0] - e0[0]), e0[2] + t1 * (e1[2] - e0[2])))
     return tuple(lines)
 
@@ -2409,6 +2415,7 @@ def roof_lines(g, v, r):
         if o != r:
             occ.extend(g.q(_roof_vpieces, v, o))
     lines = []
+    fo = g.q(_fview, v)   # 외래 요소가 저작 선을 가린다(IO-04 4차). 뷰에 외래 요소가 없으면 None 이라 값은 이전과 같다
     for a, b in g.q(roof_edges3, r):
         pa, pb = _sw(cfg, a), _sw(cfg, b)
         e0, e1 = (pa[0], pa[1], a[2]), (pb[0], pb[1], b[2])
@@ -2420,7 +2427,7 @@ def roof_lines(g, v, r):
         e0, e1 = c
         if abs(e1[0] - e0[0]) < EPS and abs(e1[2] - e0[2]) < EPS:   # 화면에서 한 점으로 보이는 선
             continue
-        for t0, t1 in (_visible_slanted(e0, e1, occ) if occ else [(0.0, 1.0)]):
+        for t0, t1 in _fvis(fo, e0, e1, _visible_slanted(e0, e1, occ) if occ else [(0.0, 1.0)]):
             lines.append(("proj", e0[0] + t0 * (e1[0] - e0[0]), e0[2] + t0 * (e1[2] - e0[2]), e0[0] + t1 * (e1[0] - e0[0]), e0[2] + t1 * (e1[2] - e0[2])))
     if cfg[9]:
         rects = g.q(roof_cut_rects, v, r)
@@ -2683,6 +2690,7 @@ def elev_finish(g, v, w):
         occ.extend(g.q(_slab_vpieces, v, sl))
     for st in g.q(scope_stairs, v):
         occ.extend(g.q(_stair_vpieces, v, st))
+    fo = g.q(_fview, v)   # 외래 요소가 저작 선을 가린다(IO-04 4차). 뷰에 외래 요소가 없으면 None 이라 값은 이전과 같다
     step = HATCH_STEP * cfg[10]
     text = mat.strip()[:24]
     need = _text_w(text, LABEL_FIRE_H) * cfg[10]               # 글이 들어갈 만큼 넓은 조각에만 재료 문자를 놓는다(벽 끝면 같은 좁은 조각은 해치만)
@@ -2700,7 +2708,7 @@ def elev_finish(g, v, w):
             sa, sb = max(s0, c + z0), min(s1, c + z1)
             if sb - sa > SEG_MIN:
                 e0, e1 = (sa, wf, sa - c), (sb, wf, sb - c)
-                for t0, t1 in _visible_slanted(e0, e1, occ):
+                for t0, t1 in _fvis(fo, e0, e1, _visible_slanted(e0, e1, occ)):
                     if (t1 - t0) * (sb - sa) * 1.4142 < SEG_MIN:   # 가림 경계에 남은 부스러기 선분은 버린다(병합 단계도 같은 길이로 거른다)
                         continue
                     mine.append(("hatch", e0[0] + t0 * (e1[0] - e0[0]), e0[2] + t0 * (e1[2] - e0[2]),
@@ -3025,11 +3033,12 @@ def vwin_detail(g, v, w):
 
     occ = _view_occluders(g, v, w)
     out = []
+    fo = g.q(_fview, v)   # 외래 요소가 저작 선을 가린다(IO-04 4차). 뷰에 외래 요소가 없으면 None 이라 값은 이전과 같다
     for u0, u1, z0, _z1 in sorted(wins):
         zl = z0 - SILL_DROP
         edges = [(pt(u0 - SILL_EXT, zl), pt(u1 + SILL_EXT, zl)), (pt(u0 - SILL_EXT, zl), pt(u0 - SILL_EXT, z0)), (pt(u1 + SILL_EXT, zl), pt(u1 + SILL_EXT, z0))]
         for e0, e1 in edges:
-            for t0, t1 in visible_parts(e0, e1, occ):
+            for t0, t1 in _fvis(fo, e0, e1, visible_parts(e0, e1, occ)):
                 out.append(("proj", e0[0] + t0 * (e1[0] - e0[0]), e0[2] + t0 * (e1[2] - e0[2]), e0[0] + t1 * (e1[0] - e0[0]), e0[2] + t1 * (e1[2] - e0[2])))
     return tuple(out)
 
@@ -3441,11 +3450,12 @@ def vwall_lines(g, v, w):
             boxed += [b for b in other if b[2] < w_cut and b[3] < z_hi and b[4] > z_lo]
             boxed += [b for b in _occ_boxed(solid) if b[2] < w_cut]
             boxed.sort(key=_W_KEY)   # 이미 정렬된 묶음을 이어 붙인 목록이라 정렬이 빠르다
+        fo = g.q(_fview, v)   # 외래 요소가 저작 선을 가린다(IO-04 4차). 뷰에 외래 요소가 없으면 None 이라 값은 이전과 같다
         for e0, e1 in edges:
             slanted = abs(e1[2] - e0[2]) > 1e-9 and (abs(e1[0] - e0[0]) > 1e-9 or abs(e1[1] - e0[1]) > 1e-9)   # 아치 윤곽의 현(18단계)
             if slanted and full is None:
                 full = [b[5] for b in wall_boxes] + occ     # 비스듬한 선은 전체 조각으로 판정한다(가려진 구간을 정렬하므로 순서와 무관)
-            for t0, t1 in (_visible_slanted(e0, e1, full) if slanted else _visible_culled(e0, e1, boxed)):
+            for t0, t1 in _fvis(fo, e0, e1, _visible_slanted(e0, e1, full) if slanted else _visible_culled(e0, e1, boxed)):
                 x0, z0 = e0[0] + t0 * (e1[0] - e0[0]), e0[2] + t0 * (e1[2] - e0[2])
                 x1, z1 = e0[0] + t1 * (e1[0] - e0[0]), e0[2] + t1 * (e1[2] - e0[2])
                 lines.append(("proj", x0, z0, x1, z1))
@@ -4234,9 +4244,10 @@ def vwall_hidden(g, v, w):
         occ.extend(g.q(_stair_vpieces, v, st))
     for rf in g.q(scope_roofs, v):
         occ.extend(g.q(_roof_solid_vpieces, v, rf))
+    fo = g.q(_fview, v)   # 외래 요소가 저작 선을 가린다(IO-04 4차). 뷰에 외래 요소가 없으면 None 이라 값은 이전과 같다
     out = []
     for e0, e1 in g.q(vedges, v, w) + g.q(vfam_hosted_edges, v, w):
-        for t0, t1 in _complement(visible_parts(e0, e1, occ)):
+        for t0, t1 in _complement(_fvis(fo, e0, e1, visible_parts(e0, e1, occ))):
             out.append(("hid", e0[0] + t0 * (e1[0] - e0[0]), e0[2] + t0 * (e1[2] - e0[2]), e0[0] + t1 * (e1[0] - e0[0]), e0[2] + t1 * (e1[2] - e0[2])))
     return tuple(out)
 
@@ -4718,25 +4729,49 @@ def _occ_index(g, v):
     boxes, bins = [], {}
     for i, (z0, z1, poly) in enumerate(pieces):
         s0, s1 = min(q[0] for q in poly), max(q[0] for q in poly)
-        boxes.append((s0, s1, min(q[1] for q in poly), z0, z1))
+        wf = min(q[1] for q in poly)
+        boxes.append((s0, s1, wf, z0, z1))
         for k in range(int(s0 // OCC_BIN), int(s1 // OCC_BIN) + 1):
-            bins.setdefault(k, []).append(i)
-    return (tuple(pieces), tuple(boxes), {k: tuple(x) for k, x in bins.items()})
+            for m in range(int(z0 // OCC_BIN), int(z1 // OCC_BIN) + 1):
+                bins.setdefault((k, m), []).append((wf, i))
+    # 칸 = (s // OCC_BIN, z // OCC_BIN), 칸마다 앞(w 최소)부터 정렬(IO-04 4차: 외래 대형 모델에서 외래 모서리마다 부르는 _occ_near 가 병목이었다)
+    return (tuple(pieces), tuple(boxes), {k: tuple(sorted(x)) for k, x in bins.items()})
 
 
 def _occ_near(idx, s0, s1, z0, z1, wmax):
-    """색인에서 (s, z) 범위가 겹치고 wmax 보다 앞(작은 w)에 걸친 조각들."""
+    """색인에서 (s, z) 범위가 겹치고 wmax 보다 앞(작은 w)에 걸친 조각들(앞부터의 순서. 쓰는 쪽 _vis 는 가려진 구간을 정렬하므로 순서와 무관하다).
+    s 방향 칸 범위는 예전(s 칸만 쓰던 색인)과 같고 z 방향은 상자 판정의 여유(EPS)까지 본다: 고르는 조각 집합이 예전과 같다."""
+    return list(_occ_near_iter(idx, s0, s1, z0, z1, wmax))
+
+
+def _occ_near_iter(idx, s0, s1, z0, z1, wmax):
+    """_occ_near 의 조각들을 앞(w 최소)부터 하나씩 낸다."""
     pieces, boxes, bins = idx
-    seen, out = set(), []
-    for k in range(int(s0 // OCC_BIN), int(s1 // OCC_BIN) + 1):
-        for i in bins.get(k, ()):
+    cells = [c for k in range(int(s0 // OCC_BIN), int(s1 // OCC_BIN) + 1)
+             for m in range(int((z0 - EPS) // OCC_BIN), int((z1 + EPS) // OCC_BIN) + 1) if (c := bins.get((k, m)))]
+    one = len(cells) == 1
+    seen = set()
+    for wf, i in (cells[0] if one else heapq.merge(*cells)):
+        if wf >= wmax:
+            break   # 칸 목록은 앞부터라 나머지는 모두 wmax 보다 뒤다(예전 판정의 b[2] < wmax)
+        if not one:
             if i in seen:
                 continue
             seen.add(i)
-            b = boxes[i]
-            if b[0] <= s1 + EPS and b[1] >= s0 - EPS and b[3] <= z1 + EPS and b[4] >= z0 - EPS and b[2] < wmax:
-                out.append(pieces[i])
-    return out
+        b = boxes[i]
+        if b[0] <= s1 + EPS and b[1] >= s0 - EPS and b[3] <= z1 + EPS and b[4] >= z0 - EPS:
+            yield pieces[i]
+
+
+def _vis_near(idx, e0, e1):
+    """_vis(e0, e1, _occ_near(...)) 와 같은 값을 더 빨리: 앞부터 모은 조각 몇 개(CULL_PROBE)만으로 다 가려지면 바로 빈 목록.
+    가려진 구간의 합집합은 조각을 보탤수록 커지기만 하므로(visible_parts·_visible_slanted) 일부로 다 가려지면 전체로도 다 가려진다. 조각이 없으면 [(0, 1)]."""
+    cand = []
+    for pc in _occ_near_iter(idx, min(e0[0], e1[0]), max(e0[0], e1[0]), min(e0[2], e1[2]), max(e0[2], e1[2]), max(e0[1], e1[1])):
+        cand.append(pc)
+        if len(cand) in CULL_PROBE and not _vis(e0, e1, cand):
+            return []
+    return _vis(e0, e1, cand) if cand else [(0.0, 1.0)]
 
 
 def _vis(e0, e1, occ):
@@ -4797,6 +4832,7 @@ def solid_lines(g, v, e):
             sa, sb = _sw(cfg, a), _sw(cfg, b)
             if sqrt((sb[0] - sa[0]) ** 2 + (b[2] - a[2]) ** 2) > SEG_MIN:
                 out.append(("cut", sa[0], a[2], sb[0], b[2]))
+    fo = g.q(_fview, v)   # 외래 요소가 저작 선을 가린다(IO-04 4차). 뷰에 외래 요소가 없으면 None 이라 값은 이전과 같다
     for ia, ib, fl in edges:
         if len(fl) == 2 and all(nrm[f][0] * d[0] + nrm[f][1] * d[1] >= -1e-9 for f in fl):
             continue   # 뒷면끼리의 모서리
@@ -4810,7 +4846,7 @@ def solid_lines(g, v, e):
             continue
         e0, e1 = cl
         occ = _occ_near(idx, min(e0[0], e1[0]), max(e0[0], e1[0]), min(e0[2], e1[2]), max(e0[2], e1[2]), max(e0[1], e1[1]))
-        for t0, t1 in _vis(e0, e1, occ):
+        for t0, t1 in _fvis(fo, e0, e1, _vis(e0, e1, occ)):
             out.append(("proj", e0[0] + t0 * (e1[0] - e0[0]), e0[2] + t0 * (e1[2] - e0[2]), e0[0] + t1 * (e1[0] - e0[0]), e0[2] + t1 * (e1[2] - e0[2])))
     return tuple(out)
 
@@ -5207,11 +5243,14 @@ def forget_views(g, vids) -> int:
 #   투영선: 메시의 날카로운 모서리(이웃 면이 5도 넘게 꺾이거나 경계) 중 보이는 범위(평면: 절단 높이~보이는 깊이, 단면: near~far)에 든 부분.
 #   가림(외래끼리): 뷰 좌표 (a, b, d) 에서 모서리 점보다 앞(d 가 작은)에 있는 면(삼각형을 보이는 범위 앞쪽 경계로 자른 볼록 다각형)이 덮으면 숨는다.
 #     절단면에서 잘린 몸체 안(절단 영역: 단면 선분 묶음의 짝홀 규칙)도 그 뒤를 가린다(잘린 몸체 뚜껑).
-#   가림(저작 요소가 외래 선을): 단면·입면에서 기존 가림 조각(_occ_index)이 가린다. 외래 요소가 저작 요소 선을 가리지는 않는다(혼합 모델의 알려진 한계).
+#   가림(저작 요소가 외래 선을): 단면·입면에서 기존 가림 조각(_occ_index)이 가린다.
+#   가림(외래 요소가 저작 선을, IO-04 4차): 단면·입면에서 저작 요소의 보이는 구간(visible_parts 등)에서 외래 면·절단 영역이 앞에서 덮는 구간을 뺀다(_fvis).
+#     판정은 외래끼리의 가림과 같은 _f_hidden 이다. 평면(절단면 아래 투영선)은 아직 가리지 않는다(다음 차수). 숨은 선(vwall_hidden)도 같은 판정의 여집합이다.
 #   외래 요소가 없으면 모든 함수가 빈 값이라 기존 도면은 바이트 그대로다.
 FOREIGN_CUT_CLS = {"heavy": "cut", "medium": "symbol", "light": "proj"}
 F_TOL = 1.0       # 가림 깊이 허용(mm): 같은 면에 놓인 모서리가 자기 면에 가려지지 않게
-F_BIN = 2000.0    # 가림 면 색인의 a 방향 칸 폭(mm)
+F_BIN = 2000.0    # 가림 면·절단 영역 색인의 칸 폭(mm, a·b 두 방향)
+F_PROBE = frozenset((1, 2, 4, 8, 16, 32, 64, 128, 256, 512))   # 가려진 구간이 이만큼 모일 때마다 선분 전체가 덮였는지 본다(값과 무관, 속도만)
 
 
 def _raw_foreign(g):
@@ -5293,12 +5332,13 @@ def _f_cut(g, v, e):
 
 
 def _f_occ(g, v):
-    """뷰 하나의 외래 가림 자료 (면 조각들, 조각 상자들, {칸: (번호, ...)}, 절단 영역들).
+    """뷰 하나의 외래 가림 자료 (면 조각들, 조각 상자들, {칸: ((가장 앞 d, 번호), ...)}, 절단 영역들, {칸: (영역 번호, ...)}).
     면 조각 = (볼록 다각형((a, b), ... 반시계), (pa, pb, pc): 그 면의 깊이 d = pa*a + pb*b + pc). 상자 = (a0, a1, b0, b1, 가장 앞 d).
-    절단 영역 = (상자 (a0, a1, b0, b1), 단면 선분들): 요소 하나의 절단면 단면이다. 안쪽 점(짝홀 규칙)은 잘린 몸체 속이라 그 뒤가 보이지 않는다."""
+    절단 영역 = (상자 (a0, a1, b0, b1), 단면 선분들): 요소 하나의 절단면 단면이다. 안쪽 점(짝홀 규칙)은 잘린 몸체 속이라 그 뒤가 보이지 않는다.
+    칸 = (a // F_BIN, b // F_BIN): 조각·영역 상자가 걸치는 칸마다 넣는다. 면 조각 칸 목록은 가장 앞 d 순서라 _f_hidden 이 앞에서부터 본다(IO-04 4차, 대형 모델 성능)."""
     cfg = g.q(view_cfg, v)
     d0, d1 = _f_range(cfg)
-    polys, boxes, bins, regions = [], [], {}, []
+    polys, boxes, bins, regions, rbins = [], [], {}, [], {}
     for e in g.q(scope_foreign, v):
         _cat, verts, faces, _edges, _nrm, _bb = g.q(foreign_info, e)
         P = [_f_pt(cfg, p) for p in verts]
@@ -5335,14 +5375,21 @@ def _f_occ(g, v):
             i = len(polys)
             polys.append((tuple(p2), plane))
             a0, a1 = min(q[0] for q in p2), max(q[0] for q in p2)
-            boxes.append((a0, a1, min(q[1] for q in p2), max(q[1] for q in p2), min(q[2] for q in poly)))
+            b0, b1, dmin = min(q[1] for q in p2), max(q[1] for q in p2), min(q[2] for q in poly)
+            boxes.append((a0, a1, b0, b1, dmin))
             for k in range(int(a0 // F_BIN), int(a1 // F_BIN) + 1):
-                bins.setdefault(k, []).append(i)
+                for m in range(int(b0 // F_BIN), int(b1 // F_BIN) + 1):
+                    bins.setdefault((k, m), []).append((dmin, i))
         segs = g.q(_f_cut, v, e)
         if segs:
-            regions.append(((min(min(s[0], s[2]) for s in segs), max(max(s[0], s[2]) for s in segs),
-                             min(min(s[1], s[3]) for s in segs), max(max(s[1], s[3]) for s in segs)), segs))
-    return (tuple(polys), tuple(boxes), {k: tuple(x) for k, x in bins.items()}, tuple(regions))
+            bx = (min(min(s[0], s[2]) for s in segs), max(max(s[0], s[2]) for s in segs),
+                  min(min(s[1], s[3]) for s in segs), max(max(s[1], s[3]) for s in segs))
+            for k in range(int(bx[0] // F_BIN), int(bx[1] // F_BIN) + 1):
+                for m in range(int(bx[2] // F_BIN), int(bx[3] // F_BIN) + 1):
+                    rbins.setdefault((k, m), []).append(len(regions))
+            regions.append((bx, segs))
+    return (tuple(polys), tuple(boxes), {k: tuple(sorted(x)) for k, x in bins.items()}, tuple(regions),
+            {k: tuple(x) for k, x in rbins.items()})
 
 
 def _f_inside(segs, pa, pb) -> bool:
@@ -5356,55 +5403,81 @@ def _f_inside(segs, pa, pb) -> bool:
     return n % 2 == 1
 
 
+def _f_covered(hidden) -> bool:
+    """가려진 구간들의 합집합이 [0, 1] 을 빈틈없이 덮는가(_f_visible 이 빈 목록을 내는 경우와 같은 정확한 판정)."""
+    cur = 0.0
+    for a, b in sorted(hidden):
+        if a > cur:
+            return False
+        cur = max(cur, b)
+    return cur >= 1.0
+
+
 def _f_hidden(occ, A, B) -> list:
-    """뷰 좌표 선분 A-B((a, b, d) 두 점) 에서 외래 면·절단 영역에 가려지는 매개변수 구간들 [(t0, t1), ...]."""
-    polys, boxes, bins, regions = occ
+    """뷰 좌표 선분 A-B((a, b, d) 두 점) 에서 외래 면·절단 영역에 가려지는 매개변수 구간들 [(t0, t1), ...].
+    후보 면 조각은 선분이 걸치는 칸들에서 앞(가장 앞 d 가 작은)부터 꺼내고, 선분보다 앞에 있을 수 없는 조각에 닿으면 멈춘다.
+    도중에 가려진 구간이 선분 전체를 덮으면 바로 돌려준다(뒤의 조각을 더해도 덮인 그대로다: _f_visible 은 합집합만 본다).
+    덮이지 않으면 후보 전체를 본 것이라 예전(a 방향 칸만 쓰던 전수 판정)과 같은 구간 집합이다(순서만 다르고 _f_visible 은 정렬한다)."""
+    polys, boxes, bins, regions, rbins = occ
     da, db = B[0] - A[0], B[1] - A[1]
     dd = B[2] - A[2]
     lo_a, hi_a = min(A[0], B[0]), max(A[0], B[0])
     lo_b, hi_b = min(A[1], B[1]), max(A[1], B[1])
     dmax = max(A[2], B[2])
+    dcut = dmax - F_TOL
     out = []
     seen = set()
-    for k in range(int(lo_a // F_BIN), int(hi_a // F_BIN) + 1):
-        for i in bins.get(k, ()):
-            if i in seen:
-                continue
-            seen.add(i)
-            bx = boxes[i]
-            if bx[0] > hi_a + EPS or bx[1] < lo_a - EPS or bx[2] > hi_b + EPS or bx[3] < lo_b - EPS or bx[4] >= dmax - F_TOL:
-                continue
-            poly, (pa, pb, pc) = polys[i]
-            t0, t1 = 0.0, 1.0
-            n = len(poly)
-            for j in range(n):
-                p, q = poly[j], poly[(j + 1) % n]
-                ex, ey = q[0] - p[0], q[1] - p[1]
-                num = ex * (A[1] - p[1]) - ey * (A[0] - p[0])
-                den = ex * db - ey * da
-                if abs(den) < 1e-12:
-                    if num < 0:
-                        t0, t1 = 1.0, 0.0
-                        break
-                    continue
-                t = -num / den
-                if den > 0:
-                    t0 = max(t0, t)
-                else:
-                    t1 = min(t1, t)
-                if t1 - t0 <= 1e-9:
+    ka0, ka1 = int(lo_a // F_BIN), int(hi_a // F_BIN)   # a 방향은 예전 색인과 같은 칸 범위(후보 집합이 같게)
+    kb0, kb1 = int((lo_b - EPS) // F_BIN), int((hi_b + EPS) // F_BIN)   # b 방향은 상자 판정의 여유(EPS)까지
+    cells = [c for k in range(ka0, ka1 + 1) for m in range(kb0, kb1 + 1) if (c := bins.get((k, m)))]
+    for dmin, i in (cells[0] if len(cells) == 1 else heapq.merge(*cells)):
+        if dmin >= dcut:
+            break   # 칸 목록은 앞부터라 나머지는 모두 선분보다 뒤다(예전 판정의 bx[4] >= dmax - F_TOL)
+        if i in seen:
+            continue
+        seen.add(i)
+        bx = boxes[i]
+        if bx[0] > hi_a + EPS or bx[1] < lo_a - EPS or bx[2] > hi_b + EPS or bx[3] < lo_b - EPS:
+            continue
+        poly, (pa, pb, pc) = polys[i]
+        t0, t1 = 0.0, 1.0
+        n = len(poly)
+        for j in range(n):
+            p, q = poly[j], poly[(j + 1) % n]
+            ex, ey = q[0] - p[0], q[1] - p[1]
+            num = ex * (A[1] - p[1]) - ey * (A[0] - p[0])
+            den = ex * db - ey * da
+            if abs(den) < 1e-12:
+                if num < 0:
+                    t0, t1 = 1.0, 0.0
                     break
-            if t1 - t0 <= 1e-9:
                 continue
-            # 모서리 깊이 - 면 깊이 - 허용: 양수면 면이 앞에 있다(선분 위에서 일차식)
-            fa = (A[2] + t0 * dd) - (pa * (A[0] + t0 * da) + pb * (A[1] + t0 * db) + pc) - F_TOL
-            fb = (A[2] + t1 * dd) - (pa * (A[0] + t1 * da) + pb * (A[1] + t1 * db) + pc) - F_TOL
-            if fa > 0 and fb > 0:
-                out.append((t0, t1))
-            elif fa > 0 or fb > 0:
-                tc = t0 + (t1 - t0) * fa / (fa - fb)
-                out.append((t0, tc) if fa > 0 else (tc, t1))
-    for (ra0, ra1, rb0, rb1), segs in regions:
+            t = -num / den
+            if den > 0:
+                t0 = max(t0, t)
+            else:
+                t1 = min(t1, t)
+            if t1 - t0 <= 1e-9:
+                break
+        if t1 - t0 <= 1e-9:
+            continue
+        # 모서리 깊이 - 면 깊이 - 허용: 양수면 면이 앞에 있다(선분 위에서 일차식)
+        fa = (A[2] + t0 * dd) - (pa * (A[0] + t0 * da) + pb * (A[1] + t0 * db) + pc) - F_TOL
+        fb = (A[2] + t1 * dd) - (pa * (A[0] + t1 * da) + pb * (A[1] + t1 * db) + pc) - F_TOL
+        if fa > 0 and fb > 0:
+            out.append((t0, t1))
+        elif fa > 0 or fb > 0:
+            tc = t0 + (t1 - t0) * fa / (fa - fb)
+            out.append((t0, tc) if fa > 0 else (tc, t1))
+        else:
+            continue
+        if len(out) in F_PROBE and _f_covered(out):
+            return out
+    if not regions:
+        return out
+    ri = sorted({r for k in range(int((lo_a - EPS) // F_BIN), int((hi_a + EPS) // F_BIN) + 1)
+                 for m in range(kb0, kb1 + 1) for r in rbins.get((k, m), ())})
+    for (ra0, ra1, rb0, rb1), segs in (regions[r] for r in ri):
         if ra0 > hi_a + EPS or ra1 < lo_a - EPS or rb0 > hi_b + EPS or rb1 < lo_b - EPS:
             continue
         ts = [0.0, 1.0]
@@ -5487,11 +5560,10 @@ def foreign_lines(g, v, e):
         if sqrt((B2[0] - A2[0]) ** 2 + (B2[1] - A2[1]) ** 2) <= SEG_MIN:
             continue   # 보는 방향과 나란한 모서리(점으로 보인다)
         hid = _f_hidden(occ, A2, B2)
-        if idx is not None and idx[0]:   # 저작 요소의 가림 조각(단면·입면): 기존 _vis 의 보이는 구간의 여집합을 더한다
+        # 저작 요소의 가림 조각(단면·입면): 기존 _vis 의 보이는 구간의 여집합을 더한다. 외래 면이 이미 다 가렸으면 볼 필요가 없다(4차, 값은 같다)
+        if idx is not None and idx[0] and not (hid and _f_covered(hid)):
             e0, e1 = (A2[0], A2[2], A2[1]), (B2[0], B2[2], B2[1])   # (s, w, z)
-            near = _occ_near(idx, min(e0[0], e1[0]), max(e0[0], e1[0]), min(e0[2], e1[2]), max(e0[2], e1[2]), max(e0[1], e1[1]))
-            if near:
-                hid.extend(_f_complement(_vis(e0, e1, near)))
+            hid.extend(_f_complement(_vis_near(idx, e0, e1)))
         for a, b in _f_visible(hid):
             p, q = lerp(a), lerp(b)
             if sqrt((q[0] - p[0]) ** 2 + (q[1] - p[1]) ** 2) > SEG_MIN:
@@ -5508,6 +5580,35 @@ def _f_complement(vis) -> list:
         last = max(last, b)
     if last < 1.0:
         out.append((last, 1.0))
+    return out
+
+
+def _fview(g, v):
+    """단면·입면에서 저작 요소의 선을 가릴 외래 가림 자료(_f_occ 값) 또는 None(IO-04 4차).
+    평면·배치도이거나 뷰가 그리는 외래 요소가 없거나 가릴 면·절단 영역이 하나도 없으면 None 이다: 저작 전용 뷰는 값이 이전과 같다."""
+    cfg = g.q(view_cfg, v)
+    if cfg is None or cfg[0] not in ("sec", "elev") or not g.q(scope_foreign, v):
+        return None
+    occ = g.q(_f_occ, v)
+    return occ if occ[0] or occ[3] else None
+
+
+def _fvis(fo, e0, e1, vis) -> list:
+    """저작 선분 e0->e1((s, w, z) 두 점)의 보이는 매개변수 구간들 vis 에서 외래 면·외래 절단 영역이 앞에서 가리는 구간을 뺀다(IO-04 4차).
+    판정은 외래끼리의 가림(_f_hidden)과 같다: 뷰 좌표 (a, b, d) = (s, z, w) 에서 선분 점보다 F_TOL 넘게 앞(d 가 작은)에 있는 외래 면이 덮으면 숨는다.
+    fo 가 None(외래 요소 없음)이거나 가려진 곳이 없으면 vis 를 그대로 돌려준다."""
+    if fo is None or not vis:
+        return vis
+    hid = _f_hidden(fo, (e0[0], e0[2], e0[1]), (e1[0], e1[2], e1[1]))
+    if not hid:
+        return vis
+    keep = _f_visible(hid)
+    out = []
+    for a, b in vis:
+        for c, d in keep:
+            lo, hi = max(a, c), min(b, d)
+            if hi - lo > 1e-9:
+                out.append((lo, hi))
     return out
 
 
@@ -5737,4 +5838,4 @@ def foreign_symbol_defaults(g, v) -> int:
 
 VIEW_SCOPED = VIEW_SCOPED | frozenset({scope_foreign, _f_cut, _f_occ, foreign_lines,
                                        foreign_fills, scope_foreign_spaces, foreign_space_labels,
-                                       foreign_opening_symbol, foreign_symbol_defaults})   # 외래 도면 경로의 뷰별 질의(forget_views 가 치운다)
+                                       foreign_opening_symbol, foreign_symbol_defaults, _fview})   # 외래 도면 경로의 뷰별 질의(forget_views 가 치운다)
