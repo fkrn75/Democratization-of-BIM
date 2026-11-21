@@ -65,6 +65,7 @@
     {"id": "view.callout", "label": "콜아웃 뷰 만들기(부위 확대)", "command": "view.callout"},
     {"id": "sheet.viewports", "label": "뷰포트 배치·상세 번호·뷰 제목, 뷰 참조", "commands": ["sheet.viewport.set", "view.refs"]},
     {"id": "view.plans", "label": "반사 천장 평면·면적 평면(면적 목록)·범례 뷰 만들기", "commands": ["view.rcp", "view.area_plan", "view.areas", "view.legend"]},
+    {"id": "view.drafting", "label": "제도 뷰 만들기(모델 없이 2D 작도만)", "command": "view.drafting"},
     {"id": "draft.layers", "label": "층 패널", "commands": ["draft.layer.list", "draft.layer.set", "draft.layer.delete"]},
     {"id": "edit.delete", "label": "지우기", "commands": ["element.delete", "draft.delete"]},
     {"id": "edit.undo", "label": "되돌리기", "command": "history.undo"},

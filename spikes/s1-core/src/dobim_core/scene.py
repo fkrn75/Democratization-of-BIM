@@ -226,10 +226,11 @@ def view_scene(g, v):
     작도(draft) 항목은 drafting.draft_items, 주석(dim·tag)은 annot.annot_draw 의 그림 항목 그대로다(이미 id 가 붙어 있다).
     뷰 단위 그림(대지 뷰 전체·표지판·지반선·치수 문자)은 종류 "view", id = 뷰 id 로 담는다. 뷰가 없으면 빈 값."""
     cfg = g.q(D.view_cfg, v)
-    if cfg is None:   # 범례 뷰(W1 1-C 3차)는 뷰 단위 그림 하나. 범례가 아니면 빈 값
+    if cfg is None:   # 모델이 없는 뷰: 범례 뷰(W1 1-C 3차)의 뷰 단위 그림 하나 + 2D 작도(제도 뷰 W1 연장 VIEW-07). 둘 다 없으면 빈 값
         from dobim_core import viewplans as VP
         ll, lt = g.q(VP.legend_lines, v), g.q(VP.legend_labels, v)
-        return (("view", v, ll, (), lt, (), _bbox(ll, (), lt)),) if ll or lt else ()
+        out = [("view", v, ll, (), lt, (), _bbox(ll, (), lt))] if ll or lt else []
+        return _with_items(g, v, out, ())
     crop = g.q(D.view_opts, v).get("crop")
     groups = []   # (종류, id, 선분 원본, 채움, 문자)
     if cfg[0] != "site":
@@ -286,7 +287,11 @@ def view_scene(g, v):
         ml = _minus_cut(ml, cuts) if cuts else ml
         if ml or fl or tx:
             out.append((kind, e, ml, fl, tx, (), _bbox(ml, fl, tx)))
-    # 2D 작도·주석: 요소 id 별로 묶는다(이미 그림 항목에 id 가 있다)
+    return _with_items(g, v, out, vdims)
+
+
+def _with_items(g, v, out, vdims):
+    """2D 작도·주석: 요소 id 별로 묶는다(이미 그림 항목에 id 가 있다). out(요소별 장면 행)에 더해 종류·id 순으로 돌려준다."""
     by: dict = {}
     for it in g.q(DRF.view_drafts, v):
         by.setdefault(("draft", it[1]), []).append(it)

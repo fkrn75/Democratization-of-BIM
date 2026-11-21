@@ -21,6 +21,7 @@ import hashlib
 import json
 from math import sqrt
 
+from dobim_core import foreign_symbols as FSYM
 from dobim_core import kinds as K
 from dobim_core import queries as Q
 from dobim_core import solids as SO
@@ -98,6 +99,7 @@ def view_cfg(g, v):
     """뷰 설정을 계산용 튜플로 푼다.
     평면: ("plan", 레벨, 절단 z, 보이는 깊이, 축척) + 모드가 있으면 (모드,): "rcp" 반사 천장 평면(보이는 깊이는 절단면 위로), "gross"·"rooms" 면적 평면(W1 1-C 3차)
     범례 뷰(legend)는 모델을 자르지 않으므로 None 이다(모델 질의는 고아 뷰처럼 비고, viewplans 가 범례를 그린다)
+    제도 뷰(drafting, W1 연장 VIEW-07)도 모델이 없어 None 이다(2D 작도만 그린다)
     배치도: ("site", None, 0, 0, 축척)  (모델 전체를 위에서 본 대지·건물 외곽 뷰)
     그 밖: (종류, ox, oy, 보는방향 dx, dy, 오른쪽 rx, ry, near, far, 절단 여부, 축척)"""
     row = Q.el(g, v)
@@ -107,7 +109,7 @@ def view_cfg(g, v):
     t, scale = p["type"], p["scale"]
     if t == "site":
         return ("site", None, 0.0, 0.0, scale)
-    if t == "legend":
+    if t in ("legend", "drafting"):
         return None
     if t == "plan":
         mode = ("rcp",) if p.get("rcp") else (p["area"],) if "area" in p else ()   # 모드가 없는 평면은 이전과 같은 5칸이다
@@ -5331,6 +5333,10 @@ def foreign_lines(g, v, e):
     info = g.q(foreign_info, e)
     if cfg is None or info is None or cfg[0] == "site":
         return ()
+    if cfg[0] == "plan":   # 외래 문·창(3차): 절단면이 높이 범위 안이면 형상 대신 평면 기호(문짝 호·창틀·유리선)
+        sym = g.q(foreign_opening_symbol, v, e)
+        if sym is not None:
+            return sym[0]
     cat, verts, _faces, edges, _nrm, _bb = info
     out = [(FOREIGN_CUT_CLS[cat],) + s for s in g.q(_f_cut, v, e)]
     d0, d1 = _f_range(cfg)
@@ -5574,5 +5580,44 @@ def foreign_datums(g):
     return tuple(sorted(out, key=lambda t: (t[1], t[0])))
 
 
+# ---------------------------------------------------------------- 외래 도면 3차: 문·창 평면 기호 (IO-04, baseline.md 50절)
+#   외래 IfcDoor·IfcWindow 는 평면 절단면이 그 높이 범위 안이면 형상(절단선·투영선) 대신 평면 기호를 그린다(저작 문·창과 같은 관행).
+#   문은 OperationType(요소, 없으면 유형)대로 문짝 선과 1/4 호, 창은 창틀 양면 선·유리선(미서기는 겹친 유리선 둘, 세로 칸 나눔은 칸막이).
+#   방식을 모르면(NOTDEFINED·없음·지원하지 않는 방식) 기본 기호를 그리고 commands._render_view 가 개수를 경고한다.
+#   가림(_f_occ)·채움은 그대로다. 외래 문·창이 없으면 새 질의는 모두 빈 값이라 기존 도면은 바이트 그대로다.
+F_OPENING_CLS = ("IfcDoor", "IfcWindow")
+
+
+def foreign_opening_symbol(g, v, e):
+    """외래 문·창 하나의 평면 기호 (선분들, 기본 기호 여부) 또는 None(평면이 아님·문창 아님·절단면이 높이 범위 밖·배치를 못 읽음)."""
+    cfg = g.q(view_cfg, v)
+    if cfg is None or cfg[0] != "plan" or is_rcp(cfg):
+        return None
+    row = Q.el(g, e)
+    if row is None or not str(row.get("ifc_class") or "").startswith(F_OPENING_CLS):
+        return None
+    info = g.q(foreign_info, e)
+    fo = Q.fopen(g, e)
+    if info is None or fo is None:
+        return None
+    bb = info[5]
+    if not (bb[2] - EPS <= cfg[2] <= bb[5] + EPS):
+        return None
+    org, xa, ya = (fo[2], fo[3], fo[4]) if fo[0] == "door" else (fo[3], fo[4], fo[5])
+    pts = [((p[0] - org[0]) * xa[0] + (p[1] - org[1]) * xa[1], (p[0] - org[0]) * ya[0] + (p[1] - org[1]) * ya[1]) for p in info[1]]
+    return FSYM.symbol(fo, pts)
+
+
+def foreign_symbol_defaults(g, v) -> int:
+    """뷰에서 여닫이 방식을 몰라 기본 기호로 그린 외래 문·창 수."""
+    n = 0
+    for e in g.q(scope_foreign, v):
+        s = g.q(foreign_opening_symbol, v, e)
+        if s is not None and s[1]:
+            n += 1
+    return n
+
+
 VIEW_SCOPED = VIEW_SCOPED | frozenset({scope_foreign, _f_cut, _f_occ, foreign_lines,
-                                       foreign_fills, scope_foreign_spaces, foreign_space_labels})   # 외래 도면 경로의 뷰별 질의(forget_views 가 치운다)
+                                       foreign_fills, scope_foreign_spaces, foreign_space_labels,
+                                       foreign_opening_symbol, foreign_symbol_defaults})   # 외래 도면 경로의 뷰별 질의(forget_views 가 치운다)

@@ -85,12 +85,15 @@ def _view_rule(ctx, p):
         raise DobimError("CONSTRAINT", "경사 기호의 두 점이 수직선 위에 있어 기울기를 잴 수 없다: text 로 준다", path="/pts")
     if p["shape"] == "spot_elev" and vt == "site":
         raise DobimError("CONSTRAINT", "배치도의 표고는 높이를 몰라 값을 잴 수 없다: text 로 준다", path="/text")
+    if p["shape"] in ("spot_elev", "spot_coord") and vt == "drafting":   # 제도 뷰(W1 연장 VIEW-07)의 좌표는 모델과 무관하다
+        raise DobimError("CONSTRAINT", "제도 뷰는 모델이 없어 표고·좌표 값을 잴 수 없다: text 로 준다", path="/text",
+                         hint='예: "text": "EL+3,300"')
 
 
 # ================================================================ 생성·수정
 class DraftCreate(A):
     id: Id | None = None
-    view: Id = Field(description="요소를 둘 뷰(평면·단면·입면·배치도)")
+    view: Id = Field(description="요소를 둘 뷰(평면·단면·입면·배치도·제도 뷰)")
     shape: Literal["line", "polyline", "arc", "circle", "text", "region", "dim", "dim_angle", "dim_radius", "dim_diameter", "dim_arc",
                    "dim_chain", "dim_base", "spot_elev", "spot_coord", "spot_slope", "mask", "cloud"] = Field(
         description="line 선분, polyline 꺾은선(closed 로 닫기), arc 호(중심·r·a0->a1 반시계 도), circle 원, text 문자(a0 = 회전각), region 채움 영역(fill), "

@@ -5,6 +5,7 @@ view.rcp       : 반사 천장 평면(평면 뷰 + rcp). 절단면에서 위를 
                  (위층 슬래브 밑면·구멍, 매단 패밀리, 천장 높이가 있는 공간의 천장선과 'CH 높이' 문자). 문·창 기호는 없다.
 view.area_plan : 면적 평면(평면 뷰 + area). gross = 그 층 벽 윤곽 합집합의 바깥선(외벽 바깥면) 면적, rooms = 공간별 면적과 합계.
 view.legend    : 범례 뷰(뷰 종류 legend). symbols = 모델의 문(폭·높이별)·패밀리 유형 기호, materials = 벽·슬래브 재료 해치 견본.
+view.drafting  : 제도 뷰(뷰 종류 drafting, W1 연장 VIEW-07). 모델 없이 2D 작도(draft.*)만 담는다. 시트에 올리는 법은 다른 뷰와 같다.
 view.areas     : 면적 평면의 면적 목록·합계.
 설정은 뷰 정의의 키라 DoBIM_Defs 로 IFC 를 왕복하고 실행 취소·병합을 그대로 탄다. view.set(이름·축척·절단 높이·깊이)·view.delete·시트 배치는 기존 커맨드를 쓴다.
 이 모듈은 ifcopenshell 을 import 하지 않는다.
@@ -80,6 +81,24 @@ def view_legend(ctx, a: ViewLegend):
     _fresh_id(ctx, a, "view")
     C._view_name_free(ctx, a.name)
     ctx.put_el(a.id, row("view", "", "view.basic", {"name": a.name, "type": "legend", "legend": a.content, "scale": a.scale}))
+    return {"id": a.id}
+
+
+class ViewDrafting(A):
+    id: Id | None = None
+    name: Name
+    scale: C.Scale = Field(20, description="축척 분모(1:N). 2D 작도의 문자 높이·파선 간격·치수 글자가 이 축척을 따른다")
+
+
+@command("view.drafting", kind="mutation", risk="write", group="view", summary="제도 뷰(모델 없이 2D 작도만 담는 뷰)를 만든다",
+         args=ViewDrafting, since="0.14", examples=[{"id": F.VD1, "name": "D-01 창호 상세", "scale": 10}])
+def view_drafting(ctx, a: ViewDrafting):
+    """Revit 의 제도 뷰(Drafting View). 모델을 자르거나 투영하지 않고 draft.* 로 그린 선·문자·채움·치수만 담는다.
+    시트에 올리는 방법(sheet.define·sheet.viewport.set)·축척·이름 바꾸기(view.set)는 다른 뷰와 같다.
+    다른 뷰의 2D 작도는 draft.copy 의 to_view 로 옮겨 온다. 모델 치수·태그·가시성·템플릿은 쓰지 않는다(모델이 없다)."""
+    _fresh_id(ctx, a, "view")
+    C._view_name_free(ctx, a.name)
+    ctx.put_el(a.id, row("view", "", "view.basic", {"name": a.name, "type": "drafting", "scale": a.scale}))
     return {"id": a.id}
 
 

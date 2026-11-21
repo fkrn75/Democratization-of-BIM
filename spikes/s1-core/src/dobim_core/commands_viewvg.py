@@ -60,6 +60,8 @@ def _target(ctx, tid, write=True):
 def _no_legend(r):
     if r["params"]["type"] == "legend":   # 범례 뷰(W1 1-C 3차)는 모델 범주를 그리지 않는다
         raise DobimError("CONSTRAINT", "범례 뷰에는 가시성·필터·템플릿을 쓰지 않는다", path="/id")
+    if r["params"]["type"] == "drafting":   # 제도 뷰(W1 연장 VIEW-07)도 모델이 없다(2D 작도 층은 draft.layer.* 로 다룬다)
+        raise DobimError("CONSTRAINT", "제도 뷰에는 가시성·필터·템플릿을 쓰지 않는다", path="/id", hint="2D 작도 층의 선 굵기·선 종류·색은 draft.layer.set 으로 바꾼다")
 
 
 def _put(ctx, tid, r, p):

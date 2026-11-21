@@ -12,6 +12,13 @@
 - 그 밖의 공간 구조(IfcSpatialElement: 대지·건물 등): ("spatial",). 자기 형상 없이 부분으로 이루어진 요소: ("aggregate",). 개구부 등 형상 특징·가상 요소: ("skip",). 셋 다 그리지 않고 생략으로 세지 않는다.
 - 그 밖(형상 없음·그리지 않는 종류·형상 계산 실패·상한 초과): None. 도면은 이 요소를 생략하고 개수를 알린다.
 
+문·창 평면 기호 입력(외래 도면 3차, 그래프 입력 ("fopen", id), opening 함수):
+- IfcDoor: ("door", 여닫이 방식 또는 None, 원점 (x, y) mm, 국소 x 축 (x, y), 국소 y 축 (x, y), 전체 폭 mm 또는 None)
+- IfcWindow: ("window", 칸 나눔 또는 None, 창짝 여닫이 방식들(튜플), 원점, 국소 x 축, 국소 y 축, 전체 폭 mm 또는 None)
+  여닫이 방식은 요소의 OperationType(IFC4)이 정해져 있으면 그것, 아니면 유형(IfcDoorType·IfcDoorStyle)의 값이다. NOTDEFINED·USERDEFINED 는 None.
+  창의 칸 나눔은 PartitioningType(IFC4 요소, 없으면 유형) 또는 IFC2x3 IfcWindowStyle.OperationType, 창짝은 유형의 IfcWindowPanelProperties.OperationType.
+  배치가 수직으로 서 있지 않은(국소 x·y 축이 수평이 아닌) 문·창, 문·창이 아닌 요소는 None(기호 없이 형상 그대로 그린다).
+
 결정성: 같은 파일·같은 ifcopenshell 판이면 같은 메시다(단일 스레드 create_shape). 좌표는 0.01mm 로 반올림하고 같은 좌표를 한 꼭짓점으로 합친다.
 외래 요소의 형상은 바뀌지 않으므로(속성만 편집, ADR-0005) 값은 IfcModel 하나에 한 번만 계산해 둔다(_MEMO 속성).
 """
@@ -129,6 +136,89 @@ def _space(model, ent):
         return ("spatial",)
     zs = [p[2] for p in verts]
     return ("space", title, number, (round(sx / area, ROUND), round(sy / area, ROUND)), round(area, ROUND), (min(zs), max(zs)))
+
+
+_OPEN_MEMO = "_fopen_memo"
+_UNDEF = (None, "NOTDEFINED", "USERDEFINED")
+
+
+def _enum(v) -> str | None:
+    """IFC 열거값을 문자로. 정하지 않음(NOTDEFINED·USERDEFINED·없음)은 None."""
+    return None if v in _UNDEF or not isinstance(v, str) else v
+
+
+def _type_of(ent):
+    import ifcopenshell.util.element as ue
+    try:
+        return ue.get_type(ent)
+    except Exception:   # 유형 관계가 깨진 파일: 유형 없이 본다
+        return None
+
+
+def _opening_frame(model, ent):
+    """(원점 (x, y) mm, 국소 x 축 (x, y), 국소 y 축 (x, y)) 또는 None(배치 없음·수직이 아님)."""
+    import ifcopenshell.util.placement as up
+    import ifcopenshell.util.unit as uu
+    if getattr(ent, "ObjectPlacement", None) is None:
+        return None
+    m = up.get_local_placement(ent.ObjectPlacement)
+    scale = uu.calculate_unit_scale(model.f) * 1000.0
+    xa = [float(m[i][0]) for i in range(3)]
+    ya = [float(m[i][1]) for i in range(3)]
+    if abs(xa[2]) > 1e-6 or abs(ya[2]) > 1e-6:
+        return None   # 기울어진 문·창: 평면 기호를 정할 수 없다
+    nx, ny = (xa[0] ** 2 + xa[1] ** 2) ** 0.5, (ya[0] ** 2 + ya[1] ** 2) ** 0.5
+    if nx < 1e-9 or ny < 1e-9:
+        return None
+
+    def r(c):
+        c = round(c, 9)
+        return 0.0 if c == 0 else c
+    org = tuple(0.0 if c == 0 else c for c in (round(float(m[0][3]) * scale, ROUND), round(float(m[1][3]) * scale, ROUND)))
+    return org, (r(xa[0] / nx), r(xa[1] / nx)), (r(ya[0] / ny), r(ya[1] / ny))
+
+
+def _overall_width(model, ent) -> float | None:
+    import ifcopenshell.util.unit as uu
+    w = getattr(ent, "OverallWidth", None)
+    if not isinstance(w, (int, float)) or w <= 0:
+        return None
+    return round(float(w) * uu.calculate_unit_scale(model.f) * 1000.0, ROUND)
+
+
+def _opening_value(model, ent):
+    is_door, is_window = ent.is_a("IfcDoor"), ent.is_a("IfcWindow")
+    if not (is_door or is_window):
+        return None
+    fr = _opening_frame(model, ent)
+    if fr is None:
+        return None
+    t = _type_of(ent)
+    width = _overall_width(model, ent)
+    if is_door:
+        op = _enum(getattr(ent, "OperationType", None)) or (_enum(getattr(t, "OperationType", None)) if t is not None else None)
+        return ("door", op) + fr + (width,)
+    part = _enum(getattr(ent, "PartitioningType", None))
+    if part is None and t is not None:   # IFC4 유형의 칸 나눔, IFC2x3 IfcWindowStyle 은 OperationType 이 칸 나눔이다
+        part = _enum(getattr(t, "PartitioningType", None)) or (_enum(getattr(t, "OperationType", None)) if t.is_a("IfcWindowStyle") else None)
+    panels = []
+    for ps in ((getattr(t, "HasPropertySets", None) or ()) if t is not None else ()):
+        if ps.is_a("IfcWindowPanelProperties"):
+            panels.append(_enum(getattr(ps, "OperationType", None)) or "NOTDEFINED")
+    return ("window", part, tuple(panels)) + fr + (width,)
+
+
+def opening(model, row, eid):
+    """그래프 입력 ("fopen", eid) 의 값(외래 도면 3차). 외래 문·창이 아니면 None. 외래 요소의 IFC 는 바뀌지 않으므로 한 번만 계산해 둔다."""
+    if row is None or row["kind"] != "foreign" or eid not in model.ents:
+        return None
+    memo = getattr(model, _OPEN_MEMO, None)
+    if memo is None:
+        memo = {}
+        setattr(model, _OPEN_MEMO, memo)
+    if eid not in memo:
+        memo[eid] = _opening_value(model, model.ents[eid])
+    return memo[eid]
 
 
 def load(model, row, eid):
