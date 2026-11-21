@@ -3,7 +3,8 @@
 
 반사 천장 평면 : 평면 뷰의 선택 키 rcp. drawing 의 평면 질의가 절단면 위를 보게 바뀌고(is_rcp), 여기서는 천장선과 천장 높이 문자를 더한다.
                  천장 = 천장 높이(ceiling_height)가 있는 공간의 경계(레벨 + 천장 높이가 절단면 위 보이는 깊이 안일 때).
-면적 평면      : 평면 뷰의 선택 키 area("gross" 바닥면적 = 그 층 벽 윤곽 합집합의 바깥선, "rooms" 실별 = 공간 경계).
+면적 평면      : 평면 뷰의 선택 키 area("gross" 바닥면적 = 그 층 벽 윤곽 합집합의 바깥선, "rooms" 실별 = 공간 경계,
+                 "legal" 법정 바닥면적 = 그 층 벽 중심선 영역 + 그 층의 법정 면적 객체(larea, W1 연장 ARC-36)).
                  평면 그림 위에 면적 경계(symbol)·해치(hatch)·면적 이름·값을 얹는다. 공간 이름·면적 문자는 면적 항목이 대신한다.
 범례 뷰        : 뷰 종류 legend(legend = "symbols" 문·창·패밀리 기호, "materials" 재료 해치). 모델을 자르지 않고 모델에서 쓰는 종류를
                  행마다 기호 + 이름으로 늘어놓는다. view_cfg 가 None 이라 다른 모델 질의는 모두 빈 값이다.
@@ -12,6 +13,7 @@
 from __future__ import annotations
 
 from dobim_core import drawing as D
+from dobim_core import legal_area as LA
 from dobim_core import queries as Q
 
 AREA_HATCH = 4.0        # 면적 해치 간격(용지 mm)
@@ -175,8 +177,10 @@ def area_items(g, v):
     """면적 평면의 면적 항목: ((이름, 경계 선분들, 면적 mm2, 문자 위치), ...). 면적 평면이 아니면 빈 값.
     gross: 그 평면이 자르는 벽(scope_walls) 바닥 윤곽 합집합의 바깥선(외벽 바깥면 기준) 하나. rooms: 공간마다(섬 구멍은 뺀다)."""
     cfg = g.q(D.view_cfg, v)
-    if cfg is None or len(cfg) != 6 or cfg[5] not in ("gross", "rooms"):
+    if cfg is None or len(cfg) != 6 or cfg[5] not in ("gross", "rooms", "legal"):
         return ()
+    if cfg[5] == "legal":   # 법정 바닥면적(ARC-36): 값은 산입 면적(빼는 객체는 음수). 층 바닥면적 합은 legal_totals 로 읽는다
+        return tuple((it[1], it[4], it[6], it[7]) for it in g.q(legal_items, v))
     out = []
     if cfg[5] == "gross":
         polys = []
@@ -214,6 +218,8 @@ def _area_total_at(items, sc):
 def area_lines(g, v):
     """면적 경계(symbol)와 면적마다 번갈아 45·135도 해치(hatch)."""
     cfg = g.q(D.view_cfg, v)
+    if cfg[5] == "legal":
+        return g.q(legal_lines, v)
     out = []
     for i, (_n, edges, _a, _at) in enumerate(g.q(area_items, v)):
         out += [("symbol", a[0], a[1], b[0], b[1]) for a, b in edges]
@@ -224,6 +230,8 @@ def area_lines(g, v):
 def area_labels(g, v):
     """면적 이름·값 문자, 실별(rooms)이면 아래에 합계."""
     cfg = g.q(D.view_cfg, v)
+    if cfg is not None and len(cfg) == 6 and cfg[5] == "legal":
+        return g.q(legal_labels, v)
     items = g.q(area_items, v)
     sc = cfg[4] if cfg is not None else 100
     out = []
@@ -233,6 +241,137 @@ def area_labels(g, v):
     if items and cfg[5] == "rooms":
         x, y = _area_total_at(items, sc)
         out.append((round(x, 3), round(y, 3), f"합계 {len(items)}실 {sum(it[2] for it in items) / 1.0e6:.2f}㎡", D.LABEL_NAME_H, "middle"))
+    return tuple(out)
+
+
+# ---------------------------------------------------------------- 법정 면적 평면(W1 연장, ARC-36)
+# 면적 평면의 scheme "legal": 건축법 시행령 119조 1항 3호의 바닥면적(그 층 저작 벽 중심선으로 닫힌 영역의 합집합)과 그 층의 바닥면적 대상
+# 법정 면적 객체(larea)를 그린다. 계산은 area.legal 의 층 표와 같은 함수(faces_of·union_mm2)를 써서 값이 같다.
+# 대지·건축면적 대상 객체(레벨이 없다)는 이 평면에 그리지 않는다. 법정 면적 평면이 없으면 이 경로는 타지 않는다.
+LEGAL_EFFECT = {"add": "산입", "exclude": "불산입", "far": "용적률 제외", "balcony": "노대 산입"}
+
+
+def faces_of(walls) -> list:
+    """[(키, (x1,y1), (x2,y2), 두께), ...] -> 벽 중심선으로 닫힌 영역들(반시계 다각형). space.from_walls 와 같은 면 찾기(막다른 벽은 걷어낸다)."""
+    from dobim_core import regions as RG
+    return [tuple(f["center"]) for f in RG.find_faces(walls)] if walls else []
+
+
+def union_segs(polys) -> tuple:
+    """반시계 다각형들의 합집합 바깥 선분(면적 평면 gross 와 같은 계산)."""
+    return _union_directed(D.outline_of(tuple(polys))) if polys else ()
+
+
+def union_mm2(polys) -> float:
+    """반시계 다각형들의 합집합 면적(mm2)."""
+    segs = union_segs(polys)
+    return max(0.0, sum(x0 * y1 - x1 * y0 for x0, y0, x1, y1 in segs) / 2.0)
+
+
+def legal_floor_polys(g, lv):
+    """레벨의 저작 벽 중심선으로 닫힌 영역들(area.legal 의 바닥면적 3호 본문과 같은 입력)."""
+    walls = []
+    for w in sorted(Q.rel_in(g, "on_level", lv)):
+        r = Q.el(g, w)
+        if r is not None and r["kind"] == "wall" and r["origin"] == "authored":
+            x1, y1, x2, y2 = r["params"]["axis"]
+            walls.append((w, (x1, y1), (x2, y2), r["params"]["thickness"]))
+    return tuple(faces_of(walls))
+
+
+def legal_lareas(g, lv):
+    """레벨에 놓인 바닥면적 대상 법정 면적 객체 id(정렬). 객체가 없으면 빈 값."""
+    if not Q.count(g, "larea"):
+        return ()
+    out = []
+    for b in range(Q.NB):
+        for e in Q.bucket_ids(g, "larea", b):
+            p = Q.el(g, e)["params"]
+            if p["target"] == "floor" and p.get("level") == lv:
+                out.append(e)
+    return tuple(sorted(out))
+
+
+def larea_counted(p) -> tuple:
+    """법정 면적 객체 하나의 (면적 mm2, 산입 면적 mm2). 노대는 면적 - 접한 길이 x 1.5m, 빼는 것은 음수(area.list 와 같은 규칙)."""
+    ar = abs(LA.area2(p["boundary"])) / 2.0
+    if p["effect"] == "balcony":
+        return ar, LA.balcony_counted(ar, p["contact_length"])
+    return ar, (-ar if p["effect"] in ("exclude", "far") else ar)
+
+
+def legal_items(g, v):
+    """법정 면적 평면의 항목: ((id 또는 None, 이름, 근거, 효과, 경계 선분들, 면적 mm2, 산입 mm2, 문자 위치), ...).
+    첫 항목은 벽 중심선 바닥면적(id None, 닫힌 벽 영역이 없으면 없다), 다음은 그 층 법정 면적 객체(id 순)."""
+    cfg = g.q(D.view_cfg, v)
+    if cfg is None or len(cfg) != 6 or cfg[5] != "legal" or cfg[1] is None or Q.el(g, cfg[1])["kind"] != "level":
+        return ()
+    out = []
+    segs = union_segs(g.q(legal_floor_polys, cfg[1]))
+    a2 = sum(x0 * y1 - x1 * y0 for x0, y0, x1, y1 in segs)
+    if a2 > 1.0:
+        cx = sum((x0 + x1) * (x0 * y1 - x1 * y0) for x0, y0, x1, y1 in segs) / (3.0 * a2)
+        cy = sum((y0 + y1) * (x0 * y1 - x1 * y0) for x0, y0, x1, y1 in segs) / (3.0 * a2)
+        edges = tuple(((x0, y0), (x1, y1)) for x0, y0, x1, y1 in segs)
+        out.append((None, "바닥면적(벽 중심선)", "119-1-3", "walls", edges, a2 / 2.0, a2 / 2.0, (cx, cy)))
+    for e in g.q(legal_lareas, cfg[1]):
+        p = Q.el(g, e)["params"]
+        ring = [tuple(q) for q in p["boundary"]]
+        if D._area2(ring) < 0:
+            ring.reverse()
+        ar, c = larea_counted(p)
+        out.append((e, p["name"], p["rule"], p["effect"], tuple(_ring_edges(tuple(ring))), ar, c, D.polygon_centroid(tuple(ring))))
+    return tuple(out)
+
+
+def legal_totals(g, v):
+    """법정 면적 평면의 층 합계 ㎡: (벽 중심선, 조정 합, 바닥면적, 용적률 제외 합). area.legal 층 표와 같은 반올림(객체마다 ㎡ 둘째 자리)."""
+    walls = adj = far = 0.0
+    for it in g.q(legal_items, v):
+        if it[0] is None:
+            walls = round(it[5] / 1.0e6, 2)
+        elif it[3] == "far":
+            far += round(it[6] / 1.0e6, 2)
+        else:
+            adj += round(it[6] / 1.0e6, 2)
+    adj = round(adj, 2)
+    return walls, adj, round(max(0.0, walls + adj), 2), round(far, 2)
+
+
+def legal_lines(g, v):
+    """법정 경계(symbol): 벽 중심선 바닥면적 바깥선과 객체 경계. 객체만 해치(더함·노대 45도, 뺌·용적률 제외 135도)."""
+    cfg = g.q(D.view_cfg, v)
+    out = []
+    for it in g.q(legal_items, v):
+        out += [("symbol", a[0], a[1], b[0], b[1]) for a, b in it[4]]
+        if it[0] is not None:
+            out += _hatch_edges(list(it[4]), 1.0 if it[3] in ("add", "balcony") else -1.0, AREA_HATCH * cfg[4])
+    return tuple(out)
+
+
+def legal_value_text(it) -> str:
+    """항목의 둘째 줄 문자: 벽 중심선 영역은 면적, 객체는 '근거 효과 산입 면적(부호)'."""
+    c = it[6] / 1.0e6
+    if it[0] is None:
+        return f"{c:.2f}㎡"
+    return f"{it[2]} {LEGAL_EFFECT[it[3]]} {c:+.2f}㎡"
+
+
+def legal_labels(g, v):
+    """항목 이름과 값, 아래에 층 바닥면적 합계(용적률 제외 객체가 있으면 덧붙인다)."""
+    cfg = g.q(D.view_cfg, v)
+    items = g.q(legal_items, v)
+    sc = cfg[4]
+    out = []
+    for it in items:
+        cx, cy = it[7]
+        out.append((round(cx, 3), round(cy + 0.9 * sc, 3), it[1], D.LABEL_NAME_H, "middle"))
+        out.append((round(cx, 3), round(cy - 2.0 * sc, 3), legal_value_text(it), D.LABEL_SUB_H, "middle"))
+    if items:
+        _w, _a, fl, far = g.q(legal_totals, v)
+        x, y = _area_total_at([(None, it[4]) for it in items], sc)
+        txt = f"바닥면적 {fl:.2f}㎡" + (f" (용적률 산정 제외 {-far:.2f}㎡)" if far else "")
+        out.append((round(x, 3), round(y, 3), txt, D.LABEL_NAME_H, "middle"))
     return tuple(out)
 
 
@@ -353,4 +492,5 @@ def legend_labels(g, v):
 
 
 # 뷰 하나에 딸린 질의 노드(뷰를 지우면 치운다)
-D.VIEW_SCOPED = D.VIEW_SCOPED | frozenset({rcp_ceilings, area_items, area_lines, area_labels, mode_lines, legend_rows, legend_lines, legend_labels})
+D.VIEW_SCOPED = D.VIEW_SCOPED | frozenset({rcp_ceilings, area_items, area_lines, area_labels, mode_lines, legend_rows, legend_lines, legend_labels,
+                                         legal_items, legal_totals, legal_lines, legal_labels})
