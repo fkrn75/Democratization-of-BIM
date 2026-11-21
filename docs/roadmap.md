@@ -268,6 +268,7 @@ ADR-0011의 미확인 항목 전부. 특히 Codex의 이미지 처리와 출력 
 - W1 연장 4번째 PR(2026-11-21): 1-A 잔여 VIEW-07 제도 뷰(view.drafting: 모델 없이 2D 작도만, 시트·뷰포트·내보내기·GUI 장면·IFC 왕복)와 IO-04 외래 IFC 도면 3차(외래 문 OperationType 별 문짝 호, 창 칸 나눔·미서기 기호, 모르면 기본 기호 + 경고). 외래 표본 기준선은 RA01·RA01-bonsai 평면 4장만 의도 변경(별도 커밋). 기존 도면 183 파일 바이트 불변, bench 5만 요소 -4.7~-1.4%. 4차(외래가 저작 선 가리기·대형 가림 성능)는 남음. 상세 spikes/phase1-drawings/baseline.md 50절.
 - W1 연장 5번째 PR(2026-11-21): 1-D 잔여 ARC-36 나머지 중 법정 면적 평면(view.area_plan scheme legal: 벽 중심선 바닥면적 경계 + 그 층 법정 면적 객체의 이름·근거·산입 면적, 층 합계 = area.legal)과 면적표 CSV(area.export: 요약·층별·면적 객체). 기존 도면 183 파일 바이트 불변, bench 5만 요소 -3.9~-1.5%. 세움터 면적 객체(IfcSpace + AIS_분류코드) IFC 내보내기는 다음 PR. 상세 spikes/phase1-drawings/baseline.md 51절.
 - W1 연장 6번째 PR(2026-11-21): 1-D 잔여 ARC-36 마무리. ifc.export 에 seumteo_areas 인자: 세움터 면적 객체(IfcSpace + AIS_분류코드 A+5자리 용도구획·B 건축면적·S 대지면적, 면적 값·제외 플래그, 값 = area.legal)를 IFC4·IFC2X3 로 내보내고 krules KR-SEU-09·10·11 로 자체 검사. 용도 코드 표·세움터 IFC 위치는 확인 필요. 옵션을 끄면 IFC 출력 바이트 그대로, 기존 도면 183 파일 바이트 불변. 상세 spikes/phase1-drawings/baseline.md 52절.
+- W1 연장 7번째 PR(2026-11-21): 면적 평면 gross 5만 요소 30초 초과 해결. 윤곽 합집합(outline_of)의 바깥 탈출 판정·이웃 고르기를 격자 색인으로 후보만 골라 같은 식으로 판정(프로파일상 탈출 판정 전수 검사가 view_lines 의 94%). gross 27.65 -> 8.57초(-69%), 선분·SVG 바이트·면적 값 그대로, 기존 도면 183 파일 바이트 불변. 상세 spikes/phase1-drawings/baseline.md 53절.
 
 ### 2a단계: 헤드리스 저작 MVP (8.5~16PM)
 
