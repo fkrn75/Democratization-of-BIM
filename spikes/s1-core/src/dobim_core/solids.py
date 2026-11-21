@@ -616,6 +616,46 @@ def feature_edges(verts, faces) -> tuple:
     return tuple(out), tuple(nrm)
 
 
+def feature_edges_tris(verts, tris) -> tuple:
+    """feature_edges(verts, tuple((t,) for t in tris)) 와 같은 값(면이 모두 삼각형 하나짜리 고리일 때, 외래 메시).
+    법선은 newell·face_normals 와 같은 순서·같은 식으로 더하고 나눈다(부동소수 결과가 같다). 삼각형이 아닌 면이 있으면 일반 함수로 넘긴다."""
+    nrm = []
+    edges: dict = {}
+    nv = len(verts)   # 모서리 열쇠 = 작은 번호 * nv + 큰 번호: 정수 정렬 순서가 (작은, 큰) 튜플 정렬과 같다
+    for fi, t in enumerate(tris):
+        if len(t) != 3:
+            return feature_edges(verts, tuple((t,) for t in tris))
+        i0, i1, i2 = t
+        a, b, c = verts[i0], verts[i1], verts[i2]
+        nx = 0.0 + (a[1] - b[1]) * (a[2] + b[2])
+        nx += (b[1] - c[1]) * (b[2] + c[2])
+        nx += (c[1] - a[1]) * (c[2] + a[2])
+        ny = 0.0 + (a[2] - b[2]) * (a[0] + b[0])
+        ny += (b[2] - c[2]) * (b[0] + c[0])
+        ny += (c[2] - a[2]) * (c[0] + a[0])
+        nz = 0.0 + (a[0] - b[0]) * (a[1] + b[1])
+        nz += (b[0] - c[0]) * (b[1] + c[1])
+        nz += (c[0] - a[0]) * (c[1] + a[1])
+        ln = sqrt(nx ** 2 + ny ** 2 + nz ** 2)
+        nrm.append((nx / ln, ny / ln, nz / ln) if ln > 1e-12 else (0.0, 0.0, 0.0))
+        for p, q in ((i0, i1), (i1, i2), (i2, i0)):
+            key = p * nv + q if p < q else q * nv + p
+            fl = edges.get(key)
+            if fl is None:
+                edges[key] = [fi]
+            else:
+                fl.append(fi)
+    out = []
+    for key, fl in sorted(edges.items()):
+        if len(fl) == 2:
+            n0, n1 = nrm[fl[0]], nrm[fl[1]]
+            if _dot(n0, n1) >= FEATURE_COS:
+                continue
+        p, q = divmod(key, nv)
+        out.append((p, q, tuple(fl)))
+    return tuple(out), tuple(nrm)
+
+
 def plane_section(verts, faces, nrm, axis, c) -> list:
     """다면체를 평면 (점 . axis) = c 로 자른 선분들 [((x,y,z),(x,y,z)), ...]. axis 는 단위 벡터.
     면마다 고리 변이 평면을 지나는 점을 면 위 교선 방향으로 정렬해 짝짓는다(오목·구멍 면도 짝수-홀수 규칙으로 맞다). 평면에 놓인 면은 건너뛴다."""
