@@ -126,8 +126,8 @@ def test_단면에서_잘린_외래_벽이_뒤의_저작_선을_가린다(mix):
         assert _vert(lines, s) == [(3000.0, 4000.0)], (s, _vert(lines, s))
 
 
-def test_평면과_외래_없는_뷰는_새_질의가_None(mix, base):
-    assert mix.engine(P).g.q(D._fview, VP) is None
+def test_외래_없는_뷰는_새_질의가_None(mix, base):
+    assert mix.engine(P).g.q(D._fview, VP) is not None   # 평면도 외래가 저작 선을 가린다(5차, test_foreign_plan_occlusion)
     assert base.run("view.create", {"id": VE, "name": "남", "type": "elevation", "dir": "S"})["ok"]
     assert base.eng.g.q(D._fview, VE) is None
 
