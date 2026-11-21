@@ -737,7 +737,7 @@ def test_v5c_이_변경_전에_만든_프로젝트는_그대로_열리고_뷰_�
     con = __import__("sqlite3").connect(tmp_path / "src.dobim")   # 프로젝트 파일에 정의용 테이블·메타가 없다(옛 파일과 같은 구조)
     names = {r[0] for r in con.execute("SELECT name FROM sqlite_master WHERE type='table'")}
     con.close()
-    assert names == {"meta", "element", "relation", "op_log", "foreign_base", "import_spec"}
+    assert names == {"meta", "element", "relation", "op_log", "foreign_base", "import_spec", "foreign_mesh"}   # foreign_mesh: 외래 형상 저장 캐시(형식 2, ADR-0017)
     b = S.Bench(tmp_path)
     try:
         assert S.trip(b.hashes("src.dobim")) == h

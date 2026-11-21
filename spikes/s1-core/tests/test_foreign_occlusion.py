@@ -178,7 +178,9 @@ def test_외래_형상_미리_계산은_하나씩_계산과_같은_메시이고_
     env = dispatch.Env(tmp_path, "t")
     FC._import(env, src)
     eng = env.engine(FC.PROJECT)
-    fs = eng.g.q(D.all_foreign)   # 형상 첫 요청: 여기서 미리 계산이 돈다
+    fs = eng.g.q(D.all_foreign)   # 형상 첫 요청(가져올 때 저장한 캐시를 쓴다, ADR-0017)
+    setattr(eng.ifc, FG._RAW, None)   # 미리 계산 길만 따로 돌린다
+    FG.prefetch(eng.ifc, sorted(eng.st.by_kind["foreign"]))
     raw = getattr(eng.ifc, FG._RAW)
     assert fs and len(raw) >= len(fs), (len(fs), len(raw))
     st = FG._settings()

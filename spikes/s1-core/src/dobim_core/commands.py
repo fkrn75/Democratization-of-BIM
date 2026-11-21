@@ -235,7 +235,7 @@ class Empty(A):
          args=Empty, examples=[{}], idempotent=True)
 def project_info(ctx, a):
     g = ctx.g
-    out = {"project_uuid": ctx.eng.project_guid_uuid, "rev": ctx.eng.rev, "schema_version": "1",
+    out = {"project_uuid": ctx.eng.project_guid_uuid, "rev": ctx.eng.rev, "schema_version": ctx.eng.schema_version,
            "counts": g.q(Q.model_stats), "undo_depth": len(ctx.eng.undo_stack),
            "redo_depth": len(ctx.eng.redo_stack)}
     if ctx.eng.has_base:   # 외래 IFC 를 가져온 프로젝트: 요소의 출처별 개수
