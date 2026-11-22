@@ -444,6 +444,7 @@ def test_9_종류_레지스트리가_모든_모듈과_맞는다(tmp_path):
         _ok(b.run("opening.wall", {"host": F.W2, "offset": 2800, "sill": 900, "width": 800, "height": 1200}, project=p))   # 독립 개구 객체(W2 세 번째 PR, ARC-34)
         _ok(b.run("curtain.create", {"level": F.LV1, "axis": [0, -2000, 6000, -2000], "height": 3000, "u_grid": {"rule": "spacing", "value": 1500},
                                      "v_grid": {"rule": "count", "value": 2}}, project=p))   # 커튼월(W2 네 번째 PR, ARC-22)
+        _ok(b.run("material.define", {"name": "유리"}, project=p))   # 재료 외관 정의(W2 다섯 번째 PR, DATA-05)
     finally:
         b.close()
     eng = Engine(tmp_path / p, "t", create=False)

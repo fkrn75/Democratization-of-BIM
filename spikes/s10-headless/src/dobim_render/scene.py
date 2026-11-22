@@ -55,7 +55,7 @@ def _subset(m: _mesh.Mesh, keep: list[bool]) -> _mesh.Mesh:
     fk = np.array(keep, bool)[m.face_elem] if len(m.face_elem) else np.zeros(0, bool)
     return _mesh.Mesh(m.verts, m.faces[fk], idx[m.face_elem[fk]].astype(np.int32),
                       [e for e, k in zip(m.elems, keep) if k], [x for x, k in zip(m.mats, keep) if k],
-                      [x for x, k in zip(m.supers, keep) if k])
+                      [x for x, k in zip(m.supers, keep) if k], [x for x, k in zip(m.alphas, keep) if k])
 
 
 def render_ifc(path: str, width: int = 1280, view: str = "iso", threads: int = 1, png_level: int = 6,
@@ -73,9 +73,32 @@ def render_ifc(path: str, width: int = 1280, view: str = "iso", threads: int = 1
         fit = (x.min(), x.max(), y.min(), y.max()) if len(x) else None   # 숨긴 요소가 있어도 전체와 같은 틀
     else:
         fit = None
-    fr = raster.render(m.verts, m.faces, m.face_elem, [c for _, c in m.elems], width=width, view=view,
-                       elem_colors=[rgb or raster.material_color(nm) for nm, rgb in m.mats] if m.mats else None,
-                       tie_eps=tie_eps, fit=fit)
+    colors = [rgb or raster.material_color(nm) for nm, rgb in m.mats] if m.mats else None
+    see = [a > 0.0 for a in m.alphas] if len(m.alphas) == len(m.elems) else []
+    if any(see):   # 재료 외관 투명도(W2 다섯 번째 PR): 불투명 요소를 먼저 그리고, 투명 요소가 앞에 있는 픽셀은 투명도만큼 섞는다
+        if fit is None:
+            r, u, _ = raster.camera_basis(view)
+            x, y = raster.dot3(m.verts, r), raster.dot3(m.verts, u)
+            fit = (x.min(), x.max(), y.min(), y.max())   # 두 장을 같은 틀로
+        op_idx = [i for i, s in enumerate(see) if not s]
+        gl_idx = [i for i, s in enumerate(see) if s]
+        op, gl = _subset(m, [not s for s in see]), _subset(m, see)
+        fr = raster.render(op.verts, op.faces, op.face_elem, [c for _, c in op.elems], width=width, view=view,
+                           elem_colors=[colors[i] for i in op_idx] if colors else None, tie_eps=tie_eps, fit=fit)
+        gf = raster.render(gl.verts, gl.faces, gl.face_elem, [c for _, c in gl.elems], width=width, view=view,
+                           elem_colors=[colors[i] for i in gl_idx] if colors else None, tie_eps=tie_eps, fit=fit)
+        omap = np.array(op_idx + [-1], np.int32)   # 부분 메시 번호 -> 전체 번호(-1 = 배경)
+        gmap = np.array(gl_idx + [-1], np.int32)
+        fr.ids = np.where(fr.ids >= 0, omap[fr.ids], -1).astype(np.int32)
+        front = gf.depth > fr.depth
+        gid = gf.ids[front]
+        a = np.rint(np.array([m.alphas[i] for i in gl_idx] + [0.0])[gid] * 256).astype(np.int32)[:, None]   # 뒤(불투명)가 비치는 비율(/256)
+        fr.color[front] = ((fr.color[front].astype(np.int32) * a + gf.color[front].astype(np.int32) * (256 - a)) >> 8).astype(np.uint8)
+        fr.ids[front] = gmap[gid]
+        fr.stats["transparent_pixels"] = int(front.sum())
+    else:
+        fr = raster.render(m.verts, m.faces, m.face_elem, [c for _, c in m.elems], width=width, view=view,
+                           elem_colors=colors, tie_eps=tie_eps, fit=fit)
     if (only or hide) and ghost:
         g = _subset(full, [not k for k in keep])
         gf = raster.render(g.verts, g.faces, g.face_elem, [c for _, c in g.elems], width=width, view=view,

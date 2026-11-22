@@ -690,6 +690,7 @@ class Engine:
             # 되살리지 못한 정의(손상·참조 불일치)는 여기 없으니 파일에 그대로 남는다(ADR-0015)
             owned = {e[1] for e in gen_eff if e[0] == "el" and e[3] is not None and e[3]["kind"] in VD.DEF_KINDS} if gen_eff is not None else set()
             self.ifc.adopt_defs(owned)
+        self.ifc.set_appearance(self.appearance_map(), restyle=False)   # 재료를 만들기 전에 외관 정의 표를 놓는다(처음부터 맞는 스타일로 만든다)
         for (eid, pset, prop), v in sorted(psets.items(), key=lambda kv: kv[0]):
             # 외래 기반에는 가져온 속성이 이미 있으므로 삭제(None)도 적용한다. 빈 파일에서 시작하는 일반 프로젝트는 건너뛴다
             if (v is not None or base) and eid in self.ifc.ents:
@@ -995,6 +996,11 @@ class Engine:
         self._flush_defs()
         return n
 
+    def appearance_map(self) -> dict:
+        """재료 외관 정의 행(matdef) -> {재료 이름: (r, g, b, 투명도, 광택)}. 정의가 없으면 빈 표(IFC 는 18단계 그대로)."""
+        from dobim_core import appearance as AP
+        return {self.st.el[i]["params"]["name"]: AP.appearance_key(self.st.el[i]["params"]) for i in sorted(self.st.by_kind.get("matdef", ()))}
+
     def _flush_defs(self) -> None:
         """뷰·치수·태그의 정의를 IFC 프로젝트 속성셋에 맞춘다(ADR-0015). 정의가 없으면 아무것도 하지 않는다(IFC 가 그대로다).
         행은 불변이라 같은 객체면 텍스트를 다시 만들지 않는다. 바뀐 정의의 속성만 쓴다."""
@@ -1007,6 +1013,7 @@ class Engine:
         self._defs_cache = cache
         try:
             self.ifc.sync_defs({eid: t for eid, (_, t) in cache.items()})
+            self.ifc.set_appearance(self.appearance_map())   # 재료 외관 정의(W2 다섯 번째 PR): 값이 바뀐 재료의 IFC 표면 스타일만 다시 붙인다
         except BaseException as ex:
             self._taint("정의 속성", ex)
             try:

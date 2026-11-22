@@ -166,6 +166,13 @@ def to_ifc2x3(src: ifcopenshell.file, version: str = "0", stamp: int = 0) -> tup
                 e.OperationType = pt if ok else "NOTDEFINED"
             if e.ParameterTakesPrecedence is None:
                 e.ParameterTakesPrecedence = False
+    # IFC2x3 의 IfcStyledItem.Styles 는 스타일 묶음(IfcPresentationStyleAssignment)의 집합이다(IFC4 는 스타일을 바로 담는다). 이전기가 그대로 옮긴
+    # 스타일을 묶음 하나로 싼다(재료 겉모습 18단계·재료 외관 W2 다섯 번째 PR: 이것이 없으면 IFC2x3 스키마 검증 오류)
+    for si in sorted(out.by_type("IfcStyledItem"), key=lambda x: x.id()):
+        sts = list(si.Styles or ())
+        if sts and not all(s.is_a("IfcPresentationStyleAssignment") for s in sts):
+            keep = [s for s in sts if s.is_a("IfcPresentationStyleAssignment")]
+            si.Styles = keep + [out.createIfcPresentationStyleAssignment([s for s in sts if not s.is_a("IfcPresentationStyleAssignment")])]
     # IfcShapeRepresentationTypes 규칙: IfcSweptDiskSolid 는 'SweptSolid' 가 아니라 'AdvancedSweptSolid' 다(IFC4 도 같다. 투영은 W2 부터
     # 처음부터 AdvancedSweptSolid 로 쓰고, 여기서는 그 전에 내보낸 파일을 가져온 사본 등에 남은 'SweptSolid' 를 고친다)
     for r in out.by_type("IfcShapeRepresentation"):

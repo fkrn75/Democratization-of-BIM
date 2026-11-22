@@ -88,6 +88,8 @@
     {"id": "check.model", "label": "모델 품질 점검(겹친 벽·중복·고아·열린 공간 경계)", "command": "model.check"},
     {"id": "check.drawings", "label": "건축법 도면 기준 대조(허가·착공 필수 도면·축척·방위·표제란)", "command": "drawing.check"},
     {"id": "param.panel", "label": "프로젝트 매개변수(정의·목록·지우기)", "commands": ["param.list", "param.define", "param.delete"]},
+    {"id": "material.panel", "label": "재료 외관(색·투명도·광택: 목록·정의·라이브러리·지우기)", "commands": ["material.list", "material.define", "material.library", "material.delete"]},
+    {"id": "material.scene", "label": "3D 장면 재료 외관(요소별 색·투명도)", "command": "material.appearance"},
     {"id": "area.legal_panel", "label": "법정 면적표(건축면적·연면적·건폐율·용적률)·면적 객체", "commands": ["area.legal", "area.list", "area.define", "area.delete"]},
     {"id": "area.export_csv", "label": "법정 면적표 CSV 내보내기(요약·층별·면적 객체)", "command": "area.export"},
     {"id": "canvas.pan", "exempt": true},

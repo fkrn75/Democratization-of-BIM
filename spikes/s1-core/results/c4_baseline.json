@@ -23,6 +23,12 @@
       "mode": "full",
       "commit": "phase1/w1x-1(788f3df 위 코드 커밋)",
       "reason": "S11 크기 항목만 갱신(W1 게이트 결정 U-3): commands.describe 를 요약 + section 으로 나눠 8,000토큰 초과 describe(solid.create·sheet.export·sheet.image)가 없어졌다. over_8000_by_tiktoken ['commands.describe solid.create', 'commands.describe sheet.export', 'commands.describe sheet.image', 'commands.describe solid.create'] -> [], 최대 o200k 8714 -> 5956. 다른 항목(퍼즈·실행 취소·T0·S10·분기 금지)은 그대로(baseline 47절)"
+    },
+    {
+      "date": "2026-11-23",
+      "mode": "full",
+      "commit": "phase2/w2-material-appearance",
+      "reason": "S10 통과 수만 갱신 35 -> 36: 재료 외관(W2 다섯 번째 PR, VIS-07)의 3D 렌더 투명도 시험 tests/test_render_appearance.py 1건을 더했다. 다른 항목(퍼즈·실행 취소·T0·S10 건너뜀·S11)은 그대로(test_slow 전체판에서 s10 통과 수 외 불일치 없음, baseline 63절)"
     }
   ],
   "quick": {
@@ -147,7 +153,7 @@
     "s10": {
       "exit": 0,
       "counts": {
-        "passed": 35,
+        "passed": 36,
         "skipped": 3
       },
       "failed": []

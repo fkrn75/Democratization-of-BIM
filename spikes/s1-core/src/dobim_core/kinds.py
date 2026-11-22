@@ -1423,6 +1423,22 @@ def _pparam_params(p):
         "desc": lambda v: text_ok(v, 0, PPARAM_DESC_MAX)})
 
 
+# ---------------------------------------------------------------- 재료 외관 정의(W2 다섯 번째 PR, DATA-05·VIS-07)
+# matdef = Revit 의 재료 외관(Appearance/Shading): 재료 이름 하나의 표면 색·투명도·광택. 요소에는 재료 이름만 두고(material.set),
+#          IFC 투영은 그 이름의 IfcMaterial 에 표면 스타일(IfcSurfaceStyleRendering)을 붙인다. 비 IFC 의도 요소라 DoBIM_Defs 로 IFC 를 왕복한다
+MATDEFS_MAX = 1000           # 재료 외관 정의 수 상한
+
+
+def _unit_ok(v) -> bool:
+    return type(v) is float and isfinite(v) and 0.0 <= v <= 1.0
+
+
+def _matdef_params(p):
+    return _check_fields("matdef", p, {
+        "name": _name, "color": lambda v: isinstance(v, list) and len(v) == 3 and all(type(c) is int and 0 <= c <= 255 for c in v),
+        "transparency": _unit_ok, "shininess": _unit_ok})
+
+
 # ---------------------------------------------------------------- 법정 면적 객체(W1 연장, ARC-36·ANA-04)
 # larea = Revit 의 면적 계획 속 면적(Area)에 해당한다: 건축법 시행령 119조의 산입·불산입을 근거 코드와 함께 그린 다각형.
 #         대상(대지·건축·바닥면적)과 효과(더함·뺌·용적률만 뺌·노대)는 근거 코드가 정한다(manual 만 사용자가 고른다). 비 IFC 의도 요소라 DoBIM_Defs 로 왕복한다
@@ -1598,6 +1614,8 @@ ELEMENT_KINDS: dict[str, ElementKind] = {k.name: k for k in (
                 ref_kinds=(("host", ("slab", "wall")), ("level", ("level",)))),
     # 커튼월(W2 네 번째 PR, ARC-22): 멀리언·패널은 행이 아니라 커튼월의 IFC 부속(IfcRelAggregates)이다
     ElementKind("curtwall", True, "IfcCurtainWall", True, 1, _curtwall_params, geometric=True),
+    # 재료 외관 정의(W2 다섯 번째 PR, DATA-05·VIS-07): 프로젝트 매개변수처럼 비 IFC 의도 요소다(재료 이름이 키)
+    ElementKind("matdef", False, None, False, 6, _matdef_params),
 )}
 
 NON_IFC_KINDS = frozenset(k for k, v in ELEMENT_KINDS.items() if not v.ifc)      # 신원·속성셋·재료가 없는 의도 요소(뷰 정의, 치수·태그)
