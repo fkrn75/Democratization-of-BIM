@@ -5398,3 +5398,4 @@ from dobim_core import commands_drawcheck  # noqa: E402,F401
 from dobim_core import commands_arch  # noqa: E402,F401
 from dobim_core import commands_arcwall  # noqa: E402,F401
 from dobim_core import commands_opening  # noqa: E402,F401   독립 개구 객체(W2 세 번째 PR, ARC-34)
+from dobim_core import commands_curtain  # noqa: E402,F401   커튼월(W2 네 번째 PR, ARC-22)

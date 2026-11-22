@@ -53,7 +53,7 @@ name = "순수 질의는 엔진·프로토콜 계층을 모른다"
 type = "forbidden"
 source_modules = ["dobim_core.queries", "dobim_core.graph", "dobim_core.drawing", "dobim_core.drawing_export", "dobim_core.dxf_export", "dobim_core.sheet", "dobim_core.pdf_font", "dobim_core.annot",
                   "dobim_core.kinds", "dobim_core.family.spec", "dobim_core.family.evaluate", "dobim_core.family.restore", "dobim_core.viewdefs", "dobim_core.raster",
-                  "dobim_core.drafting", "dobim_core.scene", "dobim_core.xform", "dobim_core.roofpoly", "dobim_core.foreign_symbols"]
+                  "dobim_core.drafting", "dobim_core.scene", "dobim_core.xform", "dobim_core.roofpoly", "dobim_core.foreign_symbols", "dobim_core.curtain"]
 forbidden_modules = ["dobim_core.engine", "dobim_core.cli", "dobim_core.mcp_server", "dobim_core.dispatch", "dobim_core.ifc_model"]
 allow_indirect_imports = true
 
@@ -80,7 +80,7 @@ source_modules = ["dobim_core.commands", "dobim_core.commands_family", "dobim_co
                   "dobim_core.dispatch", "dobim_core.cli", "dobim_core.mcp_server", "dobim_core.fixture",
                   "dobim_core.paths", "dobim_core.errors", "dobim_core.drawing", "dobim_core.drawing_export", "dobim_core.dxf_export", "dobim_core.sheet", "dobim_core.pdf_font", "dobim_core.annot",
                   "dobim_core.merge", "dobim_core.kinds", "dobim_core.limits", "dobim_core.family.evaluate", "dobim_core.family.expr",
-                  "dobim_core.family.recipe", "dobim_core.family.spec", "dobim_core.family.library", "dobim_core.family.restore", "dobim_core.viewdefs", "dobim_core.raster", "dobim_core.roofpoly", "dobim_core.foreign_symbols"]
+                  "dobim_core.family.recipe", "dobim_core.family.spec", "dobim_core.family.library", "dobim_core.family.restore", "dobim_core.viewdefs", "dobim_core.raster", "dobim_core.roofpoly", "dobim_core.foreign_symbols", "dobim_core.curtain", "dobim_core.commands_curtain"]
 forbidden_modules = ["ifcopenshell"]
 allow_indirect_imports = true
 

@@ -17,6 +17,7 @@ from math import isfinite, sqrt
 from typing import Callable, NamedTuple
 
 from dobim_core import arcgeom as AG
+from dobim_core import curtain as CW
 from dobim_core import roofpoly as RP
 from dobim_core import solids as SO
 from dobim_core import wallcut as WC
@@ -1477,6 +1478,62 @@ def opening_shape(p) -> dict:
     return {"shape": p["shape"], "offset": p["offset"], "sill": p["sill"], "width": p["width"], "height": p["height"]}
 
 
+# ---------------------------------------------------------------- 커튼월(W2 네 번째 PR, ARC-22)
+# curtwall = 벽 축(직선·곡선) + 높이를 가진 커튼 시스템. 격자(규칙 + 개별 더하기·빼기)가 칸을 나누고, 멀리언(격자선 한 칸마다)·패널(칸마다)은
+#   params 의 재정의로 하나씩 고칠 수 있는 부속이다(행은 커튼월 하나: 수천 개 멀리언도 행 하나라 열기·도면·병합이 가볍다).
+#   IFC 는 IfcCurtainWall + IfcRelAggregates 로 IfcMember(MULLION)·IfcPlate(CURTAIN_PANEL)·IfcDoor(문 패널), GlobalId = part_guid(커튼월, "m:키"·"p:키").
+#   배치 기하는 curtain.py 가 정한다(도면·IFC 가 같은 값을 쓴다)
+CW_KEY_MAX = 40
+
+
+def _cw_rule_ok(v) -> bool:
+    if not isinstance(v, dict) or v.get("rule") not in CW.RULES:
+        return False
+    r = v["rule"]
+    if r == "none":
+        return set(v) == {"rule"}
+    if r == "count":
+        return set(v) == {"rule", "value"} and num_ok(v["value"]) and float(v["value"]).is_integer() and 1 <= v["value"] <= CW.LINES_MAX + 1
+    keys = {"rule", "value", "justify"} if r == "spacing" else {"rule", "value"}
+    return set(v) - {"justify"} == {"rule", "value"} and set(v) <= keys and _pos(v["value"]) and v.get("justify", "start") in CW.JUSTIFY
+
+
+def _cw_types_ok(v) -> bool:
+    return (isinstance(v, dict) and 1 <= len(v) <= CW.TYPES_MAX and all(
+        text_ok(k, 1, 32) and isinstance(t, dict) and set(t) == {"width", "depth"} and all(_pos(t[x]) and t[x] <= CW.TYPE_DIM_MAX for x in t)
+        for k, t in v.items()))
+
+
+def _cw_list_ok(v) -> bool:
+    return isinstance(v, list) and 1 <= len(v) <= CW.ADDS_MAX and all(num_ok(x) for x in v)
+
+
+def _cw_keys_ok(v, vals) -> bool:
+    return (isinstance(v, dict) and 1 <= len(v) <= 2 * CW.CELLS_MAX + 4 * CW.LINES_MAX
+            and all(text_ok(k, 2, CW_KEY_MAX) and k[0] in "VHP" and x in vals for k, x in v.items()))
+
+
+def _curtwall_params(p):
+    err = _check_opt("curtwall", p, {"name": _name, "axis": lambda v: isinstance(v, list) and len(v) == 4 and all(num_ok(x) and abs(x) <= 1e7 for x in v),
+                                     "height": lambda v: _pos(v) and v <= CW.HEIGHT_MAX, "u_grid": _cw_rule_ok, "v_grid": _cw_rule_ok, "types": _cw_types_ok,
+                                     "mullion": lambda v: isinstance(v, dict) and "interior" in v and set(v) <= {"interior", "border"} and all(isinstance(x, str) for x in v.values()),
+                                     "join": lambda v: v in CW.JOINS, "panel_thickness": lambda v: _pos(v) and v <= CW.PANEL_T_MAX},
+                     {"arc": _pt_ok, "base_offset": lambda v: num_ok(v) and v != 0 and abs(v) <= WT.BASE_OFFSET_MAX,
+                      "u_add": _cw_list_ok, "u_remove": _cw_list_ok, "v_add": _cw_list_ok, "v_remove": _cw_list_ok,
+                      "mullion_overrides": lambda v: True, "panel_overrides": lambda v: True})
+    if err is not None:
+        return err
+    types = p["types"]
+    if any(x not in types for x in p["mullion"].values()):
+        return "curtwall.mullion: 유형 이름이 types 에 없다"
+    if "mullion_overrides" in p and not _cw_keys_ok(p["mullion_overrides"], set(types) | {""}):
+        return "curtwall.mullion_overrides 값이 올바르지 않다(키 V·H, 값은 유형 이름 또는 빈 문자열)"
+    if "panel_overrides" in p and not _cw_keys_ok(p["panel_overrides"], set(CW.PANEL_TYPES) - {CW.DEFAULT_PANEL}):
+        return "curtwall.panel_overrides 값이 올바르지 않다(키 P, 값은 opaque·door·empty)"
+    why = CW.problem(p)
+    return f"curtwall: {why}" if why else None
+
+
 # 태그 대상 종류(annot.TAG_FIELDS 와 같다: 가져오기가 복원한 태그 대상을 이 종류로 검사한다)
 TAG_TARGET_KINDS = ("wall", "door", "slab", "space", "stair", "finst", "roof", "railing")
 
@@ -1539,6 +1596,8 @@ ELEMENT_KINDS: dict[str, ElementKind] = {k.name: k for k in (
     # 독립 개구 객체(W2 세 번째 PR, ARC-34): 수직(슬래브)·샤프트(레벨 범위의 슬래브들)·벽 개구. 호스트를 지우면 고아로 남는다(그리지 않는다)
     ElementKind("opening", False, None, False, 6, _opening_params, refs=(("host", "id", None), ("level", "id", None)),
                 ref_kinds=(("host", ("slab", "wall")), ("level", ("level",)))),
+    # 커튼월(W2 네 번째 PR, ARC-22): 멀리언·패널은 행이 아니라 커튼월의 IFC 부속(IfcRelAggregates)이다
+    ElementKind("curtwall", True, "IfcCurtainWall", True, 1, _curtwall_params, geometric=True),
 )}
 
 NON_IFC_KINDS = frozenset(k for k, v in ELEMENT_KINDS.items() if not v.ifc)      # 신원·속성셋·재료가 없는 의도 요소(뷰 정의, 치수·태그)
@@ -1547,8 +1606,9 @@ FIXED_IFC_CLASS = {k: v.ifc_class for k, v in ELEMENT_KINDS.items() if v.ifc_cla
 KIND_NAMES = tuple(ELEMENT_KINDS)
 # 의도 복원(S2 가져오기)이 IFC 클래스로 종류를 정하는 것: IFC 클래스 -> 종류. 패밀리 타입·인스턴스(ftype/finst)는 클래스가 레시피마다 달라 의도가 스스로 밝힌
 # 종류를 따른다(family.restore, ADR-0014). 뷰·주석은 IFC 신원이 없어 IFC 에서 복원할 수 없다(알려진 한계)
-IMPORTABLE_BY_CLASS = {"IfcBuildingStorey": "level", "IfcWall": "wall", "IfcDoor": "door", "IfcSlab": "slab", "IfcStair": "stair", "IfcSpace": "space", "IfcRailing": "railing", "IfcTransportElement": "elevator", "IfcRoof": "roof", "IfcSite": "site"}
-FAMILY_OF_KIND = {"level": "level.basic", "wall": "wall.basic", "door": "door.single", "slab": "slab.basic", "stair": "stair.straight", "space": "space.basic", "railing": "railing.basic", "elevator": "elevator.basic", "roof": "roof.basic", "site": "site.basic", "solid": "solid.generic"}
+IMPORTABLE_BY_CLASS = {"IfcBuildingStorey": "level", "IfcWall": "wall", "IfcDoor": "door", "IfcSlab": "slab", "IfcStair": "stair", "IfcSpace": "space", "IfcRailing": "railing", "IfcTransportElement": "elevator", "IfcRoof": "roof", "IfcSite": "site", "IfcCurtainWall": "curtwall"}
+FAMILY_OF_KIND = {"level": "level.basic", "wall": "wall.basic", "door": "door.single", "slab": "slab.basic", "stair": "stair.straight", "space": "space.basic", "railing": "railing.basic", "elevator": "elevator.basic", "roof": "roof.basic", "site": "site.basic", "solid": "solid.generic",
+                  "curtwall": "curtwall.basic"}
 
 
 def _remap_ref(form: str, v, m: dict):
@@ -1641,7 +1701,7 @@ def _fs(*a):
 
 REL_KINDS: dict[str, RelKind] = {r.name: r for r in (
     # 레벨은 분리돼 있어도 그 위의 저작 벽이 레벨을 따른다(S2): 레벨 쪽은 막지 않고, 놓이는 요소만 저작이어야 한다
-    RelKind("on_level", _fs("wall", "slab", "stair", "space", "railing", "elevator", "roof", "solid", "finst", "foreign"), _fs("level"), guard=("src",), violation="LEVEL_DELETED", message="벽이 놓인 레벨이 지워졌다"),
+    RelKind("on_level", _fs("wall", "slab", "stair", "space", "railing", "elevator", "roof", "solid", "finst", "foreign", "curtwall"), _fs("level"), guard=("src",), violation="LEVEL_DELETED", message="벽이 놓인 레벨이 지워졌다"),
     RelKind("joins", _fs("wall"), _fs("wall"), guard=("src", "dst"), violation="JOIN_TARGET_DELETED", message="조인 대상 벽이 지워졌다"),
     RelKind("hosts", _fs("wall"), _fs("door", "finst"), guard=("src", "dst"), violation="HOST_DELETED",
             message="호스트 벽이 지워졌는데 문이 그 벽에 놓여 있다"),

@@ -3621,6 +3621,8 @@ def _other_occ_boxes(g, v):
         occ.extend(g.q(_stair_vpieces, v, st))
     for rf in g.q(scope_roofs, v):
         occ.extend(g.q(_roof_solid_vpieces, v, rf))
+    for cw in g.q(scope_curtains, v):   # 커튼월의 불투명·문 패널(W2 ARC-22): 없으면 조각은 이전과 같다
+        occ.extend(g.q(curtain_vpieces, v, cw))
     return tuple(sorted(_occ_boxed(occ), key=_W_KEY))
 
 
@@ -4958,6 +4960,8 @@ def _occ_index(g, v):
         pieces.extend(g.q(_roof_solid_vpieces, v, rf))
     for e in g.q(scope_solids, v):
         pieces.extend(g.q(_solid_vpieces, v, e))
+    for cw in g.q(scope_curtains, v):   # 커튼월의 불투명·문 패널(W2 ARC-22): 없으면 조각은 이전과 같다
+        pieces.extend(g.q(curtain_vpieces, v, cw))
     boxes, bins = [], {}
     for i, (z0, z1, poly) in enumerate(pieces):
         s0, s1 = min(q[0] for q in poly), max(q[0] for q in poly)
@@ -5320,6 +5324,8 @@ def view_lines(g, v):
         segs.extend(g.q(roof_lines, v, rf))
     for so in g.q(scope_solids, v):   # 일반 솔리드(18단계): 없으면 선분은 이전과 같다
         segs.extend(g.q(solid_lines, v, so))
+    for cw in g.q(scope_curtains, v):   # 커튼월(W2 네 번째 PR, ARC-22): 없으면 선분은 이전과 같다
+        segs.extend(g.q(curtain_lines, v, cw))
     for fe in g.q(scope_foreign, v):   # 외래 IFC 요소(1단계 외래 도면 경로): 형상 있는 외래 요소가 없으면 선분은 이전과 같다
         segs.extend(g.q(foreign_lines, v, fe))
     if cfg[0] == "elev":
@@ -5404,6 +5410,8 @@ def view_lines_hier(g, v):
         segs.extend(g.q(roof_lines, v, rf))
     for so in g.q(scope_solids, v):   # 일반 솔리드(18단계): 없으면 선분은 이전과 같다
         segs.extend(g.q(solid_lines, v, so))
+    for cw in g.q(scope_curtains, v):   # 커튼월(W2 네 번째 PR, ARC-22): 없으면 선분은 이전과 같다
+        segs.extend(g.q(curtain_lines, v, cw))
     for fe in g.q(scope_foreign, v):   # 외래 IFC 요소: 외래 벽(IfcWall)의 LoadBearing 이 거짓이면 절단선을 cutn 으로(2차)
         fl = g.q(foreign_lines, v, fe)
         if fe in fnb:
@@ -5468,6 +5476,8 @@ def view_fills(g, v):
             out.extend(g.q(roof_cut_rects, v, rf))
     for fe in g.q(scope_foreign, v):   # 외래 IFC 요소의 절단면 채움(2차): heavy 범주만. 외래 요소가 없으면 채움은 이전과 같다
         out.extend(g.q(foreign_fills, v, fe))
+    for cw in g.q(scope_curtains, v):   # 커튼월 멀리언·패널 절단면(W2 ARC-22): 없으면 채움은 이전과 같다
+        out.extend(g.q(curtain_fills, v, cw))
     res = tuple(tuple((round(p[0], 3), round(p[1], 3)) for p in poly) for poly in out)
     crop = g.q(view_opts, v).get("crop")
     return res if crop is None else _crop_polys(res, crop)
@@ -6269,3 +6279,265 @@ def foreign_symbol_defaults(g, v) -> int:
 VIEW_SCOPED = VIEW_SCOPED | frozenset({scope_foreign, _f_cut, _f_occ, foreign_lines,
                                        foreign_fills, scope_foreign_spaces, foreign_space_labels,
                                        foreign_opening_symbol, foreign_symbol_defaults, _fview})   # 외래 도면 경로의 뷰별 질의(forget_views 가 치운다)
+
+
+# ================================================================ 커튼월(W2 네 번째 PR, ARC-22)
+# 부속(멀리언·패널)은 모두 수직 각기둥(평면 사각형 + z 범위, curtain.layout)이다. 수천 개라도 빠르게:
+#   평면은 절단 높이가 지나는 각기둥의 사각형(멀리언) / 두 면 선(패널), 그 아래 가로대의 윗면, 문 패널은 문 열림 기호.
+#   입면·단면은 각기둥마다 보는 쪽 면의 윤곽을 3D 선분으로 모아 같은 직선 위의 것을 먼저 이은 뒤(세로대 한 줄이 선 하나가 된다)
+#   다른 요소의 가림(_occ_index)과 외래 가림을 본다. 유리는 뒤를 가리지 않고(입면에서 안이 비친다), 불투명·문 패널만 가림 조각이 된다.
+#   패널 가장자리는 멀리언이 덮지 않은 쪽(지운 멀리언·외곽 없음)만 그린다(덮인 쪽은 멀리언 윤곽 안이다).
+def all_curtains(g):
+    """그리는 커튼월(저작만)."""
+    return tuple(c for c in g.q(Q.curtain_ids) if Q.el(g, c)["origin"] == "authored")
+
+
+def curtain_info(g, c):
+    """(배치, 바닥 절대 z)."""
+    return (g.q(Q.curtain_layout, c), g.q(Q.curtain_z, c)[0])
+
+
+def scope_curtains(g, v):
+    cfg = g.q(view_cfg, v)
+    if cfg is None or cfg[0] == "site":
+        return ()
+    cs = g.q(all_curtains)
+    if not cs:
+        return ()
+    if cfg[0] == "plan":
+        if cfg[1] is None:
+            return ()
+        cut = cfg[2]
+        lo = cut if is_rcp(cfg) else cut - cfg[3]
+        return tuple(c for c in cs if (zr := g.q(Q.curtain_z, c))[0] <= cut + EPS and zr[1] >= lo - EPS)
+    return cs
+
+
+def _quad_edges(cls, q):
+    return [(cls, q[k][0], q[k][1], q[(k + 1) % 4][0], q[(k + 1) % 4][1]) for k in range(4)]
+
+
+def _along(a, b, t):
+    """a -> b 위 t(mm) 지점."""
+    dx, dy = b[0] - a[0], b[1] - a[1]
+    n = sqrt(dx * dx + dy * dy)
+    return (a[0] + dx * t / n, a[1] + dy * t / n) if n > 0 else a
+
+
+CW_DOOR_SEGS = 8   # 문 패널 열림 호를 나누는 선분 수
+
+
+def _cw_door_symbol(q, trims):
+    """문 패널 평면 기호: 오른쪽 면 쪽으로 여는 문짝 선 + 4분의 1 호(경첩 = 시작 쪽). 축 가운데 점에서 잰다."""
+    a = ((q[0][0] + q[3][0]) / 2.0, (q[0][1] + q[3][1]) / 2.0)
+    b = ((q[1][0] + q[2][0]) / 2.0, (q[1][1] + q[2][1]) / 2.0)
+    h = _along(a, b, trims[0])
+    e = _along(b, a, trims[1])
+    dx, dy = e[0] - h[0], e[1] - h[1]
+    n = sqrt(dx * dx + dy * dy)
+    if n < SEG_MIN:
+        return []
+    nx, ny = (q[0][0] - q[3][0]), (q[0][1] - q[3][1])   # 오른쪽 면 쪽(문이 열리는 쪽) 단위 법선
+    m = sqrt(nx * nx + ny * ny)
+    nx, ny = (nx / m, ny / m) if m > 0 else (dy / n, -dx / n)
+    out = [("proj", h[0], h[1], h[0] + nx * n, h[1] + ny * n)]
+    prev = (h[0] + nx * n, h[1] + ny * n)
+    for k in range(1, CW_DOOR_SEGS + 1):
+        sn, cs = AG.sincos(AG.PI / 2.0 * k / CW_DOOR_SEGS)
+        pt = (h[0] + nx * n * cs + dx * sn, h[1] + ny * n * cs + dy * sn)
+        out.append(("proj", prev[0], prev[1], pt[0], pt[1]))
+        prev = pt
+    return out
+
+
+def curtain_plan(g, v, c):
+    """평면: (선분들, 채움 다각형들). 절단 높이가 지나는 멀리언은 절단 사각형(채움), 패널은 두 면 선(멀리언이 덮은 곳은 뺀다)·문 패널은 열림 기호,
+    절단 아래 보이는 깊이 안의 가로대는 윗면 윤곽. 커튼월 전체가 절단 아래면 패널 윗면도 그린다. 반사 천장 평면은 절단만."""
+    cfg = g.q(view_cfg, v)
+    lay, zb = g.q(curtain_info, c)
+    cut = cfg[2]
+    rcp = is_rcp(cfg)
+    lo = cut - cfg[3]
+    lines, fills = [], []
+    cutted = False
+
+    def is_cut(z0, z1):
+        return z0 + zb <= cut + EPS and cut < z1 + zb - EPS
+    for _k, d, _t, q, z0, z1 in lay["mullions"]:
+        if is_cut(z0, z1):
+            lines.extend(_quad_edges("cut", q))
+            fills.append(q)
+            cutted = True
+        elif not rcp and d == "H" and lo - EPS <= z1 + zb <= cut + EPS:
+            lines.extend(_quad_edges("proj", q))
+    below = []
+    for _k, kind, q, z0, z1, cover, trims in lay["panels"]:
+        if is_cut(z0, z1):
+            cutted = True
+            if kind == "door":
+                lines.extend(_cw_door_symbol(q, trims))
+                continue
+            for a, b, ta, tb in ((q[0], q[1], trims[0], trims[1]), (q[3], q[2], trims[0], trims[1])):
+                p0, p1 = _along(a, b, ta), _along(b, a, tb)
+                lines.append(("cut", p0[0], p0[1], p1[0], p1[1]))
+            if not cover[0]:
+                lines.append(("cut", q[0][0], q[0][1], q[3][0], q[3][1]))
+            if not cover[1]:
+                lines.append(("cut", q[1][0], q[1][1], q[2][0], q[2][1]))
+        elif not rcp and lo - EPS <= z1 + zb <= cut + EPS:
+            below.append(q)
+    if not cutted and not rcp:
+        for q in below:
+            lines.extend(_quad_edges("proj", q))
+    return (tuple(lines), tuple(fills))
+
+
+def _ivs_merge(ivs):
+    ivs.sort()
+    out = [list(ivs[0])]
+    for a, b in ivs[1:]:
+        if a <= out[-1][1] + 1e-6:
+            if b > out[-1][1]:
+                out[-1][1] = b
+        else:
+            out.append([a, b])
+    return out
+
+
+def _cw_prism_edges(cfg, q, z0, z1, sides=None):
+    """수직 각기둥(평면 사각형 q, z0~z1)의 보이는 쪽 윤곽 3D 선분 (s, w, z) 목록. sides 가 있으면 패널: 덮이지 않은 쪽(시작·끝·아래·위)만."""
+    d0, d1 = cfg[3], cfg[4]
+    pts = [_sw(cfg, p) for p in q]
+    face = []
+    for k in range(4):
+        a, b = q[k], q[(k + 1) % 4]
+        face.append((b[1] - a[1]) * d0 - (b[0] - a[0]) * d1 < -1e-9)   # 바깥 법선(오른쪽)이 보는 사람 쪽
+    out = []
+    if sides is None:
+        for k in range(4):
+            if face[k]:
+                a, b = pts[k], pts[(k + 1) % 4]
+                if abs(b[0] - a[0]) > EPS:
+                    out.append(((a[0], a[1], z0), (b[0], b[1], z0)))
+                    out.append(((a[0], a[1], z1), (b[0], b[1], z1)))
+            if face[k] or face[k - 1]:
+                out.append(((pts[k][0], pts[k][1], z0), (pts[k][0], pts[k][1], z1)))
+        return out
+    k = 0 if face[0] else (2 if face[2] else None)   # 패널의 넓은 면(오른쪽 면 0 -> 1 또는 왼쪽 면 2 -> 3)
+    if k is None:
+        return out
+    a, b = pts[k], pts[k + 1]
+    sa, sb = (a, b) if k == 0 else (b, a)   # 시작(u 작은 쪽)·끝
+    left, right, bottom, top = sides
+    if abs(b[0] - a[0]) > EPS:
+        if bottom:
+            out.append(((a[0], a[1], z0), (b[0], b[1], z0)))
+        if top:
+            out.append(((a[0], a[1], z1), (b[0], b[1], z1)))
+    if left:
+        out.append(((sa[0], sa[1], z0), (sa[0], sa[1], z1)))
+    if right:
+        out.append(((sb[0], sb[1], z0), (sb[0], sb[1], z1)))
+    return out
+
+
+def _cw_section(cfg, q, z0, z1):
+    """단면: 각기둥이 절단면(w = near)에 걸치면 절단 사각형 ((s0, z0), (s1, z0), (s1, z1), (s0, z1)), 절단면 앞이면 "front", 뒤면 None."""
+    near = cfg[7]
+    pts = [_sw(cfg, p) for p in q]
+    ws = [p[1] for p in pts]
+    if max(ws) <= near + EPS:
+        return "front"
+    if min(ws) >= near - EPS:
+        return None
+    ss = []
+    for k in range(4):
+        a, b = pts[k], pts[(k + 1) % 4]
+        if (a[1] - near) * (b[1] - near) <= 0 and abs(b[1] - a[1]) > 1e-12:
+            t = (near - a[1]) / (b[1] - a[1])
+            ss.append(a[0] + t * (b[0] - a[0]))
+    if len(ss) < 2 or max(ss) - min(ss) <= EPS:
+        return "front"
+    s0, s1 = min(ss), max(ss)
+    return ((s0, z0), (s1, z0), (s1, z1), (s0, z1))
+
+
+def curtain_vparts(g, v, c):
+    """단면·입면: (3D 선분들(같은 직선 위의 것은 이었다), 절단 사각형들)."""
+    cfg = g.q(view_cfg, v)
+    lay, zb = g.q(curtain_info, c)
+    sec, far = cfg[9], cfg[8]
+    edges, cuts = [], []
+
+    def take(q, z0, z1, sides=None):
+        if sec:
+            r = _cw_section(cfg, q, z0, z1)
+            if r == "front":
+                return
+            if r is not None:
+                cuts.append(r)
+                return
+        if min(_sw(cfg, p)[1] for p in q) > far:
+            return
+        edges.extend(_cw_prism_edges(cfg, q, z0, z1, sides))
+    for _k, _d, _t, q, z0, z1 in lay["mullions"]:
+        take(q, z0 + zb, z1 + zb)
+    for _k, kind, q, z0, z1, cover, _tr in lay["panels"]:
+        sides = (True, True, True, True) if kind == "door" else tuple(not x for x in cover)
+        if sec or any(sides):
+            take(q, z0 + zb, z1 + zb, sides)
+    vert, horz, rest = {}, {}, []
+    for e0, e1 in edges:
+        if abs(e0[0] - e1[0]) < 1e-9 and abs(e0[1] - e1[1]) < 1e-9:
+            vert.setdefault((round(e0[0], 6), round(e0[1], 6)), []).append((min(e0[2], e1[2]), max(e0[2], e1[2])))
+        elif abs(e0[2] - e1[2]) < 1e-9 and abs(e0[1] - e1[1]) < 1e-9:
+            horz.setdefault((round(e0[2], 6), round(e0[1], 6)), []).append((min(e0[0], e1[0]), max(e0[0], e1[0])))
+        else:
+            rest.append((e0, e1))
+    out = []
+    for (s, w), ivs in sorted(vert.items()):
+        out.extend(((s, w, a), (s, w, b)) for a, b in _ivs_merge(ivs))
+    for (z, w), ivs in sorted(horz.items()):
+        out.extend(((a, w, z), (b, w, z)) for a, b in _ivs_merge(ivs))
+    out.extend(rest)
+    return (tuple(out), tuple(cuts))
+
+
+def curtain_vpieces(g, v, c):
+    """다른 요소를 가리는 조각: 불투명·문 패널((z0, z1, 다각형(s,w)), ...). 유리는 가리지 않는다."""
+    cfg = g.q(view_cfg, v)
+    lay, zb = g.q(curtain_info, c)
+    out = []
+    for _k, kind, q, z0, z1, _c, _t in lay["panels"]:
+        if kind in ("opaque", "door"):
+            poly = _clip_w([_sw(cfg, p) for p in q], cfg[7], cfg[8])
+            if len(poly) >= 3 and _area2(poly) > 2 * EPS:
+                out.append((z0 + zb, z1 + zb, tuple(poly)))
+    return tuple(out)
+
+
+def curtain_lines(g, v, c):
+    """커튼월 하나가 뷰에 기여하는 선분."""
+    cfg = g.q(view_cfg, v)
+    if cfg[0] == "plan":
+        return g.q(curtain_plan, v, c)[0]
+    edges, cuts = g.q(curtain_vparts, v, c)
+    idx = g.q(_occ_index, v)
+    fo = g.q(_fview, v)
+    out = []
+    for e0, e1 in edges:
+        for t0, t1 in _fvis(fo, e0, e1, _vis_near(idx, e0, e1)):
+            out.append(("proj", e0[0] + t0 * (e1[0] - e0[0]), e0[2] + t0 * (e1[2] - e0[2]), e0[0] + t1 * (e1[0] - e0[0]), e0[2] + t1 * (e1[2] - e0[2])))
+    for r in cuts:
+        out.extend(("cut", r[k][0], r[k][1], r[(k + 1) % 4][0], r[(k + 1) % 4][1]) for k in range(4))
+    return tuple(out)
+
+
+def curtain_fills(g, v, c):
+    cfg = g.q(view_cfg, v)
+    if cfg[0] == "plan":
+        return g.q(curtain_plan, v, c)[1]
+    return g.q(curtain_vparts, v, c)[1]
+
+
+VIEW_SCOPED = VIEW_SCOPED | frozenset({scope_curtains, curtain_plan, curtain_vparts, curtain_vpieces, curtain_lines, curtain_fills})   # 커튼월(W2 ARC-22)의 뷰별 질의
