@@ -108,10 +108,13 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--expected-rev", type=int, default=None)
     p.add_argument("--confirm", default=None, help="파괴적 커맨드의 확인 토큰")
 
-    p = sub.add_parser("script", help="JSONL 배치: 줄마다 {\"command\":..., \"args\":{...}}")
+    p = sub.add_parser("script", help="JSONL 배치: 줄마다 {\"command\":..., \"args\":{...}}. 기본은 전체가 하나의 트랜잭션(하나라도 실패하면 전부 되돌린다)")
     p.add_argument("file")
     p.add_argument("-p", "--project", required=True)
-    p.add_argument("--atomic", action="store_true", help="전체를 하나의 트랜잭션으로")
+    mode = p.add_mutually_exclusive_group()
+    mode.add_argument("--atomic", action="store_true", help="전체를 하나의 트랜잭션으로(기본값. 예전 스크립트 호환용으로 받는다)")
+    mode.add_argument("--per-item", action="store_true",
+                      help="항목마다 따로 커밋하고 첫 실패에서 멈춘다(앞 항목은 남는다). 조회·세션 커맨드를 섞을 때 쓴다")
     p.add_argument("--dry-run", action="store_true")
     p.add_argument("--expected-rev", type=int, default=None)
 
@@ -175,9 +178,12 @@ def main(argv: list[str] | None = None) -> int:
                                    dry_run=ns.dry_run, confirm=ns.confirm)
         else:  # script
             items = _script_lines(ns.file)
-            if ns.atomic:
+            if not ns.per_item:   # 기본은 원자적(W2 실사용 결함 3: 중간 실패 시 앞 항목이 프로젝트에 남지 않게)
                 env_out = dispatch.run_batch(env, items, project=ns.project, expected_rev=ns.expected_rev,
                                              dry_run=ns.dry_run)
+                err = env_out.get("error") or {}
+                if err.get("code") == "USAGE" and "mutation" in err.get("message", ""):
+                    err["hint"] = "원자적 스크립트(기본)에는 변경 커맨드만 넣을 수 있다: 조회·세션 커맨드를 섞으려면 --per-item 으로 실행하세요"
             else:
                 env_out = dispatch.run_script(env, items, project=ns.project, dry_run=ns.dry_run)
         out.emit(env_out)

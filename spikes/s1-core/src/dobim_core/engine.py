@@ -889,13 +889,17 @@ class Engine:
             txn = f"t{base + 1}"
             ts = time.strftime("%Y-%m-%dT%H:%M:%S", time.gmtime())
             entries, results, warnings, seqs = [], [], [], []
-            for cmd, model in cmds:
+            for i, (cmd, model) in enumerate(cmds):
                 if cmd.name.startswith("history.") and len(cmds) > 1:
                     raise DobimError("USAGE", "history.* 는 배치에 섞을 수 없다")
                 seq = base + len(entries) + 1
                 ctx = Ctx(self, seq, self.actor, dry_run)
                 try:
                     res = cmd.func(ctx, model)
+                except DobimError as ex:
+                    if len(cmds) > 1:   # 배치(원자적 script 포함)에서는 몇 번째 항목이 실패했는지 경로로 알린다(파싱 오류의 /commands/i 와 같은 꼴)
+                        ex.path = f"/commands/{i}{ex.path or ''}"
+                    raise
                 finally:
                     applied.extend(ctx.effects)  # 중간에 실패해도 적용된 효과는 되돌려야 한다
                 results.append(res)

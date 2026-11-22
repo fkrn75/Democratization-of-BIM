@@ -140,7 +140,7 @@ class Cli:
     def script(self, items: list[dict], atomic: bool) -> dict:
         f = self.ws / "_steps.jsonl"
         f.write_text("".join(json.dumps(it, ensure_ascii=False) + "\n" for it in items), encoding="utf-8")
-        return self._call(["script", str(f), "-p", PROJECT] + (["--atomic"] if atomic else []))
+        return self._call(["script", str(f), "-p", PROJECT] + (["--atomic"] if atomic else ["--per-item"]))   # 기본이 원자적이라(W2) 이어진 단계는 --per-item
 
     def hashes(self) -> dict:
         r = self.run("model.hash", {})

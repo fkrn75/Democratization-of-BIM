@@ -127,6 +127,46 @@ def test_2_IFC2x3_내보내기도_유효한_GlobalId(tmp_path):
         b.close()
 
 
+# ---------------------------------------------------------------- 3. script 원자성
+def _cli(ws, *args):
+    p = subprocess.run([sys.executable, "-m", "dobim_core", "--workspace", str(ws), *args], capture_output=True, env=ENV,
+                       stdin=subprocess.DEVNULL, cwd=ws, timeout=120)
+    return p.returncode, json.loads(p.stdout.decode("utf-8"))
+
+
+@pytest.fixture
+def ws(tmp_path):
+    code, _ = _cli(tmp_path, "run", "project.new", "path=p.dobim", f"guid={F.GUID}")
+    assert code == 0
+    return tmp_path
+
+
+def _walls(ws):
+    return _cli(ws, "run", "project.info", "-p", "p.dobim")[1]["result"]["counts"].get("wall", 0)
+
+
+def test_3_script는_기본이_원자적이라_중간_실패면_아무것도_남지_않는다(ws):
+    lines = [{"command": "level.create", "args": {"id": F.LV1, "name": "1F", "elevation": 0}}]
+    lines += [{"command": "wall.create", "args": {"level": F.LV1, "axis": [0, i * 100, 3000, i * 100]}} for i in range(5)]
+    lines += [{"command": "wall.move", "args": {"id": "1" + "9" * 21, "dx": 1}}]   # 없는 벽: 7번째에서 실패
+    (ws / "s.jsonl").write_text("\n".join(json.dumps(x) for x in lines), encoding="utf-8")
+    rev0 = _cli(ws, "run", "project.info", "-p", "p.dobim")[1]["rev"]
+    code, out = _cli(ws, "script", "s.jsonl", "-p", "p.dobim")
+    assert code != 0 and not out["ok"] and out["error"]["code"] == "NOT_FOUND" and "/6" in (out["error"].get("path") or "")
+    assert _walls(ws) == 0 and _cli(ws, "run", "project.info", "-p", "p.dobim")[1]["rev"] == rev0
+    code, out = _cli(ws, "script", "s.jsonl", "-p", "p.dobim", "--per-item")   # 옛 동작: 앞 항목은 따로 커밋된다
+    assert code != 0 and [x["index"] for x in out["result"] if not x["ok"]] == [6]
+    assert _walls(ws) == 5
+
+
+def test_3_기본_script에_조회를_섞으면_per_item을_안내한다(ws):
+    (ws / "q.jsonl").write_text(json.dumps({"command": "model.stats", "args": {}}), encoding="utf-8")
+    code, out = _cli(ws, "script", "q.jsonl", "-p", "p.dobim")
+    assert code != 0 and out["error"]["code"] == "USAGE" and "--per-item" in out["error"]["hint"]
+    code, out = _cli(ws, "script", "q.jsonl", "-p", "p.dobim", "--per-item")
+    assert code == 0 and out["ok"]
+
+
 # ---------------------------------------------------------------- 6. 재료 전파
 def test_6_꺾인_계단의_단_묶음과_참은_계단의_재료를_따른다(base):
     sid = "0" + F.ST1[1:]
