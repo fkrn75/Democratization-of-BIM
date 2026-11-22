@@ -147,6 +147,15 @@ def _solid_intent(p) -> dict:
             out[k] = [list(f) for f in v]
         elif k == "openings":
             out[k] = _openings(v)
+        elif k == "ops":   # 불리언 피연산자(W2 여섯 번째 PR): 피연산자도 같은 규칙(메시 면 번호 정수, 개구부)
+            if not isinstance(v, list) or any(not isinstance(o, dict) for o in v):
+                raise ValueError("불리언 목록이 올바르지 않다")
+            out[k] = [{kk: (_solid_intent(x) if kk == "solid" else x) for kk, x in o.items()} for o in v]
+        elif k == "res" and isinstance(v, dict) and "seg" in v:   # 현 수는 정수
+            sg = v["seg"]
+            out[k] = {kk: x for kk, x in v.items()}
+            if isinstance(sg, float) and sg.is_integer():
+                out[k]["seg"] = int(sg)
         else:
             out[k] = fl(v)
     return out

@@ -2784,8 +2784,23 @@ class MemberSection(A):
     wall: Pos | None = Field(None, description="box·pipe: 관 두께 mm")
 
 
+class SolidRes(A):
+    """곡면 해상도(W2 여섯 번째 PR): seg 또는 tol 하나. 빈 객체 {} 는 기본값으로 되돌린다(solid.set)."""
+    seg: Annotated[int, Field(ge=8, le=1024)] | None = Field(None, description="원 한 바퀴를 나눌 현 수(호는 중심각에 비례)")
+    tol: Annotated[float, Field(ge=0.01, le=1000, allow_inf_nan=False)] | None = Field(None, description="현 높이(현과 호 사이 최대 거리) 허용 오차 mm: 반지름이 클수록 잘게")
+
+    @model_validator(mode="after")
+    def _one(self):
+        if self.seg is not None and self.tol is not None:
+            raise ValueError("res 는 seg 와 tol 중 하나만 준다")
+        return self
+
+
+SoBulge = Annotated[float, Field(ge=-1, le=1, allow_inf_nan=False)]
+
+
 class SolidGeom(A):
-    form: Literal["prism", "loft", "panel", "sweep", "mesh", "member", "plate"] | None = Field(None, description="prism 수직 돌출, loft 단면 잇기(각뿔·첨탑), panel 수직면 위 윤곽 판(+개구부), sweep 평면 경로를 따른 단면(띠돌림), mesh 다면체, member 3D 축선을 따른 곧은 부재(보·가새·관·덕트), plate 기운 평면 위 윤곽 판(+구멍: 지붕판·경사 슬래브)")
+    form: Literal["prism", "loft", "panel", "sweep", "mesh", "member", "plate", "revolve", "sweep3d"] | None = Field(None, description="prism 수직 돌출, loft 단면 잇기(각뿔·첨탑), panel 수직면 위 윤곽 판(+개구부), sweep 평면 경로를 따른 단면(띠돌림), mesh 다면체, member 3D 축선을 따른 곧은 부재(보·가새·관·덕트), plate 기운 평면 위 윤곽 판(+구멍: 지붕판·경사 슬래브), revolve 단면을 축 둘레로 돌린 회전체(호퍼·롤러·원통·원뿔·고리), sweep3d 단면을 3D 경로(직선·호, z 포함)를 따라 쓴 형상(파이프·레일·손잡이)")
     polygon: SoPoly | None = Field(None, description="prism·plate: 평면 윤곽 [[x,y],...] (3~256)")
     holes: Annotated[list[SoPoly], Field(min_length=0, max_length=64)] | None = Field(None, description="plate: 구멍 윤곽 목록(빈 목록이면 뗀다)")
     base: SoPt3 | None = Field(None, description="plate: 윗면 위의 한 점 [x,y,z] (z 는 레벨 기준)")
@@ -2796,19 +2811,30 @@ class SolidGeom(A):
     sections: Annotated[list[LoftSection], Field(min_length=2, max_length=32)] | None = Field(None, description="loft: 아래에서 위로 단면 목록(꼭짓점 수가 같아야 한다)")
     line: Annotated[list[SoCoord], Field(min_length=4, max_length=4)] | None = Field(None, description="panel: 판이 놓인 수직면의 기준선 [x1,y1,x2,y2]. 판 두께는 이 선의 양쪽으로 반씩")
     thickness: Pos | None = Field(None, description="panel: 판 두께 mm / plate: 수직 두께 mm(윗면에서 아래로)")
-    profile: SoPoly | None = Field(None, description="panel: 윤곽 [[u,z],...] (u = line 시작점에서 길이 방향, z = 레벨 기준) / sweep: 단면 [[o,z],...] (o = 경로 진행 방향 왼쪽 거리)")
+    profile: SoPoly | None = Field(None, description="panel: 윤곽 [[u,z],...] (u = line 시작점에서 길이 방향, z = 레벨 기준) / sweep: 단면 [[o,z],...] (o = 경로 진행 방향 왼쪽 거리) / revolve: 단면 [[r,h],...] (r = 축에서 거리 0 이상, h = 축 방향 거리) / sweep3d: 단면 [[a,b],...] (a = 진행 방향 왼쪽, b = 위, 경로 중심 기준)")
     openings: Openings | None = Field(None, description="panel: 모양 개구부(offset 은 line 시작점 기준, sill 은 레벨 기준 z). 빈 목록이면 뗀다")
     path: Annotated[list[SoPt2], Field(min_length=2, max_length=256)] | None = Field(None, description="sweep: 평면 경로 [[x,y],...] (첫 점을 끝에 다시 주면 닫힌 고리)")
     vertices: Annotated[list[SoPt3], Field(min_length=4, max_length=4096)] | None = Field(None, description="mesh: 꼭짓점 [[x,y,z],...] (z 는 레벨 기준)")
     faces: Annotated[list[Annotated[list[Annotated[int, Field(ge=0, le=4095)]], Field(min_length=3, max_length=64)]], Field(min_length=4, max_length=8192)] | None = Field(None, description="mesh: 면 = 꼭짓점 번호 목록(바깥에서 보아 반시계). 닫힌 다면체여야 한다")
     start: SoPt3 | None = Field(None, description="member: 축선 시작점 [x,y,z] (z 는 레벨 기준)")
     end: SoPt3 | None = Field(None, description="member: 축선 끝점 [x,y,z]")
-    section: MemberSection | None = Field(None, description="member: 단면")
+    section: MemberSection | None = Field(None, description="member: 단면 / sweep3d: 경로 중심에 놓는 부재 단면(profile 대신)")
     anchor: Literal["top", "center", "bottom"] | None = Field(None, description="member: 축선이 지나는 단면 위치(기본 top: 보 윗면 가운데. 관·덕트는 center)")
+    bulges: Annotated[list[SoBulge], Field(max_length=256)] | None = Field(None, description="revolve·sweep3d: profile 변마다 볼록도 tan(중심각/4)(변 i -> i+1, 0 = 직선, 양수 = 반시계 호, 1 = 반원). 빈 목록이면 뗀다")
+    origin: SoPt3 | None = Field(None, description="revolve: 회전축 위의 한 점 [x,y,z] (z 는 레벨 기준)")
+    axis: SoPt3 | None = Field(None, description="revolve: 회전축 방향 [dx,dy,dz] (기본 [0,0,1] 수직)")
+    ref: SoPt3 | None = Field(None, description="revolve: 각 0 의 방향(단면 r 축). 기본은 세계 x 를 축에 수직으로 투영한 방향")
+    angle: Annotated[float, Field(gt=0, le=360, allow_inf_nan=False)] | None = Field(None, description="revolve: 회전 각(도, 축 오른손 방향, 기본 360 = 한 바퀴)")
+    rail: Annotated[list[SoPt3], Field(min_length=2, max_length=256)] | None = Field(None, description="sweep3d: 3D 경로 꼭짓점 [[x,y,z],...] (z 는 레벨 기준, 첫 점을 끝에 다시 주면 닫힌 고리)")
+    via: Annotated[list[SoPt3 | None], Field(max_length=255)] | None = Field(None, description="sweep3d: 경로 구간마다 null(직선) 또는 그 구간 호가 지나는 점 [x,y,z]. 빈 목록이면 뗀다")
+    res: SolidRes | None = Field(None, description="member·revolve·sweep3d: 곡면 해상도 {seg: 한 바퀴 현 수} 또는 {tol: 현 높이 mm}. 없으면 기존 32각형")
 
 
-_SO_KEYS = {"prism": ("polygon", "z0", "z1"), "loft": ("sections",), "panel": ("line", "thickness", "profile", "openings"), "sweep": ("path", "profile"), "mesh": ("vertices", "faces"), "member": ("start", "end", "section", "anchor"),
-           "plate": ("polygon", "holes", "thickness", "base", "pitch", "dir")}
+_SO_KEYS = {"prism": ("polygon", "z0", "z1"), "loft": ("sections",), "panel": ("line", "thickness", "profile", "openings"), "sweep": ("path", "profile"), "mesh": ("vertices", "faces"), "member": ("start", "end", "section", "anchor", "res"),
+           "plate": ("polygon", "holes", "thickness", "base", "pitch", "dir"),
+           "revolve": ("profile", "bulges", "origin", "axis", "ref", "angle", "res"), "sweep3d": ("rail", "via", "profile", "bulges", "section", "res")}
+_SO_ALL = ("polygon", "z0", "z1", "sections", "line", "thickness", "profile", "path", "vertices", "faces", "openings", "start", "end", "section", "anchor", "holes", "base", "pitch", "dir",
+           "bulges", "origin", "axis", "ref", "angle", "rail", "via", "res")
 
 
 def _solid_geom(a: SolidGeom, base: dict | None) -> dict:
@@ -2821,6 +2847,8 @@ def _solid_geom(a: SolidGeom, base: dict | None) -> dict:
         for k in _SO_KEYS[form]:
             if k in base:
                 out[k] = base[k]
+    if base and "ops" in base:   # 불리언(W2 여섯 번째 PR)은 solid.boolean 이 고친다: 형태를 바꿔도 이어받는다
+        out["ops"] = base["ops"]
     for k in _SO_KEYS[form]:
         v = getattr(a, k)
         if v is None:
@@ -2829,10 +2857,24 @@ def _solid_geom(a: SolidGeom, base: dict | None) -> dict:
             out[k] = float(v)
         elif k == "line":
             out[k] = [float(x) for x in v]
-        elif k in ("start", "end", "base"):
+        elif k in ("start", "end", "base", "origin", "axis", "ref"):
             out[k] = [float(x) for x in v]
-        elif k in ("pitch", "dir"):
+        elif k in ("pitch", "dir", "angle"):
             out[k] = float(v)
+        elif k == "rail":
+            out[k] = [[float(c) for c in q] for q in v]
+        elif k in ("bulges", "via"):
+            if v:
+                out[k] = [float(b) for b in v] if k == "bulges" else [None if q is None else [float(c) for c in q] for q in v]
+            else:
+                out.pop(k, None)
+        elif k == "res":
+            if v.seg is not None:
+                out[k] = {"seg": int(v.seg)}
+            elif v.tol is not None:
+                out[k] = {"tol": float(v.tol)}
+            else:
+                out.pop(k, None)
         elif k == "holes":
             if v:
                 out[k] = [[[float(c) for c in q] for q in h] for h in v]
@@ -2853,11 +2895,22 @@ def _solid_geom(a: SolidGeom, base: dict | None) -> dict:
                 out[k] = _openings_in(v)
             else:
                 out.pop(k, None)
-    for k in ("polygon", "z0", "z1", "sections", "line", "thickness", "profile", "path", "vertices", "faces", "openings", "start", "end", "section", "anchor", "holes", "base", "pitch", "dir"):
+    for k in _SO_ALL:
         if k not in _SO_KEYS[form] and getattr(a, k) is not None:
             raise DobimError("CONSTRAINT", f"{k} 는 form={form} 에 쓰지 않는다", path=f"/{k}")
     if form == "member":
         out.setdefault("anchor", "top")
+    if form == "sweep3d" and (a.section is None) != (a.profile is None):   # 3D 스윕: 단면을 다른 방식으로 주면 이어받은 쪽을 뗀다
+        for k in (("profile", "bulges") if a.section is not None else ("section",)):
+            if getattr(a, k) is None:
+                out.pop(k, None)
+    if form == "revolve":   # 회전체 기본값: 수직 축, 한 바퀴, 기준 방향은 세계 x 를 축에 수직으로 투영
+        out.setdefault("axis", [0.0, 0.0, 1.0])
+        out.setdefault("angle", 360.0)
+        if "ref" not in out or (a.axis is not None and a.ref is None and base and base.get("form") == "revolve"):
+            from dobim_core import solidops as SX
+            if K.SO._pt3(out["axis"]) and sum(c * c for c in out["axis"]) > 1e-18:
+                out["ref"] = SX.default_ref(out["axis"])
     if form == "plate":
         out.setdefault("pitch", 0.0)
         out.setdefault("dir", 0.0)
@@ -2881,7 +2934,7 @@ class SolidCreate(SolidGeom):
 
 
 @command("solid.create", kind="mutation", risk="write", group="model.solid",
-         summary="일반 솔리드 생성(돌출 prism·단면 잇기 loft·수직 판 panel(+아치 개구부)·스윕 sweep·메시 mesh). 범주가 IFC 클래스를 정한다(IfcWall·IfcRoof·IfcColumn·IfcCovering 등). IFC 는 IfcFacetedBrep",
+         summary="일반 솔리드 생성(돌출 prism·단면 잇기 loft·수직 판 panel(+아치 개구부)·스윕 sweep·메시 mesh·부재 member·경사 판 plate·회전체 revolve·3D 스윕 sweep3d). 범주가 IFC 클래스를 정한다(IfcWall·IfcRoof·IfcColumn·IfcCovering 등). IFC 는 IfcFacetedBrep",
          args=SolidCreate, since="0.5",
          examples=[{"level": F.LV1, "category": "buttress", "form": "prism", "polygon": [[0, -900], [600, -900], [600, -100], [0, -100]], "z0": 0, "z1": 2400},
                    {"level": F.LV2, "category": "spire", "form": "loft", "sections": [{"z": 0, "polygon": [[0, 0], [1000, 0], [1000, 1000], [0, 1000]]}, {"z": 3000, "polygon": [[500, 500]]}]},
@@ -2906,7 +2959,7 @@ class SolidSet(SolidGeom):
 
     @model_validator(mode="after")
     def _any(self):
-        if all(getattr(self, k) is None for k in ("name", "category", "form", "polygon", "z0", "z1", "sections", "line", "thickness", "profile", "openings", "path", "vertices", "faces", "start", "end", "section", "anchor", "holes", "base", "pitch", "dir")):
+        if all(getattr(self, k) is None for k in ("name", "category", "form") + _SO_ALL):
             raise ValueError("바꿀 필드가 하나도 없다")
         return self
 
@@ -2957,8 +3010,16 @@ def _solid_moved(p: dict, dx: float, dy: float, dz: float) -> dict:
     elif f == "member":
         q["start"] = [p["start"][0] + dx, p["start"][1] + dy, p["start"][2] + dz]
         q["end"] = [p["end"][0] + dx, p["end"][1] + dy, p["end"][2] + dz]
+    elif f == "revolve":
+        q["origin"] = [p["origin"][0] + dx, p["origin"][1] + dy, p["origin"][2] + dz]
+    elif f == "sweep3d":
+        q["rail"] = [[x + dx, y + dy, z + dz] for x, y, z in p["rail"]]
+        if "via" in p:
+            q["via"] = [None if m is None else [m[0] + dx, m[1] + dy, m[2] + dz] for m in p["via"]]
     else:
         q["vertices"] = [[x + dx, y + dy, z + dz] for x, y, z in p["vertices"]]
+    if "ops" in p:   # 불리언 피연산자도 함께 옮긴다
+        q["ops"] = [dict(o, solid=_solid_moved(o["solid"], dx, dy, dz)) for o in p["ops"]]
     return q
 
 
@@ -5400,3 +5461,4 @@ from dobim_core import commands_arcwall  # noqa: E402,F401
 from dobim_core import commands_opening  # noqa: E402,F401   독립 개구 객체(W2 세 번째 PR, ARC-34)
 from dobim_core import commands_curtain  # noqa: E402,F401   커튼월(W2 네 번째 PR, ARC-22)
 from dobim_core import commands_material  # noqa: E402,F401   재료 외관(W2 다섯 번째 PR, DATA-05·VIS-07)
+from dobim_core import commands_solidops  # noqa: E402,F401   솔리드 불리언(W2 여섯 번째 PR, ARC-12·ARC-44)

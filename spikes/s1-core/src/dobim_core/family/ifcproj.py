@@ -55,16 +55,58 @@ def _profile(f, p: dict):
     return f.createIfcArbitraryClosedProfileDef("AREA", None, pl)
 
 
+def _rotated(it: dict, loc, axis, ref):
+    """형상 회전(W2 여섯 번째 PR, 항목의 rotate)을 배치 (원점, z 축, x 축)에 적용한다. rotate 가 없으면 그대로."""
+    rt = it.get("rotate")
+    if not rt:
+        return loc, axis, ref
+    k = rt["axis"]
+    kl = math.sqrt(sum(c * c for c in k))
+    k = [c / kl for c in k]
+    a = math.radians(rt["angle"])
+    c, s = math.cos(a), math.sin(a)
+
+    def rv(v):
+        kv = sum(k[i] * v[i] for i in range(3))
+        kx = [k[1] * v[2] - k[2] * v[1], k[2] * v[0] - k[0] * v[2], k[0] * v[1] - k[1] * v[0]]
+        return [round(v[i] * c + kx[i] * s + k[i] * kv * (1 - c), 12) + 0.0 for i in range(3)]
+    o = rt["origin"]
+    lo = rv([loc[i] - o[i] for i in range(3)])
+    return [lo[i] + o[i] for i in range(3)], rv(list(axis)), rv(list(ref))
+
+
 def _extrude_item(f, it: dict):
     a0, a1 = it["range"]
     plane = it["plane"]
     if plane == "xy":
-        pos = _ax3(f, (0, 0, a0), (0, 0, 1), (1, 0, 0))
+        loc, axis, ref = (0, 0, a0), (0, 0, 1), (1, 0, 0)
     elif plane == "xz":
-        pos = _ax3(f, (0, a1, 0), (0, -1, 0), (1, 0, 0))   # 평면 법선이 -y 라 y=a1 에서 -y 로 돌출한다
+        loc, axis, ref = (0, a1, 0), (0, -1, 0), (1, 0, 0)   # 평면 법선이 -y 라 y=a1 에서 -y 로 돌출한다
     else:
-        pos = _ax3(f, (a0, 0, 0), (1, 0, 0), (0, 1, 0))
+        loc, axis, ref = (a0, 0, 0), (1, 0, 0), (0, 1, 0)
+    pos = _ax3(f, *_rotated(it, loc, axis, ref))
     return f.createIfcExtrudedAreaSolid(_profile(f, it["profile"]), pos, _dir(f, (0, 0, 1)), float(a1 - a0))
+
+
+# 회전체 배치: 단면 (r, h) 를 배치의 (x, y) 에 두고 배치 y 축(= 회전축) 둘레로 돌린다. (x 축 = r 방향, y 축 = 회전축)
+_REV_FRAME = {"z": ((1.0, 0.0, 0.0), (0.0, 0.0, 1.0)), "x": ((0.0, 1.0, 0.0), (1.0, 0.0, 0.0)), "y": ((0.0, 0.0, 1.0), (0.0, 1.0, 0.0))}
+
+
+def _revolve_item(f, it: dict):
+    """회전체(W2 여섯 번째 PR) -> IfcRevolvedAreaSolid. 각은 라디안(프로젝트에 평면각 단위가 없어 IFC 기본 라디안)."""
+    X, Y = _REV_FRAME[it["axis"]]
+    Z = (X[1] * Y[2] - X[2] * Y[1], X[2] * Y[0] - X[0] * Y[2], X[0] * Y[1] - X[1] * Y[0])
+    pos = _ax3(f, *_rotated(it, it["origin"], Z, X))
+    pts = [list(q) for q in it["profile"]]
+    pl = f.createIfcPolyline([f.createIfcCartesianPoint([float(x), float(y)]) for x, y in pts + [pts[0]]])
+    prof = f.createIfcArbitraryClosedProfileDef("AREA", None, pl)
+    ax1 = f.createIfcAxis1Placement(_pt3(f, _ZERO), _dir(f, (0.0, 1.0, 0.0)))
+    return f.createIfcRevolvedAreaSolid(prof, pos, ax1, math.radians(float(it["angle"])))
+
+
+def _item(f, it: dict):
+    k = it["k"]
+    return _extrude_item(f, it) if k == "extrude" else _revolve_item(f, it) if k == "revolve" else _segment_item(f, it)
 
 
 _AX = {"x": (1.0, 0.0, 0.0), "y": (0.0, 1.0, 0.0), "z": (0.0, 0.0, 1.0)}
@@ -84,18 +126,18 @@ def _segment_item(f, it: dict):
         prof = f.createIfcRectangleProfileDef("AREA", None, _ax2(f, (0, 0)), float(pr["w"]), float(pr["h"]))
     else:
         prof = f.createIfcCircleProfileDef("AREA", None, _ax2(f, (0, 0)), float(pr["r"]))
-    return f.createIfcExtrudedAreaSolid(prof, _ax3(f, a, u, w), _dir(f, (0, 0, 1)), float(ln))
+    return f.createIfcExtrudedAreaSolid(prof, _ax3(f, *_rotated(it, a, u, w)), _dir(f, (0, 0, 1)), float(ln))
 
 
 def solid_entity(f, it: dict):
     """형상 하나. 공극(cuts)이 있으면 IfcBooleanResult(DIFFERENCE) 체인을 IfcCsgSolid 로 감싼다
     (IFC4 의 'Clipping' 표현은 반공간 절단만 허용해서, 일반 공극은 IfcSolidModel 인 IfcCsgSolid 로 담는다)."""
-    base = _extrude_item(f, it) if it["k"] == "extrude" else _segment_item(f, it)
+    base = _item(f, it)
     cuts = it.get("cuts", ())
     if not cuts:
         return base
     for cut in cuts:
-        base = f.createIfcBooleanResult("DIFFERENCE", base, _extrude_item(f, cut) if cut["k"] == "extrude" else _segment_item(f, cut))
+        base = f.createIfcBooleanResult("DIFFERENCE", base, _item(f, cut))
     return f.createIfcCsgSolid(base)
 
 
@@ -105,7 +147,7 @@ def body_representation(model, items: list[dict]):
     if not items:
         return None
     sols = [solid_entity(f, it) for it in items]
-    typ = "SolidModel" if any(it.get("cuts") for it in items) else "SweptSolid"
+    typ = "SolidModel" if any(it.get("cuts") for it in items) else "SweptSolid"   # IfcRevolvedAreaSolid 도 SweptSolid 다
     return f.createIfcShapeRepresentation(model.body, "Body", typ, sols)
 
 

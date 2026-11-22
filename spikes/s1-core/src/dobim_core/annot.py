@@ -220,7 +220,7 @@ def _finst_ref(g, e, role, row):
     best = None
     for b in g.q(Q.ifc_spec, e).get("body") or ():
         pr = b.get("profile") or {}
-        if b.get("k") == "extrude" and b.get("plane") == "xy" and pr.get("shape") == "circle" and (best is None or pr["r"] > best[1]):
+        if b.get("k") == "extrude" and b.get("plane") == "xy" and pr.get("shape") == "circle" and not b.get("rotate") and (best is None or pr["r"] > best[1]):
             best = (pr["center"], pr["r"])
     if best is None:
         return ("orphan", "target_deleted")

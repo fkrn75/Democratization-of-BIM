@@ -25,7 +25,7 @@ OPENINGS_MAX = 64            # 벽·판 하나의 모양 개구부 수 상한
 ARC_DEPTH = 3                # 호 이등분 횟수: 호 하나 = 2**3 = 8 현
 OPENING_SHAPES = ("rect", "round", "pointed", "circle")
 OPENING_FILLS = ("none", "glazing", "door")
-SOLID_FORMS = ("prism", "loft", "panel", "sweep", "mesh", "member", "plate")
+SOLID_FORMS = ("prism", "loft", "panel", "sweep", "mesh", "member", "plate", "revolve", "sweep3d")   # revolve·sweep3d: W2 여섯 번째 PR(solidops)
 MEMBER_SHAPES = ("rect", "circle", "h", "box", "pipe")   # 부재(member) 단면: 사각·원·H/I형강·각형 강관(속 빈 사각)·원형 관(속 빈 원)
 MEMBER_ANCHORS = ("top", "center", "bottom")             # 부재 축선이 단면의 어디를 지나는가(보는 윗면 가운데, 관·덕트는 가운데가 관행)
 
@@ -298,10 +298,12 @@ def solid_problem(p) -> str | None:
     form = p.get("form")
     keys = {"prism": {"polygon", "z0", "z1"}, "loft": {"sections"}, "panel": {"line", "thickness", "profile"},
             "sweep": {"path", "profile"}, "mesh": {"vertices", "faces"}, "member": {"start", "end", "section", "anchor"},
-            "plate": {"polygon", "thickness", "base", "pitch", "dir"}}.get(form)
+            "plate": {"polygon", "thickness", "base", "pitch", "dir"},
+            "revolve": {"profile", "origin", "axis", "ref", "angle"}, "sweep3d": {"rail"}}.get(form)
     if keys is None:
         return f"solid.form 은 {'/'.join(SOLID_FORMS)} 중 하나다"
     opt = {"openings"} if form == "panel" else {"holes", "grid"} if form == "plate" else set()
+    opt = opt | _EXT_OPT.get(form, set()) | {"ops"}   # W2 여섯 번째 PR: 곡면 해상도(res)·호(bulges·via)·불리언(ops). 없으면 이전과 같다
     base = {"name", "category", "form"} | keys
     if not base <= set(p) or set(p) - base - opt:
         return f"solid({form}) 의 파라미터 이름이 다르다"
@@ -310,6 +312,48 @@ def solid_problem(p) -> str | None:
         return "solid.name 값이 올바르지 않다"
     if p["category"] not in SOLID_CATEGORIES:
         return "solid.category 값이 올바르지 않다"
+    return _geom_problem(p)
+
+
+_EXT_OPT = {"member": {"res"}, "revolve": {"bulges", "res"}, "sweep3d": {"via", "profile", "bulges", "section", "res"}}
+
+
+def operand_problem(q) -> str | None:
+    """불리언 피연산자(이름·범주 없는 형상 사전) 검사."""
+    if not isinstance(q, dict):
+        return "피연산자가 객체가 아니다"
+    return solid_problem({**q, "name": "op", "category": "proxy"})
+
+
+def _geom_problem(p) -> str | None:
+    """형태별 형상 검사(solid_problem 의 뒷부분). res·ops 는 W2 여섯 번째 PR."""
+    if "res" in p:
+        from dobim_core import solidops as SX
+        why = SX.res_problem(p["res"])
+        if why:
+            return why
+    why = _form_problem(p)
+    if why or "ops" not in p:
+        return why
+    from dobim_core import solidops as SX
+    why = SX.ops_problem(p, operand_problem)
+    if why:
+        return why
+    try:
+        if not solid_mesh(p)[0]:
+            return "불리언 결과가 비었다(남는 형상이 없다)"
+    except ValueError as ex:   # 입력 다각형 상한
+        return str(ex)
+    except (ArithmeticError, IndexError, KeyError, TypeError) as ex:   # 계산이 퇴화한 입력(방어): 조용히 깨진 형상을 두지 않고 거절한다
+        return f"불리언을 계산할 수 없다({type(ex).__name__})"
+    return None
+
+
+def _form_problem(p) -> str | None:
+    form = p["form"]
+    if form in ("revolve", "sweep3d"):
+        from dobim_core import solidops as SX
+        return SX.revolve_problem(p) if form == "revolve" else SX.sweep3d_problem(p)
     if form == "prism":
         if not isinstance(p["polygon"], list) or not all(_pt2(q) for q in p["polygon"]):
             return "solid.polygon 값이 올바르지 않다"
@@ -470,9 +514,49 @@ def panel_frame(line):
     return (x1, y1, (x2 - x1) / ln, (y2 - y1) / ln, ln)
 
 
+_CSG_CACHE: dict = {}
+_CSG_CACHE_MAX = 128
+
+
 def solid_mesh(p) -> tuple:
-    """솔리드 파라미터 -> (verts, faces). z 는 레벨 기준."""
+    """솔리드 파라미터 -> (verts, faces). z 는 레벨 기준. 불리언(ops, W2 여섯 번째 PR)이 있으면 그 결과(비면 ([], []))."""
+    if "ops" in p:
+        return _ops_mesh(p)
+    return _base_mesh(p)
+
+
+def _ops_mesh(p) -> tuple:
+    """불리언 결과(같은 형상은 한 번만 계산한다: 도면·IFC·검사가 같은 값을 여러 번 묻는다)."""
+    import json
+    from dobim_core import solidops as SX
+    key = json.dumps({k: v for k, v in p.items() if k not in ("name", "category", "grid")}, sort_keys=True)
+    hit = _CSG_CACHE.get(key)
+    if hit is None:
+        r = SX.boolean_mesh(_base_mesh(p), p["ops"], solid_mesh)
+        hit = (tuple(r[0]), tuple(tuple(tuple(lp) for lp in f) for f in r[1])) if r else ((), ())
+        if len(_CSG_CACHE) >= _CSG_CACHE_MAX:
+            _CSG_CACHE.pop(next(iter(_CSG_CACHE)))
+        _CSG_CACHE[key] = hit
+    return list(hit[0]), [[list(lp) for lp in f] for f in hit[1]]
+
+
+def base_mesh(p) -> tuple:
+    """불리언을 빼고 형태만의 다면체(IFC 불리언의 첫 피연산자)."""
+    return _base_mesh(p)
+
+
+def csg_tree(p) -> tuple:
+    """IFC 불리언 사슬의 재료: (꼭짓점, 면, ((연산, 하위 나무), ...)). 피연산자 안의 ops 도 같은 모양으로 펼친다."""
+    v, f = _base_mesh(p)
+    subs = tuple((o["op"], csg_tree(o["solid"])) for o in p.get("ops", ()))
+    return (tuple(v), tuple(tuple(tuple(lp) for lp in fc) for fc in f), subs)
+
+
+def _base_mesh(p) -> tuple:
     form = p["form"]
+    if form in ("revolve", "sweep3d"):
+        from dobim_core import solidops as SX
+        return SX.revolve_mesh(p) if form == "revolve" else SX.sweep3d_mesh(p)
     if form == "prism":
         z0 = float(p["z0"])
         return _extrude(ccw(p["polygon"]), [], lambda q, t: (q[0], q[1], z0 + t), None, float(p["z1"]) - z0)
@@ -770,12 +854,18 @@ def _circle(r, cx=0.0, cy=0.0):
     return out
 
 
-def member_section(sc, anchor) -> tuple:
-    """단면 (바깥 반시계, 구멍 목록(시계)) 2D (a, b). a = 폭 방향(수평 축선이면 진행 방향 왼쪽 +), b = 위쪽. anchor 가 b 원점을 정한다."""
+def member_section(sc, anchor, res=None) -> tuple:
+    """단면 (바깥 반시계, 구멍 목록(시계)) 2D (a, b). a = 폭 방향(수평 축선이면 진행 방향 왼쪽 +), b = 위쪽. anchor 가 b 원점을 정한다.
+    res(곡면 해상도, W2 여섯 번째 PR)가 있으면 원은 그 현 수로, 없으면 이전 32각형."""
     w, d = float(sc["width"]), float(sc["depth"])
     b0 = {"top": -d, "center": -d / 2.0, "bottom": 0.0}[anchor]
     h = w / 2.0
     shape = sc["shape"]
+    if shape in ("circle", "pipe") and res is not None:
+        from dobim_core import solidops as SX
+        outer = SX.circle(h, b0 + d / 2.0, res)
+        holes = [SX.circle(h - float(sc["wall"]), b0 + d / 2.0, res)[::-1]] if shape == "pipe" else []
+        return outer, holes
     if shape in ("circle", "pipe"):
         outer = _circle(h, 0.0, b0 + d / 2.0)
         holes = [_circle(h - float(sc["wall"]), 0.0, b0 + d / 2.0)[::-1]] if shape == "pipe" else []
@@ -811,7 +901,7 @@ def member_frame(p) -> tuple:
 
 def _member(p):
     o, D, S, U, ln = member_frame(p)
-    outer, holes = member_section(p["section"], p["anchor"])
+    outer, holes = member_section(p["section"], p["anchor"], p.get("res"))
 
     def to3(q, t):
         return (o[0] + q[0] * S[0] + q[1] * U[0] + t * D[0], o[1] + q[0] * S[1] + q[1] * U[1] + t * D[1], o[2] + q[0] * S[2] + q[1] * U[2] + t * D[2])

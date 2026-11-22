@@ -22,7 +22,7 @@ from typing import Any
 
 from dobim_core.family import expr as E
 from dobim_core.family.recipe import (HOST_NAMES, RESERVED_NAMES, Extrude, ExprVal, FamilyError, Issue, Param, Recipe,
-                                      Sweep, check_json_value, parse_recipe, ptr)
+                                      Revolve, Sweep, check_json_value, parse_recipe, ptr)
 
 MAX_REPEAT = 50
 MAX_ITEMS = 400
@@ -97,7 +97,19 @@ def _sites(r: Recipe) -> list[ExprSite]:
             add(ptr(*base, "repeat", "count"), s.repeat.count)
         if s.when is not None:
             add(ptr(*base, "when"), s.when, "bool", extra)
-        if isinstance(s, Extrude):
+        if s.rotate is not None:   # 형상 회전(W2 여섯 번째 PR)
+            for key in ("axis", "origin"):
+                for j, v in enumerate(getattr(s.rotate, key) or ()):
+                    add(ptr(*base, "rotate", key, j), v, extra=extra)
+            add(ptr(*base, "rotate", "angle"), s.rotate.angle, extra=extra)
+        if isinstance(s, Revolve):   # 회전체(W2 여섯 번째 PR)
+            for j, v in enumerate(s.origin or ()):
+                add(ptr(*base, "origin", j), v, extra=extra)
+            for j, pt in enumerate(s.profile):
+                for m, v in enumerate(pt):
+                    add(ptr(*base, "profile", j, m), v, extra=extra)
+            add(ptr(*base, "angle"), s.angle, extra=extra)
+        elif isinstance(s, Extrude):
             for j, v in enumerate(s.range):
                 add(ptr(*base, "range", j), v, extra=extra)
             p = s.profile
@@ -540,6 +552,30 @@ def _resolve_sweep(s: Sweep, env: dict, base: str) -> list[dict]:
     return out
 
 
+def _resolve_revolve(s: Revolve, env: dict, base: str) -> dict:
+    org = [0.0, 0.0, 0.0] if s.origin is None else [_num_checked(_ev(v, env, f"{base}/origin/{j}"), f"{base}/origin/{j}") for j, v in enumerate(s.origin)]
+    pts = [_pt2(pt, env, f"{base}/profile/{j}") for j, pt in enumerate(s.profile)]
+    if any(q[0] < 0 for q in pts):
+        raise _bad("E_DEGENERATE", base + "/profile", "회전체 단면의 r(첫 좌표)이 0 보다 작다(축을 넘는다)", "단면은 축 한쪽(r >= 0)에 두세요")
+    if abs(_area2(pts)) < 1e-6:
+        raise _bad("E_DEGENERATE", base + "/profile", "회전체 단면 넓이가 0 이다")
+    ang = _num_checked(_ev(s.angle, env, base + "/angle"), base + "/angle")
+    if not 0 < ang <= 360:
+        raise _bad("E_DEGENERATE", base + "/angle", f"회전 각은 0 초과 360 이하다({ang:g})")
+    return {"k": "revolve", "axis": s.axis, "origin": [r6(c) for c in org], "profile": pts, "angle": r6(ang)}
+
+
+def _resolve_rotate(s, env: dict, base: str) -> dict:
+    rt = s.rotate
+    ax = [_num_checked(_ev(v, env, f"{base}/rotate/axis/{j}"), f"{base}/rotate/axis/{j}") for j, v in enumerate(rt.axis)]
+    if math.sqrt(sum(c * c for c in ax)) < 1e-9:
+        raise _bad("E_DEGENERATE", base + "/rotate/axis", "회전 축 방향이 0 벡터다")
+    org = [0.0, 0.0, 0.0] if rt.origin is None else [_num_checked(_ev(v, env, f"{base}/rotate/origin/{j}"), f"{base}/rotate/origin/{j}")
+                                                    for j, v in enumerate(rt.origin)]
+    ang = _num_checked(_ev(rt.angle, env, base + "/rotate/angle"), base + "/rotate/angle")
+    return {"axis": [r6(c) for c in ax], "angle": r6(ang), "origin": [r6(c) for c in org]}
+
+
 def resolve_solids(r: Recipe, env: dict) -> tuple[list[dict], list[str]]:
     """형상 목록을 해석한다. when=false 인 형상은 제외, repeat 는 펼치고, void 는 대상 solid 의 cuts 로 붙인다."""
     solids: list[dict] = []     # role=solid 항목 (id, base, ...)
@@ -558,7 +594,11 @@ def resolve_solids(r: Recipe, env: dict) -> tuple[list[dict], list[str]]:
             if s.when is not None and not _ev(s.when, e2, base + "/when", "bool"):
                 continue
             sid = s.id if not s.repeat else f"{s.id}[{idx}]"
-            items = [_resolve_extrude(s, e2, base)] if isinstance(s, Extrude) else _resolve_sweep(s, e2, base)
+            items = ([_resolve_extrude(s, e2, base)] if isinstance(s, Extrude) else [_resolve_revolve(s, e2, base)] if isinstance(s, Revolve)
+                     else _resolve_sweep(s, e2, base))
+            if s.rotate is not None:   # 임의 축 회전(W2 여섯 번째 PR): 해석된 항목마다 같은 회전을 붙인다(투영이 배치에 반영한다)
+                rot = _resolve_rotate(s, e2, base)
+                items = [dict(it, rotate=rot) for it in items]
             for j, it in enumerate(items):
                 it = dict(it, id=sid if len(items) == 1 else f"{sid}.{j}", base=s.id)
                 if s.role == "void":
