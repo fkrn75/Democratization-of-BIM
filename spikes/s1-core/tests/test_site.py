@@ -2,9 +2,9 @@
 """대지 종류(site): 커맨드·검사, IFC 투영(뼈대 대지 아래 하위 IfcSite)·가져오기 왕복, 병합 검사, 대지가 없으면 모델·IFC 바이트 불변."""
 import sys
 
-import ifcopenshell
 
 from conftest import ROOT
+from dobim_core import globalid as GI   # 내보낸 IFC 를 원래 요소 id 로 연다(W2: 첫 글자가 무효한 id 는 파일에서 바뀐다)
 from dobim_core import fixture as F
 from dobim_core import kinds as K
 
@@ -79,7 +79,7 @@ def test_IFC_투영은_뼈대_대지_아래_하위_IfcSite와_경계_폴리라�
     out = tmp_path / "s.ifc"
     base.eng.flush_ifc()
     base.eng.ifc.write(str(out))
-    f = ifcopenshell.open(str(out))
+    f = GI.open_exported(str(out))
     st = f.by_guid(F.SI1)
     assert st.is_a("IfcSite") and st.Name == "대지" and st.RefElevation == 1200.0
     rep = st.Representation.Representations[0]
@@ -117,7 +117,7 @@ def test_외부에서_대지_경계를_바꾸면_분리된다(tmp_path):
         S.build_authored(b)
         assert b.run("site.create", {"id": F.SI1, "boundary": LOT})["ok"]
         b.export("s.ifc")
-        f = ifcopenshell.open(str(tmp_path / "s.ifc"))
+        f = GI.open_exported(str(tmp_path / "s.ifc"))
         f.by_guid(F.SI1).Representation.Representations[0].Items[0].Elements[0].Points[0].Coordinates = (-9999.0, -6000.0)
         f.write(str(tmp_path / "t.ifc"))
         assert b.import_ifc("t.ifc", "imp.dobim")["ok"]
@@ -135,4 +135,4 @@ def test_대지가_없으면_IFC와_해시가_그대로다(base, tmp_path):
     base.eng.flush_ifc()
     base.eng.ifc.write(str(tmp_path / "b.ifc"))
     assert base.eng.state_hash() == h0
-    assert len(ifcopenshell.open(str(tmp_path / "b.ifc")).by_type("IfcSite")) == 1
+    assert len(GI.open_exported(str(tmp_path / "b.ifc")).by_type("IfcSite")) == 1

@@ -1008,6 +1008,8 @@ class IfcModel:
             if cur is not None and not our_usage(cur):   # 코어가 투영한 층 구성은 재료 이름을 뗀다고 떼지 않는다(투영이 정한다)
                 api_material.unassign_material(f, products=[e])
                 self._gc_material(cur)
+                if eid in self.parts:
+                    self._mirror_material(eid)
             return
         mat = self._named_material(name)
         ls = cur.ForLayerSet if our_usage(cur) else None
@@ -1016,6 +1018,8 @@ class IfcModel:
             self._drop_layer_set(ls)
         elif cur is not None and cur != mat:
             self._gc_material(cur)
+        if eid in self.parts:   # 집합 부속(계단 조각·지붕 경사면 등)도 따른다(W2 실사용 결함 6)
+            self._mirror_material(eid)
 
     def _named_material(self, name: str):
         mat = self._mats.get(name)
@@ -1381,8 +1385,53 @@ class IfcModel:
                 setattr(part, k, v)
             self._place(part, host.ObjectPlacement, (0.0, 0.0, 0.0), (1.0, 0.0, 0.0))
             self._set_body(part, w["solid"]())
+        self._mirror_material(eid)
         if not have:
             self.parts.pop(eid, None)
+
+    def _mirror_material(self, eid: str) -> None:
+        """집합 부속(꺾인 계단의 단 묶음·참·돌음, 지붕 경사면, 슬래브 파라펫)이 요소의 단순 재료(IfcMaterial)를 따르게 한다(W2 실사용 결함 6).
+        부속의 재료 지정은 요소마다 관계 하나(GlobalId = part_guid(요소, "material"), 부속 전부)로만 둔다: 어떤 순서로 만들고 고쳐도 IFC 가
+        같은 모양이라 증분 == 전체 재생성·실행 취소 후 해시가 지켜진다. 요소에 재료가 없거나 층 구성이면 부속의 재료 지정을 뗀다.
+        개구부(빼기 부속)는 재료를 갖지 않는다."""
+        f = self.f
+        parts = [p for _, p in sorted((self.parts.get(eid) or {}).items()) if not p.is_a("IfcFeatureElementSubtraction")]
+        host = self.ents.get(eid)
+        m = ue.get_material(host, should_inherit=False) if host is not None else None
+        want = m if (m is not None and m.is_a("IfcMaterial")) else None
+        gid = part_guid(eid, "material")
+        canon, old_mats = None, []
+        for p in parts:
+            for r in list(p.HasAssociations or ()):
+                if not r.is_a("IfcRelAssociatesMaterial") or r == canon:
+                    continue
+                if r.GlobalId == gid and canon is None:
+                    canon = r
+                    continue
+                old_mats.append(r.RelatingMaterial)   # 부속에 따로 붙은 재료 지정(외부 도구 등)은 뗀다
+                rest = tuple(x for x in r.RelatedObjects if x != p)
+                if rest:
+                    r.RelatedObjects = rest
+                else:
+                    f.remove(r)
+        if want is None or not parts:
+            if canon is not None:
+                old_mats.append(canon.RelatingMaterial)
+                f.remove(canon)
+        elif canon is None:
+            f.createIfcRelAssociatesMaterial(gid, None, None, None, parts, want)
+        else:
+            if canon.RelatingMaterial != want:
+                old_mats.append(canon.RelatingMaterial)
+                canon.RelatingMaterial = want
+            if list(canon.RelatedObjects) != parts:
+                canon.RelatedObjects = parts
+        for om in old_mats:   # 이제 아무도 쓰지 않는 재료는 지운다(재료 목록이 상태의 함수여야 취소 후 해시가 복원된다)
+            if om is not None and om != want:
+                try:
+                    self._gc_material(om)
+                except RuntimeError:
+                    pass   # 이미 지웠다
 
     def _stair_solid(self, run, width, n, rise, zbase, zbot):
         """단 묶음 하나의 톱니 옆모습을 폭 방향으로 압출한 솔리드. 챌판 n 개가 zbase 에서 올라가고 밑은 zbot 까지 채운다."""
@@ -1466,6 +1515,9 @@ class IfcModel:
             return f.createIfcSweptDiskSolid(pl, float(r), None, None, None)
         items = [disk(g["top"], RAILING_HANDRAIL_R)] + [disk([a, b], RAILING_POST_R) for a, b in g["posts"]]
         self._set_body(e, items)
+        # IFC4 IfcShapeRepresentationTypes: 'SweptSolid' 는 IfcExtrudedAreaSolid·IfcRevolvedAreaSolid 만 담는다. IfcSweptDiskSolid 는
+        # 'AdvancedSweptSolid' 여야 검증 오류가 없다(W2 실사용 결함 1)
+        e.Representation.Representations[0].RepresentationType = "AdvancedSweptSolid"
 
     def _ring_solid(self, outer, inner, depth, z0):
         """바깥 둘레와 안쪽 고리 사이(구멍 있는 프로필)를 +Z 로 depth 만큼 압출한 솔리드(파라펫)."""
@@ -1796,9 +1848,12 @@ class IfcModel:
         return out
 
     def validate(self, express: bool = True) -> dict:
+        """내보낼 파일과 같은 내용을 검사한다: 첫 글자가 무효한 GlobalId(사용자 id)는 ifc.export 처럼 바꾼 사본으로 본다(globalid.py)."""
+        from dobim_core import globalid as GI
         lg = ifcopenshell.validate.json_logger()
         try:
-            ifcopenshell.validate.validate(self.f, lg, express_rules=express)
+            f, _ = GI.encoded_copy(self.f)
+            ifcopenshell.validate.validate(f, lg, express_rules=express)
         except Exception as ex:  # 검증기 자체의 실패도 오류로 센다
             return {"errors": 1, "warnings": 0, "samples": [f"검증기 예외: {ex!r}"]}
         errs = [s for s in lg.statements if s["level"] in ("error", "critical")]

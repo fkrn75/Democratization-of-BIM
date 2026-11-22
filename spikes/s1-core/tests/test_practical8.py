@@ -10,6 +10,7 @@ import pytest
 
 import kit  # noqa: F401
 from conftest import ROOT
+from dobim_core import globalid as GI   # 내보낸 IFC 를 원래 요소 id 로 연다(W2: 첫 글자가 무효한 id 는 파일에서 바뀐다)
 from dobim_core import drawing as D
 from dobim_core import fixture as F
 from dobim_core import queries as Q
@@ -106,7 +107,7 @@ def test_맞닿은_also_cuts_는_IFC_에_빈_개구부를_만들지_않고_왕�
         assert b_.run("family.place", {"family": "window.framed", "type_values": {"width": 900}, "id": i, "host": a, "offset": 2610,
                                        "also_cuts": [b]})["ok"]
         h = b_.hashes()
-        f = ifcopenshell.open(str(b_.export("t.ifc")))
+        f = GI.open_exported(str(b_.export("t.ifc")))
         assert not [r for r in f.by_type("IfcRelVoidsElement") if r.RelatingBuildingElement.GlobalId == b]
         r = b_.import_ifc("t.ifc", "imp.dobim")
         assert r["ok"] and not r["result"]["warnings"], r
@@ -193,7 +194,7 @@ def test_framed_단x칸_IFC_패널과_옆_경첩은_왕복한다(tmp_path):
                                    "host": F.W2, "offset": 2000})
         assert r["ok"], r
         h = b.hashes()
-        f = ifcopenshell.open(str(b.export("t.ifc")))
+        f = GI.open_exported(str(b.export("t.ifc")))
         t, pn = _panels(f, i1)
         assert t.PartitioningType == "USERDEFINED"
         assert pn == [("FIXEDCASEMENT", "LEFT"), ("FIXEDCASEMENT", "MIDDLE"), ("FIXEDCASEMENT", "RIGHT"),

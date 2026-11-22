@@ -3,11 +3,11 @@
 입력이 없으면 저장 형식·해시·산출 바이트가 그대로, IFC 왕복, 증분 == 전체 재생성."""
 import sys
 
-import ifcopenshell
 import ifcopenshell.util.element as ue
 import pytest
 
 from conftest import ROOT
+from dobim_core import globalid as GI   # 내보낸 IFC 를 원래 요소 id 로 연다(W2: 첫 글자가 무효한 id 는 파일에서 바뀐다)
 from dobim_core import dispatch
 from dobim_core import drawing as D
 from dobim_core import fixture as F
@@ -38,7 +38,7 @@ def export_ifc(sess, name):
     if not r["ok"]:
         r = sess.run("ifc.export", {"path": name}, confirm=r["error"]["details"]["confirm_token"])
     ok(r)
-    return ifcopenshell.open(str(sess.path.parent / name))
+    return GI.open_exported(str(sess.path.parent / name))
 
 
 def export_file(sess, cmd, args):

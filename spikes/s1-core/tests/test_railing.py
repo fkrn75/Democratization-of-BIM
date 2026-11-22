@@ -2,11 +2,11 @@
 """난간(railing): 커맨드·검사, 계단·슬래브 가장자리 자동 생성, IFC(IfcRailing, 손잡이·기둥 IfcSweptDiskSolid) 투영·왕복, 도면(평면·입면), 증분 == 전체 재생성, 결정성."""
 import sys
 
-import ifcopenshell
 import pytest
 
 import kit
 from conftest import ROOT
+from dobim_core import globalid as GI   # 내보낸 IFC 를 원래 요소 id 로 연다(W2: 첫 글자가 무효한 id 는 파일에서 바뀐다)
 from dobim_core import drawing as D
 from dobim_core import fixture as F
 from dobim_core import kinds as K
@@ -130,7 +130,7 @@ def test_IFC는_IfcRailing_손잡이와_기둥을_담는다(base, tmp_path):
     base.eng.flush_ifc()
     out = tmp_path / "r.ifc"
     base.eng.ifc.write(str(out))
-    f = ifcopenshell.open(str(out))
+    f = GI.open_exported(str(out))
     rl = f.by_guid(F.RL1)
     assert rl.is_a("IfcRailing") and rl.PredefinedType == "GUARDRAIL"
     items = rl.Representation.Representations[0].Items
@@ -166,7 +166,7 @@ def test_외부에서_난간_형상을_바꾸면_분리된다(tmp_path):
         S.build_authored(b)
         assert b.run("railing.create", {"id": F.RL1, "level": F.LV1, "path": PATH})["ok"]
         b.export("r.ifc")
-        f = ifcopenshell.open(str(tmp_path / "r.ifc"))
+        f = GI.open_exported(str(tmp_path / "r.ifc"))
         f.by_guid(F.RL1).Representation.Representations[0].Items[0].Radius = 99.0
         f.write(str(tmp_path / "t.ifc"))
         assert b.import_ifc("t.ifc", "imp.dobim")["ok"]

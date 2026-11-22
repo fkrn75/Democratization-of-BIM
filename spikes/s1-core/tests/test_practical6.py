@@ -8,6 +8,7 @@ import pytest
 
 import kit  # noqa: F401
 from conftest import ROOT
+from dobim_core import globalid as GI   # 내보낸 IFC 를 원래 요소 id 로 연다(W2: 첫 글자가 무효한 id 는 파일에서 바뀐다)
 from dobim_core import drawing as D
 from dobim_core import fixture as F
 from dobim_core.family import library
@@ -90,7 +91,7 @@ def test_프로젝트창_미닫이창은_IfcWindow_와_창_패널로_나가고_�
         assert b.run("family.place", {"id": ids["fixed"], "family": "window.framed", "type_values": {"mullions": 2, "width": 2400}, "host": F.W3, "offset": 1300})["ok"]
         h = b.hashes()
         out = b.export("t.ifc")
-        f = ifcopenshell.open(str(out))
+        f = GI.open_exported(str(out))
         exp = {"project": ("SINGLE_PANEL", [("TOPHUNG", "MIDDLE")]),
                "slide": ("DOUBLE_PANEL_VERTICAL", [("SLIDINGHORIZONTAL", "LEFT"), ("SLIDINGHORIZONTAL", "RIGHT")]),
                "fixed": ("TRIPLE_PANEL_VERTICAL", [("FIXEDCASEMENT", "LEFT"), ("FIXEDCASEMENT", "MIDDLE"), ("FIXEDCASEMENT", "RIGHT")])}
@@ -107,14 +108,14 @@ def test_프로젝트창_미닫이창은_IfcWindow_와_창_패널로_나가고_�
         hi = b.hashes("imp.dobim")
         assert {k: v for k, v in hi.items() if k != "rev"} == {k: v for k, v in h.items() if k != "rev"}
         out2 = b.export("t2.ifc", project="imp.dobim")                  # 다시 내보내도 패널이 한 벌이다(겹치지 않는다)
-        f2 = ifcopenshell.open(str(out2))
+        f2 = GI.open_exported(str(out2))
         assert _type_panels(f2, f2.by_guid(ids["slide"]))[1] == exp["slide"][1]
         assert len(f2.by_type("IfcWindowPanelProperties")) == len(f.by_type("IfcWindowPanelProperties")) == 6
         # 타입을 지우면(인스턴스를 지운 뒤) 패널도 사라진다
         t_id = b.run("element.get", {"id": ids["project"]})["result"]["params"]["type"]
         assert b.run("element.delete", {"id": ids["project"]})["ok"]
         assert b.run("element.delete", {"id": t_id})["ok"]
-        f3 = ifcopenshell.open(str(b.export("t3.ifc")))
+        f3 = GI.open_exported(str(b.export("t3.ifc")))
         assert len(f3.by_type("IfcWindowPanelProperties")) == 5
     finally:
         b.close()
@@ -169,7 +170,7 @@ def test_복합_창호_IFC는_사용자_정의_분할과_왕복(tmp_path):
                                    "values": {"door_pos": 1200, "open": "out", "swing": "R"}, "host": F.W1, "offset": 3800})
         assert r["ok"], r
         h = b.hashes()
-        f = ifcopenshell.open(str(b.export("t.ifc")))
+        f = GI.open_exported(str(b.export("t.ifc")))
         e = f.by_guid(i1)
         t, panels = _type_panels(f, e)
         assert e.is_a() == "IfcWindow" and t.PartitioningType == "USERDEFINED" and t.UserDefinedPartitioningType == "STOREFRONT_DOOR"
@@ -271,7 +272,7 @@ def test_상단_구속_벽은_IFC_왕복에서_구속이_남는다(tmp_path):
         S.build_authored(b)
         assert b.run("wall.create", {"id": W5, "level": F.LV1, "axis": [0, 8000, 6000, 8000], "top_level": F.LV2, "top_offset": 2000})["ok"]
         h = b.hashes()
-        f = ifcopenshell.open(str(b.export("t.ifc")))
+        f = GI.open_exported(str(b.export("t.ifc")))
         assert f.by_guid(W5).Representation.Representations[0].Items[0].Depth == 5300.0
         r = b.import_ifc("t.ifc", "imp.dobim")
         assert r["ok"] and not r["result"]["warnings"], r

@@ -3,11 +3,11 @@
 지붕이 아닌 슬래브의 도면 불변, 증분 == 전체 재생성, 결정성."""
 import sys
 
-import ifcopenshell
 import pytest
 
 import kit
 from conftest import ROOT
+from dobim_core import globalid as GI   # 내보낸 IFC 를 원래 요소 id 로 연다(W2: 첫 글자가 무효한 id 는 파일에서 바뀐다)
 from dobim_core import drawing as D
 from dobim_core import fixture as F
 
@@ -99,7 +99,7 @@ def test_IFC는_지붕_슬래브를_ROOF로_내보낸다(base, tmp_path):
     base.eng.flush_ifc()
     out = tmp_path / "r.ifc"
     base.eng.ifc.write(str(out))
-    f = ifcopenshell.open(str(out))
+    f = GI.open_exported(str(out))
     assert f.by_guid(F.S1).is_a("IfcSlab") and f.by_guid(F.S1).PredefinedType == "ROOF"
     assert f.by_guid(F.S1[:-1] + "9").PredefinedType == "FLOOR"                                         # 일반 슬래브는 그대로 FLOOR
     assert base.run("model.validate", {})["ok"]
@@ -131,7 +131,7 @@ def test_외부에서_PredefinedType을_바꾸면_분리된다(tmp_path):
         S.build_authored(b)
         assert b.run("slab.create", {"id": F.S1, "level": F.LV2, "boundary": BOUND, **ROOF})["ok"]
         b.export("r.ifc")
-        f = ifcopenshell.open(str(tmp_path / "r.ifc"))
+        f = GI.open_exported(str(tmp_path / "r.ifc"))
         f.by_guid(F.S1).PredefinedType = "FLOOR"
         f.write(str(tmp_path / "t.ifc"))
         assert b.import_ifc("t.ifc", "imp.dobim")["ok"]

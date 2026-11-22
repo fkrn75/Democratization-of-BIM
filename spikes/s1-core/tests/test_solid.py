@@ -4,11 +4,11 @@
 입력이 없는 프로젝트의 산출 불변, 증분 == 전체 재생성."""
 import sys
 
-import ifcopenshell
 import pytest
 
 import kit
 from conftest import ROOT
+from dobim_core import globalid as GI   # 내보낸 IFC 를 원래 요소 id 로 연다(W2: 첫 글자가 무효한 id 는 파일에서 바뀐다)
 from dobim_core import drawing as D
 from dobim_core import fixture as F
 from dobim_core import kinds as K
@@ -198,7 +198,7 @@ def test_IFC는_범주_클래스와_FacetedBrep와_벽_개구부를_내보낸다
     base.eng.flush_ifc()
     out = tmp_path / "s.ifc"
     base.eng.ifc.write(str(out))
-    f = ifcopenshell.open(str(out))
+    f = GI.open_exported(str(out))
     b = f.by_guid(F.SO1)
     assert b.is_a("IfcColumn") and b.PredefinedType == "USERDEFINED" and b.ObjectType == "BUTTRESS"
     rep = b.Representation.Representations[0]
@@ -213,7 +213,7 @@ def test_IFC는_범주_클래스와_FacetedBrep와_벽_개구부를_내보낸다
     assert base.run("wall.set", {"id": F.W3, "openings": []})["ok"]
     base.eng.flush_ifc()
     base.eng.ifc.write(str(out))
-    f2 = ifcopenshell.open(str(out))   # 파일 객체를 붙잡아 둔다(엔티티보다 먼저 해제되면 접근 위반)
+    f2 = GI.open_exported(str(out))   # 파일 객체를 붙잡아 둔다(엔티티보다 먼저 해제되면 접근 위반)
     w = f2.by_guid(F.W3)
     assert not [r for r in w.HasOpenings if r.RelatedOpeningElement.Name.endswith("-opening1")]   # 개구부를 떼면 부속도 사라진다
 
@@ -252,7 +252,7 @@ def test_솔리드_형상을_외부에서_바꾸면_분리되고_클래스가_�
         S.build_authored(b)
         assert b.run("solid.create", PRISM)["ok"]
         b.export("r.ifc")
-        f = ifcopenshell.open(str(tmp_path / "r.ifc"))
+        f = GI.open_exported(str(tmp_path / "r.ifc"))
         pt = f.by_guid(F.SO1).Representation.Representations[0].Items[0].Outer.CfsFaces[0].Bounds[0].Bound.Polygon[0]
         pt.Coordinates = (pt.Coordinates[0] + 50.0, pt.Coordinates[1], pt.Coordinates[2])
         f.write(str(tmp_path / "t.ifc"))
@@ -344,13 +344,13 @@ def test_재료_이름이_겉모습_표에_맞으면_IFC_재료에_표면_스타
     base.eng.flush_ifc()
     out = tmp_path / "m.ifc"
     base.eng.ifc.write(str(out))
-    n0 = len(ifcopenshell.open(str(out)).by_type("IfcSurfaceStyle"))
+    n0 = len(GI.open_exported(str(out)).by_type("IfcSurfaceStyle"))
     assert base.run("material.set", {"id": F.W2, "name": "적벽돌"})["ok"]
     assert base.run("solid.create", PRISM)["ok"]
     assert base.run("material.set", {"id": F.SO1, "name": "적벽돌"})["ok"]   # 같은 재료는 스타일도 하나
     base.eng.flush_ifc()
     base.eng.ifc.write(str(out))
-    f = ifcopenshell.open(str(out))
+    f = GI.open_exported(str(out))
     mats = [m for m in f.by_type("IfcMaterial") if m.Name == "적벽돌"]
     assert len(mats) == 1 and mats[0].HasRepresentation
     shade = [x for x in f.by_type("IfcSurfaceStyleShading")]
@@ -360,7 +360,7 @@ def test_재료_이름이_겉모습_표에_맞으면_IFC_재료에_표면_스타
     assert base.eng.state_hash() == h0
     base.eng.flush_ifc()
     base.eng.ifc.write(str(out))
-    f2 = ifcopenshell.open(str(out))
+    f2 = GI.open_exported(str(out))
     assert len(f2.by_type("IfcSurfaceStyle")) == n0 and not [m for m in f2.by_type("IfcMaterial") if m.Name == "적벽돌"]
     assert not f2.by_type("IfcSurfaceStyleShading") and not f2.by_type("IfcColourRgb") and not f2.by_type("IfcMaterialDefinitionRepresentation")   # 고아 엔티티가 남지 않는다
 

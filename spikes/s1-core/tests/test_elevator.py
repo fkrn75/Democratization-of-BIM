@@ -10,6 +10,7 @@ import kit
 from conftest import ROOT
 from dobim_core import drawing as D
 from dobim_core import fixture as F
+from dobim_core import globalid as GI
 from dobim_core import kinds as K
 
 sys.path.insert(0, str(ROOT.parent / "s2-roundtrip"))
@@ -191,7 +192,7 @@ def test_외부에서_카_형상을_바꾸면_분리된다(tmp_path):
         S.build_authored(b)
         assert b.run("elevator.create", {"id": F.EL1, "level": F.LV1, "shaft": SHAFT, "rise": 6000})["ok"]
         b.export("e.ifc")
-        f = ifcopenshell.open(str(tmp_path / "e.ifc"))
+        f = GI.open_exported(tmp_path / "e.ifc")   # 첫 글자가 무효한 id(F.EL1)는 내보낸 파일에서 바뀌어 있다(W2): 원래 id 로 되돌려 연다
         f.by_guid(F.EL1).Representation.Representations[0].Items[0].Depth = 2500.0
         f.write(str(tmp_path / "t.ifc"))
         assert b.import_ifc("t.ifc", "imp.dobim")["ok"]
