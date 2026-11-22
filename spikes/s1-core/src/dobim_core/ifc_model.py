@@ -1146,7 +1146,14 @@ class IfcModel:
         self._contain(eid, spec["level"])
         self._place(e, self.ents[spec["level"]].ObjectPlacement, (x, y, 0.0), (c, sn, 0.0))
         if "arc" in spec:   # 곡선 벽(W2 ARC-04): 바깥·안쪽 호와 양 끝 선의 닫힌 복합 곡선을 돌출하고, 축 표현(IfcTrimmedCurve(IfcCircle))을 단다
-            self._set_body(e, self._arc_solid(spec))
+            rep0 = e.Representation.Representations[0] if e.Representation is not None else None
+            if "top" in spec:   # 상단 윤곽(W2 세 번째 PR): 윗변이 기울어 돌출이 아니다. 조각마다 닫힌 다면체(IfcFacetedBrep) 여럿, 표현 종류 Brep
+                self._set_body(e, self._arc_top_breps(spec))
+                e.Representation.Representations[0].RepresentationType = "Brep"
+            else:
+                self._set_body(e, self._arc_solid(spec))
+                if rep0 is not None and rep0.RepresentationType == "Brep":   # 상단 윤곽을 뗐다: 돌출로 되돌린다
+                    rep0.RepresentationType = "SweptSolid"
             self._set_axis(e, self._arc_curve(spec["arc"], spec["footprint"][0][0], spec["footprint"][1][0], 0.0))
         elif "top" in spec:   # 벽 상단 윤곽(21단계): 지역 (u, z) 수직 윤곽(바닥 ~ 상단 윤곽)을 두께 방향으로 돌출한다(평면 윤곽은 늘 직사각형이라 같은 형상)
             self._set_body(e, self._vprofile_solid(spec["top"], spec["thickness"] / 2.0, spec["thickness"]))
@@ -1164,13 +1171,18 @@ class IfcModel:
         # 모양 개구부(18단계): 벽 지역 (u, z) 윤곽을 두께 방향(지역 y)으로 벽보다 양쪽 10mm 더 길게 돌출한 IfcOpeningElement. 없으면 부속도 없다(이전과 같다)
         ops = spec.get("openings", ())
         xops = spec.get("xopenings", ())   # 다른 벽의 창이 함께 자르는 개구부(25단계): 부속 키는 인스턴스 id 라 순서가 바뀌어도 GlobalId 가 같다
-        if ops or xops or eid in self.parts:
+        if ops or xops or spec.get("voids") or eid in self.parts:
             half = spec.get("thickness", 0.0) / 2.0 + 10.0
             wanted = {f"opening:{i}": {"cls": "IfcOpeningElement", "name": f"{spec['name']}-opening{i + 1}", "rel": "void",
                                        "solid": (lambda lp=lp: self._vprofile_solid(lp, half, 2.0 * half))} for i, lp in enumerate(ops)}
+            for i, at in enumerate(spec.get("openings_at", ())):   # 곡선 벽(W2 세 번째 PR): 개구부 가운데의 접선 틀에서 휜 두께를 다 뚫는다
+                wanted[f"opening:{i}"]["solid"] = (lambda lp=ops[i], at=at: self._vprofile_solid_at(lp, at))
             for fid, lp in xops:
                 wanted[f"xopening:{fid}"] = {"cls": "IfcOpeningElement", "name": f"{spec['name']}-xopening:{fid}", "rel": "void",
                                              "solid": (lambda lp=lp: self._vprofile_solid(lp, half, 2.0 * half))}
+            for oid, oname, lp, at in spec.get("voids", ()):   # 독립 벽 개구(W2 세 번째 PR, ARC-34): 이름표 void:<개구 id>, 곡선 벽은 접선 틀
+                wanted[f"void:{oid}"] = {"cls": "IfcOpeningElement", "name": f"{oname}-void:{oid}", "rel": "void",
+                                         "solid": (lambda lp=lp, at=at: self._vprofile_solid(lp, half, 2.0 * half) if at is None else self._vprofile_solid_at(lp, at))}
             self._sync_parts(eid, wanted)
 
     # ------------------------------------------------------------ 곡선 벽(W2 ARC-04)
@@ -1207,6 +1219,42 @@ class IfcModel:
         prof = f.createIfcArbitraryClosedProfileDef("AREA", None, cc)
         pos = f.createIfcAxis2Placement3D(f.createIfcCartesianPoint([0.0, 0.0, float(spec.get("base", 0.0))]), None, None)
         return f.createIfcExtrudedAreaSolid(prof, pos, f.createIfcDirection([0.0, 0.0, 1.0]), float(spec["height"]))
+
+    def _arc_top_breps(self, spec):
+        """상단 윤곽 곡선 벽 몸체: 윤곽 점(조각 경계 점을 넣은 것) 사이 구간마다 바닥 ~ 윗변의 닫힌 다면체 하나(바깥을 향하게 면 방향을 맞춘다).
+        윗면은 기울어진 두 반지름 선 사이라 평면이 아니어서 삼각형 둘로 나눈다. 단(같은 u 두 점)은 이웃 다면체의 높이 차로 생긴다."""
+        f = self.f
+        arc, h = spec["arc"], spec["thickness"] / 2.0
+        zb = float(spec.get("base", 0.0))
+        loop = spec["top"]                      # [(start, zb), (end, zb)] + 윗변(끝 -> 시작)
+        top = list(loop[2:])[::-1]
+        dense = [top[0]]
+        for (u0, z0), (u1, z1) in zip(top, top[1:]):
+            if u1 - u0 > 1e-6:
+                for u in AG.breaks(arc, u0, u1)[1:-1]:
+                    dense.append((u, z0 + (z1 - z0) * (u - u0) / (u1 - u0)))
+            dense.append((u1, z1))
+        out = []
+        for (ua, za), (ub, zc) in zip(dense, dense[1:]):
+            if ub - ua <= 1e-6:
+                continue
+            ra, rb, lb, la = self._arc_pt(arc, ua, -h), self._arc_pt(arc, ub, -h), self._arc_pt(arc, ub, h), self._arc_pt(arc, ua, h)
+            vs = [(*ra, zb), (*rb, zb), (*lb, zb), (*la, zb), (*ra, za), (*rb, zc), (*lb, zc), (*la, za)]
+            vs = [tuple(round(float(c), 6) + 0.0 for c in v) for v in vs]
+            faces = [(0, 3, 2, 1), (4, 5, 6), (4, 6, 7), (0, 1, 5, 4), (1, 2, 6, 5), (2, 3, 7, 6), (3, 0, 4, 7)]
+            cx, cy, cz = (sum(v[k] for v in vs) / 8.0 for k in range(3))
+            fixed = []
+            for fc in faces:   # Newell 법선이 몸체 중심에서 면 중심으로 가는 방향과 같게(바깥을 향하게)
+                nx = ny = nz = 0.0
+                for i in range(len(fc)):
+                    p, q = vs[fc[i]], vs[fc[(i + 1) % len(fc)]]
+                    nx += (p[1] - q[1]) * (p[2] + q[2])
+                    ny += (p[2] - q[2]) * (p[0] + q[0])
+                    nz += (p[0] - q[0]) * (p[1] + q[1])
+                fx, fy, fz = (sum(vs[i][k] for i in fc) / len(fc) for k in range(3))
+                fixed.append(fc if nx * (fx - cx) + ny * (fy - cy) + nz * (fz - cz) >= 0.0 else tuple(reversed(fc)))
+            out.append(self._brep(vs, [[list(fc)] for fc in fixed]))
+        return out
 
     def _axis_ctx(self):
         """'Axis' 하위 문맥(Model/Axis/GRAPH_VIEW). 곡선 벽이 처음 필요할 때 만든다(곡선 벽이 없는 모델의 IFC 는 그대로다)."""
@@ -1266,6 +1314,19 @@ class IfcModel:
         pos = f.createIfcAxis2Placement3D(f.createIfcCartesianPoint([0.0, float(y0), 0.0]), f.createIfcDirection([0.0, -1.0, 0.0]), f.createIfcDirection([1.0, 0.0, 0.0]))
         return f.createIfcExtrudedAreaSolid(prof, pos, f.createIfcDirection([0.0, 0.0, 1.0]), float(depth))
 
+    def _vprofile_solid_at(self, loop, at):
+        """곡선 벽의 모양 개구부: (u, z) 윤곽을 가운데 u 기준으로 옮겨, 축 위 점 (x, y)·접선 (tx, ty) 틀에서 왼쪽 면 밖(반 깊이 hd)부터
+        오른쪽으로 2·hd 돌출한다(_vprofile_solid 의 접선 틀 판, at = queries.host_at)."""
+        f = self.f
+        x, y, tx, ty, hd = at
+        uc = (min(u for u, _ in loop) + max(u for u, _ in loop)) / 2.0
+        pl = f.createIfcPolyline([f.createIfcCartesianPoint([float(u - uc), float(z)]) for u, z in list(loop) + [loop[0]]])
+        prof = f.createIfcArbitraryClosedProfileDef("AREA", None, pl)
+        org = [round(float(x - ty * hd), 6) + 0.0, round(float(y + tx * hd), 6) + 0.0, 0.0]
+        pos = f.createIfcAxis2Placement3D(f.createIfcCartesianPoint(org), f.createIfcDirection([float(ty), float(-tx), 0.0]),
+                                          f.createIfcDirection([float(tx), float(ty), 0.0]))
+        return f.createIfcExtrudedAreaSolid(prof, pos, f.createIfcDirection([0.0, 0.0, 1.0]), float(2.0 * hd))
+
     def _brep(self, verts, faces):
         """다면체(solids.solid_mesh 의 값) -> IfcFacetedBrep. 꼭짓점 점 엔티티는 면끼리 공유한다."""
         f = self.f
@@ -1310,6 +1371,9 @@ class IfcModel:
         depth = spec["thickness"] + 20.0
         wanted = {f"opening:{i}": {"cls": "IfcOpeningElement", "name": f"{spec['name']}-opening{i + 1}", "rel": "void",
                                    "solid": (lambda o=o: self._solid(o, depth, z0=z0))} for i, o in enumerate(spec.get("openings", ()))}
+        for oid, oname, o in spec.get("voids", ()):   # 독립 수직·샤프트 개구(W2 세 번째 PR, ARC-34): 이름표 void:<개구 id>
+            wanted[f"void:{oid}"] = {"cls": "IfcOpeningElement", "name": f"{oname}-void:{oid}", "rel": "void",
+                                     "solid": (lambda o=o: self._solid(o, depth, z0=z0))}
         if "parapet" in spec:   # 지붕 슬래브 둘레의 파라펫: 슬래브에 집합한 IfcWall(PARAPET). 바깥 경계와 안쪽 고리 사이를 윗면 위로 높이만큼 압출한다
             ph, pt = spec["parapet"]
             ring = parapet_ring([list(q) for q in spec["boundary"]], pt)
@@ -1346,6 +1410,16 @@ class IfcModel:
                 if cut < 0:
                     continue
                 label = "xopening:" + name[cut + len("-xopening:"):]
+                if label not in have and p.GlobalId == part_guid(eid, label):
+                    have[label] = p
+        if kind in ("wall", "slab"):   # 독립 개구 객체(W2 세 번째 PR, ARC-34): 이름 끝의 void:<개구 id> 를 읽고 GlobalId(part_guid)로 확인한다
+            for r in getattr(e, "HasOpenings", None) or ():
+                p = r.RelatedOpeningElement
+                name = p.Name if isinstance(p.Name, str) else ""
+                cut = name.rfind("-void:")
+                if cut < 0:
+                    continue
+                label = "void:" + name[cut + len("-void:"):]
                 if label not in have and p.GlobalId == part_guid(eid, label):
                     have[label] = p
         if not have:

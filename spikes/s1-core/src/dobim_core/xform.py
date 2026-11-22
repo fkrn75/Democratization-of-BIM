@@ -105,7 +105,8 @@ def wall(p: dict, xf: Xf) -> dict:
     q = dict(p, axis=_line(xf, p["axis"], True))
     if "arc" in p:   # 곡선 벽(W2 ARC-04): 호 위의 점도 옮긴다(대칭이면 축이 뒤집혀도 가운데 점은 가운데 점이다)
         q["arc"] = xf.pt(*p["arc"])
-        n = axis_len(p["axis"])
+    if xf.mirror:   # 대칭은 축이 뒤집혀 u 로 잰 값을 L - u 로(W2 세 번째 PR: 첫 PR 이 이 조건을 곡선 벽 조건으로 바꿔 직선 벽 대칭이 뒤집지 않던 결함을 되돌린다)
+        n = wall_len(p)   # 곡선 벽은 호 길이(현 길이가 아니다)
         if "openings" in p:
             q["openings"] = _flip_openings(p["openings"], n)
         if "top_profile" in p:

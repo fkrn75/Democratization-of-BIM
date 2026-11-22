@@ -110,9 +110,9 @@ def test_거절_사례(base):
     assert err(base.run("wall.arc", {"level": F.LV1, "center": [0, 0], "radius": 900, "start_angle": 0, "end_angle": 360}))["code"] == "SCHEMA_INVALID"
     assert err(base.run("wall.arc", {"level": F.LV1, "points": PTS, "center": [0, 0]}))["code"] == "SCHEMA_INVALID"
     apse(base, views=False)
-    for name, args in (("wall.split", {"id": AW, "at": 1000}), ("wall.offset", {"ids": [AW], "distance": 500}),
-                       ("wall.set", {"id": AW, "axis": [0, 0, 100, 0]}), ("wall.set", {"id": AW, "top_profile": [[0, 3000], [6283.185, 2000]]}),
-                       ("join.tee", {"stem": AW, "host": F.W2}), ("wall.extend_to", {"id": F.W2, "to": AW})):
+    # 분할·간격띄우기·T 조인 줄기·트림/연장은 W2 세 번째 PR 부터 곡선 벽도 받는다(test_arc_wall_edit.py)
+    for name, args in (("wall.set", {"id": AW, "axis": [0, 0, 100, 0]}), ("wall.set", {"id": AW, "top_profile": [[0, 3000], [6000, 2000]]}),   # 윤곽 끝 = 호 길이(6283.185)가 아니다
+                       ("join.tee", {"stem": AW, "host": F.W2})):   # 곡선 벽 원이 W2 축(x=6000)과 만나지 않는다
         assert err(base.run(name, args))["code"] == "CONSTRAINT", name
     ok(base.run("wall.set", {"id": AW, "thickness": 300, "height": 3200}))          # 두께·높이는 직선 벽과 같다
     assert err(base.run("wall.set", {"id": AW, "thickness": 4200}))["code"] == "CONSTRAINT"   # 안쪽 면 반지름이 음수가 된다

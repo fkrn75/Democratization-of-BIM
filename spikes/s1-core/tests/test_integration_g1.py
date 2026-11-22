@@ -441,6 +441,7 @@ def test_9_종류_레지스트리가_모든_모듈과_맞는다(tmp_path):
         _ok(b.run("view.area_plan", {"id": F.VA1, "name": "1F 실면적", "level": F.LV1, "scheme": "rooms"}, project=p))
         _ok(b.run("view.legend", {"id": F.VL1, "name": "창호 범례", "content": "symbols"}, project=p))
         _ok(b.run("view.drafting", {"id": F.VD1, "name": "D-01 상세", "scale": 10}, project=p))   # 제도 뷰(W1 연장 VIEW-07)
+        _ok(b.run("opening.wall", {"host": F.W2, "offset": 2800, "sill": 900, "width": 800, "height": 1200}, project=p))   # 독립 개구 객체(W2 세 번째 PR, ARC-34)
     finally:
         b.close()
     eng = Engine(tmp_path / p, "t", create=False)

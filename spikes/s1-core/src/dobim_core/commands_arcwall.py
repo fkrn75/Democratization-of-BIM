@@ -6,7 +6,9 @@ wall.arc_set  곡선 벽의 축을 바꾼다(같은 두 입력 방식). 호스�
 
 저장: params.axis = [시작 x, y, 끝 x, y], params.arc = [호 가운데 점 x, y](소수 6자리). arc 키가 없으면 직선 벽이고 행은 이전과 같다.
 지역 u(문·창 offset, 치수 trim.*)는 호를 따라 잰 거리다. 형상·도면·IFC 는 arcgeom 이 정한다.
-아직 받지 않는 것(kinds.ARC_EXCLUSIVE): 모양 개구부·상단 윤곽·잘라내기·T 조인 줄기. 분할·간격띄우기·트림/연장·모서리 잇기도 직선 벽만 한다.
+W2 세 번째 PR 부터 곡선 벽도 받는 편집: 분할(wall.split, 호 위 거리)·동심 간격띄우기(wall.offset)·트림/연장(wall.extend_to·wall.corner, 호를 따라)·
+T 조인 줄기(join.tee)·상단 붙이기(wall.attach_top, 조각 현마다 잰 윤곽)·사각 모양 개구부(wall.set openings shape rect)·독립 벽 개구(opening.wall).
+아직 받지 않는 것(kinds.ARC_EXCLUSIVE): 잘라내기(cuts). 아치·원 모양 개구부도 직선 벽만 한다.
 이 모듈은 ifcopenshell 을 import 하지 않는다.
 """
 from __future__ import annotations

@@ -196,10 +196,21 @@ def _tee_of(g, w):
     return el(g, w)["params"].get("tee")
 
 
+def _stem_side(g, w, tee, p):
+    """tee_end_at 의 곡선 벽(W2 ARC-04)도 받는 판: 곡선 줄기는 끝을 호 위 거리로 고른다. 직선 벽은 tee_end_at 그대로다."""
+    if not tee:
+        return None
+    if g.q(wall_arc, w) is None:
+        return tee_end_at(g.q(wall_frame, w), tee, p)
+    t, length = g.q(axis_u, w, p), g.q(axis_len, w)
+    end = "start" if abs(t) <= abs(t - length) else "end"
+    return end if end in tee and min(abs(t), abs(t - length)) <= JOIN_MAX_EXT else None
+
+
 def _is_stem_at(g, o, p):
-    """상대 벽 o 가 점 p 에서 T 조인 줄기인가. 곡선 벽은 줄기가 될 수 없다(kinds.ARC_EXCLUSIVE: tee 키가 없다)."""
+    """상대 벽 o 가 점 p 에서 T 조인 줄기인가(곡선 줄기는 W2 세 번째 PR 부터: _stem_side)."""
     tee = _tee_of(g, o)
-    return bool(tee) and tee_end_at(g.q(wall_frame, o), tee, p) is not None
+    return bool(tee) and _stem_side(g, o, tee, p) is not None
 
 
 
@@ -250,19 +261,21 @@ def _arc_trim(g, w):
 
 def _arc_extent(g, w):
     """곡선 벽이 낀 wall_extent(W2 ARC-04): 직선 벽 규칙과 같되 u·방향을 axis_u·axis_dir 로 잰다(조인 지점의 접선 방향으로 사인을 잰다).
-    곡선 벽은 T 조인 줄기가 될 수 없고, 곡선 벽 몸통에 닿는 직선 줄기는 몸통 반 두께/|sin| 만큼 물러난다(조인 지점 접선 기준 근사)."""
+    T 조인 줄기(직선·곡선)는 몸통 반 두께/|sin| 만큼 물러난다(조인 지점 접선 기준 근사, 곡선 줄기는 호를 따라 물러난다)."""
     start, end, status = g.q(wall_trim, w)
     if not CORNER_EXTEND or status != "ok":
         return (start, end)
     length = g.q(axis_len, w)
     tee = _tee_of(g, w)
-    if tee:   # 직선 줄기가 곡선 몸통에 닿는다
-        x, y, c, s, flen = g.q(wall_frame, w)
+    if tee:   # 줄기가 곡선 몸통에 닿거나, 곡선 줄기가 몸통에 닿는다
         for o in g.q(wall_joins, w):
             pt = g.q(join_point, min(w, o), max(w, o))
             if pt is None or _is_stem_at(g, o, pt):
                 continue
-            side = tee_end_at((x, y, c, s, flen), tee, pt)
+            side = _stem_side(g, w, tee, pt)
+            if side is None:
+                continue
+            c, s = g.q(axis_dir, w, g.q(axis_u, w, pt))
             oc, os_ = g.q(axis_dir, o, g.q(axis_u, o, pt))
             sin = c * os_ - s * oc
             if side is None or abs(sin) < MIN_SIN:
@@ -278,7 +291,7 @@ def _arc_extent(g, w):
         pt = g.q(join_point, w, o)
         if pt is None:
             continue
-        if tee and tee_end_at(g.q(wall_frame, w), tee, pt) or _is_stem_at(g, o, pt):
+        if tee and _stem_side(g, w, tee, pt) or _is_stem_at(g, o, pt):
             continue
         t = g.q(axis_u, w, pt)
         to = g.q(axis_u, o, pt)
@@ -363,6 +376,59 @@ def wall_footprint(g, w):
     start, end = g.q(wall_extent, w)
     half = el(g, w)["params"]["thickness"] / 2.0
     return ((start, -half), (end, -half), (end, half), (start, half))
+
+
+# ---------------------------------------------------------------- 독립 개구 객체(W2 세 번째 PR, ARC-34)
+def opening_objs(g):
+    """저작 독립 개구 객체 ((id, params), ...) id 순. 없으면 빈 값(호스트 형상·도면·IFC 는 이전과 같다)."""
+    if not count(g, "opening"):
+        return ()
+    out = []
+    for b in range(NB):
+        for o in bucket_ids(g, "opening", b):
+            r = el(g, o)
+            if r is not None and r["origin"] == "authored":
+                out.append((o, r["params"]))
+    return tuple(sorted(out, key=lambda x: x[0]))
+
+
+def shaft_zrange(g, o):
+    """샤프트 개구의 절대 z 범위 (아래, 위). 레벨이 없으면(고아) None."""
+    p = el(g, o)["params"]
+    li = el(g, p["level"])
+    if li is None or li["kind"] != "level":
+        return None
+    z0 = li["params"]["elevation"] + p.get("base_offset", 0.0)
+    return (z0, z0 + p["height"])
+
+
+def slab_voids(g, s):
+    """슬래브를 관통하는 독립 개구 ((개구 id, 이름, 경계 다각형), ...): 이 슬래브를 가리키는 수직 개구 + z 범위가 슬래브 두께와 겹치고(샤프트 바닥에 윗면이 닿는 바닥 레벨 슬래브도 관통, 위 끝은 뺀다) 경계가
+    슬래브 경계 안에 드는 샤프트 개구(슬래브 구멍과 겹치지 않는다). 없으면 빈 값."""
+    objs = g.q(opening_objs)
+    if not objs:
+        return ()
+    from dobim_core import kinds as K
+    p = el(g, s)["params"]
+    out = []
+    for o, op in objs:
+        if op["mode"] == "vertical" and op["host"] == s:
+            out.append((o, op["name"], tuple(tuple(q) for q in op["boundary"])))
+        elif op["mode"] == "shaft":
+            zr = g.q(shaft_zrange, o)
+            if zr is None:
+                continue
+            zb, zt = g.q(slab_zrange, s)
+            if zr[0] <= zt + 1e-6 and zb < zr[1] - 1e-6 and all(K.point_in_polygon(q, p["boundary"]) == 1 for q in op["boundary"]) and not any(
+                    K.point_in_polygon(q, h) >= 0 for h in p.get("openings", ()) for q in op["boundary"]):
+                out.append((o, op["name"], tuple(tuple(q) for q in op["boundary"])))
+    return tuple(out)
+
+
+def wall_voids(g, w):
+    """벽을 뚫는 독립 벽 개구 ((개구 id, 이름, 모양 개구부 꼴 dict), ...). 없으면 빈 값."""
+    from dobim_core import kinds as K
+    return tuple((o, op["name"], K.opening_shape(op)) for o, op in g.q(opening_objs) if op["mode"] == "wall" and op["host"] == w)
 
 
 def wall_hosted(g, w):
@@ -585,6 +651,9 @@ def wall_row(g, w):
         opening += dp["width"] * dp["height"]
     for o in p.get("openings", ()):   # 모양 개구부(18단계)의 실제 윤곽 면적
         opening += abs(SO.area2(SO.opening_loop(o))) / 2.0
+    if g.q(opening_objs):   # 독립 벽 개구(W2 세 번째 PR, ARC-34)도 같은 넓이로 뺀다. 없으면 행은 그대로
+        for _o, _n, d in g.q(wall_voids, w):
+            opening += abs(SO.area2(SO.opening_loop(d))) / 2.0
     if "cuts" in p:   # 벽 잘라내기(23단계): 두께를 다 뚫는 상자의 입면 넓이를 뺀다(한쪽 면만 파인 상자는 부피에만 든다). 없으면 행은 그대로
         opening += WC.through_area(g.q(wall_cut_boxes, w), p["thickness"] / 2.0)
     opening += g.q(wall_xcut_area, w)[0]   # 26단계: 다른 벽의 창이 함께 자르는 개구부(also_cuts). 없으면 0 이라 행은 그대로
@@ -775,9 +844,15 @@ def ifc_spec(g, e):
         if "cuts" in p:   # 벽 잘라내기(23단계): 몸체에서 뺄 상자(형상 범위로 자른 값). 없으면 명세는 이전과 같다
             spec["cuts"] = g.q(wall_cut_boxes, e)
             spec["cut_range"] = (spec["footprint"][0][0], spec["footprint"][1][0], p["thickness"] / 2.0, WT.base(p), WT.top_rel(p))
+        vs = g.q(wall_voids, e) if g.q(opening_objs) else ()
+        if vs:   # 독립 벽 개구(W2 세 번째 PR, ARC-34): (개구 id, 이름, 지역 (u, z) 윤곽, 곡선 벽이면 host_at). 없으면 명세는 이전과 같다
+            spec["voids"] = tuple((o, n, tuple(SO.opening_loop(d)), g.q(host_at, e, d["offset"], d["width"] / 2.0)) for o, n, d in vs)
+            spec["thickness"] = p["thickness"]
         if "arc" in p:   # 곡선 벽(W2 ARC-04): 배치 틀(시작점, 현 방향) 안의 호 (중심 x, y, 반지름, 시작각, 방향, 중심각). footprint 의 u 는 호 위 거리다
             spec["arc"] = g.q(wall_arc_local, e)
             spec["thickness"] = p["thickness"]
+            if "openings" in p:   # 사각 모양 개구부(W2 세 번째 PR): 개구부 가운데 u 의 축 위 점·접선 틀(문과 같은 host_at)에 놓는다
+                spec["openings_at"] = tuple(g.q(host_at, e, o["offset"], o["width"] / 2.0) for o in p["openings"])
         return spec
     if kind == "solid":
         # 배치는 레벨 좌표계(원점·무회전)이고 형상 z 는 레벨 기준이므로 레벨 높이는 읽지 않는다. 형상은 solids.solid_mesh 가 정한다(도면과 같은 값)
@@ -793,6 +868,9 @@ def ifc_spec(g, e):
             spec["layers"] = tuple((x["material"], x["thickness"]) for x in p["layers"])
         if "openings" in p:   # 구멍이 없으면 명세는 이전과 같다
             spec["openings"] = tuple(tuple(tuple(q) for q in o) for o in p["openings"])
+        vs = g.q(slab_voids, e) if g.q(opening_objs) else ()
+        if vs:   # 독립 수직·샤프트 개구(W2 세 번째 PR, ARC-34): (개구 id, 이름, 경계). 없으면 명세는 이전과 같다
+            spec["voids"] = vs
         if "use" in p:   # 지붕 슬래브(PredefinedType ROOF). 물매·배수구는 IFC 가 아니라 의도로만 왕복한다(명세에 넣지 않는다)
             spec["use"] = p["use"]
         if "parapet" in p:   # 파라펫: 슬래브에 집합한 IfcWall(PARAPET) 부속. 없으면 명세는 이전과 같다

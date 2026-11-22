@@ -213,6 +213,48 @@ def target_faces(kind: str, p: dict, face: str, dz: float) -> list:
     return out
 
 
+def attach_profile_arc(ai, height: float, faces: list, face: str):
+    """곡선 벽(W2 ARC-04) 축 위의 상단 윤곽: 호를 도면 조각(facet) 경계에서 나눈 현마다 attach_profile 을 재고 현 위 거리 s 를 호 위 거리 u 로
+    옮겨 잇는다(도면·IFC 가 조각마다 곧게 그리는 것과 같은 근사, 현과 호의 차는 arcgeom.FACET_SAG 이하). 덮인 구간이 없으면 (None, [])."""
+    from dobim_core import arcgeom as AG   # 순수 모듈(늦게 읽는다)
+    n = AG.length(ai)
+    us = AG.breaks(ai, 0.0, n)
+    pts, covered, hit = [], [], False
+    for ua, ub in zip(us, us[1:]):
+        pa, pb = AG.point(ai, ua), AG.point(ai, ub)
+        chord = ((pb[0] - pa[0]) ** 2 + (pb[1] - pa[1]) ** 2) ** 0.5
+        prof, cov = attach_profile([pa[0], pa[1], pb[0], pb[1]], height, faces, face)
+        k = (ub - ua) / chord
+        seg = [[ua, float(height)], [ub, float(height)]] if prof is None else [[ua + s * k, z] for s, z in prof]
+        seg[0][0], seg[-1][0] = ua, ub
+        hit = hit or prof is not None
+        for a, b in cov:
+            a, b = ua + a * k, ua + b * k
+            if covered and abs(covered[-1][1] - a) < 1e-3:
+                covered[-1] = (covered[-1][0], b)
+            else:
+                covered.append((a, b))
+        for s, z in seg:
+            q = (round(s, 3) + 0.0, round(z, 3) + 0.0)
+            if pts and abs(pts[-1][0] - q[0]) < 1e-9 and abs(pts[-1][1] - q[1]) < 1e-3:
+                continue
+            pts.append(q)
+    if not hit:
+        return None, []
+    simp = []   # 한 직선 위의 가운데 점을 뺀다(단은 남는다): attach_profile 과 같은 규칙
+    for q in pts:
+        while len(simp) >= 2:
+            (sa, za), (sb, zb) = simp[-2], simp[-1]
+            if sb - sa > 1e-9 and q[0] - sb > 1e-9 and abs((zb - za) * (q[0] - sb) - (q[1] - zb) * (sb - sa)) <= 1e-6 * (q[0] - sa):
+                simp.pop()
+            else:
+                break
+        simp.append(q)
+    simp[0] = (0.0, simp[0][1])
+    simp[-1] = (n, simp[-1][1])
+    return [[s, z] for s, z in simp], [[round(a, 3) + 0.0, round(b, 3) + 0.0] for a, b in covered]
+
+
 def _inside(pt, loops) -> bool:
     if SO.point_in(pt, loops[0]) < 0:
         return False

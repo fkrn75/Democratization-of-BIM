@@ -282,6 +282,17 @@ def _bands(start, end, zb, zt, ops):
     return tuple(bands)
 
 
+def _arc_dense_top(ai, top):
+    """곡선 벽 상단 윤곽 점 ((u, z), ...)의 각 구간에 조각 경계 u 의 점(선형 보간)을 넣는다. 단(같은 u 두 점)은 그대로."""
+    out = [top[0]]
+    for (u0, z0), (u1, z1) in zip(top, top[1:]):
+        if u1 - u0 > EPS:
+            for u in AG.breaks(ai, u0, u1)[1:-1]:
+                out.append((u, z0 + (z1 - z0) * (u - u0) / (u1 - u0)))
+        out.append((u1, z1))
+    return tuple(out)
+
+
 def _top_rel(p) -> float:
     """벽 윗면의 레벨 기준 높이: 상단 윤곽(21단계)이 있으면 가장 높은 점, 없으면 바닥 오프셋(22단계) + height."""
     return WT.top_rel(p)
@@ -306,6 +317,8 @@ def wall_solid(g, w):
     if "arc" in p:   # 곡선(원호) 벽(W2 ARC-04): 13번째 칸 = 호 계산값(arcgeom.info). 띠의 속이 찬 구간은 조각(facet) 경계에서 나눠 조각마다 볼록한 사다리꼴이 된다
         ai = g.q(Q.wall_arc, w)
         bands = tuple((z0, z1, AG.split_ivs(ai, ivs)) for z0, z1, ivs in _bands(start, end, zb, zt, ops))
+        if top is not None:   # 상단 윤곽(W2 세 번째 PR): 조각 경계마다 점을 넣어 윗변도 조각마다 곧게(평면·단면·입면이 조각 단위로 읽는다)
+            top = _arc_dense_top(ai, top)
         return (x, y, c, s, p["thickness"] / 2.0, start, end, zb, zt, ops, bands, top, ai)
     return (x, y, c, s, p["thickness"] / 2.0, start, end, zb, zt, ops, _bands(start, end, zb, zt, ops), top)
 
@@ -432,6 +445,16 @@ def _u_of(cfg, sol, s_, w_):
     return (px - sol[0]) * sol[2] + (py - sol[1]) * sol[3]
 
 
+def _u_of_chord(cfg, sol, s_, w_, u0, u1):
+    """곡선 벽 조각 [u0, u1] 안에서 뷰 좌표 (s, w) -> u: 조각 중심 현에 투영해 선형으로 옮긴다(조각 근사와 같다)."""
+    px = cfg[1] + s_ * cfg[5] + w_ * cfg[3]
+    py = cfg[2] + s_ * cfg[6] + w_ * cfg[4]
+    a, b = _world(sol, u0, 0.0), _world(sol, u1, 0.0)
+    dx, dy = b[0] - a[0], b[1] - a[1]
+    t = ((px - a[0]) * dx + (py - a[1]) * dy) / (dx * dx + dy * dy)
+    return u0 + t * (u1 - u0)
+
+
 def _clip_u(poly, lo, hi):
     """볼록 다각형 (u, z) 를 lo <= u <= hi 로 자른다."""
     for bound, keep_ge in ((lo, True), (hi, False)):
@@ -481,7 +504,10 @@ def _vcut_top(g, v, w):
         s0, s1 = min(ss), max(ss)
         if s1 - s0 <= EPS:
             continue
-        ua, ub = _u_of(cfg, sol, s0, near), _u_of(cfg, sol, s1, near)
+        if len(sol) == 13:   # 곡선 벽(W2 세 번째 PR): 조각 하나 안에서 u 는 그 조각 중심 현을 따라 선형이다
+            ua, ub = _u_of_chord(cfg, sol, s0, near, u0, u1), _u_of_chord(cfg, sol, s1, near, u0, u1)
+        else:
+            ua, ub = _u_of(cfg, sol, s0, near), _u_of(cfg, sol, s1, near)
         if abs(ub - ua) < 1e-6:   # 축에 수직으로 자른다: 그 u 에서의 높이 범위
             span = _z_span(poly, max(u0, min(u1, (ua + ub) / 2.0)))
             if span is not None and span[1] - span[0] > EPS:
@@ -583,24 +609,44 @@ def _arc_vedges(sol, pt, front):
     front(u, vv) = 조각 가운데 u 에서 면 vv 가 관찰자를 향하는가."""
     h, start, end, zb, zt, ops, bands = sol[4], sol[5], sol[6], sol[7], sol[8], sol[9], sol[10]
     ai = sol[12]
+    top = sol[11]
     raw = []
-    for u in (start, end):
-        for vv in (-h, h):
-            raw.append((pt(u, vv, zb), pt(u, vv, zt)))
-        for z in (zb, zt):
-            raw.append((pt(u, -h, z), pt(u, h, z)))
     us = AG.breaks(ai, start, end)
-    for vv in (-h, h):
-        for z in (zb, zt):
+    if top is None:
+        for u in (start, end):
+            for vv in (-h, h):
+                raw.append((pt(u, vv, zb), pt(u, vv, zt)))
+            for z in (zb, zt):
+                raw.append((pt(u, -h, z), pt(u, h, z)))
+        for vv in (-h, h):
+            for z in (zb, zt):
+                for a, b in zip(us, us[1:]):
+                    raw.append((pt(a, vv, z), pt(b, vv, z)))
+    else:   # 상단 윤곽(W2 세 번째 PR): 끝 모서리는 그 끝의 윤곽 높이까지, 윗변은 조각 경계 점을 넣은 윤곽 선(단 포함), 꺾이는 곳의 두께 방향 선
+        for u, z in ((start, top[0][1]), (end, top[-1][1])):
+            for vv in (-h, h):
+                raw.append((pt(u, vv, zb), pt(u, vv, z)))
+            for zz in (zb, z):
+                raw.append((pt(u, -h, zz), pt(u, h, zz)))
+        for vv in (-h, h):
             for a, b in zip(us, us[1:]):
-                raw.append((pt(a, vv, z), pt(b, vv, z)))
+                raw.append((pt(a, vv, zb), pt(b, vv, zb)))
+            for (ua, za), (ub, zc) in zip(top, top[1:]):
+                raw.append((pt(ua, vv, za), pt(ub, vv, zc)))
+        for i in range(1, len(top) - 1):
+            (ua, za), (u, z), (ub, zc) = top[i - 1], top[i], top[i + 1]
+            if u - ua <= 1e-9 or ub - u <= 1e-9 or abs((z - za) * (ub - u) - (zc - z) * (u - ua)) > 1e-6 * (ub - ua):
+                raw.append((pt(u, -h, z), pt(u, h, z)))
     for z0, z1, ivs in bands:   # 윤곽 수직선: 띠 안에서 이어진 두 조각의 앞뒤가 바뀌는 경계
         for (a0, a1), (b0, b1) in zip(ivs, ivs[1:]):
             if abs(a1 - b0) > 1e-9:
                 continue
+            ztop = z1 if top is None else min(z1, WT.eval_at(top, a1))   # 상단 윤곽이면 그 u 의 윗변까지
+            if ztop - z0 <= EPS:
+                continue
             for vv in (-h, h):
                 if front((a0 + a1) / 2.0, vv) != front((b0 + b1) / 2.0, vv):
-                    raw.append((pt(a1, vv, z0), pt(a1, vv, z1)))
+                    raw.append((pt(a1, vv, z0), pt(a1, vv, ztop)))
     for u0, u1, z0, z1 in ops:
         zs = (z1,) + ((z0,) if z0 > zb + EPS else ())
         ou = AG.breaks(ai, u0, u1)
@@ -718,7 +764,7 @@ def plan_pieces(g, v, w):
         cut = [_quad(sol, a, b) for a, b in _cut_intervals(sol, cutz)]
         if is_rcp(cfg):   # 반사 천장 평면: 절단면 아래는 보이지 않는다
             return (tuple(cut), ())
-        proj = [_quad(sol, a, b) for a, b in WT.ivs_between(sol[11], max(zb, cutz - depth) - EPS, cutz - EPS)]
+        proj = [q for a, b in WT.ivs_between(sol[11], max(zb, cutz - depth) - EPS, cutz - EPS) for q in _span_quads(sol, a, b)]   # 곡선 벽은 조각마다(직선 벽은 사각형 하나 그대로)
         return (tuple(cut), tuple(proj))
     if zb - EPS <= cutz <= zt + EPS:
         for z0, z1, ivs in sol[10]:
@@ -1197,6 +1243,8 @@ def slab_info(g, s):
     if _area2(poly) < 0:
         poly.reverse()
     holes = tuple(tuple(tuple(q) for q in o) for o in row["params"].get("openings", ()))
+    if g.q(Q.opening_objs):   # 독립 개구 객체(W2 세 번째 PR, ARC-34): 수직·샤프트 개구도 구멍이다. 없으면 이전과 같다
+        holes += tuple(poly_ for _o, _n, poly_ in g.q(Q.slab_voids, s))
     return (zb, zt, tuple(poly), holes)
 
 
@@ -5098,11 +5146,12 @@ def _solid_wall_occ(g, v, w):
 def wall_shape_openings(g, w):
     """벽의 모양 개구부: ((사각 부분 상자 (u0,u1,z0,z_spring) 절대 z 또는 None, 윤곽 ((u, z) 절대), 채움), ...)."""
     p = Q.el(g, w)["params"]
-    if "openings" not in p:
+    voids = g.q(Q.wall_voids, w) if g.q(Q.opening_objs) else ()   # 독립 벽 개구(W2 세 번째 PR, ARC-34): 모양 개구부와 같이 그린다. 없으면 이전과 같다
+    if "openings" not in p and not voids:
         return ()
     _, elev = g.q(Q.level_info, g.q(Q.wall_level, w))
     out = []
-    for o in p["openings"]:
+    for o in list(p.get("openings", ())) + [v[2] for v in voids]:
         u0, u1, z0, zs, _zt = SO.opening_box(o)
         box = (u0, u1, elev + z0, elev + zs) if zs - z0 > EPS else None
         out.append((box, tuple((u, elev + z) for u, z in SO.opening_loop(o)), o.get("fill", "none")))
@@ -5281,7 +5330,37 @@ def view_lines(g, v):
     if len(cfg) == 6:   # 반사 천장 평면의 천장선·면적 평면의 면적 경계·해치(W1 1-C 3차)
         from dobim_core import viewplans as VP
         segs.extend(g.q(VP.mode_lines, v))
+    if cfg[0] == "plan" and g.q(Q.opening_objs):   # 독립 수직·샤프트 개구 기호(W2 세 번째 PR, ARC-34): 없으면 선분은 이전과 같다
+        segs.extend(g.q(plan_opening_lines, v))
     return _crop_if(g, v, merge_lines(segs))
+
+
+def plan_opening_lines(g, v):
+    """평면: 이 뷰 레벨의 슬래브를 뚫는 수직 개구는 경계선, 절단 높이가 z 범위 안인 샤프트 개구는 경계선과 대각선 둘(X, 상용 도구의 샤프트 기호).
+    호스트가 없거나(고아) 그 슬래브에 구멍이 나지 않은(경계 밖) 개구는 그리지 않는다."""
+    cfg = g.q(view_cfg, v)
+    if cfg is None or cfg[0] != "plan" or cfg[1] is None:
+        return ()
+    out = []
+    for o, op in g.q(Q.opening_objs):
+        pts = [tuple(q) for q in op["boundary"]] if op["mode"] != "wall" else None
+        if op["mode"] == "vertical":
+            h = Q.el(g, op["host"])
+            if h is None or h["kind"] != "slab" or Q.rel_out(g, "on_level", op["host"]) != (cfg[1],):
+                continue
+        elif op["mode"] == "shaft":
+            zr = g.q(Q.shaft_zrange, o)
+            if zr is None or not zr[0] - EPS <= cfg[2] <= zr[1] + EPS:
+                continue
+        else:
+            continue
+        for a, b in zip(pts, pts[1:] + pts[:1]):
+            out.append(("proj", a[0], a[1], b[0], b[1]))
+        if op["mode"] == "shaft":
+            xs, ys = [q[0] for q in pts], [q[1] for q in pts]
+            out.append(("proj", min(xs), min(ys), max(xs), max(ys)))
+            out.append(("proj", min(xs), max(ys), max(xs), min(ys)))
+    return tuple(out)
 
 
 def _falsy(v) -> bool:
@@ -5338,6 +5417,8 @@ def view_lines_hier(g, v):
     if len(cfg) == 6:   # 반사 천장 평면의 천장선·면적 평면의 면적 경계·해치(W1 1-C 3차)
         from dobim_core import viewplans as VP
         segs.extend(g.q(VP.mode_lines, v))
+    if cfg[0] == "plan" and g.q(Q.opening_objs):   # 독립 수직·샤프트 개구 기호(W2 세 번째 PR, ARC-34): 없으면 선분은 이전과 같다
+        segs.extend(g.q(plan_opening_lines, v))
     return _crop_if(g, v, merge_lines(segs))
 
 

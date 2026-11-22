@@ -817,10 +817,10 @@ def check_hosted_fit(ctx, wall_id: str, old_wp: dict, new_wp: dict) -> None:
     changed = next((k for k in ("thickness", "height", "axis") if old_wp[k] != new_wp[k]), None)
     if changed is None and WT.base(old_wp) != WT.base(new_wp):   # 바닥 오프셋(22단계)만 바뀌어도 높이 범위를 다시 본다
         changed = "base_offset"
+    if changed is None and old_wp.get("arc") != new_wp.get("arc"):   # 곡선 벽(W2 ARC-04)의 호만 바뀌었다(끝점이 같아도 호 길이가 바뀐다)
+        changed = "axis"
     if changed is None:
         return
-    if changed is None and old_wp.get("arc") != new_wp.get("arc"):   # 곡선 벽(W2 ARC-04)의 호만 바뀌었다
-        changed = "axis"
     path = "/" + changed
     length = C.wall_len(new_wp)
     host_ctx = {"host_thickness": new_wp["thickness"], "host_height": new_wp["height"]}
