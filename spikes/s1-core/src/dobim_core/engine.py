@@ -202,6 +202,7 @@ class Ctx:
         self.warnings: list[str] = []
         self._n = 0
         self._issued: set[str] = set()   # 이번 실행이 내준 id(아직 효과로 내보내기 전인 것도 겹치지 않게)
+        self.stack_ok = False   # 스택 벽 커맨드가 부분 벽을 직접 다룰 때만 True(W2 일곱 번째 PR)
 
     # ---- 읽기
     def fresh(self) -> RefGraph:
@@ -229,6 +230,10 @@ class Ctx:
         r = self.eng.st.el.get(eid)
         if r is not None:
             self._frozen_check(eid, r, what)
+            if (r["kind"] == "wall" and "stack" in r["params"] and not self.stack_ok
+                    and not (what in STACK_PART_OK or what.startswith(("태그 대상", "치수 대상")))):
+                raise DobimError("CONSTRAINT", f"스택 벽의 부분 벽이라 {what}을 바꿀 수 없다: {eid}", path="/id",
+                                 hint="부분 벽은 스택 벽 커맨드(stackwall.set, 스택 벽 element.delete)로 고친다. 조인·문·창·벽 개구는 놓을 수 있다")
         return self.row(eid, kind)
 
     @staticmethod
@@ -374,6 +379,10 @@ class Ctx:
 
     def txn_entries(self, txn: str) -> list[tuple]:
         return self.eng.txn_entries(txn)
+
+
+# 스택 벽 부분 벽(W2 일곱 번째 PR)에 허용하는 저작 확인 이유: 조인·호스팅(문·창·패밀리·벽 개구·함께 자르기). 형상·삭제·복사는 스택 벽 커맨드로만
+STACK_PART_OK = frozenset({"조인", "벽 자동 조인", "문 호스팅", "패밀리 인스턴스 호스팅", "벽 개구 호스트", "개구부로 함께 자르기"})
 
 
 def input_keys_of(effects: list) -> set:
@@ -1001,6 +1010,20 @@ class Engine:
         from dobim_core import appearance as AP
         return {self.st.el[i]["params"]["name"]: AP.appearance_key(self.st.el[i]["params"]) for i in sorted(self.st.by_kind.get("matdef", ()))}
 
+    def walltype_map(self) -> dict:
+        """벽 유형 행(walltype) -> {유형 id: (이름, 기능, 두께, 층 구성 ((재료, 두께), ...), 그 유형을 쓰는 IFC 벽 id 들)}. 유형이 없으면 빈 표.
+        저작·투영된 벽만 센다(외래·분리 벽은 의도의 유형을 IFC 에 걸지 않는다)."""
+        tids = self.st.by_kind.get("walltype")
+        if not tids:
+            return {}
+        out = {}
+        for t in sorted(tids):
+            p = self.st.el[t]["params"]
+            walls = tuple(w for w in self.st.inn.get(("of_type", t), ()) if w in self.ifc.ents and self.st.el[w]["origin"] == "authored")
+            layers = tuple((x["material"], float(x["thickness"])) for x in p.get("layers", ()))
+            out[t] = (p["name"], p.get("function"), float(p["thickness"]), layers, walls)
+        return out
+
     def _flush_defs(self) -> None:
         """뷰·치수·태그의 정의를 IFC 프로젝트 속성셋에 맞춘다(ADR-0015). 정의가 없으면 아무것도 하지 않는다(IFC 가 그대로다).
         행은 불변이라 같은 객체면 텍스트를 다시 만들지 않는다. 바뀐 정의의 속성만 쓴다."""
@@ -1014,6 +1037,7 @@ class Engine:
         try:
             self.ifc.sync_defs({eid: t for eid, (_, t) in cache.items()})
             self.ifc.set_appearance(self.appearance_map())   # 재료 외관 정의(W2 다섯 번째 PR): 값이 바뀐 재료의 IFC 표면 스타일만 다시 붙인다
+            self.ifc.sync_wall_types(self.walltype_map())   # 벽 유형(W2 일곱 번째 PR): IfcWallType·층 집합·타입 지정 관계. 유형이 없으면 아무것도 하지 않는다
         except BaseException as ex:
             self._taint("정의 속성", ex)
             try:

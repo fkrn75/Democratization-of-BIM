@@ -558,6 +558,11 @@ def solid_level(g, s):
     return rel_out(g, "on_level", s)[0]
 
 
+# ---------------------------------------------------------------- 스택 벽(W2 일곱 번째 PR, ARC-09)
+def stack_level(g, s):
+    return rel_out(g, "on_level", s)[0]
+
+
 # ---------------------------------------------------------------- 커튼월(W2 네 번째 PR, ARC-22)
 def curtain_level(g, c):
     return rel_out(g, "on_level", c)[0]
@@ -790,6 +795,10 @@ def model_stats(g):
         st = [g.q(curtain_stats, c) for c in g.q(curtain_ids)]
         out["mullion"] = sum(s[0] for s in st)
         out["curtain_panel"] = sum(s[1] for s in st)
+    for k in ("walltype", "stackwall"):   # 벽 유형·스택 벽(W2 일곱 번째 PR): 없으면 응답은 그대로다
+        n = g.q(count, k)
+        if n:
+            out[k] = n
     return out
 
 
@@ -811,9 +820,9 @@ def intent_of(g, e):
     elif row["kind"] == "wall":
         out["level"] = g.q(wall_level, e)
         out["joins"] = list(g.q(wall_joins, e))
-    elif row["kind"] in ("slab", "stair", "space", "railing", "elevator", "roof", "solid", "curtwall"):
+    elif row["kind"] in ("slab", "stair", "space", "railing", "elevator", "roof", "solid", "curtwall", "stackwall"):
         out["level"] = g.q({"slab": slab_level, "stair": stair_level, "space": space_level, "railing": railing_level, "elevator": elevator_level, "roof": roof_level, "solid": solid_level,
-                            "curtwall": curtain_level}[row["kind"]], e)
+                            "curtwall": curtain_level, "stackwall": stack_level}[row["kind"]], e)
     elif row["kind"] == "door":
         out["host"] = g.q(door_host, e)
     return out
@@ -895,6 +904,8 @@ def ifc_spec(g, e):
         if vs:   # 독립 벽 개구(W2 세 번째 PR, ARC-34): (개구 id, 이름, 지역 (u, z) 윤곽, 곡선 벽이면 host_at). 없으면 명세는 이전과 같다
             spec["voids"] = tuple((o, n, tuple(SO.opening_loop(d)), g.q(host_at, e, d["offset"], d["width"] / 2.0)) for o, n, d in vs)
             spec["thickness"] = p["thickness"]
+        if "stack" in p:   # 스택 벽 부분 벽(W2 일곱 번째 PR): 층이 아니라 스택 벽에 집합된다. 없으면 명세는 이전과 같다
+            spec["part_of"] = p["stack"]
         if "arc" in p:   # 곡선 벽(W2 ARC-04): 배치 틀(시작점, 현 방향) 안의 호 (중심 x, y, 반지름, 시작각, 방향, 중심각). footprint 의 u 는 호 위 거리다
             spec["arc"] = g.q(wall_arc_local, e)
             spec["thickness"] = p["thickness"]
@@ -936,6 +947,8 @@ def ifc_spec(g, e):
         if "slopes" in p:   # 다각형 외곽 지붕(W1 1-F 4차): 없으면 명세는 이전과 같다
             spec["slopes"] = tuple(p["slopes"])
         return spec
+    if kind == "stackwall":   # 스택 벽(W2 일곱 번째 PR): 형상 없이 레벨 좌표계에 놓이고 부분 벽(구간 순서)을 집합한다
+        return {"kind": kind, "name": p["name"], "level": g.q(stack_level, e), "parts": tuple(p["parts"]), "intent": intent}
     if kind == "curtwall":
         # 커튼월(W2 네 번째 PR, ARC-22): 자신은 형상 없이 레벨 좌표계에 놓이고, 부속(멀리언 IfcMember·패널 IfcPlate·문 패널 IfcDoor)이 IfcRelAggregates 로 매달린다.
         # 부속 = (이름표, IFC 클래스, 유형 또는 패널 종류, 평면 사각형(레벨 좌표), 바닥 z(레벨 기준), 높이). 이름표 순서라 결정적이다

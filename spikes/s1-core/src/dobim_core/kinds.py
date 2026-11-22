@@ -22,6 +22,7 @@ from dobim_core import roofpoly as RP
 from dobim_core import solids as SO
 from dobim_core import wallcut as WC
 from dobim_core import walltop as WT
+from dobim_core import walltypes as WTY
 
 ID_LEN = 22
 NAME_MAX = 64
@@ -158,7 +159,9 @@ def _wall_params(p):
                                                                                                          "cuts": lambda v: WC.cuts_problem(v) is None,   # 벽 잘라내기(23단계)
                                                                                                          "top_level": id_ok, "top_offset": lambda v: num_ok(v) and v != 0,
                                                                                                          "tee": tee_ok,   # T 조인 줄기 끝(W1 1-F 3차)
-                                                                                                         "arc": _pt_ok})   # 곡선(원호) 벽(W2 ARC-04): 호 위의 점(가운데)
+                                                                                                         "arc": _pt_ok,   # 곡선(원호) 벽(W2 ARC-04): 호 위의 점(가운데)
+                                                                                                         "wtype": id_ok, "loc": lambda v: v in WTY.LOC_LINES[1:],   # 벽 유형·위치선(W2 일곱 번째 PR)
+                                                                                                         "core": lambda v: isinstance(v, list), "stack": id_ok})   # 코어 범위·스택 벽 부분(W2 일곱 번째 PR)
     if err is None and "arc" in p:   # 곡선 벽(W2 ARC-04): 아직 받지 않는 형상 키와 함께 둘 수 없다. 축 검사는 arcgeom.problem
         bad = [k for k in ARC_EXCLUSIVE if k in p]
         if bad:
@@ -174,6 +177,8 @@ def _wall_params(p):
         return "wall.top_level 과 top_profile 은 함께 둘 수 없다"
     if err is None and "layers" in p and abs(layers_total(p["layers"]) - p["thickness"]) > LAYER_SUM_TOL:
         return "wall.layers 두께의 합이 벽 두께와 다르다"
+    if err is None and "core" in p and not ("layers" in p and WTY.core_ok(p["core"], len(p["layers"]))):   # 코어 범위(W2 일곱 번째 PR): 층 번호 [a, b)
+        return "wall.core 는 층 구성의 층 번호 범위 [a, b] 여야 한다"
     top = p.get("top_profile") if err is None else None   # 벽 상단 윤곽(21단계): 없으면 이전과 같다
     if top is not None:
         ax = p["axis"]
@@ -1439,6 +1444,44 @@ def _matdef_params(p):
         "transparency": _unit_ok, "shininess": _unit_ok})
 
 
+# ---------------------------------------------------------------- 벽 유형·스택 벽(W2 일곱 번째 PR, ARC-11·ARC-09)
+# walltype = Revit 의 기본 벽 유형(시스템 패밀리 유형): 이름 붙은 두께 또는 층 구성 + 코어 범위·기능·기본 높이. 벽 행이 유형의 층 구성을 복사해 갖고
+#            유형을 고치면 그 유형의 벽 행을 모두 다시 쓴다. 비 IFC 의도 요소라 DoBIM_Defs 로 왕복하고, IFC 투영은 IfcWallType(엔진 flush 가 맞춘다)
+# stackwall = Revit 의 스택 벽: 높이 구간마다 벽 유형이 다른 벽들(부분 벽 = 보통 벽 행, params.stack)을 한 요소로 묶는다.
+#             IFC 는 형상 없는 IfcWall 하나가 부분 IfcWall 들을 IfcRelAggregates 로 모은다
+def _walltype_params(p):
+    err = _check_opt("walltype", p, {"name": _name, "thickness": _pos},
+                     {"layers": layers_ok, "core": lambda v: isinstance(v, list), "function": lambda v: v in WTY.FUNCTIONS, "height": _pos})
+    if err is None and "layers" in p and abs(layers_total(p["layers"]) - p["thickness"]) > LAYER_SUM_TOL:
+        return "walltype.layers 두께의 합이 유형 두께와 다르다"
+    if err is None and "core" in p and not ("layers" in p and WTY.core_ok(p["core"], len(p["layers"]))):
+        return "walltype.core 는 층 구성의 층 번호 범위 [a, b] 여야 한다"
+    return err
+
+
+def _stack_seg_ok(v) -> bool:
+    return (isinstance(v, dict) and set(v) == {"type", "height", "offset"} and id_ok(v["type"]) and num_ok(v["offset"])
+            and (v["height"] is None or _pos(v["height"])))
+
+
+def _stackwall_params(p):
+    def axis(v):
+        return (isinstance(v, list) and len(v) == 4 and all(num_ok(x) for x in v)
+                and (v[2] - v[0]) ** 2 + (v[3] - v[1]) ** 2 >= 1.0)
+    err = _check_opt("stackwall", p, {"name": _name, "axis": axis, "height": _pos, "line": lambda v: v in WTY.LOC_LINES,
+                                      "segments": lambda v: isinstance(v, list) and 2 <= len(v) <= WTY.STACK_SEGS_MAX and all(_stack_seg_ok(x) for x in v),
+                                      "parts": lambda v: isinstance(v, list) and all(id_ok(x) for x in v) and len(set(v)) == len(v)},
+                     {"arc": _pt_ok, "base_offset": lambda v: num_ok(v) and v != 0 and abs(v) <= WT.BASE_OFFSET_MAX})
+    if err is None and len(p["parts"]) != len(p["segments"]):
+        return "stackwall.parts 수가 구간 수와 다르다"
+    if err is None:
+        try:
+            WTY.stack_heights(p["segments"], p["height"])
+        except ValueError as ex:
+            return f"stackwall.segments: {ex}"
+    return err
+
+
 # ---------------------------------------------------------------- 법정 면적 객체(W1 연장, ARC-36·ANA-04)
 # larea = Revit 의 면적 계획 속 면적(Area)에 해당한다: 건축법 시행령 119조의 산입·불산입을 근거 코드와 함께 그린 다각형.
 #         대상(대지·건축·바닥면적)과 효과(더함·뺌·용적률만 뺌·노대)는 근거 코드가 정한다(manual 만 사용자가 고른다). 비 IFC 의도 요소라 DoBIM_Defs 로 왕복한다
@@ -1572,7 +1615,8 @@ class ElementKind(NamedTuple):
 
 ELEMENT_KINDS: dict[str, ElementKind] = {k.name: k for k in (
     ElementKind("level", True, "IfcBuildingStorey", True, 0, _level_params),
-    ElementKind("wall", True, "IfcWall", True, 1, _wall_params, geometric=True),
+    ElementKind("wall", True, "IfcWall", True, 1, _wall_params, geometric=True,
+                refs=(("wtype", "id", "of_type"), ("stack", "id", None)), ref_kinds=(("wtype", ("walltype",)), ("stack", ("stackwall",)))),   # 벽 유형·스택 벽 부분(W2 일곱 번째 PR)
     ElementKind("door", True, "IfcDoor", True, 2, _door_params, geometric=True),
     ElementKind("slab", True, "IfcSlab", True, 1, _slab_params, geometric=True),
     ElementKind("stair", True, "IfcStair", True, 1, _stair_params, geometric=True),
@@ -1616,6 +1660,10 @@ ELEMENT_KINDS: dict[str, ElementKind] = {k.name: k for k in (
     ElementKind("curtwall", True, "IfcCurtainWall", True, 1, _curtwall_params, geometric=True),
     # 재료 외관 정의(W2 다섯 번째 PR, DATA-05·VIS-07): 프로젝트 매개변수처럼 비 IFC 의도 요소다(재료 이름이 키)
     ElementKind("matdef", False, None, False, 6, _matdef_params),
+    # 벽 유형(W2 일곱 번째 PR, ARC-11): 비 IFC 의도 요소(정의는 DoBIM_Defs). 벽보다 먼저 만든다(벽이 of_type 으로 가리킨다)
+    ElementKind("walltype", False, None, False, 0, _walltype_params),
+    # 스택 벽(W2 일곱 번째 PR, ARC-09): 부분 벽(보통 벽 행)을 모으는 형상 없는 IfcWall. 부분 벽보다 뒤에 투영한다(집합 관계가 부분 엔티티를 가리킨다)
+    ElementKind("stackwall", True, "IfcWall", True, 2, _stackwall_params, refs=(("parts", "ids", None),)),
 )}
 
 NON_IFC_KINDS = frozenset(k for k, v in ELEMENT_KINDS.items() if not v.ifc)      # 신원·속성셋·재료가 없는 의도 요소(뷰 정의, 치수·태그)
@@ -1625,7 +1673,7 @@ KIND_NAMES = tuple(ELEMENT_KINDS)
 # 의도 복원(S2 가져오기)이 IFC 클래스로 종류를 정하는 것: IFC 클래스 -> 종류. 패밀리 타입·인스턴스(ftype/finst)는 클래스가 레시피마다 달라 의도가 스스로 밝힌
 # 종류를 따른다(family.restore, ADR-0014). 뷰·주석은 IFC 신원이 없어 IFC 에서 복원할 수 없다(알려진 한계)
 IMPORTABLE_BY_CLASS = {"IfcBuildingStorey": "level", "IfcWall": "wall", "IfcDoor": "door", "IfcSlab": "slab", "IfcStair": "stair", "IfcSpace": "space", "IfcRailing": "railing", "IfcTransportElement": "elevator", "IfcRoof": "roof", "IfcSite": "site", "IfcCurtainWall": "curtwall"}
-FAMILY_OF_KIND = {"level": "level.basic", "wall": "wall.basic", "door": "door.single", "slab": "slab.basic", "stair": "stair.straight", "space": "space.basic", "railing": "railing.basic", "elevator": "elevator.basic", "roof": "roof.basic", "site": "site.basic", "solid": "solid.generic",
+FAMILY_OF_KIND = {"stackwall": "wall.stacked", "level": "level.basic", "wall": "wall.basic", "door": "door.single", "slab": "slab.basic", "stair": "stair.straight", "space": "space.basic", "railing": "railing.basic", "elevator": "elevator.basic", "roof": "roof.basic", "site": "site.basic", "solid": "solid.generic",
                   "curtwall": "curtwall.basic"}
 
 
@@ -1719,13 +1767,14 @@ def _fs(*a):
 
 REL_KINDS: dict[str, RelKind] = {r.name: r for r in (
     # 레벨은 분리돼 있어도 그 위의 저작 벽이 레벨을 따른다(S2): 레벨 쪽은 막지 않고, 놓이는 요소만 저작이어야 한다
-    RelKind("on_level", _fs("wall", "slab", "stair", "space", "railing", "elevator", "roof", "solid", "finst", "foreign", "curtwall"), _fs("level"), guard=("src",), violation="LEVEL_DELETED", message="벽이 놓인 레벨이 지워졌다"),
+    RelKind("on_level", _fs("wall", "slab", "stair", "space", "railing", "elevator", "roof", "solid", "finst", "foreign", "curtwall", "stackwall"), _fs("level"), guard=("src",), violation="LEVEL_DELETED", message="벽이 놓인 레벨이 지워졌다"),
     RelKind("joins", _fs("wall"), _fs("wall"), guard=("src", "dst"), violation="JOIN_TARGET_DELETED", message="조인 대상 벽이 지워졌다"),
     RelKind("hosts", _fs("wall"), _fs("door", "finst"), guard=("src", "dst"), violation="HOST_DELETED",
             message="호스트 벽이 지워졌는데 문이 그 벽에 놓여 있다"),
     RelKind("succ", _fs("wall"), _fs("wall"), dangling_ok=True),
     RelKind("annot_of", _fs("dim", "tag", "draft"), _fs("view"), violation="VIEW_DELETED", message="주석이 속한 뷰가 지워졌다"),
-    RelKind("of_type", _fs("finst"), _fs("ftype"), violation="TYPE_DELETED", message="인스턴스의 패밀리 타입이 지워졌다"),
+    # 벽 -> 벽 유형(W2 일곱 번째 PR, ARC-11)도 같은 관계다(Revit 의 타입 지정)
+    RelKind("of_type", _fs("finst", "wall"), _fs("ftype", "walltype"), violation="TYPE_DELETED", message="인스턴스의 패밀리 타입이 지워졌다"),
 )}
 REL_NAMES = tuple(REL_KINDS)
 READ_REL_NAMES = ("on_level", "joins", "hosts", "of_type")   # element.get / relation.list 가 보이는 관계(주석·분할 이력은 따로 읽는다)

@@ -143,6 +143,7 @@ def pairs_label(layers) -> str:
 
 
 LAYER_MARK = "DoBIM"   # 코어가 투영한 층 구성(IfcMaterialLayerSet)의 Description. 외래 파일의 층 구성과 구분한다
+WALLTYPE_MARK = "DoBIM wall type"   # 벽 유형 투영(W2 일곱 번째 PR)의 IfcRelDefinesByType·유형 층 집합 Description: 투영이 소유한다는 표식
 
 
 def our_usage(m) -> bool:
@@ -418,6 +419,8 @@ _CORE_RELS = ("IfcRelContainedInSpatialStructure", "IfcRelAggregates", "IfcRelFi
 def _is_core_rel(r) -> bool:
     if any(r.is_a(c) for c in _CORE_RELS):
         return True
+    if r.is_a("IfcRelDefinesByType") and getattr(r, "Description", None) == WALLTYPE_MARK:   # 벽 유형 지정(W2 일곱 번째 PR)은 투영이 소유한다
+        return True
     if r.is_a("IfcRelDefinesByProperties"):
         d = r.RelatingPropertyDefinition
         return isinstance(d, ifcopenshell.entity_instance) and d.is_a("IfcPropertySet")
@@ -539,6 +542,8 @@ class IfcModel:
         self.parts: dict[str, dict[str, Any]] = {}   # 요소 id -> {이름표: 부속 엔티티} (꺾인 계단의 단 묶음·층참, 슬래브 구멍. 투영 소유)
         self._cw_sig: dict[str, dict[str, tuple]] = {}   # 커튼월 id -> {이름표: 마지막으로 투영한 부속 명세} (같으면 다시 쓰지 않는다, W2 ARC-22)
         self._cw_axis: dict[str, Any] = {}   # 커튼월 id -> 부속 배치가 함께 쓰는 단위 IfcAxis2Placement3D
+        self._wt_sig: dict[str, tuple] = {}   # 벽 유형 id -> 마지막으로 맞춘 (이름, 기능, 두께, 층 구성) (W2 일곱 번째 PR)
+        self._wt_scanned = False              # 가져온 파일의 낡은 벽 유형을 한 번 훑었는가
         self.container_of: dict[str, str] = {}  # 요소 id -> 현재 담긴 층 id (투영 상태)
         self._mats: dict[str, Any] = {}         # 재료 이름 -> 엔티티
         self._appearance: dict[str, tuple] = {}   # 재료 외관 정의(W2 다섯 번째 PR): 재료 이름 -> (r,g,b,투명도,광택). 엔진이 정의 행에서 맞춘다
@@ -1211,7 +1216,7 @@ class IfcModel:
     def project(self, eid: str, spec: dict) -> None:
         kind = spec["kind"]
         {"level": self._project_level, "wall": self._project_wall, "door": self._project_door, "slab": self._project_slab, "stair": self._project_stair, "space": self._project_space, "railing": self._project_railing, "elevator": self._project_elevator, "roof": self._project_roof,
-         "site": self._project_site, "solid": self._project_solid, "curtwall": self._project_curtwall, "ftype": lambda i, sp: fp.project_type(self, i, sp), "finst": lambda i, sp: fp.project_inst(self, i, sp)}[kind](eid, spec)
+         "site": self._project_site, "solid": self._project_solid, "curtwall": self._project_curtwall, "stackwall": self._project_stackwall, "ftype": lambda i, sp: fp.project_type(self, i, sp), "finst": lambda i, sp: fp.project_inst(self, i, sp)}[kind](eid, spec)
         # 의도를 IFC 에도 복제한다. 정본은 의도 저장소이고 이 속성셋은 매번 덮어쓴다.
         e = self.ents[eid]
         text = json.dumps(spec["intent"], sort_keys=True, separators=(",", ":"))
@@ -1241,6 +1246,170 @@ class IfcModel:
         api_spatial.assign_container(f, products=[e], relating_structure=self.ents[level_id])
         self.container_of[eid] = level_id
 
+    def _uncontain(self, eid) -> None:
+        """요소를 층에서 뺀다(담겨 있을 때만)."""
+        if eid in self.container_of:
+            self.flush_rels()
+            api_spatial.unassign_container(self.f, products=[self.ents[eid]])
+            self.container_of.pop(eid)
+
+    # ------------------------------------------------------------ 스택 벽(W2 일곱 번째 PR, ARC-09)
+    # 스택 벽 = 형상 없는 IfcWall(층에 담긴다) + 부분 벽 IfcWall 들의 IfcRelAggregates(GlobalId = part_guid(스택 벽, "agg"), 대상은 구간 순서).
+    # Revit 의 IFC 내보내기와 같은 짜임이다(스택 벽 = 부분 벽을 모은 집합 요소). 부분 벽은 층에 담지 않는다(집합의 부분은 전체만 층에 담긴다)
+    def _project_stackwall(self, eid, spec):
+        e = self.ents[eid]
+        e.Name = spec["name"]
+        self._contain(eid, spec["level"])
+        lp = self.ents[spec["level"]].ObjectPlacement
+        if e.ObjectPlacement is None:
+            self._place(e, lp, (0.0, 0.0, 0.0), (1.0, 0.0, 0.0))
+        elif e.ObjectPlacement.PlacementRelTo != lp:
+            e.ObjectPlacement.PlacementRelTo = lp
+        self._stack_rel(eid, spec["parts"])
+
+    def _stack_rel(self, eid: str, parts) -> None:
+        f = self.f
+        e = self.ents[eid]
+        gid = part_guid(eid, "agg")
+        rel = next((r for r in (getattr(e, "IsDecomposedBy", None) or ()) if r.GlobalId == gid), None)
+        want = [self.ents[c] for c in parts if c in self.ents]
+        if not want:
+            if rel is not None:
+                f.remove(rel)
+        elif rel is None:
+            f.createIfcRelAggregates(gid, None, None, None, e, want)
+        elif [x.id() for x in rel.RelatedObjects] != [x.id() for x in want]:
+            rel.RelatedObjects = want
+
+    # ------------------------------------------------------------ 벽 유형(W2 일곱 번째 PR, ARC-11)
+    # 벽 유형 = IfcWallType(GlobalId = part_guid(유형 id, "walltype"), PredefinedType STANDARD, ElementType = 기능) + 유형에 붙는 IfcMaterialLayerSet
+    # (IfcRelAssociatesMaterial, GlobalId = part_guid(유형, "walltype:mat")) + 그 유형의 벽들을 묶는 IfcRelDefinesByType(GlobalId = part_guid(유형, "walltype:rel"),
+    # 대상은 벽 id 순서). 벽 자신의 층 구성 지정(IfcMaterialLayerSetUsage)은 이전과 같다. 정의(이름·층 구성)는 DoBIM_Defs 가 정본이고 이것은 투영이다.
+    # 유형이 하나도 없으면 아무것도 만들지 않는다(기존 프로젝트의 IFC 그대로)
+    def _by_guid(self, gid: str):
+        try:
+            return self.f.by_guid(gid)
+        except RuntimeError:
+            return None
+
+    def sync_wall_types(self, m: dict) -> None:
+        """m = {유형 id: (이름, 기능, 두께, 층 구성, 벽 id 들)} 에 IFC 를 맞춘다(엔진 flush 가 투영 뒤에 부른다)."""
+        if self.base_mode and not self._wt_scanned:
+            self._wt_scanned = True
+            self._wt_scan_base({part_guid(t, "walltype") for t in m})
+        if not m and not self._wt_sig:
+            return
+        for tid in sorted(set(self._wt_sig) - set(m)):
+            self._wt_drop(tid)
+        for tid in sorted(m):
+            name, func, _thick, layers, walls = m[tid]
+            sig = m[tid][:4]
+            t = self._by_guid(part_guid(tid, "walltype"))
+            if t is None:
+                t = self.f.create_entity("IfcWallType", GlobalId=part_guid(tid, "walltype"), Name=name, Tag=tid, PredefinedType="STANDARD")
+                self._wt_sig.pop(tid, None)
+            if self._wt_sig.get(tid) != sig:
+                if t.Tag != tid:   # Tag = 유형 id(GlobalId 가 그 id 의 결정적 함수라 투영 소유를 알아본다)
+                    t.Tag = tid
+                if t.Name != name:
+                    t.Name = name
+                if t.ElementType != func:
+                    t.ElementType = func
+                if t.PredefinedType != "STANDARD":
+                    t.PredefinedType = "STANDARD"
+                self._wt_material(tid, t, name, layers)
+                self._wt_sig[tid] = sig
+            self._wt_rel(tid, t, walls)
+
+    def _wt_material(self, tid: str, t, name: str, layers) -> None:
+        f = self.f
+        mr = self._by_guid(part_guid(tid, "walltype:mat"))
+        cur = mr.RelatingMaterial if mr is not None else None
+        if cur is not None and cur.is_a("IfcMaterialLayerSet") and cur.LayerSetName == name and \
+                [(ly.Material.Name if ly.Material is not None else None, float(ly.LayerThickness)) for ly in cur.MaterialLayers] == [tuple(x) for x in layers]:
+            return
+        if mr is not None:
+            f.remove(mr)
+            if cur is not None and cur.is_a("IfcMaterialLayerSet") and not f.get_inverse(cur):
+                self._drop_type_set(cur)
+        if not layers:
+            return
+        lys = [f.create_entity("IfcMaterialLayer", Material=self._named_material(n), LayerThickness=float(th)) for n, th in layers]
+        ls = f.create_entity("IfcMaterialLayerSet", MaterialLayers=lys, LayerSetName=name, Description=WALLTYPE_MARK)
+        f.create_entity("IfcRelAssociatesMaterial", GlobalId=part_guid(tid, "walltype:mat"), RelatedObjects=[t], RelatingMaterial=ls)
+
+    def _drop_type_set(self, ls) -> None:
+        """유형 층 집합(Description = WALLTYPE_MARK)과 층을 지우고, 쓰던 재료가 다른 데서 안 쓰이면 함께 지운다."""
+        f = self.f
+        lys = list(ls.MaterialLayers)
+        mats = [ly.Material for ly in lys if ly.Material is not None]
+        f.remove(ls)
+        for ly in lys:
+            if not f.get_inverse(ly):
+                f.remove(ly)
+        for m_ in mats:
+            try:
+                self._gc_material(m_)
+            except RuntimeError:
+                pass
+
+    def _wt_rel(self, tid: str, t, walls) -> None:
+        f = self.f
+        rel = self._by_guid(part_guid(tid, "walltype:rel"))
+        want = [self.ents[w] for w in walls if w in self.ents]
+        if not want:
+            if rel is not None:
+                f.remove(rel)
+        elif rel is None:
+            f.create_entity("IfcRelDefinesByType", GlobalId=part_guid(tid, "walltype:rel"), Description=WALLTYPE_MARK, RelatedObjects=want, RelatingType=t)
+        elif [x.id() for x in rel.RelatedObjects] != [x.id() for x in want] or rel.RelatingType != t:
+            rel.RelatedObjects = want
+            rel.RelatingType = t
+
+    def _wt_drop(self, tid: str) -> None:
+        t = self._by_guid(part_guid(tid, "walltype"))
+        if t is not None:
+            self._wt_drop_ent(t)
+        self._wt_sig.pop(tid, None)
+
+    @staticmethod
+    def _wt_owned(f, t) -> bool:
+        """투영이 만든 벽 유형인가: Tag 가 유형 id 이고 GlobalId 가 그 id 의 결정적 값이다(또는 표식 붙은 타입 지정 관계·유형 층 집합이 있다)."""
+        tag = getattr(t, "Tag", None)
+        if isinstance(tag, str) and len(tag) == 22 and t.GlobalId == part_guid(tag, "walltype"):
+            return True
+        for r in f.get_inverse(t):
+            if r.is_a("IfcRelDefinesByType") and r.Description == WALLTYPE_MARK:
+                return True
+            if r.is_a("IfcRelAssociatesMaterial") and r.RelatingMaterial.is_a("IfcMaterialLayerSet") and r.RelatingMaterial.Description == WALLTYPE_MARK:
+                return True
+        return False
+
+    def _wt_drop_ent(self, t) -> None:
+        """벽 유형 엔티티와 그 타입 지정 관계·유형 층 집합을 지운다."""
+        f = self.f
+        gid = t.GlobalId
+        for r in list(f.get_inverse(t)):
+            if r.is_a("IfcRelDefinesByType") and r.Description == WALLTYPE_MARK:
+                f.remove(r)
+            elif r.is_a("IfcRelAssociatesMaterial") and r.RelatingMaterial.is_a("IfcMaterialLayerSet") and r.RelatingMaterial.Description == WALLTYPE_MARK:
+                ls = r.RelatingMaterial
+                f.remove(r)
+                if not f.get_inverse(ls):
+                    self._drop_type_set(ls)
+        if f.get_inverse(t):   # 다른 도구가 붙인 관계(속성셋 등)가 남았다: 제품 지우기가 함께 치운다
+            api_root.remove_product(f, product=t)
+        else:
+            f.remove(t)
+        if self.base_mode:
+            self._types_by_gid.pop(gid, None)
+
+    def _wt_scan_base(self, keep: set) -> None:
+        """가져온 파일(작업 사본)에 남은, 투영이 만든 벽 유형 중 지금 유형이 아닌 것을 지운다(가져온 뒤 지운 유형: 다시 열어도 같은 IFC)."""
+        for t in list(self.f.by_type("IfcWallType")):
+            if t.GlobalId not in keep and self._wt_owned(self.f, t):
+                self._wt_drop_ent(t)
+
     def flush_rels(self) -> None:
         """일괄 모드에서 모아 둔 층 담기·타입 관계 추가를 반영한다(모은 것이 없으면 아무것도 하지 않는다)."""
         pend, self._pend_contain = self._pend_contain, {}
@@ -1257,7 +1426,10 @@ class IfcModel:
         x, y = spec["origin"]
         c, sn = spec["xdir"]
         # 층에 담는 호출이 배치를 건드릴 수 있으므로 담은 뒤에 배치를 확정한다
-        self._contain(eid, spec["level"])
+        if "part_of" in spec:   # 스택 벽 부분 벽(W2 일곱 번째 PR): 층이 아니라 스택 벽(전체)에 집합된다. 층에는 전체만 담긴다
+            self._uncontain(eid)
+        else:
+            self._contain(eid, spec["level"])
         self._place(e, self.ents[spec["level"]].ObjectPlacement, (x, y, 0.0), (c, sn, 0.0))
         if "arc" in spec:   # 곡선 벽(W2 ARC-04): 바깥·안쪽 호와 양 끝 선의 닫힌 복합 곡선을 돌출하고, 축 표현(IfcTrimmedCurve(IfcCircle))을 단다
             rep0 = e.Representation.Representations[0] if e.Representation is not None else None

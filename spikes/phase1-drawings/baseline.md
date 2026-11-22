@@ -2331,3 +2331,45 @@ W1 이 끝나고 W2 의 첫 과업으로 직선 축뿐이던 벽에 원호 축�
 - 정확한 곡면 IFC(IfcRevolvedAreaSolid·IfcSweptDiskSolid 를 일반 솔리드에도), NURBS·자유 곡면, 로프트의 곡선 단면.
 - 불리언: 요소 사이 연결(도구를 지우면 자동으로 떼기·연동) 없음(복사 방식), 벽·슬래브 같은 정형 요소와의 불리언 없음(23단계 wall.cut_by 만), 결과를 패밀리로 만들기(인플레이스 -> 패밀리화) 없음.
 - 회전체·3D 스윕의 단면·입면 가림 조각, 프리즘 윤곽의 볼록도 호, 판 개구부 호의 res, 패밀리 레시피의 3D 경로 스윕·loft·중첩 패밀리.
+
+## 65. W2 일곱 번째 PR: 벽 유형 ARC-11·벽 위치선·스택 벽 ARC-09 (2026-11-23, 브랜치 phase2/w2-wall-types)
+
+실사용 시험(건물 3동)에서 벽 유형이 없어 층 구성을 벽마다 반복 지정했고(한 동에서 wall.layers 60회), 위치선(코어 중심·마감면) 지정이 없어 축을 손으로 평행 이동했으며, 높이 방향으로 구성이 다른 벽(스택 벽)을 만들 수 없었다. 벽 유형(시스템 패밀리 유형)·위치선·스택 벽을 더한다. 벽 행의 axis 는 계속 몸체 중심선이라 도면·IFC·조인 경로는 그대로이고, 새 기능을 쓰지 않은 프로젝트는 바이트까지 같다. 합성 데이터만 쓴다.
+
+### 65.1 벽 유형 `walltype`
+- 새 비 IFC 의도 종류 walltype: 이름(유일), 두께 또는 층 구성(layers, 바깥 = 지역 -v 면 층부터), 코어 범위 core [a, b](층 a ~ b-1, 생략하면 가장 두꺼운 층), 기능 function(exterior·interior·foundation·retaining·soffit·core_shaft), 기본 높이 height. 정의는 DoBIM_Defs 로 IFC 를 왕복한다(가져올 때 같은 이름 유형이 둘이면 되살리지 않는다).
+- 커맨드: walltype.create·set(clear 로 키 떼기)·duplicate·delete(쓰는 벽이 있으면 거절, detach=true 면 벽에서 떼고 지운다. 스택 벽이 쓰면 거절)·list(유형 일람표: 두께·층·코어·기능·기본 높이·쓰는 벽 수·스택 벽 수, 유형 없는 벽 수, 키셋 커서).
+- 벽 행은 유형의 두께·층 구성·코어를 복사해 갖고(params.wtype + 관계 of_type: 패밀리 인스턴스와 같은 관계를 벽 -> 벽 유형에도 쓴다), walltype.set 이 형상 키(두께·층·코어)가 바뀐 때만 그 유형의 벽 행을 다시 쓴다(증분 갱신: 다른 벽의 도면 캐시는 그대로). 근거: 벽 형상·도면·IFC 가 벽 행만 읽는 구조를 바꾸지 않고, 실행 취소·병합·가져오기가 행 효과로 그대로 탄다.
+- wall.type.set {ids, type | null}: 입히면 층 구성이 재료를 대신하고(wall.layers 와 같다) 위치선이 제자리에 남게 몸체를 옮긴다. null 이면 유형만 떼고 층 구성은 벽에 남는다. 유형 있는 벽의 wall.layers·wall.set thickness 는 거절(힌트: walltype.set 또는 유형 떼기). wall.split·element.copy 는 유형을 잇는다. 유형 대신 개별 층 구성을 가진 기존 벽은 그대로다.
+
+### 65.2 벽 위치선
+- params.loc ∈ core_center·finish_ext·finish_int·core_ext·core_int(wall_center 는 키 없음). 위치선은 몸체 중심선에서 지역 v 로 loc_offset 만큼 떨어진 선(왼쪽 +)이다. 첫 층(바깥) 면 = 축 오른쪽: 반시계로 그린 외벽은 왼쪽이 방이다(regions.py 의 규칙). 층 구성이 없으면 몸체 전체가 코어다.
+- wall.create·wall.arc 의 새 인자 type·location_line: 입력 축을 위치선으로 보고 몸체를 층 구성에 따라 놓는다(곡선 벽은 동심 호). type 이면 thickness 를 함께 주지 않고, height 를 생략하면 유형의 기본 높이. 응답 키는 그대로다.
+- wall.location.set {ids, line, keep}: keep=body(기본, Revit 과 같다) 몸체를 두고 선만 바꾼다, keep=line 지금 위치선 자리에 새 위치선이 오게 몸체를 옮긴다. wall.location {ids}: 위치선 이름·거리·축(곡선 벽은 호 가운데 점)·몸체 중심선·유형·스택 벽.
+- 유형을 바꾸거나 고쳐 두께가 바뀌면 위치선을 제자리에 두고 몸체를 옮긴다(직선은 평행 이동, 곡선은 동심 호 + 호스팅 요소 같은 각도).
+
+### 65.3 스택 벽 `stackwall`
+- 새 종류 stackwall(IFC 신원 IfcWall, 형상 없음): 정렬선 축(axis, 선택 arc_through 로 곡선), 정렬 위치선 line, 전체 높이, 바닥 오프셋, 구간 segments [{type, height | 생략(가변, 정확히 하나), offset(정렬선 기준 그 구간 위치선 거리)}](아래부터, 2~8개), 부분 벽 id parts.
+- 구간마다 부분 벽을 보통 벽 행으로 만든다(params.stack, 유형·바닥 오프셋·높이·위치선을 구간에서). 그래서 평면은 절단 높이를 지나는 구간만 자르고 아래 구간은 투영선, 단면·입면은 구간마다 그려진다(기존 벽 경로). Revit 도 평면은 절단 높이 구간의 유형으로 그린다.
+- stackwall.create·set(구간 유형·높이·offset·수, 높이, 정렬선, 축, 이름; 늘면 새 부분 벽, 줄면 문이 없는 부분 벽을 지운다, 문이 새 구간 밖이면 거절), element.delete(스택 벽 = 부분 벽과 그 위 문까지). 부분 벽은 조인·문·창·벽 개구·태그·치수만 받고 형상 편집·삭제·복사·유형·위치선 변경은 거절한다(스택 벽 커맨드로). walltype.set 은 부분 벽에도 정렬선을 지키며 퍼진다. model.check 겹친 벽은 같은 스택 벽의 부분 벽 쌍을 건너뛴다.
+
+### 65.4 IFC
+- 벽 유형마다 IfcWallType(PredefinedType STANDARD, ElementType = 기능, Tag = 유형 id, GlobalId = 유형 id 의 결정적 값) + 유형의 IfcMaterialLayerSet(IfcRelAssociatesMaterial) + 그 유형 벽들의 IfcRelDefinesByType(벽 id 순서). 엔진 flush 가 투영 뒤에 맞춘다. 벽 자신의 IfcMaterialLayerSetUsage 는 이전과 같다. 쓰는 벽이 없는 유형도 IfcWallType 은 나간다. 유형이 없으면 아무것도 만들지 않는다(기존 IFC 그대로).
+- 스택 벽: 형상 없는 IfcWall 이 층에 담기고 부분 IfcWall 들을 IfcRelAggregates(구간 순서)로 모은다. 부분 벽은 층에 담지 않는다(집합의 부분은 전체만 공간 구조에 담는다). Revit 의 IFC 내보내기와 같은 짜임이다.
+- IFC4·IFC2X3 검증 오류 0. 가져오기는 유형 정의와 벽의 타입 관계·스택 벽과 부분 벽을 되살린다(의미 해시 3종 같음, 다시 내보낸 바이트 같음). 가져온 프로젝트에서 유형을 고치거나 지워도 다시 연 프로젝트의 해시가 같다(가져온 파일의 낡은 투영 유형은 Tag·GlobalId 로 알아봐 지운다).
+
+### 65.5 하위 호환
+- 기존 커맨드의 응답 키·의미 그대로(wall.create·wall.arc 의 새 인자, wall.layers·wall.set 은 유형 있는 벽에서만 새 거절). model.stats 는 유형·스택 벽이 있을 때만 walltype·stackwall 수를 더한다. 새 커맨드 9개(walltype.create·set·duplicate·delete·list, wall.type.set, wall.location.set, wall.location, stackwall.create·set), parity 준비 WT1·WT2·SW1. 회귀 기준 변경: test_integration_g1 의 투영 순서 표에 stackwall, test_integration_review 의 관계 짝 참조 종류에 wall(새 종류·새 참조라서).
+- 실사용 A3 이 지적한 T 조인 자동은 join.auto tee=true(W1 1-F 3차)로 이미 된다. 기본값을 바꾸면 기존 의미가 바뀌어 손대지 않았다.
+
+### 65.6 검증(코드 커밋 1af8413 에서 run-all 한 번)
+- 새 시험 `tests/test_wall_types.py`(13건: 위치선 거리·코어 기본값, 스택 구간 높이·행 검사, 유형 만들기·고치기·복제·지우기·일람표 쪽 나누기·실행 취소/다시 실행, 유형 있는 벽 생성·위치선·기본 높이·직접 편집 거절, 유형을 고치면 그 유형 벽만·위치선 제자리·증분 = 전체 도면, 입히기·떼기·분할, 위치선 몸체 고정·선 고정, 곡선 벽 유형·위치선(문 호스팅), 스택 벽 부분 벽·평면 절단 구간·단면·부분 벽 편집 거절·문·구간 고치기·유형 전파·지우기·되돌리기, 곡선 스택 벽, IFC4·IFC2X3 IfcWallType·관계·집합·검증 오류 0·왕복 해시·바이트·가져온 프로젝트에서 고치기·지우기·다시 열기, 다시 연 프로젝트 해시, 유형을 쓰지 않으면 응답 그대로).
+- s1-core 전체(test_slow 제외)·test_slow(기준값 변경 없음) 통과, parity 불일치 0·통과, parity_g 통과, s10-headless 전체 통과. 기준 도면 183 파일이 main 78c4746 와 바이트 같음. 로컬 Revit 표본도 저장소 밖 기준선과 같음.
+
+### 65.6.1 bench
+도면 경로 파일(queries·kinds)을 바꿨으므로 main 78c4746 와 번갈아 3회씩 쟀다(같은 노트북, 새 프로세스). 5만 요소 중앙값: 평면 8.08 -> 7.87초(-2.6%), 단면 15.88 -> 15.72초(-1.0%), 입면 22.34 -> 22.30초(-0.2%), 반사 천장 평면 -1.0%, 면적 평면 gross -1.8%·legal -1.6%, 최대 22.4초(30초 이내), 선분 수·SVG 바이트 같음. 외래 혼합 모델 첫 뷰 평면 -1.3%·단면 +1.5%·입면 -3.8%(main 한 회 35.6초 튐, 중앙값 비교), 프로젝트 열기 -1.7~+1.2%, SVG 같음.
+
+### 65.7 한계(다음 몫)
+- 유형 속성셋·유형 매개변수(공유 매개변수), 층별 기능(구조·단열·마감) 표기와 층 감싸기(wrapping), 유형별 평면 해치.
+- 스택 벽의 상단 구속·이동·복사·회전 편집, 부분 벽끼리·이웃 벽과의 조인 정리, 스택 벽 유형(이름 붙은 스택 구성) 자체.
+- 위치선은 직선·곡선 벽만(커튼월·경사 벽 없음).
