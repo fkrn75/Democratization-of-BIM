@@ -91,6 +91,9 @@ def _overlap(ctx, walls, tol):
                 for v in by.get((lv, (ka + da) % nang, kc + dc), ()):
                     if v <= w or (w, v) in seen:
                         continue
+                    sw = st.el[w]["params"].get("stack")
+                    if sw is not None and sw == st.el[v]["params"].get("stack"):   # 같은 스택 벽의 부분 벽(W2 일곱 번째 PR)은 높이로 나뉘어 겹치지 않는다
+                        continue
                     t2 = info[v][0]
                     if min(abs(t - t2), pi - abs(t - t2)) > ANG_TOL:
                         continue

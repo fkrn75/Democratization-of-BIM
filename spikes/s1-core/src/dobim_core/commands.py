@@ -449,6 +449,9 @@ def _apply_top_level(ctx, p: dict, base_level: str) -> None:
     p["height"] = float(top - bottom)
 
 
+LocLine = Literal["wall_center", "core_center", "finish_ext", "finish_int", "core_ext", "core_int"]   # 벽 위치선(W2 일곱 번째 PR, walltypes.LOC_LINES)
+
+
 class WallCreate(A):
     id: Id | None = None
     level: Id
@@ -463,6 +466,10 @@ class WallCreate(A):
     top_level: Id | None = Field(None, description="상단 레벨(24단계, 상용 도구의 Top Constraint). 주면 height 를 상단 레벨 + top_offset 까지로 계산한다(height 와 함께 줄 수 없다). "
                                                     "여러 층에 걸친 벽의 평면 절단은 지나가는 각 층 평면에 그린다")
     top_offset: Num | None = Field(None, description="상단 레벨 기준 상단 오프셋 mm(top_level 과 함께). 생략·0 이면 키 없음")
+    type: Id | None = Field(None, description="벽 유형(W2 일곱 번째 PR, walltype.create): 두께·층 구성·코어를 유형에서 받는다(thickness 를 함께 주지 않는다). "
+                                              "height 를 생략하면 유형의 기본 높이")
+    location_line: LocLine | None = Field(None, description="위치선(W2 일곱 번째 PR): axis 가 이 선이다. 몸체는 층 구성에 따라 놓인다. "
+                                                            "생략하면 벽 중심선(이전과 같다). finish_ext = 첫 층(바깥) 면 = 축 오른쪽")
 
     @model_validator(mode="after")
     def _top(self):
@@ -497,10 +504,18 @@ def wall_create(ctx, a: WallCreate):
         if a.top_offset:
             p["top_offset"] = float(a.top_offset)
         _apply_top_level(ctx, p, a.level)
+    tid = None
+    if a.type is not None or a.location_line is not None:   # 벽 유형·위치선(W2 일곱 번째 PR): 없으면 행은 이전과 같다
+        from dobim_core import commands_walltype as CWT
+        p, tid = CWT.creation_options(ctx, p, a.type, a.location_line, "height" in a.model_fields_set or a.top_level is not None,
+                                      "thickness" in a.model_fields_set)
+        _wall_checked(p)
     if a.openings or a.top_profile or a.base_offset:
         _wall_checked(p)
     ctx.put_el(a.id, row("wall", "IfcWall", "wall.basic", p))
     ctx.rel("on_level", a.id, a.level, True)
+    if tid is not None:
+        ctx.rel("of_type", a.id, tid, True)
     return {"id": a.id}
 
 
@@ -552,6 +567,9 @@ class WallSet(A):
 def wall_set(ctx, a: WallSet):
     r = ctx.authored(a.id, "wall")
     p = dict(r["params"])
+    if a.thickness is not None and "wtype" in p and abs(a.thickness - p["thickness"]) > 1e-9:   # 벽 유형(W2 일곱 번째 PR): 두께는 유형이 정한다
+        raise DobimError("CONSTRAINT", "유형이 있는 벽의 두께는 유형이 정한다", path="/thickness",
+                         hint="walltype.set 으로 유형을 고치거나 wall.type.set 으로 다른 유형을 입히세요(type null 이면 뗀다)")
     if a.thickness is not None and "layers" in p and abs(a.thickness - p["thickness"]) > 1e-9:
         raise DobimError("CONSTRAINT", "층 구성이 있는 벽의 두께는 wall.layers 로 층을 바꿔 정한다", path="/thickness", hint="wall.layers 로 층 구성을 바꾸세요(층 두께 합 = 벽 두께)")
     for k in ("name", "thickness", "height"):
@@ -639,6 +657,9 @@ class WallLayers(A):
 def wall_layers(ctx, a: WallLayers):
     r = ctx.authored(a.id, "wall", what="층 구성 지정")
     p = dict(r["params"])
+    if "wtype" in p:   # 벽 유형(W2 일곱 번째 PR): 층 구성은 유형이 정한다
+        raise DobimError("CONSTRAINT", "유형이 있는 벽의 층 구성은 유형이 정한다", path="/id",
+                         hint="walltype.set 으로 유형을 고치거나 wall.type.set 의 type null 로 유형을 뗀 뒤 지정하세요")
     if a.layers is None:
         p.pop("layers", None)
     else:
@@ -1102,6 +1123,9 @@ def wall_split(ctx, a: WallSplit):
         np_["cuts"] = cuts_n
     if "layers" in p:   # 층 구성이 있으면 끝 쪽 새 벽도 같은 층 구성(복사)
         np_["layers"] = [dict(x) for x in p["layers"]]
+    for k in ("core", "wtype", "loc"):   # 코어 범위·벽 유형·위치선(W2 일곱 번째 PR)도 끝 쪽 새 벽이 같다(없으면 행은 이전과 같다)
+        if k in p:
+            np_[k] = list(p[k]) if isinstance(p[k], list) else p[k]
     if ops_n:
         np_["openings"] = ops_n
     if top_n is not None:
@@ -1110,6 +1134,8 @@ def wall_split(ctx, a: WallSplit):
         np_["tee"] = ["end"]
     ctx.put_el(nid, row("wall", "IfcWall", "wall.basic", np_))
     ctx.rel("on_level", nid, ctx.rels_out("on_level", a.id)[0], True)
+    if "wtype" in np_:   # 벽 유형(W2 일곱 번째 PR)
+        ctx.rel("of_type", nid, np_["wtype"], True)
     for o in voids_n:
         r_ = ctx.st.el[o]
         ctx.put_el(o, dict(r_, params=dict(r_["params"], host=nid, offset=r_["params"]["offset"] - a.at)))
@@ -1253,6 +1279,18 @@ def element_delete(ctx, a: IdArg):
         if ft:   # 다른 도구가 이 타입에 붙인 요소: 타입이 사라지면 그 요소의 타입 지정이 조용히 사라진다(벽의 외래 개구부와 같은 경고)
             ctx.warn(f"이 타입에 타입 지정으로 붙은 외래 요소 {len(ft)}개의 타입 지정이 타입과 함께 사라진다(실행 취소로 되살아나지 않는다): {', '.join(ft[:3])}"
                      + (" 외" if len(ft) > 3 else ""))
+    elif r["kind"] == "walltype":   # 벽 유형(W2 일곱 번째 PR): 쓰는 벽이 있으면 walltype.delete detach 로
+        from dobim_core import commands_walltype as CWT
+        if CWT._walls_of(ctx, a.id) or CWT._stacks_of(ctx, a.id):
+            raise DobimError("CONSTRAINT", "벽·스택 벽이 쓰는 벽 유형은 지울 수 없다", path="/id", hint="walltype.delete 의 detach: true 로 벽에서 떼고 지우세요")
+    elif r["kind"] == "stackwall":   # 스택 벽(W2 일곱 번째 PR): 부분 벽(그 위의 문 포함)을 함께 지운다
+        ctx.stack_ok = True
+        try:
+            for w in list(r["params"]["parts"]):
+                if w in ctx.st.el:
+                    gone += element_delete(ctx, IdArg(id=w))["deleted"]
+        finally:
+            ctx.stack_ok = False
     elif r["kind"] == "wall":
         xcut = _xcut_refs(ctx, a.id)
         if xcut:   # 함께 자르는 벽(25단계): 다른 벽의 창이 이 벽을 also_cuts 로 가리킨다
@@ -5462,3 +5500,4 @@ from dobim_core import commands_opening  # noqa: E402,F401   독립 개구 객�
 from dobim_core import commands_curtain  # noqa: E402,F401   커튼월(W2 네 번째 PR, ARC-22)
 from dobim_core import commands_material  # noqa: E402,F401   재료 외관(W2 다섯 번째 PR, DATA-05·VIS-07)
 from dobim_core import commands_solidops  # noqa: E402,F401   솔리드 불리언(W2 여섯 번째 PR, ARC-12·ARC-44)
+from dobim_core import commands_walltype  # noqa: E402,F401   벽 유형·위치선·스택 벽(W2 일곱 번째 PR, ARC-11·ARC-09)

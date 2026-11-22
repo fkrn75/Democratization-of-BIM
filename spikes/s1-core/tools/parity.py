@@ -45,6 +45,11 @@ _CW1 = ("curtain.create", {"id": F.CW1, "level": F.LV1, "axis": [0, -2000, 6000,
 _OP1 = ("opening.wall", {"id": F.OP1, "host": F.W2, "offset": 2800, "sill": 900, "width": 800, "height": 1200})   # 독립 개구 예시의 준비(W2 세 번째 PR, ARC-34)
 _LA1 = ("area.define", {"id": F.LA1, "name": "발코니", "rule": "119-1-3-나", "level": F.LV1, "boundary": [[0, 4000], [6000, 4000], [6000, 5500], [0, 5500]], "contact_length": 6000})   # 법정 면적 객체 예시의 준비(ARC-36)
 _MD1 = ("material.define", {"name": "Concrete"})   # 재료 외관 예시의 준비(W2 다섯 번째 PR, DATA-05)
+_WT1 = ("walltype.create", {"id": F.WT1, "name": "외벽 RC", "layers": [{"material": "치장벽돌", "thickness": 90}, {"material": "철근콘크리트", "thickness": 200}],
+                            "core": [1, 2], "function": "exterior"})   # 벽 유형 예시의 준비(W2 일곱 번째 PR, ARC-11)
+_WT2 = ("walltype.create", {"id": F.WT2, "name": "칸막이 100", "thickness": 100})
+_SW1 = ("stackwall.create", {"id": F.SW1, "level": F.LV1, "axis": [0, -3000, 6000, -3000], "height": 3000, "line": "finish_ext",
+                             "segments": [{"type": F.WT1, "height": 1000}, {"type": F.WT2}]})   # 스택 벽 예시의 준비(W2 일곱 번째 PR, ARC-09)
 _PP1 = ("param.define", {"pset": "Pset_ProjectCommon", "name": "Zone", "type": "text", "kinds": ["door", "wall"]})   # 프로젝트 매개변수 예시의 준비(DATA-03)
 _SI1 = ("site.create", {"id": F.SI1, "boundary": [[-6000, -6000], [18000, -6000], [18000, 14000], [-6000, 14000]], "name": "대지"})
 _SO1 = ("solid.create", {"id": F.SO1, "level": F.LV1, "category": "buttress", "form": "prism", "polygon": [[0, -900], [600, -900], [600, -100], [0, -100]], "z0": 0, "z1": 2400})   # 일반 솔리드 예시의 준비(18단계)
@@ -93,6 +98,9 @@ PRE = {**_DRAFT_PRE, "history.redo": [("history.undo", {})], "ifc.restore": [_EX
        "view.areas": [("view.area_plan", {"id": F.VA1, "name": "1F 바닥면적", "level": F.LV1, "scheme": "gross"})],
        "param.delete": [_PP1], "param.list": [_PP1],
        "material.delete": [_MD1], "material.list": [_MD1], "material.appearance": [_MD1],
+       "walltype.set": [_WT1], "walltype.duplicate": [_WT1], "walltype.delete": [_WT1, ("wall.type.set", {"ids": [F.W1], "type": F.WT1})],
+       "walltype.list": [_WT1], "wall.type.set": [_WT1], "wall.location": [_WT1, ("wall.type.set", {"ids": [F.W1], "type": F.WT1})],
+       "stackwall.create": [_WT1, _WT2], "stackwall.set": [_WT1, _WT2, _SW1],
        "area.delete": [_LA1], "area.list": [_LA1], "area.legal": [_W4, _SI1, _LA1], "area.export": [_W4, _SI1, _LA1],
        "opening.vertical": [_S1], "opening.delete": [_OP1],
        **{c: [_CW1] for c in ("curtain.set", "curtain.grid", "curtain.mullion.set", "curtain.panel.set", "curtain.type.set", "curtain.move", "curtain.parts")}}

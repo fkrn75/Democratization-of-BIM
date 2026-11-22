@@ -20,7 +20,7 @@ from pydantic import Field, model_validator
 from dobim_core import arcgeom as AG
 from dobim_core import fixture as F
 from dobim_core import kinds as K
-from dobim_core.commands import A, Id, Name, Num, Point2, Pos, _apply_top_level, _fresh_id, _wall_checked, command, row
+from dobim_core.commands import A, Id, LocLine, Name, Num, Point2, Pos, _apply_top_level, _fresh_id, _wall_checked, command, row
 from dobim_core.errors import DobimError
 
 Angle = Annotated[float, Field(ge=-3600.0, le=3600.0, allow_inf_nan=False)]
@@ -73,6 +73,8 @@ class WallArc(_ArcAxis):
     base_offset: Num | None = Field(None, description="벽 바닥 오프셋(레벨 기준 mm). 생략·0 이면 레벨에서 시작")
     top_level: Id | None = Field(None, description="상단 레벨(상단 구속). 주면 height 를 계산한다(height 와 함께 줄 수 없다)")
     top_offset: Num | None = Field(None, description="상단 레벨 기준 상단 오프셋 mm(top_level 과 함께)")
+    type: Id | None = Field(None, description="벽 유형(W2 일곱 번째 PR): 두께·층 구성·코어를 유형에서 받는다(thickness 를 함께 주지 않는다)")
+    location_line: LocLine | None = Field(None, description="위치선(W2 일곱 번째 PR): 입력 호가 이 선이다(몸체는 동심 호로 놓인다). 생략하면 벽 중심선")
 
     @model_validator(mode="after")
     def _top(self):
@@ -101,9 +103,16 @@ def wall_arc(ctx, a: WallArc):
         if a.top_offset:
             p["top_offset"] = float(a.top_offset)
         _apply_top_level(ctx, p, a.level)
+    tid = None
+    if a.type is not None or a.location_line is not None:   # 벽 유형·위치선(W2 일곱 번째 PR): 없으면 행은 이전과 같다(응답의 축은 입력 호 그대로)
+        from dobim_core import commands_walltype as CWT
+        p, tid = CWT.creation_options(ctx, p, a.type, a.location_line, "height" in a.model_fields_set or a.top_level is not None,
+                                      "thickness" in a.model_fields_set)
     _checked(p, "/points" if a.points is not None else "/radius")
     ctx.put_el(a.id, row("wall", "IfcWall", "wall.basic", p))
     ctx.rel("on_level", a.id, a.level, True)
+    if tid is not None:
+        ctx.rel("of_type", a.id, tid, True)
     return {"id": a.id, "axis": axis, "arc": mid, "radius": round(AG.info(axis, mid)[2], 3), "length": round(AG.length(AG.info(axis, mid)), 3)}
 
 

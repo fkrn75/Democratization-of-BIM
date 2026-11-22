@@ -392,7 +392,7 @@ def test_9_종류_레지스트리가_모든_모듈과_맞는다(tmp_path):
     assert queries.NON_IFC_KINDS == NON_IFC_KINDS and ifc_model.IFC_CLASS == FIXED_IFC_CLASS
     assert merge.GENESIS_OP == E.GENESIS_OP
     assert set(commands.DELETE_REL_NAMES) == {k for k, r in REL_KINDS.items() if not r.dangling_ok}
-    assert PROJECTED_KINDS == ("level", "site", "curtwall", "elevator", "railing", "roof", "slab", "solid", "space", "stair", "wall", "door", "ftype", "finst")   # 호스트·타입이 의존하는 것보다 먼저(슬래브는 레벨에만 의존)
+    assert PROJECTED_KINDS == ("level", "site", "curtwall", "elevator", "railing", "roof", "slab", "solid", "space", "stair", "wall", "door", "stackwall", "ftype", "finst")   # 호스트·타입이 의존하는 것보다 먼저(슬래브는 레벨에만 의존, 스택 벽은 부분 벽 뒤: W2 일곱 번째 PR)
     # 모든 효과 태그는 뒤집으면 원래대로 돌아오고, 키 계산이 정의돼 있다
     for t in EFFECT_TAGS:
         assert EFFECTS[t].keys is not None
@@ -446,6 +446,10 @@ def test_9_종류_레지스트리가_모든_모듈과_맞는다(tmp_path):
         _ok(b.run("curtain.create", {"level": F.LV1, "axis": [0, -2000, 6000, -2000], "height": 3000, "u_grid": {"rule": "spacing", "value": 1500},
                                      "v_grid": {"rule": "count", "value": 2}}, project=p))   # 커튼월(W2 네 번째 PR, ARC-22)
         _ok(b.run("material.define", {"name": "유리"}, project=p))   # 재료 외관 정의(W2 다섯 번째 PR, DATA-05)
+        _ok(b.run("walltype.create", {"id": F.WT1, "name": "외벽", "layers": [{"material": "벽돌", "thickness": 90}, {"material": "콘크리트", "thickness": 200}]}, project=p))   # 벽 유형(W2 일곱 번째 PR)
+        _ok(b.run("walltype.create", {"id": F.WT2, "name": "칸막이", "thickness": 100}, project=p))
+        _ok(b.run("stackwall.create", {"id": F.SW1, "level": F.LV1, "axis": [0, -6000, 6000, -6000], "height": 3000,
+                                       "segments": [{"type": F.WT1, "height": 1000}, {"type": F.WT2}]}, project=p))   # 스택 벽(W2 일곱 번째 PR)
     finally:
         b.close()
     eng = Engine(tmp_path / p, "t", create=False)
