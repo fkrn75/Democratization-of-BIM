@@ -48,6 +48,7 @@ _MD1 = ("material.define", {"name": "Concrete"})   # 재료 외관 예시의 준
 _PP1 = ("param.define", {"pset": "Pset_ProjectCommon", "name": "Zone", "type": "text", "kinds": ["door", "wall"]})   # 프로젝트 매개변수 예시의 준비(DATA-03)
 _SI1 = ("site.create", {"id": F.SI1, "boundary": [[-6000, -6000], [18000, -6000], [18000, 14000], [-6000, 14000]], "name": "대지"})
 _SO1 = ("solid.create", {"id": F.SO1, "level": F.LV1, "category": "buttress", "form": "prism", "polygon": [[0, -900], [600, -900], [600, -100], [0, -100]], "z0": 0, "z1": 2400})   # 일반 솔리드 예시의 준비(18단계)
+_SB1 = ("solid.boolean", {"id": F.SO1, "shape": {"form": "prism", "polygon": [[200, -1000], [400, -1000], [400, 0], [200, 0]], "z0": 1000, "z1": 1400}})   # 불리언 떼기 예시의 준비(W2 여섯 번째 PR)
 _LB1 = ("solid.create", {"id": F.SO1, "level": F.LV1, "category": "beam", "form": "member", "start": [1000, 0, 2400], "end": [2000, 0, 2400], "section": {"shape": "rect", "width": 200, "depth": 300}})   # 벽 잘라내기 예시의 준비(23단계): W1 문 위 인방
 _GR1 = ("grid.create", {"id": "g" + "0" * 21, "name": "G0", "line": [-1000, -2000, -1000, 6000]})   # 통심선 예시의 준비(19단계)
 # 2D 작도 예시의 준비(27단계): 가로선 DR1, 그것을 가로지르는 세로선 DR2(자르기 경계), 그 연장 끝의 세로선 DR3(연장 경계)
@@ -81,6 +82,7 @@ PRE = {**_DRAFT_PRE, "history.redo": [("history.undo", {})], "ifc.restore": [_EX
        "sheet.export": [_V1], "sheet.define": [_V1], "sheet.delete": [_V1, _SH1], "sheet.list": [_V1, _SH1], "sheet.render": [_V1, _SH1], "sheet.render_set": [_V1, _SH1],
        "view.image": [_V1], "sheet.image": [_V1], "drawing.check": [_V1, _SH1],
        "solid.set": [_SO1], "solid.move": [_SO1], "solid.delete": [_SO1],
+       "solid.boolean": [_SO1], "solid.boolean.remove": [_SO1, _SB1],   # 솔리드 불리언(W2 여섯 번째 PR)
        "grid.set": [_GR1], "grid.move": [_GR1], "grid.delete": [_GR1],
        "wall.attach_top": [_RF1], "wall.cut_by": [_LB1],
        "revision.set": [_RV1], "revision.issue": [_RV1], "revision.delete": [_RV1], "revision.schedule": [_V1, _SH1, _RV1],

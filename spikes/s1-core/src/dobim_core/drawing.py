@@ -935,12 +935,12 @@ def _body_boxes(body):
     """body 의 xz 평면 직사각 압출을 상자 (u0, u1, z0, z1, n0, n1) 로. 구멍(cuts)은 부모 두께 안으로 자른 상자를 더한다. 다른 형상은 건너뛴다."""
     out = []
     for b in body:
-        if b.get("k") != "extrude" or b.get("plane") != "xz" or b["profile"].get("shape") != "rect":
+        if b.get("k") != "extrude" or b.get("plane") != "xz" or b["profile"].get("shape") != "rect" or b.get("rotate"):   # 회전한 형상(W2 여섯 번째 PR)은 상자가 아니다
             continue
         pr, (n0, n1) = b["profile"], b["range"]
         out.append((pr["u"][0], pr["u"][1], pr["v"][0], pr["v"][1], n0, n1))
         for c in b.get("cuts", ()):
-            if c.get("plane") == "xz" and c["profile"].get("shape") == "rect":
+            if c.get("plane") == "xz" and c["profile"].get("shape") == "rect" and not c.get("rotate"):
                 cp, (c0, c1) = c["profile"], c["range"]
                 out.append((cp["u"][0], cp["u"][1], cp["v"][0], cp["v"][1], max(n0, c0), min(n1, c1)))
     return tuple(out)
@@ -1013,7 +1013,7 @@ def free_fam(g, e):
     zb0 = elev + spec["elevation"]
     prisms = []
     for b in spec["body"]:
-        if b.get("k") != "extrude" or b.get("plane") != "xy":
+        if b.get("k") != "extrude" or b.get("plane") != "xy" or b.get("rotate"):
             continue
         poly = _prism_poly(b)
         if poly is None:
@@ -4872,6 +4872,7 @@ def _subtract(ivs, cuts):
 #   평면: 절단 높이의 수평면으로 자른 선(cut)과, 절단면 아래 보이는 깊이 안에서 위를 향한 면에 붙은 모서리(proj). 레벨과 무관하게 높이 범위가 걸치는 솔리드를 그린다
 #   단면·입면: 보는 쪽을 향한 면에 붙은 모서리(뒷면끼리의 모서리는 그리지 않는다)를 투영선으로, 단면은 절단면으로 자른 선(cut)을 더한다.
 #   가림: 벽·슬래브·계단·지붕·패밀리 조각과 돌출(prism)·판(panel) 솔리드의 볼록 조각이 가린다. 로프트·스윕·메시는 가리지 않는다(알려진 한계)
+#   W2 여섯 번째 PR: 회전체·3D 스윕도 가리지 않고, 빼기·교집합 불리언이 있는 솔리드는 원래 형태의 조각이 구멍을 덮으므로 가림 조각을 내지 않는다(합치기만 있으면 그대로)
 #   벽 선도 돌출·판 솔리드(부벽 등)가 앞에 있으면 가려진다. 솔리드가 없는 프로젝트의 도면은 이전과 같다
 OCC_BIN = 2000.0    # 가림 조각 색인의 s 방향 칸 폭(mm)
 
@@ -4928,6 +4929,8 @@ def _solid_vpieces(g, v, e):
         poly = _clip_w([_sw(cfg, q) for q in poly], cfg[7], cfg[8])
         if len(poly) >= 3 and _area2(poly) > 2 * EPS:
             out.append((z0, z1, tuple(poly)))
+    if any(o["op"] != "union" for o in p.get("ops", ())):
+        return ()
     if p["form"] == "prism":
         for tri in SO.triangulate(SO.ccw(p["polygon"])):
             add(p["z0"] + lv, p["z1"] + lv, tri)

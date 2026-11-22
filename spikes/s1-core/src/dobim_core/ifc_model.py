@@ -1464,8 +1464,20 @@ class IfcModel:
             e.ObjectType = spec["object_type"]
         self._contain(eid, spec["level"])
         self._place(e, self.ents[spec["level"]].ObjectPlacement, (0.0, 0.0, 0.0), (1.0, 0.0, 0.0))
+        if "csg" in spec:   # 불리언(W2 여섯 번째 PR): 피연산자 IfcFacetedBrep 들의 IfcBooleanResult 사슬, 표현 종류 CSG
+            self._set_body(e, self._csg_item(spec["csg"]))
+            e.Representation.Representations[0].RepresentationType = "CSG"
+            return
         self._set_body(e, self._brep(spec["verts"], spec["faces"]))
         e.Representation.Representations[0].RepresentationType = "Brep"
+
+    def _csg_item(self, node):
+        """(꼭짓점, 면, ((연산, 하위), ...)) -> IfcFacetedBrep 또는 IfcBooleanResult(DIFFERENCE·UNION·INTERSECTION) 사슬."""
+        verts, faces, subs = node
+        item = self._brep(verts, faces)
+        for op, sub in subs:
+            item = self.f.createIfcBooleanResult(op.upper(), item, self._csg_item(sub))
+        return item
 
     def _project_slab(self, eid, spec):
         """슬래브: 레벨 좌표계 원점에 경계 프로필을 압출한다. 윗면 = 레벨 + top_offset 이므로 솔리드는 (top_offset - 두께)에서 두께만큼 +Z 로 올린다."""

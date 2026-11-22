@@ -232,12 +232,20 @@ class Repeat(M):
     count: Ex
 
 
+class Rotate(M):
+    """형상 회전(W2 여섯 번째 PR): origin 을 지나는 axis 둘레로 angle 도(오른손). z 축 회전만 되던 한계를 넘어 임의 축."""
+    axis: Pt3
+    angle: Ex
+    origin: Pt3 | None = None
+
+
 class SolidBase(M):
     id: StrictStr = Field(pattern=NAME_RE)
     role: Literal["solid", "void"] = "solid"
     cuts: list[StrictStr] = Field(default_factory=list, max_length=16)
     when: When = None
     repeat: Repeat | None = None
+    rotate: Rotate | None = None
 
     @model_validator(mode="after")
     def _roles(self):
@@ -277,7 +285,16 @@ class Sweep(SolidBase):
     profile: SweepProfile
 
 
-Solid = Annotated[Union[Extrude, Sweep], Field(discriminator="op")]
+class Revolve(SolidBase):
+    """회전체(W2 여섯 번째 PR): (r, h) 단면을 origin 을 지나는 axis(x/y/z) 둘레로 angle 도 돌린다. IFC 는 IfcRevolvedAreaSolid."""
+    op: Literal["revolve"]
+    axis: Axis = "z"
+    origin: Pt3 | None = None
+    profile: list[Pt2] = Field(min_length=3, max_length=32)
+    angle: Ex = 360
+
+
+Solid = Annotated[Union[Extrude, Sweep, Revolve], Field(discriminator="op")]
 
 
 # ---------------------------------------------------------------- 평면 기호
@@ -361,7 +378,7 @@ _HINTS = {
 }
 
 
-_TAGS = {"extrude", "sweep", "rect", "circle", "polygon", "line", "arc", "polyline"}
+_TAGS = {"extrude", "sweep", "revolve", "rect", "circle", "polygon", "line", "arc", "polyline"}
 _WRAP = {"str", "int", "float", "bool", "ExprVal"}
 
 

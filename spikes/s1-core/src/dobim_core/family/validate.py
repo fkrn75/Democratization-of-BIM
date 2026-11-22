@@ -140,8 +140,39 @@ _AXI = {"x": 0, "y": 1, "z": 2}
 
 
 def _aabb(it: dict) -> tuple[list[float], list[float]]:
-    """해석된 형상(돌출/스윕 구간) 하나의 축 정렬 경계 상자. 스윕 단면은 반대각선 길이로 부풀려 보수적으로(거짓 '빗나감'이 없게) 잡는다."""
+    """해석된 형상(돌출/스윕 구간/회전체) 하나의 축 정렬 경계 상자. 스윕 단면은 반대각선 길이로 부풀려 보수적으로(거짓 '빗나감'이 없게) 잡는다.
+    회전(rotate, W2 여섯 번째 PR)이 있으면 상자의 여덟 꼭짓점을 돌린 상자(보수적)."""
+    lo, hi = _aabb0(it)
+    rt = it.get("rotate")
+    if not rt:
+        return lo, hi
+    k = rt["axis"]
+    kl = math.sqrt(sum(c * c for c in k))
+    k = [c / kl for c in k]
+    a = math.radians(rt["angle"])
+    c, s = math.cos(a), math.sin(a)
+    o = rt["origin"]
+    pts = []
+    for x in (lo[0], hi[0]):
+        for y in (lo[1], hi[1]):
+            for z in (lo[2], hi[2]):
+                v = [x - o[0], y - o[1], z - o[2]]
+                kv = sum(k[i] * v[i] for i in range(3))
+                kx = [k[1] * v[2] - k[2] * v[1], k[2] * v[0] - k[0] * v[2], k[0] * v[1] - k[1] * v[0]]
+                pts.append([v[i] * c + kx[i] * s + k[i] * kv * (1 - c) + o[i] for i in range(3)])
+    return [min(p[i] for p in pts) for i in range(3)], [max(p[i] for p in pts) for i in range(3)]
+
+
+def _aabb0(it: dict) -> tuple[list[float], list[float]]:
     lo, hi = [0.0] * 3, [0.0] * 3
+    if it["k"] == "revolve":   # 축 방향은 h 범위, 나머지 두 축은 ±r 최대(한 바퀴 상자, 부분 각도도 보수적으로)
+        ai = _AXI[it["axis"]]
+        rmax = max(q[0] for q in it["profile"])
+        hs = [q[1] for q in it["profile"]]
+        for i in range(3):
+            o = it["origin"][i]
+            lo[i], hi[i] = (o + min(hs), o + max(hs)) if i == ai else (o - rmax, o + rmax)
+        return lo, hi
     if it["k"] == "extrude":
         au, av, ae = (_AXI[a] for a in ev._PLANE_AXES[it["plane"]])
         p = it["profile"]

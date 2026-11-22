@@ -905,8 +905,11 @@ def ifc_spec(g, e):
         # 배치는 레벨 좌표계(원점·무회전)이고 형상 z 는 레벨 기준이므로 레벨 높이는 읽지 않는다. 형상은 solids.solid_mesh 가 정한다(도면과 같은 값)
         verts, faces = SO.solid_mesh(p)
         cls, pre, otype = SO.SOLID_CATEGORIES[p["category"]]
-        return {"kind": kind, "name": p["name"], "level": g.q(solid_level, e), "ifc_class": cls, "predefined": pre, "object_type": otype,
+        spec = {"kind": kind, "name": p["name"], "level": g.q(solid_level, e), "ifc_class": cls, "predefined": pre, "object_type": otype,
                 "verts": tuple(verts), "faces": tuple(tuple(tuple(lp) for lp in f) for f in faces), "intent": intent}
+        if "ops" in p:   # 불리언(W2 여섯 번째 PR): IFC 는 피연산자 다면체의 IfcBooleanResult 사슬. 없으면 명세는 이전과 같다
+            spec["csg"] = SO.csg_tree(p)
+        return spec
     if kind == "slab":
         # 배치는 레벨 좌표계(원점·무회전)이고 윗면은 레벨 + top_offset 이므로 레벨 높이는 읽지 않는다(레벨을 옮기면 배치가 따라간다)
         spec = {"kind": kind, "name": p["name"], "level": g.q(slab_level, e), "boundary": tuple(tuple(q) for q in p["boundary"]),

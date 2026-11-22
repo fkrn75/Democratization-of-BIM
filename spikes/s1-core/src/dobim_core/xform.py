@@ -191,11 +191,46 @@ def solid(p: dict, xf: Xf) -> dict:
     elif f == "member":
         q["start"] = xf.pt(p["start"][0], p["start"][1]) + [p["start"][2]]
         q["end"] = xf.pt(p["end"][0], p["end"][1]) + [p["end"][2]]
+    elif f == "revolve":   # 회전체(W2 여섯 번째 PR): 축 위 점·축 방향·기준 방향을 옮긴다
+        q.update(_revolve(p, xf))
+    elif f == "sweep3d":   # 3D 스윕(W2 여섯 번째 PR): 경로·호 경유점. 대칭이면 단면의 a(왼쪽)가 오른쪽이 된다(부재 단면은 좌우 대칭이라 그대로)
+        q["rail"] = [xf.pt(x, y) + [z] for x, y, z in p["rail"]]
+        if "via" in p:
+            q["via"] = [None if m is None else xf.pt(m[0], m[1]) + [m[2]] for m in p["via"]]
+        if xf.mirror and "profile" in p:
+            n = len(p["profile"])
+            q["profile"] = [[_r6(-a), b] for a, b in p["profile"]][::-1]
+            if "bulges" in p:   # 뒤집은 목록의 변 j 는 원래 변 n-2-j 를 거꾸로 간다: 대칭(부호 반전)과 역방향(부호 반전)이 상쇄된다
+                q["bulges"] = [p["bulges"][(n - 2 - j) % n] for j in range(n)]
     else:   # mesh: 대칭이면 면 고리를 뒤집어 바깥 방향을 지킨다
         q["vertices"] = [xf.pt(x, y) + [z] for x, y, z in p["vertices"]]
         if xf.mirror:
             q["faces"] = [list(fc)[::-1] for fc in p["faces"]]
+    if "ops" in p:   # 불리언 피연산자(W2 여섯 번째 PR)도 같은 변환
+        q["ops"] = [dict(o, solid=solid(o["solid"], xf)) for o in p["ops"]]
     return q
+
+
+def _vec(xf: Xf, v) -> list:
+    """방향 벡터(평면 성분만 선형 변환, z 그대로)."""
+    a, b, c, d, _, _ = xf.m
+    if xf.kind == "move":
+        return [float(v[0]), float(v[1]), float(v[2])]
+    return [_r6(a * v[0] + b * v[1]), _r6(c * v[0] + d * v[1]), float(v[2])]
+
+
+def _revolve(p: dict, xf: Xf) -> dict:
+    from dobim_core import solidops as SX
+    o = xf.pt(p["origin"][0], p["origin"][1]) + [p["origin"][2]]
+    if xf.kind == "move":
+        return {"origin": o}
+    _, A, R, T = SX.revolve_frame(p)
+    A2, R2 = _vec(xf, A), _vec(xf, R)
+    if xf.mirror:   # 대칭은 회전 방향을 뒤집는다: [0, 각] 이 [-각, 0] 이 되므로 기준 방향을 -각만큼 돌린다
+        T2 = SX._cross(A2, R2)
+        s, c = SX.sincos(p["angle"])
+        R2 = [_r6(c * R2[k] - s * T2[k]) for k in range(3)]
+    return {"origin": o, "axis": A2, "ref": R2}
 
 
 BY_KIND = {"wall": wall, "slab": slab, "space": space, "stair": stair, "railing": railing, "roof": roof, "grid": grid, "solid": solid}
