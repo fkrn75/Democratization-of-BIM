@@ -2230,3 +2230,47 @@ W1 이 끝나고 W2 의 첫 과업으로 직선 축뿐이던 벽에 원호 축�
 
 ### 62.9 한계(다음 몫)
 - 경사 커튼 시스템(경사 유리지붕), storefront 를 커튼월로 바꾸기, 벽에 심는 커튼월(호스트 벽 자르기), 격자선 구간 지우기(칸 합치기), 멀리언 프로파일 형상(사각 밖)·재료 지정, 패널 유형(두께·재료) 편집, 커튼월 복사·회전·대칭, 가시성 범주(VG), 외래 IfcCurtainWall 을 저작으로 들이기.
+
+## 63. W2 다섯 번째 PR: 재료 외관 DATA-05·VIS-07(색·투명도·광택) (2026-11-22, 브랜치 phase2/w2-material-appearance)
+
+실사용 시험(건물 3동·기계 장비 6종) 9개 모두에서 "재료 색·투명도를 지정할 수 없다"가 나왔다(FBX 변환 단계에서 재료 이름으로 색을 칠해 우회, 유리 반투명 포함). 재료 이름 하나에 표면 색·투명도·광택을 정하는 외관 정의를 더한다. 요소에는 여전히 재료 이름만 둔다(material.set·material.set_many·층 구성 그대로). 합성 데이터만 쓴다.
+
+### 63.1 외관 정의와 커맨드
+- 새 비 IFC 의도 종류 `matdef`(family_id material.def): params = 재료 이름 `name`, 표면 색 `color` [r,g,b] 0~255 정수, `transparency` 0(불투명)~1, `shininess`(광택·반사 정도) 0~1. 투명도·광택은 소수 넷째 자리로 저장. 정의는 1,000개까지. 프로젝트 매개변수(pparam)처럼 DoBIM_Defs 로 IFC 를 왕복하고 실행 취소·다시 실행·병합을 그대로 탄다. 가져오기는 같은 재료 이름의 정의가 둘이면 둘 다 되살리지 않는다.
+- `material.define`: 키 = 재료 이름. 처음 만들 때 색을 주지 않으면 기본 재료 라이브러리 값으로 시작(라이브러리에 없는 이름은 color 필수, CONSTRAINT /color). 이미 있으면 준 값만 바꾼다(바뀐 것이 없으면 기록하지 않는다). 응답 id·created·changed·appearance·used_by.
+- `material.delete`: 정의를 지운다(요소의 재료 이름은 남고 외관은 기본값으로 돌아간다). `material.list`: 요소가 쓰는 재료(단일 재료·층 구성의 층·커튼월 부속 종류) + 정의된 재료, 이름 순, 외관·출처(defined·default·ifc)·라이브러리 값·쓰는 요소 수, 쪽 나누기. `material.library`: 라이브러리 표 또는 이름 하나에 맞는 값.
+- `material.appearance`: 요소 id 목록(500개까지) -> 요소별 실제 외관(3D 장면·GUI 가 칠할 색). 층 구성이면 층별, 커튼월이면 부속 종류별(멀리언·유리·불투명·문). 외관 출처 순서: 정의 -> 가져온 파일 재료의 다른 스타일 -> 18단계 기본 색 -> 없음.
+- GUI 동작 2개(material.panel: 목록·정의·라이브러리·지우기, material.scene: 요소별 외관), parity 준비 MD1(Concrete 정의).
+
+### 63.2 기본 재료 라이브러리
+- 18단계 색 표(MATERIAL_COLORS) 7종(동판·벽돌·유리·석재·목재·슬레이트·징크)은 그 색 그대로 + 투명도·광택(유리 0.6·0.9). 표에 없는 재료는 추가 표: 콘크리트(시멘트·몰탈)·알루미늄·강재(스틸·스테인리스·철)·석고·단열·타일(세라믹)·도장(페인트)·아스팔트. 이름 낱말의 부분 일치, 18단계 표가 먼저.
+- 라이브러리는 정의를 만들 때만 쓴다(아래 63.3 판단).
+
+### 63.3 IFC
+- 정의된 재료의 IfcMaterial 에 IfcSurfaceStyle(이름 = 재료 이름, BOTH) 하나 + IfcSurfaceStyleRendering(SurfaceColour IfcColourRgb, Transparency, 광택 > 0 이면 SpecularColour = IfcNormalisedRatioMeasure(광택)·SpecularHighlight = IfcSpecularRoughness(1 - 광택), ReflectanceMethod NOTDEFINED)를 IfcMaterialDefinitionRepresentation -> IfcStyledRepresentation -> IfcStyledItem 으로 붙인다(18단계와 같은 연결).
+- 엔진 flush(정의 속성 맞춤 직후)가 정의 표를 IFC 모델에 넘기고, 값이 바뀐 재료만 스타일을 지우고(재료 표현·표현·항목·스타일·색 엔티티, 고아 없음) 다시 붙인다. 재료가 IFC 에 아직 없으면(쓰는 요소가 없음) 할 일이 없다: 처음 지정될 때 새 표로 붙는다. 로그에서 다시 만들 때는 재료를 만들기 전에 표를 놓는다(다시 연 프로젝트의 의미 해시 같음).
+- 가져온 파일의 재료가 다른 도구의 스타일(여러 스타일·텍스처·조명 등 코어가 만들 수 없는 모양)을 가지면 material.define 이 거절한다(CONSTRAINT /name, 다른 이름을 정의해 지정하라는 안내). 코어가 만든 모양(18단계 Shading·외관 Rendering, IFC2x3 의 스타일 묶음 하나 포함)이면 고칠 수 있다.
+- IFC2X3 내보내기: IFC2x3 의 IfcStyledItem.Styles 는 IfcPresentationStyleAssignment 의 집합이라, 이전기가 그대로 옮긴 스타일을 묶음 하나로 싼다. 18단계 재료 색이 있던 모델에서도 나던 기존 검증 오류(시험들이 `IfcSurfaceStyle` 메시지를 빼고 보던 것)가 사라진다.
+- 기본 라이브러리 색을 IFC 에 항상 쓸지, 지정된 것만 쓸지: **지정된 것만** 쓴다. 근거 (1) 외관을 쓰지 않은 기존 프로젝트·가져온 파일의 IFC4 바이트·의미 해시가 그대로여야 한다(외부 도구 왕복·스냅숏 비교·제출본 재현). 콘크리트처럼 지금 스타일이 없는 재료에 라이브러리 색을 늘 붙이면 거의 모든 프로젝트의 IFC 가 바뀐다. (2) 라이브러리 값은 제안이다: 사용자가 `material.define {name}` 한 번으로 그대로 채택하면 IFC 에 실린다. (3) 기존 18단계 색(7종, Shading)은 이미 IFC 에 쓰던 것이라 그대로 둔다.
+- 외관을 쓰지 않은 프로젝트의 IFC 바이트(main c15f269 대비, 생성 시각 줄·무작위 GlobalId 를 빼고 비교): 기준 fixture IFC4·IFC2X3 같음, 18단계 재료(적벽돌)·커튼월(유리) 모델 IFC4 같음, 같은 모델 IFC2X3 은 IfcPresentationStyleAssignment 2개가 더해져 바뀜(위 2x3 검증 오류 수정, 의도한 변화). 스타일이 없는 모델의 IFC2X3 은 그대로.
+
+### 63.4 3D 장면(dobim_render)
+- 메시 추출이 요소 재료(층 구성은 가장 두꺼운 층, 18단계와 같은 규칙)의 표면 스타일 투명도도 읽는다(IFC2x3 스타일 묶음도 벗겨 읽는다). 투명도 > 0 인 요소가 있으면 불투명 요소를 먼저 그리고 투명 요소를 따로 그려, 투명 요소가 앞에 있는 픽셀은 투명도 비율로 뒤와 섞는다(요소 ID 는 앞의 투명 요소: 집을 수 있다, stats.transparent_pixels). 투명 요소가 없으면 이전과 같은 경로·픽셀.
+- 커튼월 패널(종류별 재료 유리·알루미늄 등), 지붕 경사면·계단 조각·파라펫(요소 재료를 따르는 부속, 60절)은 같은 IfcMaterial 을 쓰므로 정의가 그대로 전파된다. GUI 는 material.appearance 로 같은 값을 받는다.
+
+### 63.5 도면
+- 평면·단면·입면 2D 는 외관을 쓰지 않는다(도면 경로 파일 drawing·queries·scene 미변경). 외관 정의 전후 view_lines 같음(시험), 기준 도면 183 파일 바이트 같음.
+
+### 63.6 하위 호환
+- 기존 커맨드의 응답 키·의미 그대로(element.get 의 material 도 이름 그대로). 새 커맨드 5개, GUI 동작 2개. 외관 정의가 없으면 IFC4·도면·해시 그대로.
+
+### 63.7 검증(코드 커밋 4d6a53c 에서(코드 e37bc9f + C-4 기준값 4d6a53c) run-all 한 번)
+- 새 시험 `tests/test_material_appearance.py`(9건: 라이브러리, 만들기·고치기·지우기·스키마 오류·실행 취소/다시 실행, 요소별 외관(층 구성·커튼월), 도면 불변, IFC4·IFC2X3 스타일·검증 오류 0·가져오기 왕복 해시·내보낸 바이트 같음·가져온 프로젝트에서 고치기·IFC2x3 파일 가져오기·되돌리기, 지붕 부속 전파, 다시 연 프로젝트 해시, 다른 도구 스타일 거절, 파라미터 검사). `spikes/s10-headless/tests/test_render_appearance.py`(투명 패널이 비치고 집히며 정의 색을 씀, 투명 재료가 없으면 이전 경로).
+- s1-core 전체(test_slow 제외)·test_slow(C-4 회귀 코퍼스 포함) 통과, parity 불일치 0·통과(새 커맨드 5개 포함), parity_g 통과, s10-headless 전체 통과. 기준 도면 `run_baseline.py --sheets` 183 파일이 main c15f269 와 바이트 같음. 로컬 Revit 표본(test_foreign_drawings·test_foreign_occlusion)도 저장소 밖 기준선과 같음.
+- C-4 회귀 코퍼스(results/c4_baseline.json): S10 통과 수만 35 -> 36(새 렌더 시험 1건, 이유를 history 에 남김). 퍼즈·실행 취소·T0·S11 은 그대로.
+
+### 63.8 bench
+도면 경로 파일(drawing·queries·scene·drawing_export·dxf_export·sheet·viewvg·raster)을 바꾸지 않아 생략한다. 바뀐 코어 파일은 재료 정의(appearance·kinds·viewdefs·foreign)·IFC 투영(ifc_model·ifc2x3·engine flush)·커맨드(commands_material)와 3D 렌더러(s10-headless mesh·scene)다. kinds 는 종류 표에 비 IFC 종류 하나를 더했을 뿐이라 도면 질의 경로가 그대로다.
+
+### 63.9 한계(다음 몫)
+- 물성(열·구조 성질), 해치(절단·표면 패턴) 편집, 질감(텍스처 이미지·범프), 요소 단위 외관 재정의(요소 하나만 다른 색), 도면 채색 옵션(재료 색으로 칠한 평면·입면), 외래 재료 스타일을 정의로 들이기.
