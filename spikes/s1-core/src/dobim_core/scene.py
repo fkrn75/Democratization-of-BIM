@@ -171,7 +171,7 @@ def hosted_symbols(g, v, w):
             if D.FS.hosted_flipped(spec.get("rotation")):
                 plan = D._flip_plan(plan)
             if fzb + c["z"][0] <= cfg[2] + D.EPS and cfg[2] <= fzb + c["z"][1] + D.EPS:
-                lines = D._plan_items(plan, lambda u, vv, _o=spec["offset"]: D._world(sol, _o + u, vv))
+                lines = D._plan_items(D.hosted_items(sol, plan), lambda u, vv, _o=spec["offset"]: D._world(sol, _o + u, vv))
         if lines:
             out.append((d, tuple(lines)))
     return tuple(out)

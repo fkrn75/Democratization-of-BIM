@@ -51,6 +51,8 @@ def openings(g):
         row = g.q(Q.door_row, d)
         host = row[2]
         x, y, c, s, _ = g.q(Q.wall_frame, host)
+        if "arc" in Q.el(g, host)["params"]:   # 곡선 벽(W2 ARC-04): 문 자리의 접선 방향
+            c, s = g.q(Q.axis_dir, host, row[8])
         out.append({"cat": "D", "id": d, "level": g.q(Q.wall_level, host), "wall": host, "pos": (row[9], row[10]), "dir": (c, s),
                     "thick": Q.el(g, host)["params"]["thickness"], "width": row[5], "height": row[6], "sill": row[7], "fire": row[12] or ""})
     for e in _ids(g, "finst"):
@@ -62,7 +64,10 @@ def openings(g):
         x, y, c, s, _ = g.q(Q.wall_frame, host)
         off = sp["offset"]
         cat = "W" if sp.get("predefined") == "WINDOW" else "D"
-        out.append({"cat": cat, "id": e, "level": g.q(Q.wall_level, host), "wall": host, "pos": (x + off * c, y + off * s), "dir": (c, s),
+        pos = (x + off * c, y + off * s)
+        if "arc" in Q.el(g, host)["params"]:   # 곡선 벽(W2 ARC-04): 호 위 점·접선
+            pos, (c, s) = g.q(Q.axis_pt, host, off), g.q(Q.axis_dir, host, off)
+        out.append({"cat": cat, "id": e, "level": g.q(Q.wall_level, host), "wall": host, "pos": pos, "dir": (c, s),
                     "thick": Q.el(g, host)["params"]["thickness"], "width": cut["x"][1] - cut["x"][0],
                     "height": cut["z"][1] - cut["z"][0], "sill": sp["elevation"] + cut["z"][0], "fire": ""})
     return out

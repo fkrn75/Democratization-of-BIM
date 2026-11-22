@@ -107,12 +107,13 @@ def _dim_values(p: dict) -> None:
         pr = AN.parse_ref(p[k])
         if pr is None:
             raise ValueError(f"치수 참조 {k} 의 문법이 올바르지 않다")
-        ts.append(AN.ROLE_TYPES[pr[0]][pr[2]])
+        ts.append(AN.role_type(pr[0], pr[2]))
     vertical = ts[0] == "z" and ts[1] == "z"
     if (ts[0] == "z") != (ts[1] == "z"):
         raise ValueError("높이 참조와 평면 참조가 섞여 있다")
     m = p.get("measure")   # W1 1-B 2차: 각도(선 둘)·반지름·지름(같은 원 하나). 선형 치수에는 원 참조가 없다
-    if (m == "angle" and ts != ["line", "line"]) or (m in ("radius", "diameter") and (ts != ["circle", "circle"] or p["a"] != p["b"]))             or (m is None and "circle" in ts):
+    if (m == "angle" and ts != ["line", "line"]) or (m in ("radius", "diameter") and (ts[0] not in ("circle", "arc") or ts[0] != ts[1] or p["a"] != p["b"])) \
+            or (m == "arc" and (ts != ["arc", "arc"] or p["a"] != p["b"])) or (m is None and ("circle" in ts or "arc" in ts)):
         raise ValueError("치수 종류와 참조 종류가 맞지 않는다")
     if vertical != ("at" in p):
         raise ValueError("높이 치수만 at 이 있어야 한다")

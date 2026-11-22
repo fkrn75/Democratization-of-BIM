@@ -172,7 +172,7 @@ def _transform(ctx, sel: list, xf: X.Xf) -> dict:
         if kind == "door" or (kind == "finst" and "offset" in p):   # 호스팅 요소: 대칭이면 축선이 뒤집혀 offset 이 바뀐다
             if xf.mirror:
                 host = ctx.rels_in("hosts", e)[0]
-                n = X.axis_len(st.el[host]["params"]["axis"])
+                n = X.wall_len(st.el[host]["params"])
                 lo, hi = _hosted_span(ctx, e)
                 ctx.put_el(e, dict(r, params=dict(p, offset=X._r6(p["offset"] + n - lo - hi))))
             continue
@@ -223,7 +223,7 @@ def _copy_set(ctx, sel: list, xf: X.Xf, level, ids: list, warn_top: list) -> lis
         if hosted:
             if xf.mirror:
                 host = ctx.rels_in("hosts", e)[0]
-                n = X.axis_len(st.el[host]["params"]["axis"])
+                n = X.wall_len(st.el[host]["params"])
                 lo, hi = _hosted_span(ctx, e)
                 p["offset"] = X._r6(p["offset"] + n - lo - hi)
             if "also_cuts" in p:
@@ -378,6 +378,7 @@ def _walls(ctx, ids: list, what: str) -> None:
         if r is None or r["kind"] != "wall":
             raise DobimError("NOT_FOUND", f"벽을 찾을 수 없다: {w}", path=f"/ids/{i}")
         ctx.authored(w, "wall", what=what)
+        C.no_arc(ctx, w, what, path=f"/ids/{i}")
 
 
 def _left(axis, d: float) -> tuple:
@@ -489,6 +490,7 @@ def wall_extend_to(ctx, a: WallExtendTo):
         raise DobimError("CONSTRAINT", "경계는 다른 벽이어야 한다", path="/to")
     _walls(ctx, [a.id], "트림/연장")
     ctx.row(a.to, "wall")
+    C.no_arc(ctx, a.to, "트림/연장 경계", path="/to")
     pt = _line_hit(ctx.st.el[a.id]["params"]["axis"], ctx.st.el[a.to]["params"]["axis"])
     if pt is None:
         raise DobimError("CONSTRAINT", "두 벽이 평행해 만나지 않는다", path="/to")

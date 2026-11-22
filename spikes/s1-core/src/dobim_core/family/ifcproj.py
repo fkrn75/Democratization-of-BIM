@@ -324,7 +324,12 @@ def project_inst(model, eid: str, spec: dict) -> None:
     if spec["host"]:
         wall = model.ents[spec["host"]]
         xd = (-1.0, 0.0, 0.0) if FS.hosted_flipped(spec.get("rotation")) else (1.0, 0.0, 0.0)   # 뒤집은 호스팅 인스턴스는 지역 x 를 반대로(수직축 반 바퀴)
-        model._place(e, wall.ObjectPlacement, (spec["offset"], 0.0, spec["elevation"]), xd)
+        at = spec.get("at")
+        if at is not None:   # 곡선 벽 호스트(W2 ARC-04): 벽 배치 틀 안의 축 위 점·접선
+            xd = (-at[2], -at[3], 0.0) if xd[0] < 0 else (at[2], at[3], 0.0)
+            model._place(e, wall.ObjectPlacement, (at[0], at[1], spec["elevation"]), xd)
+        else:
+            model._place(e, wall.ObjectPlacement, (spec["offset"], 0.0, spec["elevation"]), xd)
     else:
         rot = math.radians(spec["rotation"])
         x, y = spec["position"]
@@ -356,13 +361,19 @@ def project_inst(model, eid: str, spec: dict) -> None:
         wall = model.ents[spec["host"]]
         cx, cz = spec["cut"]["x"], spec["cut"]["z"]
         t2 = spec["wall_thickness"] / 2.0
+        at = spec.get("at")
+        if at is not None:   # 곡선 벽 호스트: 휜 벽 두께를 다 뚫도록 깊게
+            t2 = at[4]
         item = {"k": "extrude", "plane": "xz", "profile": {"shape": "rect", "u": cx, "v": cz}, "range": [-t2, t2]}
         op = api_root.create_entity(f, ifc_class="IfcOpeningElement")
         # 개구부 GlobalId: 이미 정해진 값(가져온 파일의 것, 지우기를 되돌린 것)을 유지하고, 없으면 프로젝트에서 결정적으로 파생한다
         op.GlobalId = model._opening_gid.get(eid) or model.derived_guid_for(f"opening:{eid}")
         model._opening_gid[eid] = op.GlobalId
         op.Name = spec["name"] + "-opening"
-        model._place(op, wall.ObjectPlacement, (spec["offset"], 0.0, spec["elevation"]), (1.0, 0.0, 0.0))
+        if at is not None:
+            model._place(op, wall.ObjectPlacement, (at[0], at[1], spec["elevation"]), (at[2], at[3], 0.0))
+        else:
+            model._place(op, wall.ObjectPlacement, (spec["offset"], 0.0, spec["elevation"]), (1.0, 0.0, 0.0))
         op.Representation = f.createIfcProductDefinitionShape(None, None, [
             f.createIfcShapeRepresentation(model.body, "Body", "SweptSolid", [_extrude_item(f, item)])])
         api_feature.add_feature(f, feature=op, element=wall)

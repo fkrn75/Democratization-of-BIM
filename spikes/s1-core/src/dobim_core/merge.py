@@ -401,7 +401,20 @@ class View:
             return tuple(self.out.get((key[1], key[2]), ()))
         if t == "rel_in":
             return tuple(self.inn.get((key[1], key[2]), ()))
+        if t == "arc_walls":   # 곡선(원호) 벽(W2 ARC-04)
+            return frozenset(e for e in self.exists if self.rows[e]["kind"] == "wall" and "arc" in self.rows[e]["params"])
         raise KeyError(key)
+
+
+def _wlen(p) -> float:
+    """벽 축 길이(곡선 벽 W2 ARC-04 은 호 길이). 축 값이 이상하면 직선 길이(뒤의 검사가 행 검사로 잡는다)."""
+    ax = p["axis"]
+    if isinstance(p.get("arc"), list) and len(p["arc"]) == 2:
+        from dobim_core import arcgeom as AG
+        ai = AG.info(ax, p["arc"])
+        if ai is not None:
+            return AG.length(ai)
+    return sqrt((ax[2] - ax[0]) ** 2 + (ax[3] - ax[1]) ** 2)
 
 
 # ---------------------------------------------------------------- 의미 규칙 (병합 결과의 재생성 검사)
@@ -487,7 +500,7 @@ def violations(view: View) -> list[dict]:
         ax = view.p(w).get("axis")
         if not ax or len(ax) != 4:
             continue
-        length = sqrt((ax[2] - ax[0]) ** 2 + (ax[3] - ax[1]) ** 2)
+        length = _wlen(view.p(w))
         spans = []
         for d in _order(doors_on[w]):
             p = view.p(d)
@@ -513,7 +526,11 @@ def violations(view: View) -> list[dict]:
         lv = tuple(view.out.get(("on_level", w), ()))
         if ax and len(ax) == 4:
             a, b = (round(ax[0], 3), round(ax[1], 3)), (round(ax[2], 3), round(ax[3], 3))
-            groups.setdefault((lv, tuple(sorted((a, b)))), []).append(w)
+            mid = view.p(w).get("arc")   # 곡선 벽(W2 ARC-04): 끝점이 같아도 호가 다르면 다른 자리다
+            key = (lv, tuple(sorted((a, b))))
+            if isinstance(mid, list) and len(mid) == 2:
+                key += ((round(mid[0], 3), round(mid[1], 3)),)
+            groups.setdefault(key, []).append(w)
     for k in _order(groups):
         ws = groups[k]
         axis = [list(k[1][0]), list(k[1][1])]
@@ -576,7 +593,7 @@ def violations(view: View) -> list[dict]:
         try:
             spec = g.q(Q.ifc_spec, f)
             ax = view.p(w)["axis"]
-            length = sqrt((ax[2] - ax[0]) ** 2 + (ax[3] - ax[1]) ** 2)
+            length = _wlen(view.p(w))
         except (KeyError, IndexError, ZeroDivisionError, TypeError, ValueError):
             continue
         focus = tuple(_pu(w, k) for k in ("axis", "thickness", "height")) + tuple(_pu(f, k) for k in view.p(f))

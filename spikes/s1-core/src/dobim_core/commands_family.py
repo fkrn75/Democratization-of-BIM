@@ -608,6 +608,8 @@ def host_range(ctx, wid: str, wp: dict | None = None) -> tuple[float, float]:
     """벽 지역 u 범위: 축선 [0, 길이] 와 조인 형상 범위(조인 지점까지 자르기·늘리기 + L 조인 모서리 반 두께 연장, queries.wall_extent 와 같은 규칙)의 합집합.
     합집합이라 예전에 받던 위치(축선 안)는 모두 그대로 받는다. wp 를 주면 그 값(바뀔 벽 값)으로 계산한다."""
     wp = wp or ctx.st.el[wid]["params"]
+    if "arc" in wp:   # 곡선 벽(W2 ARC-04): 축 [0, 호 길이] 만 본다(조인 연장 범위는 아직 보지 않는다)
+        return (0.0, C.wall_len(wp))
     axis = wp["axis"]
     x, y, c, s, length = C._frame_of(axis)
     partners = sorted(set(ctx.rels_out("joins", wid) + ctx.rels_in("joins", wid)))
@@ -659,6 +661,8 @@ def _also_box(ctx, host_id: str, hp: dict, oid: str, i: int):
     if oid == host_id:
         raise DobimError("CONSTRAINT", "also_cuts 에 호스트 벽을 넣을 수 없다", path=path)
     op = ctx.authored(oid, "wall", what="개구부로 함께 자르기")["params"]
+    if "arc" in op or "arc" in hp:
+        raise DobimError("CONSTRAINT", "곡선 벽은 아직 함께 자르기(also_cuts)를 지원하지 않는다", path=path)
     hx, hy, hc, hs, _ = C._frame_of(hp["axis"])
     ox, oy, oc, os_, olen = C._frame_of(op["axis"])
     if abs(hc * os_ - hs * oc) > PARALLEL_COS:
@@ -738,7 +742,7 @@ def check_fit(ctx, host_id: str, hp: dict, offset, elevation, cut: dict, values:
     bad = [k for k, v in over.items() if v and not served[k]]
     if not bad:
         return
-    length = C.sqrt(C._axis_len2(hp["axis"]))
+    length = C.wall_len(hp)
     joined = sorted(set(ctx.rels_out("joins", host_id) + ctx.rels_in("joins", host_id)))
     details = {"opening": {"u": [round(u0, 3), round(u1, 3)], "z": [round(w0, 3), round(w1, 3)]},
                "host": {"id": host_id, "axis_length": round(length, 3), "range": [round(e0, 3), round(e1, 3)], "z": [b0, top]},
@@ -781,8 +785,10 @@ def check_hosted_fit(ctx, wall_id: str, old_wp: dict, new_wp: dict) -> None:
         changed = "base_offset"
     if changed is None:
         return
+    if changed is None and old_wp.get("arc") != new_wp.get("arc"):   # 곡선 벽(W2 ARC-04)의 호만 바뀌었다
+        changed = "axis"
     path = "/" + changed
-    length = C.sqrt(C._axis_len2(new_wp["axis"]))
+    length = C.wall_len(new_wp)
     host_ctx = {"host_thickness": new_wp["thickness"], "host_height": new_wp["height"]}
     for d in sorted(ctx.rels_out("hosts", wall_id)):
         row = ctx.st.el[d]
@@ -1137,6 +1143,9 @@ def family_place_corner(ctx, a: FamilyPlaceCorner):
     for i, w in enumerate(a.walls[1:], 1):
         if ctx.rels_out("on_level", w) != lv:
             raise DobimError("CONSTRAINT", "벽들이 같은 레벨에 있지 않다", path=f"/walls/{i}")
+    for i, rw in enumerate(rows):
+        if "arc" in rw["params"]:
+            raise DobimError("CONSTRAINT", "곡선 벽은 아직 모서리 창호를 지원하지 않는다", path=f"/walls/{i}")
     axes = [rw["params"]["axis"] for rw in rows]
     corners = []
     sides: list[dict] = [{} for _ in range(n)]   # 벽마다 {'start'|'end': 교점의 지역 u}

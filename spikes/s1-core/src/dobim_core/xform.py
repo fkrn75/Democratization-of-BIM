@@ -84,6 +84,14 @@ def axis_len(ln) -> float:
     return sqrt((ln[2] - ln[0]) ** 2 + (ln[3] - ln[1]) ** 2)
 
 
+def wall_len(p: dict) -> float:
+    """벽 축 길이(곡선 벽 W2 ARC-04 은 호 길이: 대칭이 L - u 로 뒤집는 길이 좌표의 L)."""
+    if "arc" in p:
+        from dobim_core import arcgeom as AG
+        return AG.length(AG.info(p["axis"], p["arc"]))
+    return axis_len(p["axis"])
+
+
 def _flip_u(items, length: float) -> list:
     """상단 윤곽·수직 판 윤곽 [[u,z],...] 의 u -> L - u (순서를 뒤집어 방향을 지킨다)."""
     return [[_r6(length - u), z] for u, z in items][::-1]
@@ -95,7 +103,8 @@ def _flip_openings(ops, length: float) -> list:
 
 def wall(p: dict, xf: Xf) -> dict:
     q = dict(p, axis=_line(xf, p["axis"], True))
-    if xf.mirror:
+    if "arc" in p:   # 곡선 벽(W2 ARC-04): 호 위의 점도 옮긴다(대칭이면 축이 뒤집혀도 가운데 점은 가운데 점이다)
+        q["arc"] = xf.pt(*p["arc"])
         n = axis_len(p["axis"])
         if "openings" in p:
             q["openings"] = _flip_openings(p["openings"], n)

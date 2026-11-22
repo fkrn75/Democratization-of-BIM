@@ -36,6 +36,7 @@ import ifcopenshell.util.unit as uunit
 import ifcopenshell.validate
 
 from dobim_core import appearance as AP
+from dobim_core import arcgeom as AG
 from dobim_core import wallcut as WC
 from dobim_core.errors import DobimError
 from dobim_core.kinds import FIXED_IFC_CLASS, SLAB_OPENINGS_MAX, parapet_ring, roof_geom, stair_layout
@@ -551,6 +552,7 @@ class IfcModel:
         self._pend_type: dict[str, list] = {}      # 타입 id -> 타입 관계에 더할 인스턴스들
         self.type_maps: dict[str, bool] = {}
         self.plan_ctx: Any = None
+        self._axis: Any = None                  # 'Axis' 하위 문맥(곡선 벽 W2 ARC-04 이 처음 쓸 때 찾거나 만든다)
         # 복원까지 실패해 IFC 쪽이 로그와 어긋났을 수 있으면 그 이유가 들어간다. 엔진이 이 표시를 보고 로그에서
         # 투영을 다시 만든다(만들지 못하면 쓰기를 거부한다). 예외를 삼키고 넘어가는 일은 없어야 한다.
         self.tainted: str | None = None
@@ -1139,7 +1141,10 @@ class IfcModel:
         # 층에 담는 호출이 배치를 건드릴 수 있으므로 담은 뒤에 배치를 확정한다
         self._contain(eid, spec["level"])
         self._place(e, self.ents[spec["level"]].ObjectPlacement, (x, y, 0.0), (c, sn, 0.0))
-        if "top" in spec:   # 벽 상단 윤곽(21단계): 지역 (u, z) 수직 윤곽(바닥 ~ 상단 윤곽)을 두께 방향으로 돌출한다(평면 윤곽은 늘 직사각형이라 같은 형상)
+        if "arc" in spec:   # 곡선 벽(W2 ARC-04): 바깥·안쪽 호와 양 끝 선의 닫힌 복합 곡선을 돌출하고, 축 표현(IfcTrimmedCurve(IfcCircle))을 단다
+            self._set_body(e, self._arc_solid(spec))
+            self._set_axis(e, self._arc_curve(spec["arc"], spec["footprint"][0][0], spec["footprint"][1][0], 0.0))
+        elif "top" in spec:   # 벽 상단 윤곽(21단계): 지역 (u, z) 수직 윤곽(바닥 ~ 상단 윤곽)을 두께 방향으로 돌출한다(평면 윤곽은 늘 직사각형이라 같은 형상)
             self._set_body(e, self._vprofile_solid(spec["top"], spec["thickness"] / 2.0, spec["thickness"]))
         else:
             self._set_body(e, self._solid(spec["footprint"], spec["height"], spec.get("base", 0.0)))   # 바닥 오프셋(22단계): 배치는 레벨 그대로, 몸체만 올리고 내린다
@@ -1163,6 +1168,66 @@ class IfcModel:
                 wanted[f"xopening:{fid}"] = {"cls": "IfcOpeningElement", "name": f"{spec['name']}-xopening:{fid}", "rel": "void",
                                              "solid": (lambda lp=lp: self._vprofile_solid(lp, half, 2.0 * half))}
             self._sync_parts(eid, wanted)
+
+    # ------------------------------------------------------------ 곡선 벽(W2 ARC-04)
+    @staticmethod
+    def _arc_pt(arc, u, v):
+        """배치 틀 안의 호 지역 (u, v) -> (x, y)(arcgeom.point 와 같은 식)."""
+        cx, cy, r, a0, sg, _ = arc
+        sn, cs = AG.sincos(a0 + sg * u / r)
+        rr = r - sg * v
+        return (round(cx + rr * cs, 6) + 0.0, round(cy + rr * sn, 6) + 0.0)
+
+    def _arc_curve(self, arc, u0, u1, v):
+        """반지름 r - sg·v 의 원을 u0 -> u1 로 자른 IfcTrimmedCurve(끝은 직교 좌표 점, 진행 방향은 SenseAgreement)."""
+        f = self.f
+        cx, cy, r, a0, sg, _ = arc
+        circ = f.createIfcCircle(f.createIfcAxis2Placement2D(f.createIfcCartesianPoint([float(cx), float(cy)]), None), float(r - sg * v))
+        p0, p1 = self._arc_pt(arc, u0, v), self._arc_pt(arc, u1, v)
+        return f.createIfcTrimmedCurve(circ, [f.createIfcCartesianPoint(list(p0))], [f.createIfcCartesianPoint(list(p1))], sg > 0, "CARTESIAN")
+
+    def _arc_solid(self, spec):
+        """곡선 벽 몸체: 오른쪽 면 호(v = -h, u0 -> u1), 끝 선, 왼쪽 면 호(v = +h, u1 -> u0), 시작 선의 닫힌 IfcCompositeCurve 를 바닥에서 높이만큼 돌출."""
+        f = self.f
+        arc, h = spec["arc"], spec["thickness"] / 2.0
+        u0, u1 = spec["footprint"][0][0], spec["footprint"][1][0]
+        right = self._arc_curve(arc, u0, u1, -h)
+        left = self._arc_curve(arc, u1, u0, h)
+        left.SenseAgreement = not left.SenseAgreement   # 왼쪽 면은 거꾸로(u1 -> u0) 돈다
+        def seg(c):
+            return f.createIfcCompositeCurveSegment("CONTINUOUS", True, c)
+        def line(a, b):
+            return f.createIfcPolyline([f.createIfcCartesianPoint(list(a)), f.createIfcCartesianPoint(list(b))])
+        cc = f.createIfcCompositeCurve([seg(right), seg(line(self._arc_pt(arc, u1, -h), self._arc_pt(arc, u1, h))),
+                                        seg(left), seg(line(self._arc_pt(arc, u0, h), self._arc_pt(arc, u0, -h)))], False)
+        prof = f.createIfcArbitraryClosedProfileDef("AREA", None, cc)
+        pos = f.createIfcAxis2Placement3D(f.createIfcCartesianPoint([0.0, 0.0, float(spec.get("base", 0.0))]), None, None)
+        return f.createIfcExtrudedAreaSolid(prof, pos, f.createIfcDirection([0.0, 0.0, 1.0]), float(spec["height"]))
+
+    def _axis_ctx(self):
+        """'Axis' 하위 문맥(Model/Axis/GRAPH_VIEW). 곡선 벽이 처음 필요할 때 만든다(곡선 벽이 없는 모델의 IFC 는 그대로다)."""
+        if self._axis is None:
+            for c in self.f.by_type("IfcGeometricRepresentationSubContext"):
+                if c.ContextIdentifier == "Axis" and c.ContextType == "Model" and c.TargetView == "GRAPH_VIEW":
+                    self._axis = c
+                    break
+            else:
+                self._axis = api_context.add_context(self.f, context_type="Model", context_identifier="Axis", target_view="GRAPH_VIEW",
+                                                     parent=self.body.ParentContext)
+        return self._axis
+
+    def _set_axis(self, product, curve):
+        """벽의 축 표현(Axis, Curve2D)을 바꾼다. 몸체 표현은 늘 첫 번째다(_set_body)."""
+        f = self.f
+        shape = product.Representation
+        reps = list(shape.Representations)
+        old = [r for r in reps[1:] if r.RepresentationIdentifier == "Axis"]
+        rep = f.createIfcShapeRepresentation(self._axis_ctx(), "Axis", "Curve2D", [curve])
+        shape.Representations = [reps[0]] + [r for r in reps[1:] if r not in old] + [rep]
+        for r in old:
+            for it in list(r.Items):
+                ue.remove_deep2(f, it)
+            f.remove(r)
 
     def _cut_body(self, e, cuts, rng):
         """벽 몸체(이미 투영된 돌출 하나)에서 상자들을 뺀다(23단계). 벽 면과 같은 평면에 놓인 상자 면은 FACE_PAD 만큼 벽 밖으로 내밀어
@@ -1546,12 +1611,18 @@ class IfcModel:
         e.OverallWidth = float(spec["width"])
         e.OverallHeight = float(spec["height"])
         origin = (float(spec["offset"]), 0.0, float(spec["sill"]))
+        xdir = (1.0, 0.0, 0.0)
+        at = spec.get("at")
+        if at is not None:   # 곡선 벽 호스트(W2 ARC-04): 벽 배치 틀 안의 축 위 점·접선
+            origin, xdir = (float(at[0]), float(at[1]), float(spec["sill"])), (float(at[2]), float(at[3]), 0.0)
         self._contain(eid, spec["level"])
         # 문은 호스트 벽의 국소 좌표에 놓으므로 벽을 옮겨도 이 투영은 다시 하지 않는다.
-        self._place(e, wall.ObjectPlacement, origin, (1.0, 0.0, 0.0))
+        self._place(e, wall.ObjectPlacement, origin, xdir)
         w2, t2 = spec["width"] / 2.0, spec["wall_thickness"] / 2.0
         rect = [(-w2, -t2), (w2, -t2), (w2, t2), (-w2, t2)]
         self._set_body(e, self._solid(rect, spec["height"]))
+        if at is not None:   # 개구부 상자는 휜 벽 두께를 다 뚫도록 깊게
+            rect = [(-w2, -at[4]), (w2, -at[4]), (w2, at[4]), (-w2, at[4])]
         # 개구부는 투영이 소유한다. 이미 있고 이 문·벽과 이어져 있으면 제자리에서 고쳐 GlobalId·붙은 속성을 유지한다(외부 도구가 GlobalId 를
         # 바꿨어도 그대로 둔다). 없으면 새로 만든다: GlobalId 는 되돌린 지우기가 남긴 값, 없으면 문 id 에서 결정적으로 얻는다.
         op = self.openings.get(eid)
@@ -1559,14 +1630,14 @@ class IfcModel:
                 r.is_a("IfcRelVoidsElement") and r.RelatingBuildingElement == wall for r in f.get_inverse(op)) and any(
                 r.is_a("IfcRelFillsElement") and r.RelatedBuildingElement == e for r in f.get_inverse(op)):
             op.Name = spec["name"] + "-opening"
-            self._place(op, wall.ObjectPlacement, origin, (1.0, 0.0, 0.0))
+            self._place(op, wall.ObjectPlacement, origin, xdir)
             self._set_body(op, self._solid(rect, spec["height"]))
             return
         self._unproject_door(eid)
         op = api_root.create_entity(f, ifc_class="IfcOpeningElement")
         op.GlobalId = self._opening_gid.get(eid) or opening_guid(eid)
         op.Name = spec["name"] + "-opening"
-        self._place(op, wall.ObjectPlacement, origin, (1.0, 0.0, 0.0))
+        self._place(op, wall.ObjectPlacement, origin, xdir)
         op.Representation = f.createIfcProductDefinitionShape(None, None, [
             f.createIfcShapeRepresentation(self.body, "Body", "SweptSolid", [self._solid(rect, spec["height"])])])
         api_feature.add_feature(f, feature=op, element=wall)

@@ -118,6 +118,21 @@ def _axis_len2(axis):
     return dx * dx + dy * dy
 
 
+def wall_len(p: dict) -> float:
+    """벽 축 길이(곡선 벽 W2 ARC-04 은 호 길이: 문·창 offset 을 재는 길이)."""
+    if "arc" in p:
+        from dobim_core import arcgeom as AG
+        return AG.length(AG.info(p["axis"], p["arc"]))
+    return sqrt(_axis_len2(p["axis"]))
+
+
+def no_arc(ctx, w: str, what: str, path: str = "/id") -> None:
+    """곡선 벽(W2 ARC-04)이 아직 받지 않는 편집이면 거절한다."""
+    if "arc" in ctx.st.el[w]["params"]:
+        raise DobimError("CONSTRAINT", f"곡선 벽은 아직 {what} 를 지원하지 않는다: {w}", path=path,
+                         hint="곡선 벽의 축은 wall.arc_set 으로 바꾼다")
+
+
 # 요소를 지울 때 끊는 관계(분할 이력 succ 제외). 로그의 효과 순서가 바뀌지 않게 순서는 고정하고, 레지스트리와 같은 집합인지 import 때 확인한다
 DELETE_REL_NAMES = ("joins", "on_level", "hosts", "annot_of", "of_type")
 assert set(DELETE_REL_NAMES) == {k for k, r in REL_KINDS.items() if not r.dangling_ok}, "kinds.REL_KINDS 에 관계를 더했으면 DELETE_REL_NAMES 도 고친다"
@@ -501,6 +516,8 @@ def wall_move(ctx, a: WallMove):
     r = ctx.authored(a.id, "wall")
     x1, y1, x2, y2 = r["params"]["axis"]
     p = dict(r["params"], axis=[x1 + a.dx, y1 + a.dy, x2 + a.dx, y2 + a.dy])
+    if "arc" in p:   # 곡선 벽(W2 ARC-04): 호 위의 점도 같이 옮긴다
+        p["arc"] = [p["arc"][0] + a.dx, p["arc"][1] + a.dy]
     ctx.put_el(a.id, dict(r, params=p))
     return {"id": a.id, "axis": p["axis"]}
 
@@ -541,6 +558,7 @@ def wall_set(ctx, a: WallSet):
         if getattr(a, k) is not None:
             p[k] = getattr(a, k)
     if a.axis is not None:
+        no_arc(ctx, a.id, "wall.set 의 axis(직선 축)", path="/axis")
         if _axis_len2(a.axis) < 1.0:
             raise DobimError("CONSTRAINT", "벽 길이는 1mm 이상이어야 한다", path="/axis")
         p["axis"] = list(a.axis)
@@ -589,7 +607,7 @@ def wall_set(ctx, a: WallSet):
     if a.top_profile is None and "top_profile" in p and WT.profile_problem(p["top_profile"], sqrt(_axis_len2(p["axis"]))):
         raise DobimError("CONSTRAINT", "상단 윤곽이 있는 벽의 축 길이가 바뀌면 윤곽이 맞지 않는다", path="/axis",
                          hint="새 top_profile 을 함께 주거나, wall.detach_top 으로 뗀 뒤 wall.attach_top 으로 다시 붙이세요")
-    if "openings" in p or "top_profile" in p or "base_offset" in p or "cuts" in p:   # 축·높이가 바뀌어 개구부가 벽 밖으로 나가면 거절한다
+    if "openings" in p or "top_profile" in p or "base_offset" in p or "cuts" in p or "arc" in p:   # 축·높이가 바뀌어 개구부가 벽 밖으로 나가면 거절한다(곡선 벽은 두께가 반지름 안이어야 한다)
         _wall_checked(p)
     _hosted_under_top(ctx, a.id, p)
     if WT.base(p) > 0.0:   # 바닥 오프셋(22단계): 호스팅된 문의 문턱이 새 바닥 아래면 거절한다
@@ -674,7 +692,7 @@ def _tee_mark(ctx, stem, host, on: bool):
     """줄기 벽 stem 의 params.tee 에 host 와의 조인 지점 쪽 끝을 넣거나 뺀다. 넣을 끝을 못 찾으면 None, 아니면 끝 이름."""
     r = ctx.st.el[stem]
     sp, hp = r["params"], ctx.st.el[host]["params"]
-    pt = _join_pt(stem, sp["axis"], host, hp["axis"])
+    pt = _join_pt(stem, sp["axis"], host, hp["axis"]) if "arc" not in hp else _arc_hit(sp, hp)
     if pt is None:
         return None
     side = Q.tee_end_at(_frame_of(sp["axis"]), list(K.WALL_TEE_ENDS), pt)
@@ -705,11 +723,20 @@ def join_tee(ctx, a: JoinTee):
     if ctx.rels_out("on_level", lo) != ctx.rels_out("on_level", hi):
         raise DobimError("CONSTRAINT", "다른 레벨의 벽은 조인할 수 없다", path="/host")
     sp, hp = ctx.st.el[a.stem]["params"], ctx.st.el[a.host]["params"]
-    pt = _join_pt(a.stem, sp["axis"], a.host, hp["axis"])
-    if pt is None:
-        raise DobimError("CONSTRAINT", "나란한 벽은 T 조인할 수 없다", path="/host")
-    hx, hy, hc, hs, hl = _frame_of(hp["axis"])
-    th = (pt[0] - hx) * hc + (pt[1] - hy) * hs
+    no_arc(ctx, a.stem, "T 조인 줄기", path="/stem")
+    if "arc" in hp:   # 곡선 몸통(W2 ARC-04): 줄기 축선과 호의 원이 만나는 점(줄기 끝에 가까운 쪽)
+        from dobim_core import arcgeom as AG
+        pt = _arc_hit(sp, hp)
+        if pt is None:
+            raise DobimError("CONSTRAINT", "줄기 벽 축선이 곡선 몸통 벽의 원과 만나지 않는다", path="/host")
+        ai = AG.info(hp["axis"], hp["arc"])
+        th, hl = AG.u_of(ai, pt), AG.length(ai)
+    else:
+        pt = _join_pt(a.stem, sp["axis"], a.host, hp["axis"])
+        if pt is None:
+            raise DobimError("CONSTRAINT", "나란한 벽은 T 조인할 수 없다", path="/host")
+        hx, hy, hc, hs, hl = _frame_of(hp["axis"])
+        th = (pt[0] - hx) * hc + (pt[1] - hy) * hs
     if not -Q.JOIN_MAX_EXT <= th <= hl + Q.JOIN_MAX_EXT:
         raise DobimError("CONSTRAINT", "줄기 벽 축선이 몸통 벽 근처를 지나지 않는다", path="/host")
     side = _tee_mark(ctx, a.stem, a.host, True)
@@ -717,6 +744,12 @@ def join_tee(ctx, a: JoinTee):
         raise DobimError("CONSTRAINT", f"줄기 벽 끝이 몸통 벽 축선에서 {Q.JOIN_MAX_EXT:g}mm 안에 있지 않다", path="/stem")
     ctx.rel("joins", lo, hi, True)
     return {"stem": a.stem, "host": a.host, "end": side}
+
+
+def _ends_touch(pa: dict, pb: dict, tol: float) -> bool:
+    """두 벽의 끝점 중 맞닿은(거리 tol 안) 쌍이 있는가."""
+    ea, eb = pa["axis"], pb["axis"]
+    return any((ea[i] - eb[j]) ** 2 + (ea[i + 1] - eb[j + 1]) ** 2 <= tol * tol for i in (0, 2) for j in (0, 2))
 
 
 class JoinAuto(A):
@@ -741,6 +774,11 @@ def join_auto(ctx, a: JoinAuto):
         xa, ya, ca, sa, la, ta = info[wa]
         for wb in walls[i + 1:]:
             xb, yb, cb, sb, lb, tb = info[wb]
+            if "arc" in ctx.st.el[wa]["params"] or "arc" in ctx.st.el[wb]["params"]:   # 곡선 벽(W2 ARC-04): 두 벽의 끝점이 (두께/2 + tol) 안이면 L 조인
+                if wb not in ctx.rels_out("joins", wa) and _ends_touch(ctx.st.el[wa]["params"], ctx.st.el[wb]["params"], max(ta, tb) / 2.0 + a.tol):
+                    ctx.rel("joins", wa, wb, True)
+                    joined.append([wa, wb])
+                continue
             det = ca * sb - sa * cb
             if abs(det) < 0.05:   # 나란한 벽(3도 안)은 모서리가 아니다
                 continue
@@ -768,6 +806,17 @@ def _frame_of(axis):
     dx, dy = axis[2] - axis[0], axis[3] - axis[1]
     length = sqrt(dx * dx + dy * dy)
     return axis[0], axis[1], dx / length, dy / length, length
+
+
+def _arc_hit(sp, hp):
+    """직선 벽 sp 축선과 곡선 벽 hp 의 원이 만나는 점 중 직선 벽 끝에 가까운 것(queries._arc_join_point 와 같은 고르기 규칙). 없으면 None."""
+    from dobim_core import arcgeom as AG
+    x, y, c, s, _ = _frame_of(sp["axis"])
+    cand = AG.line_hits(AG.info(hp["axis"], hp["arc"]), x, y, c, s)
+    if not cand:
+        return None
+    ends = [(sp["axis"][0], sp["axis"][1]), (sp["axis"][2], sp["axis"][3]), (hp["axis"][0], hp["axis"][1]), (hp["axis"][2], hp["axis"][3])]
+    return min(cand, key=lambda p: min((p[0] - e[0]) ** 2 + (p[1] - e[1]) ** 2 for e in ends[:2]) + min((p[0] - e[0]) ** 2 + (p[1] - e[1]) ** 2 for e in ends[2:]))
 
 
 def _join_pt(wa, axa, wb, axb):
@@ -840,6 +889,7 @@ def wall_split(ctx, a: WallSplit):
     - 분할 이력은 관계 succ(W -> N)로 남는다. 주석 참조의 끝 역할(axis.end, trim.end)이 이 관계를 따라가 값이 변하지 않는다.
     - 지워진 벽도 이력에는 남으므로, 이력에 한 번이라도 쓰인 id 는 new_id 로 다시 쓸 수 없다(succ 순환·엉뚱한 부활 방지)."""
     r = ctx.authored(a.id, "wall", what="분할")   # S5 의 분할이 S2 의 저작 확인을 거치지 않던 틈
+    no_arc(ctx, a.id, "분할")
     p = r["params"]
     xcut = _xcut_refs(ctx, a.id)
     if xcut:   # 함께 자르는 벽(25단계): 나누면 어느 조각을 자를지 모호하다
@@ -965,7 +1015,7 @@ class DoorPlace(A):
 
 
 def _fits(ctx, host, offset, width):
-    length = sqrt(_axis_len2(ctx.st.el[host]["params"]["axis"]))
+    length = wall_len(ctx.st.el[host]["params"])   # 곡선 벽은 호 길이
     if offset - width / 2 < 0 or offset + width / 2 > length:
         raise DobimError("CONSTRAINT", f"문이 호스트 벽({length:.1f}mm) 밖으로 나간다", path="/offset")
 
@@ -1997,6 +2047,10 @@ def space_from_walls(ctx, a: SpaceFromWalls):
     for w in sorted(ctx.rels_in("on_level", a.level)):
         r = ctx.row(w)
         if r["kind"] != "wall" or r["origin"] != "authored":
+            continue
+        if "arc" in r["params"]:   # 곡선 벽(W2 ARC-04): 중심선을 조각 현들로
+            from dobim_core import arcgeom as AG
+            walls.extend(AG.center_segs(w, r["params"]))
             continue
         x1, y1, x2, y2 = r["params"]["axis"]
         walls.append((w, (x1, y1), (x2, y2), r["params"]["thickness"]))
@@ -4062,7 +4116,7 @@ def view_affected(ctx, a: ViewAffected):
 # 주석은 의도 요소(kind dim, tag)이고 IFC 로 투영하지 않는다(IFC 해시 불변). 값은 저장하지 않고 항상 파생이다(그래프 질의).
 # 대상이 사라지면 조용히 지우지 않고 고아로 표시한다(annot.check). 뷰를 지우면 그 뷰의 주석도 같이 지운다(응답에 나열, undo 로 복귀).
 RefStr = Annotated[str, Field(pattern=r"^(wall|door|level|slab|space|grid|finst):[0-9A-Za-z_$]{22}#[a-z]{3,9}(\.[a-z]{3,9}){0,2}$", max_length=48,
-                              description="안정 참조 '종류:id#역할'. wall: axis.start axis.end(분할 뒤에도 원래 끝) own.end(이 벽 자신의 끝) trim.start trim.end own.trim.end axis face.left face.right base top / door: center jamb.start jamb.end sill head / level: elevation / slab: top bottom / space: ceiling(천장 마감 높이, 공간에 ceiling_height 가 있을 때) / grid: line start end(통심선) / finst: center jamb.start jamb.end(호스팅 창 개구부 양 끝) base circle(자립 기둥의 원 단면, 반지름·지름 치수)")]
+                              description="안정 참조 '종류:id#역할'. wall: axis.start axis.end(분할 뒤에도 원래 끝) own.end(이 벽 자신의 끝) trim.start trim.end own.trim.end axis face.left face.right base top arc arc.left arc.right(곡선 벽의 축·면 호: 호 길이·반지름 치수) / door: center jamb.start jamb.end sill head / level: elevation / slab: top bottom / space: ceiling(천장 마감 높이, 공간에 ceiling_height 가 있을 때) / grid: line start end(통심선) / finst: center jamb.start jamb.end(호스팅 창 개구부 양 끝) base circle(자립 기둥의 원 단면, 반지름·지름 치수)")]
 Off = Annotated[float, Field(allow_inf_nan=False, ge=-1e5, le=1e5)]
 _ANNOT_KINDS = ("dim", "tag")
 
@@ -4072,7 +4126,7 @@ def _ref_parts(ctx, ref, field):
     parts = AN.parse_ref(ref)
     if parts is None:
         kind = ref.split(":", 1)[0]
-        roles = ", ".join(AN.ROLE_TYPES.get(kind, {})) or "wall, door, level"
+        roles = ", ".join(list(AN.ROLE_TYPES.get(kind, {})) + (list(AN.ARC_ROLES) if kind == "wall" else [])) or "wall, door, level"
         raise DobimError("CONSTRAINT", f"없는 참조 역할이다: {ref[:40]}", path=field, hint=f"{kind} 의 역할: {roles}")
     ctx.authored(parts[1], parts[0], what="치수 대상(낡은 형상을 재게 된다)")
     return parts
@@ -4096,17 +4150,24 @@ def _dim_checked(ctx, view, a_ref, b_ref, at, measure=None, along=None):
     along(W1 연장 ANN-02): 연속·기준선 치수의 한 칸. 정한 방향으로 투영해 재고, 선 참조는 그 방향에 수직이어야 한다(평면 치수만)."""
     vr = ctx.row(view, "view")
     pa, pb = _ref_parts(ctx, a_ref, "/a"), _ref_parts(ctx, b_ref, "/b")
-    ta, tb = AN.ROLE_TYPES[pa[0]][pa[2]], AN.ROLE_TYPES[pb[0]][pb[2]]
+    ta, tb = AN.role_type(pa[0], pa[2]), AN.role_type(pb[0], pb[2])
     vertical = ta == "z" and tb == "z"
     if (ta == "z") != (tb == "z"):
         raise DobimError("CONSTRAINT", "높이 참조와 평면 참조는 한 치수에 섞을 수 없다", path="/b")
     if measure == "angle" and (ta, tb) != ("line", "line"):
         raise DobimError("CONSTRAINT", "각도 치수는 선 참조 두 개를 잰다", path="/b", hint="선 역할: wall axis·face.left·face.right, grid line")
-    if measure in ("radius", "diameter") and (ta != "circle" or a_ref != b_ref):
+    if measure in ("radius", "diameter") and (ta not in ("circle", "arc") or a_ref != b_ref):
         raise DobimError("CONSTRAINT", "반지름·지름 치수는 원 참조 하나를 잰다(b 는 생략하거나 a 와 같게)", path="/a",
-                         hint="원 역할: finst:<자립 기둥 id>#circle(원 단면이 있는 기둥)")
-    if measure is None and "circle" in (ta, tb):
-        raise DobimError("CONSTRAINT", "원 참조는 반지름·지름 치수(measure)에만 쓴다", path="/a")
+                         hint="원 역할: finst:<자립 기둥 id>#circle(원 단면이 있는 기둥), wall:<곡선 벽 id>#arc·arc.left·arc.right")
+    if measure == "arc" and (ta != "arc" or a_ref != b_ref):
+        raise DobimError("CONSTRAINT", "호 길이 치수는 곡선 벽의 호 참조 하나를 잰다(b 는 생략하거나 a 와 같게)", path="/a",
+                         hint="호 역할: wall:<곡선 벽 id>#arc(축), #arc.left(왼쪽 면), #arc.right(오른쪽 면)")
+    if measure is None and ("circle" in (ta, tb) or "arc" in (ta, tb)):
+        raise DobimError("CONSTRAINT", "원·호 참조는 반지름·지름·호 길이 치수(measure)에만 쓴다", path="/a")
+    for pr, fld in ((pa, "/a"), (pb, "/b")):   # 곡선 벽(W2 ARC-04)의 선 역할(축선·면선)은 곧은 선이 아니라 선형·각도 치수에 쓰지 않는다
+        if pr[0] == "wall" and AN.role_type(pr[0], pr[2]) == "line" and "arc" in ctx.st.el.get(pr[1], {}).get("params", {}):
+            raise DobimError("CONSTRAINT", "곡선 벽의 축선·면은 곧은 선이 아니다", path=fld,
+                             hint="곡선 벽은 호 역할(arc·arc.left·arc.right)로 호 길이·반지름 치수를 재거나, 끝점(trim.start·trim.end)을 잰다")
     vt = vr["params"]["type"]
     if vt in MODEL_LESS_VIEWS:
         raise DobimError("CONSTRAINT", "모델이 없는 뷰(범례·제도 뷰)에는 모델 치수를 두지 않는다", path="/view",
@@ -4175,8 +4236,9 @@ class DimCreate(A):
     b: RefStr | None = Field(None, description="둘째 참조. 반지름·지름 치수는 생략한다(a 와 같다)")
     offset: Off = Field(600.0, description="치수선 간격 mm (재는 방향 왼쪽이 +). 각도 치수는 호의 반지름(음수면 맞꼭지각 쪽)")
     at: Point2 | None = Field(None, description="높이 치수: 치수선을 그릴 평면 위치 [x,y] (생략하면 [0,0])")
-    measure: Literal["angle", "radius", "diameter"] | None = Field(
-        None, description="생략 = 선형(거리). angle = 두 선 사이 각도(도), radius·diameter = 자립 기둥 원 단면(finst:<id>#circle)의 반지름·지름. 모두 모델 연관이라 요소를 옮기면 따라간다")
+    measure: Literal["angle", "radius", "diameter", "arc"] | None = Field(
+        None, description="생략 = 선형(거리). angle = 두 선 사이 각도(도), radius·diameter = 자립 기둥 원 단면(finst:<id>#circle) 또는 곡선 벽 호(wall:<id>#arc·arc.left·arc.right)의 반지름·지름, "
+                          "arc = 곡선 벽 호의 호 길이(조인 정리 범위). 모두 모델 연관이라 요소를 옮기거나 바꾸면 따라간다")
     name: Name | None = None
 
 
@@ -4186,9 +4248,9 @@ class DimCreate(A):
          examples=[{"view": F.V1, "a": f"wall:{F.W1}#trim.start", "b": f"wall:{F.W1}#trim.end"}])
 def annot_dim_create(ctx, a: DimCreate):
     _fresh_id(ctx, a, "dim")
-    b = a.b if a.b is not None else (a.a if a.measure in ("radius", "diameter") else None)
+    b = a.b if a.b is not None else (a.a if a.measure in ("radius", "diameter", "arc") else None)
     if b is None:
-        raise DobimError("CONSTRAINT", "b 가 필요하다(반지름·지름 치수만 생략한다)", path="/b")
+        raise DobimError("CONSTRAINT", "b 가 필요하다(반지름·지름·호 길이 치수만 생략한다)", path="/b")
     vertical, ra, rb, g = _dim_checked(ctx, a.view, a.a, b, a.at, a.measure)
     params = {"name": a.name or f"DIM-{a.id[-6:]}", "view": a.view, "a": a.a, "b": b, "off": a.offset, "home": [0.0, 0.0],
               "dirs": {"a": _dir_fp(ctx, a.a), "b": _dir_fp(ctx, b)}}
@@ -4394,7 +4456,7 @@ def annot_rebind(ctx, a: AnnotRebind):
         if a.target is not None or a.fields is not None:
             raise DobimError("CONSTRAINT", "치수에는 a, b 만 쓴다", path="/target")
         p["a"], p["b"] = a.a or p["a"], a.b or p["b"]
-        if p.get("measure") in ("radius", "diameter") and a.a is not None and a.b is None:
+        if p.get("measure") in ("radius", "diameter", "arc") and a.a is not None and a.b is None:
             p["b"] = p["a"]   # 반지름·지름은 원 참조 하나(a = b)
         vertical, ra, rb, g = _dim_checked(ctx, p["view"], p["a"], p["b"], p.get("at"), p.get("measure"), p.get("along"))
         dirs = dict(p.get("dirs") or {})
@@ -5194,3 +5256,4 @@ from dobim_core import commands_dimchain  # noqa: E402,F401
 from dobim_core import commands_check  # noqa: E402,F401
 from dobim_core import commands_drawcheck  # noqa: E402,F401
 from dobim_core import commands_arch  # noqa: E402,F401
+from dobim_core import commands_arcwall  # noqa: E402,F401

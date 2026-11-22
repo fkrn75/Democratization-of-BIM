@@ -153,7 +153,7 @@ def _parse_intent(kind: str, text: str) -> dict:
             raise ValueError("레벨 params 키가 다르다")
         out = {"name": _name(p["name"]), "elevation": _num(p["elevation"])}
     elif kind == "wall":
-        if set(p) - {"layers", "openings", "top_profile", "base_offset", "cuts", "top_level", "top_offset", "tee"} != {"name", "axis", "thickness", "height"} or not isinstance(p["axis"], list) or len(p["axis"]) != 4:
+        if set(p) - {"layers", "openings", "top_profile", "base_offset", "cuts", "top_level", "top_offset", "tee", "arc"} != {"name", "axis", "thickness", "height"} or not isinstance(p["axis"], list) or len(p["axis"]) != 4:
             raise ValueError("벽 params 가 다르다")
         axis = [_num(x) for x in p["axis"]]
         if (axis[2] - axis[0]) ** 2 + (axis[3] - axis[1]) ** 2 < 1.0:
@@ -189,7 +189,12 @@ def _parse_intent(kind: str, text: str) -> dict:
             if not K.tee_ok(p["tee"]):
                 raise ValueError("벽 T 조인 표식이 올바르지 않다")
             out["tee"] = list(p["tee"])
-        if "openings" in p or "top_profile" in p or "base_offset" in p or "cuts" in p or "top_level" in p or "top_offset" in p:
+        if "arc" in p:   # 곡선(원호) 벽(W2 ARC-04): 호 위의 점
+            v = p["arc"]
+            if not isinstance(v, list) or len(v) != 2:
+                raise ValueError("곡선 벽 호 위의 점이 올바르지 않다")
+            out["arc"] = [_num(v[0]), _num(v[1])]
+        if "openings" in p or "top_profile" in p or "base_offset" in p or "cuts" in p or "top_level" in p or "top_offset" in p or "arc" in p:
             why = K.row_params_error("wall", out)
             if why:
                 raise ValueError(f"벽이 올바르지 않다({why})")
@@ -449,6 +454,8 @@ class _Inputs:
             return tuple(st.inn.get((key[1], key[2]), ()))
         if t == "xcut_finsts":   # 함께 자르는 벽이 있는 인스턴스(25단계): 지금 계획에 올라온 행에서 찾는다
             return tuple(sorted(f for f, r in st.el.items() if r is not None and r["kind"] == "finst" and "also_cuts" in r["params"]))
+        if t == "arc_walls":   # 곡선(원호) 벽(W2 ARC-04)
+            return frozenset(w for w, r in st.el.items() if r is not None and r["kind"] == "wall" and "arc" in r["params"])
         raise KeyError(key)
 
 

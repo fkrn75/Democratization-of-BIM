@@ -174,6 +174,8 @@ class _Inputs:
             return tuple(sorted(f for f in st.by_kind.get("finst", ()) if "also_cuts" in st.el[f]["params"]))
         if t == "tied_walls":   # 상단 구속 벽(24단계): 이 입력이 바뀌는 경우는 kinds._keys_el 이 정한다
             return tuple(sorted(w for w in st.by_kind.get("wall", ()) if "top_level" in st.el[w]["params"]))
+        if t == "arc_walls":   # 곡선(원호) 벽(W2 ARC-04) id 집합: 비어 있으면 조인·도면 계산은 직선 벽 경로 그대로다
+            return frozenset(w for w in st.by_kind.get("wall", ()) if "arc" in st.el[w]["params"])
         ifc = self.eng.ifc
         if t == "pset":
             return ifc.get_psets(key[1]) if key[1] in ifc.ents else {}

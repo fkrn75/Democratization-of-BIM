@@ -64,7 +64,10 @@ DIR_ROLES = {"wall": frozenset({"axis.start", "axis.end", "trim.start", "trim.en
              "door": frozenset({"center", "jamb.start", "jamb.end"}),
              "finst": frozenset({"jamb.start", "jamb.end"}),   # 호스팅 인스턴스의 문틀 양쪽은 호스트 벽 방향에 걸린다
              "grid": frozenset({"line"})}   # 각도 치수는 선의 방향으로 잰다(방향이 뒤집히면 값이 180 - θ 가 된다)
-MEASURES = ("angle", "radius", "diameter")   # 선형(기본, 키 없음) 밖의 치수 종류(dim params.measure). 선형 치수 행은 이전과 같다
+# W2 ARC-04: 곡선 벽의 호 역할(호 길이·반지름·지름 치수가 잰다). 축(arc)·왼쪽 면(arc.left)·오른쪽 면(arc.right)의 호를 조인 정리 범위(trim.start~trim.end)에서 잰다.
+# 직선 벽에는 없는 역할이다(target_deleted 고아: 원 단면이 없는 기둥의 circle 과 같다). ROLE_TYPES 와 따로 두어 임의 편집열 생성기(s5lib)의 역할 고르기가 그대로다
+ARC_ROLES = {"arc": "arc", "arc.left": "arc", "arc.right": "arc"}
+MEASURES = ("angle", "radius", "diameter", "arc")   # 선형(기본, 키 없음) 밖의 치수 종류(dim params.measure). 선형 치수 행은 이전과 같다. arc = 호 길이(W2 ARC-04)
 CHAIN_KINDS = ("chain", "baseline")   # W1 연장(ANN-02): 연속·기준선 치수 묶음 종류(dim params.gk)
 FAR_VERTEX = 1e8   # 각도 치수의 꼭짓점(두 선의 교점)이 원점에서 이보다 멀면 그리지 않는다(거의 평행: 무효 far_vertex)
 ARC_N = 24         # 각도 치수 호를 나누는 선분 수
@@ -107,14 +110,19 @@ def parse_ref(ref: str):
         kind, eid = head.split(":", 1)
     except ValueError:
         return None
-    if kind not in ROLE_TYPES or role not in ROLE_TYPES[kind] or len(eid) != 22:
+    if kind not in ROLE_TYPES or (role not in ROLE_TYPES[kind] and not (kind == "wall" and role in ARC_ROLES)) or len(eid) != 22:
         return None
     return kind, eid, role
 
 
+def role_type(kind: str, role: str) -> str:
+    """역할의 값 종류(pt·line·z·circle·arc)."""
+    return ARC_ROLES[role] if kind == "wall" and role in ARC_ROLES else ROLE_TYPES[kind][role]
+
+
 def ref_type(ref: str):
     p = parse_ref(ref)
-    return None if p is None else ROLE_TYPES[p[0]][p[2]]
+    return None if p is None else role_type(p[0], p[2])
 
 
 # ================================================================ 방향 지문
@@ -201,6 +209,8 @@ def _finst_ref(g, e, role, row):
             if not cut:
                 return ("orphan", "target_deleted")
             t += cut["x"][0] if role == "jamb.start" else cut["x"][1]
+        if "arc" in Q.el(g, h)["params"]:   # 곡선 벽 호스트(W2 ARC-04): 호 위 점
+            return ("pt", *g.q(Q.axis_pt, h, t))
         return ("pt", x + t * c, y + t * s)
     if role in ("jamb.start", "jamb.end"):
         return ("orphan", "target_deleted")
@@ -248,6 +258,8 @@ def _wall_ref(g, w, role, row):
         return ("pt", p["axis"][0], p["axis"][1])
     if role == "axis.end":
         return ("pt", p["axis"][2], p["axis"][3])
+    if role in ARC_ROLES or "arc" in p:
+        return _arc_wall_ref(g, w, role, p)
     x, y, c, s, length = g.q(Q.wall_frame, w)
     if role in ("trim.start", "trim.end"):
         start, end, _ = g.q(Q.wall_trim, w)
@@ -263,6 +275,29 @@ def _wall_ref(g, w, role, row):
     return ("line", mx - s * h, my + c * h, c, s)           # 왼쪽 법선 = (-s, c)
 
 
+def _arc_wall_ref(g, w, role, p):
+    """곡선 벽(W2 ARC-04)의 역할. 호 역할은 ("arc", 중심 x, y, 면 반지름, 시작각, 부호 있는 중심각)(조인 정리 범위). 끝점은 호 위 점,
+    선 역할(axis·face)은 호 가운데의 접선(그림 기준점용: 치수 생성은 곡선 벽의 선 역할을 받지 않는다). 직선 벽의 호 역할은 target_deleted 고아."""
+    ai = g.q(Q.wall_arc, w)
+    if ai is None:
+        return ("orphan", "target_deleted")
+    if role in ("base", "top"):
+        elev = g.q(Q.level_info, g.q(Q.wall_level, w))[1]
+        return ("z", elev + D.WT.base(p) if role == "base" else elev + D._top_rel(p))
+    start, end, _ = g.q(Q.wall_trim, w)
+    if role in ("trim.start", "trim.end"):
+        return ("pt", *g.q(Q.axis_pt, w, start if role == "trim.start" else end))
+    cx, cy, r, a0, sg, _ = ai
+    if role in ARC_ROLES:
+        v = 0.0 if role == "arc" else p["thickness"] / 2.0 * (1.0 if role == "arc.left" else -1.0)
+        return ("arc", cx, cy, r - sg * v, a0 + sg * start / r, sg * (end - start) / r)
+    m = (start + end) / 2.0
+    c, s = g.q(Q.axis_dir, w, m)
+    v = 0.0 if role == "axis" else p["thickness"] / 2.0 * (1.0 if role == "face.left" else -1.0)
+    mx, my = g.q(Q.axis_pt, w, m, v)
+    return ("line", mx, my, c, s)
+
+
 def _door_ref(g, d, role, row):
     p = row["params"]
     w = g.q(Q.door_host, d)
@@ -270,9 +305,11 @@ def _door_ref(g, d, role, row):
         elev = g.q(Q.level_info, g.q(Q.wall_level, w))[1]
         z = elev + p["sill"]
         return ("z", z if role == "sill" else z + p["height"])
-    x, y, c, s, _ = g.q(Q.wall_frame, w)
     half = p["width"] / 2.0
     t = p["offset"] + (0.0 if role == "center" else (-half if role == "jamb.start" else half))
+    if "arc" in Q.el(g, w)["params"]:   # 곡선 벽 호스트(W2 ARC-04): 호 위 점
+        return ("pt", *g.q(Q.axis_pt, w, t))
+    x, y, c, s, _ = g.q(Q.wall_frame, w)
     return ("pt", x + t * c, y + t * s)
 
 
@@ -340,7 +377,11 @@ def _measure_more(ra, rb, mode):
         if abs(ra[3] * rb[4] - ra[4] * rb[3]) <= PARALLEL_EPS:
             return ("invalid", "parallel")
         return ("ok", _atan2_pos(abs(ra[3] * rb[4] - ra[4] * rb[3]), ra[3] * rb[3] + ra[4] * rb[4]) * DEG)   # 0 < θ < 180
-    if ra[0] != "circle" or ra[1:] != rb[1:]:   # 반지름·지름은 같은 원 하나(a = b)를 잰다
+    if mode == "arc":   # 호 길이(W2 ARC-04): 같은 호 하나(a = b)
+        if ra[0] != "arc" or ra[1:] != rb[1:]:
+            return ("invalid", "mixed")
+        return ("ok", ra[3] * abs(ra[5]))
+    if ra[0] not in ("circle", "arc") or ra[1:] != rb[1:]:   # 반지름·지름은 같은 원(또는 곡선 벽의 호) 하나(a = b)를 잰다
         return ("invalid", "mixed")
     return ("ok", ra[3] * (2.0 if mode == "diameter" else 1.0))
 
@@ -349,7 +390,7 @@ def _measure(ra, rb):
     ta, tb = ra[0], rb[0]
     if "orphan" in (ta, tb):
         return ("invalid", "orphan_ref")
-    if "circle" in (ta, tb):   # 원은 반지름·지름 치수만 잰다
+    if "circle" in (ta, tb) or "arc" in (ta, tb):   # 원은 반지름·지름 치수만, 호(곡선 벽)는 호 길이·반지름·지름 치수만 잰다
         return ("invalid", "mixed")
     if ta == "z" and tb == "z":
         return ("ok", abs(ra[1] - rb[1]))
@@ -659,6 +700,8 @@ def more_geometry(p, ra, rb, value):
         segs += [_r(*pts[i], *pts[i + 1]) for i in range(ARC_N)]
         ticks = (_r(*pts[0], -d0[1] * sg, d0[0] * sg), _r(*pts[-1], -d1[1] * sg, d1[0] * sg))
         return tuple(segs), ticks, fmt_deg(value), _r(px + rad * dm[0], py + rad * dm[1]), _r(-dm[1] * sg, dm[0] * sg)
+    if ra[0] == "arc":   # 곡선 벽의 호(W2 ARC-04): 호 길이·반지름·지름
+        return _arc_geometry(p, ra, value)
     cx, cy, r = ra[1], ra[2], ra[3]
     k = sqrt(0.5)
     rim = (cx + r * k, cy + r * k)
@@ -667,6 +710,39 @@ def more_geometry(p, ra, rb, value):
     else:
         seg, ticks, txt, tpos = _r(cx - r * k, cy - r * k, *rim), (_r(cx - r * k, cy - r * k, k, k), _r(*rim, k, k)), "Ø" + fmt_num(value), _r(cx, cy)
     return (seg,), ticks, txt, tpos, _r(k, k)
+
+
+def _arc_geometry(p, ra, value):
+    """곡선 벽 호 참조의 치수 그림(more_geometry 와 같은 꼴). 호 길이: 같은 중심 반지름 (면 반지름 + off)(off 음수면 중심 쪽)의 호와
+    양 끝의 반지름 방향 보조선(면에서 치수선 너머 150), 양 끝 눈금, 가운데 글(값). 반지름: 중심에서 호 가운데까지, 지름: 호 가운데를 지나는 지름."""
+    cx, cy, r, th0, dth = ra[1], ra[2], ra[3], ra[4], ra[5]
+    sm, cm = _sincos(th0 + dth / 2.0)
+    mode = p["measure"]
+    if mode != "arc":
+        rim = (cx + r * cm, cy + r * sm)
+        if mode == "radius":
+            return (_r(cx, cy, *rim),), (_r(*rim, cm, sm),), "R" + fmt_num(value), _r(cx + r * cm / 2.0, cy + r * sm / 2.0), _r(cm, sm)
+        far = (cx - r * cm, cy - r * sm)
+        return (_r(*far, *rim),), (_r(*far, cm, sm), _r(*rim, cm, sm)), "Ø" + fmt_num(value), _r(cx, cy), _r(cm, sm)
+    rd = r + p["off"]
+    if rd <= 1.0:
+        rd = r + 600.0
+    out = 1.0 if rd >= r else -1.0
+    n = max(2, min(ARC_N * 4, int(abs(dth) / (PI / 36.0)) + 2))   # 5도 이하 간격
+    pts = []
+    for i in range(n + 1):
+        sn, cs = _sincos(th0 + dth * i / n)
+        pts.append((cx + rd * cs, cy + rd * sn))
+    segs = [_r(*pts[i], *pts[i + 1]) for i in range(n)]
+    ticks = []
+    for th in (th0, th0 + dth):
+        sn, cs = _sincos(th)
+        segs.append(_r(cx + r * cs, cy + r * sn, cx + (rd + out * 150.0) * cs, cy + (rd + out * 150.0) * sn))
+        ticks.append(_r(cx + rd * cs, cy + rd * sn, -sn, cs))
+    tdir = (-sm, cm) if dth > 0 else (sm, -cm)   # 글은 호의 진행 방향(가운데 접선)
+    if tdir[0] < -1e-9 or (abs(tdir[0]) <= 1e-9 and tdir[1] < 0):   # 글이 거꾸로 서지 않게
+        tdir = (-tdir[0], -tdir[1])
+    return tuple(segs), tuple(ticks), fmt_num(value), _r(cx + rd * cm, cy + rd * sm), _r(*tdir)
 
 
 def annot_draw(g, a):
@@ -719,6 +795,8 @@ def tag_anchor(g, target):
         x0, y0, x1, y1 = row["params"]["run"]
         return ((x0 + x1) / 2.0, (y0 + y1) / 2.0)
     if row["kind"] == "wall":
+        if "arc" in row["params"]:   # 곡선 벽(W2 ARC-04): 호 가운데 점
+            return g.q(Q.axis_pt, target, g.q(Q.axis_len, target) / 2.0)
         x, y, c, s, length = g.q(Q.wall_frame, target)
         return (x + c * length / 2.0, y + s * length / 2.0)
     r = g.q(ref_resolve, make_ref("door", target, "center"))
