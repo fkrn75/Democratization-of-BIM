@@ -9,6 +9,7 @@ from __future__ import annotations
 from math import sqrt
 
 from dobim_core import arcgeom as AG
+from dobim_core import curtain as CW
 from dobim_core.family import spec as FS
 from dobim_core import solids as SO
 from dobim_core import wallcut as WC
@@ -557,6 +558,45 @@ def solid_level(g, s):
     return rel_out(g, "on_level", s)[0]
 
 
+# ---------------------------------------------------------------- 커튼월(W2 네 번째 PR, ARC-22)
+def curtain_level(g, c):
+    return rel_out(g, "on_level", c)[0]
+
+
+def curtain_layout(g, c):
+    """커튼월 배치(curtain.layout). 행 params 만의 함수라 커튼월 하나가 바뀔 때만 다시 계산한다(검사를 통과한 행이라 실패하지 않는다)."""
+    return CW.layout(el(g, c)["params"])
+
+
+def curtain_z(g, c):
+    """커튼월의 (바닥, 윗면) 절대 높이."""
+    p = el(g, c)["params"]
+    z0 = g.q(level_info, g.q(curtain_level, c))[1] + p.get("base_offset", 0.0)
+    return (z0, z0 + p["height"])
+
+
+def curtain_stats(g, c):
+    """(멀리언 수, 패널 수, 유형별 멀리언 수 {유형: (개수, 길이 합 mm)}, 종류별 패널 수 {종류: (개수, 면적 합 m2)})."""
+    lay = g.q(curtain_layout, c)
+    by_t, by_p = {}, {}
+    for _k, d, t, q, z0, z1 in lay["mullions"]:
+        n = (z1 - z0) if d == "V" else sqrt((q[1][0] - q[0][0]) ** 2 + (q[1][1] - q[0][1]) ** 2)
+        a, b = by_t.get(t, (0, 0.0))
+        by_t[t] = (a + 1, b + n)
+    for _k, kind, q, z0, z1, _c, _t in lay["panels"]:
+        w = sqrt((q[1][0] - q[0][0]) ** 2 + (q[1][1] - q[0][1]) ** 2)
+        a, b = by_p.get(kind, (0, 0.0))
+        by_p[kind] = (a + 1, b + w * (z1 - z0) / 1e6)
+    return (len(lay["mullions"]), len(lay["panels"]), by_t, by_p)
+
+
+def curtain_ids(g):
+    out = []
+    for b in range(NB):
+        out.extend(bucket_ids(g, "curtwall", b))
+    return tuple(sorted(out))
+
+
 # ---------------------------------------------------------------- 공간
 def space_level(g, s):
     return rel_out(g, "on_level", s)[0]
@@ -744,6 +784,12 @@ def model_stats(g):
         if by.get("IfcWindow"):
             out["window"] = by["IfcWindow"]
         out["finst"] = nf
+    nc = g.q(count, "curtwall")
+    if nc:   # 커튼월(W2 네 번째 PR, ARC-22): 커튼월·멀리언·패널 수. 커튼월이 없으면 응답은 그대로다
+        out["curtwall"] = nc
+        st = [g.q(curtain_stats, c) for c in g.q(curtain_ids)]
+        out["mullion"] = sum(s[0] for s in st)
+        out["curtain_panel"] = sum(s[1] for s in st)
     return out
 
 
@@ -765,8 +811,9 @@ def intent_of(g, e):
     elif row["kind"] == "wall":
         out["level"] = g.q(wall_level, e)
         out["joins"] = list(g.q(wall_joins, e))
-    elif row["kind"] in ("slab", "stair", "space", "railing", "elevator", "roof", "solid"):
-        out["level"] = g.q({"slab": slab_level, "stair": stair_level, "space": space_level, "railing": railing_level, "elevator": elevator_level, "roof": roof_level, "solid": solid_level}[row["kind"]], e)
+    elif row["kind"] in ("slab", "stair", "space", "railing", "elevator", "roof", "solid", "curtwall"):
+        out["level"] = g.q({"slab": slab_level, "stair": stair_level, "space": space_level, "railing": railing_level, "elevator": elevator_level, "roof": roof_level, "solid": solid_level,
+                            "curtwall": curtain_level}[row["kind"]], e)
     elif row["kind"] == "door":
         out["host"] = g.q(door_host, e)
     return out
@@ -886,6 +933,14 @@ def ifc_spec(g, e):
         if "slopes" in p:   # 다각형 외곽 지붕(W1 1-F 4차): 없으면 명세는 이전과 같다
             spec["slopes"] = tuple(p["slopes"])
         return spec
+    if kind == "curtwall":
+        # 커튼월(W2 네 번째 PR, ARC-22): 자신은 형상 없이 레벨 좌표계에 놓이고, 부속(멀리언 IfcMember·패널 IfcPlate·문 패널 IfcDoor)이 IfcRelAggregates 로 매달린다.
+        # 부속 = (이름표, IFC 클래스, 유형 또는 패널 종류, 평면 사각형(레벨 좌표), 바닥 z(레벨 기준), 높이). 이름표 순서라 결정적이다
+        lay = g.q(curtain_layout, e)
+        base = p.get("base_offset", 0.0)
+        parts = [(f"m:{k}", "IfcMember", t, q, z0 + base, z1 - z0) for k, _d, t, q, z0, z1 in lay["mullions"]]
+        parts += [(f"p:{k}", "IfcDoor" if pk == "door" else "IfcPlate", pk, q, z0 + base, z1 - z0) for k, pk, q, z0, z1, _c, _t in lay["panels"]]
+        return {"kind": kind, "name": p["name"], "level": g.q(curtain_level, e), "parts": tuple(sorted(parts)), "intent": intent}
     if kind == "site":
         # 배치는 건물 아래 뼈대 대지 좌표계(원점·무회전)다. 방위·도로는 IFC 가 아니라 의도(DoBIM_Intent)로 왕복한다
         return {"kind": kind, "name": p["name"], "boundary": tuple(tuple(q) for q in p["boundary"]), "elevation": p["elevation"], "intent": intent}

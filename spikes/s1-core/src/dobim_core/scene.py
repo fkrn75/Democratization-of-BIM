@@ -119,6 +119,9 @@ def _el_parts(g, v, cfg, kind, e):
             fills.extend(g.q(D.roof_cut_rects, v, e))
     elif kind == "solid":
         lines.extend(g.q(D.solid_lines, v, e))
+    elif kind == "curtwall":   # 커튼월(W2 ARC-22): 멀리언·패널 선과 절단 채움
+        lines.extend(g.q(D.curtain_lines, v, e))
+        fills.extend(g.q(D.curtain_fills, v, e))
     elif kind == "foreign":
         lines.extend(g.q(D.foreign_lines, v, e))
         fills.extend(g.q(D.foreign_fills, v, e))   # 외래 절단면 채움(외래 IFC 2차, view_fills 와 같은 질의)
@@ -236,7 +239,7 @@ def view_scene(g, v):
     if cfg[0] != "site":
         scopes = (("wall", D.scope_walls), ("fam", D.scope_fams), ("slab", D.scope_slabs), ("stair", D.scope_stairs),
                   ("railing", D.scope_railings), ("elevator", D.scope_elevators), ("roof", D.scope_roofs),
-                  ("solid", D.scope_solids), ("foreign", D.scope_foreign), ("space", D.scope_spaces), ("fspace", D.scope_foreign_spaces))
+                  ("solid", D.scope_solids), ("curtwall", D.scope_curtains), ("foreign", D.scope_foreign), ("space", D.scope_spaces), ("fspace", D.scope_foreign_spaces))
         for kind, fn in scopes:
             if kind in ("space", "fspace") and cfg[0] != "plan":
                 continue

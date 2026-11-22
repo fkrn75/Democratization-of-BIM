@@ -337,7 +337,7 @@ class Closure:
                 voids.append(v)
         if voids:
             out["voids"] = sorted(voids, key=lambda x: json.dumps(x, sort_keys=True))
-        if e.is_a("IfcStair") or e.is_a("IfcRoof") or e.is_a("IfcSlab"):   # 꺾인 계단의 부속(단 묶음·층참)·지붕의 경사면·슬래브의 파라펫은 그 요소가 소유한다
+        if e.is_a("IfcStair") or e.is_a("IfcRoof") or e.is_a("IfcSlab") or e.is_a("IfcCurtainWall"):   # 커튼월의 멀리언·패널(W2 ARC-22)도   # 꺾인 계단의 부속(단 묶음·층참)·지붕의 경사면·슬래브의 파라펫은 그 요소가 소유한다
             kids = [self.shape(k) for r in inv if r.is_a("IfcRelAggregates") and r.RelatingObject == e for k in r.RelatedObjects]
             if kids:
                 out["parts"] = sorted(kids, key=lambda x: json.dumps(x, sort_keys=True))
@@ -537,6 +537,8 @@ class IfcModel:
         self.ents: dict[str, Any] = {}
         self.openings: dict[str, Any] = {}      # 문 id -> 개구부 엔티티 (투영 소유)
         self.parts: dict[str, dict[str, Any]] = {}   # 요소 id -> {이름표: 부속 엔티티} (꺾인 계단의 단 묶음·층참, 슬래브 구멍. 투영 소유)
+        self._cw_sig: dict[str, dict[str, tuple]] = {}   # 커튼월 id -> {이름표: 마지막으로 투영한 부속 명세} (같으면 다시 쓰지 않는다, W2 ARC-22)
+        self._cw_axis: dict[str, Any] = {}   # 커튼월 id -> 부속 배치가 함께 쓰는 단위 IfcAxis2Placement3D
         self.container_of: dict[str, str] = {}  # 요소 id -> 현재 담긴 층 id (투영 상태)
         self._mats: dict[str, Any] = {}         # 재료 이름 -> 엔티티
         # 패밀리 투영 상태(S4): 요소 종류, 타입별 IfcRelDefinesByType, 인스턴스의 타입, 평면 문맥(필요할 때만 만든다)
@@ -808,6 +810,8 @@ class IfcModel:
                             self._opening_gid[eid] = r.RelatingOpeningElement.GlobalId
                 if kind in ("slab", "stair", "roof", "wall"):
                     self._adopt_parts(eid, kind, e)
+                elif kind == "curtwall":   # 커튼월 부속(W2 ARC-22)
+                    self._cw_adopt(eid, e)
                 self._adopt_family_state(eid, kind, e)
                 return
             if kind == "foreign":
@@ -829,6 +833,9 @@ class IfcModel:
         f = self.f
         e = self.ents[eid]
         self._unproject_door(eid)
+        if self.kinds.get(eid) == "curtwall":   # 커튼월 부속(멀리언·패널, W2 ARC-22)과 집합·재료 관계
+            self._cw_sync(eid, None)
+            self._cw_axis.pop(eid, None)
         if eid in self.parts:   # 부속(단 묶음·층참·슬래브 구멍)이 먼저 간다
             self._sync_parts(eid, {})
         lost = []
@@ -1097,7 +1104,7 @@ class IfcModel:
     def project(self, eid: str, spec: dict) -> None:
         kind = spec["kind"]
         {"level": self._project_level, "wall": self._project_wall, "door": self._project_door, "slab": self._project_slab, "stair": self._project_stair, "space": self._project_space, "railing": self._project_railing, "elevator": self._project_elevator, "roof": self._project_roof,
-         "site": self._project_site, "solid": self._project_solid, "ftype": lambda i, sp: fp.project_type(self, i, sp), "finst": lambda i, sp: fp.project_inst(self, i, sp)}[kind](eid, spec)
+         "site": self._project_site, "solid": self._project_solid, "curtwall": self._project_curtwall, "ftype": lambda i, sp: fp.project_type(self, i, sp), "finst": lambda i, sp: fp.project_inst(self, i, sp)}[kind](eid, spec)
         # 의도를 IFC 에도 복제한다. 정본은 의도 저장소이고 이 속성셋은 매번 덮어쓴다.
         e = self.ents[eid]
         text = json.dumps(spec["intent"], sort_keys=True, separators=(",", ":"))
@@ -1468,6 +1475,8 @@ class IfcModel:
         부속의 재료 지정은 요소마다 관계 하나(GlobalId = part_guid(요소, "material"), 부속 전부)로만 둔다: 어떤 순서로 만들고 고쳐도 IFC 가
         같은 모양이라 증분 == 전체 재생성·실행 취소 후 해시가 지켜진다. 요소에 재료가 없거나 층 구성이면 부속의 재료 지정을 뗀다.
         개구부(빼기 부속)는 재료를 갖지 않는다."""
+        if self.kinds.get(eid) == "curtwall":   # 커튼월 부속(W2 ARC-22)은 종류마다 제 재료를 갖는다(_cw_rels)
+            return
         f = self.f
         parts = [p for _, p in sorted((self.parts.get(eid) or {}).items()) if not p.is_a("IfcFeatureElementSubtraction")]
         host = self.ents.get(eid)
@@ -1651,6 +1660,149 @@ class IfcModel:
         wanted = {f"face:{i}": {"cls": "IfcSlab", "name": f"{spec['name']}-face{i + 1}", "rel": "aggregate", "attrs": {"PredefinedType": "ROOF"},
                                 "solid": (lambda fc=fc: self._sloped_solid(fc, spec["thickness"]))} for i, fc in enumerate(gm["faces"])}
         self._sync_parts(eid, wanted)
+
+    # ------------------------------------------------------------ 커튼월(W2 네 번째 PR, ARC-22)
+    # IfcCurtainWall 자신은 형상이 없고(레벨 좌표계 배치), 부속(멀리언 IfcMember MULLION·패널 IfcPlate CURTAIN_PANEL·문 패널 IfcDoor)이
+    # 커튼월마다 IfcRelAggregates 하나(GlobalId = part_guid(커튼월, "agg"), 대상은 이름표 순서)에 매달린다. 부속의 재료는 종류마다 IfcRelAssociatesMaterial
+    # 하나(GlobalId = part_guid(커튼월, "material:<종류>")). 부속 GlobalId = part_guid(커튼월, 이름표)라 어떤 순서로 만들어도 IFC 가 같은 모양이다
+    # (증분 == 전체 재생성·실행 취소 후 해시). 수천 개 부속을 빠르게: 명세가 같은 부속은 다시 쓰지 않고, 없어진 부속 엔티티는 새 이름표에 다시 쓴다.
+    CW_MATERIALS = {"mullion": "알루미늄", "glass": "유리", "opaque": "불투명 패널", "door": "문"}
+
+    @staticmethod
+    def _cw_cat(w) -> str:
+        return "mullion" if w[0] == "IfcMember" else w[1]
+
+    def _cw_adopt(self, eid: str, e) -> None:
+        """가져온 파일의 커튼월 부속(이름 끝 "-m:키"·"-p:키", GlobalId = part_guid)을 이어받는다."""
+        have = {}
+        for r in getattr(e, "IsDecomposedBy", None) or ():
+            for k in r.RelatedObjects:
+                name = k.Name if isinstance(k.Name, str) else ""
+                cut = max(name.rfind("-m:"), name.rfind("-p:"))
+                if cut < 0:
+                    continue
+                label = name[cut + 1:]
+                if k.GlobalId == part_guid(eid, label):
+                    have[label] = k
+        if have:
+            self.parts[eid] = have
+
+    def _cw_rels(self, eid: str, parts: dict, cat: dict) -> None:
+        """집합 관계와 종류별 재료 지정을 parts({이름표: 엔티티})·cat({이름표: 종류})에 맞춘다(대상은 이름표 순서)."""
+        f = self.f
+        e = self.ents[eid]
+        gid = part_guid(eid, "agg")
+        rel = next((r for r in (getattr(e, "IsDecomposedBy", None) or ()) if r.GlobalId == gid), None)
+        want = [parts[k] for k in sorted(parts)]
+        if not want:
+            if rel is not None:
+                f.remove(rel)
+        elif rel is None:
+            f.createIfcRelAggregates(gid, None, None, None, e, want)
+        elif list(rel.RelatedObjects) != want:
+            rel.RelatedObjects = want
+        for c, mname in sorted(self.CW_MATERIALS.items()):
+            mg = part_guid(eid, f"material:{c}")
+            try:
+                mr = f.by_guid(mg)
+            except RuntimeError:
+                mr = None
+            objs = [parts[k] for k in sorted(parts) if cat[k] == c]
+            if not objs:
+                if mr is not None:
+                    mat = mr.RelatingMaterial
+                    f.remove(mr)
+                    self._gc_material(mat)
+            elif mr is None:
+                f.createIfcRelAssociatesMaterial(mg, None, None, None, objs, self._named_material(mname))
+            elif list(mr.RelatedObjects) != objs:
+                mr.RelatedObjects = objs
+
+    def _cw_sync(self, eid: str, spec: dict | None) -> None:
+        """커튼월 부속을 명세(spec["parts"], None 이면 모두 지운다)에 맞춘다."""
+        f = self.f
+        e = self.ents[eid]
+        have = self.parts.get(eid, {})
+        sig = self._cw_sig.setdefault(eid, {})
+        wanted = {} if spec is None else {w[0]: w[1:] for w in spec["parts"]}
+        name = "" if spec is None else spec["name"]
+        gone = sorted(set(have) - set(wanted))
+        pool: dict[str, list] = {}
+        keep = {k: v for k, v in have.items() if k in wanted}
+        for k in gone:   # 집합·재료 관계에서 먼저 뺀 뒤 새 이름표에 다시 쓰거나 지운다
+            pool.setdefault(have[k].is_a(), []).append(have[k])
+            sig.pop(k, None)
+        if gone:
+            self._cw_rels(eid, keep, {k: self._cw_cat(wanted[k]) for k in keep})
+        ax = self._cw_axis.get(eid)
+        if ax is not None:   # 마지막 부속과 함께 지워졌을 수 있다
+            try:
+                if f.by_id(ax.id()) != ax:
+                    ax = None
+            except RuntimeError:
+                ax = None
+        for label in sorted(wanted):
+            w = wanted[label]
+            part = keep.get(label)
+            if part is not None and not part.is_a(w[0]):
+                pool.setdefault(part.is_a(), []).append(part)
+                keep.pop(label)
+                part = None
+            pname = f"{name}-{label}"
+            if part is not None and sig.get(label) == w and part.Name == pname:
+                continue
+            if part is None:
+                reuse = pool.get(w[0])
+                if reuse:
+                    part = reuse.pop()
+                else:
+                    part = f.create_entity(w[0])
+                    if ax is None:
+                        ax = self._cw_axis[eid] = f.createIfcAxis2Placement3D(f.createIfcCartesianPoint([0.0, 0.0, 0.0]), None, None)
+                    part.ObjectPlacement = f.createIfcLocalPlacement(e.ObjectPlacement, ax)
+                part.GlobalId = part_guid(eid, label)
+                keep[label] = part
+            part.Name = pname
+            cls, sub, quad, z0, h = w
+            if cls == "IfcMember":
+                part.PredefinedType, part.ObjectType = "MULLION", sub
+            elif cls == "IfcPlate":
+                part.PredefinedType, part.ObjectType = "CURTAIN_PANEL", sub
+            else:
+                part.PredefinedType = "DOOR"
+                part.OverallHeight = float(h)
+                part.OverallWidth = float(math.sqrt((quad[1][0] - quad[0][0]) ** 2 + (quad[1][1] - quad[0][1]) ** 2))
+            if sig.get(label, (None, None, None, None, None))[2:] != w[2:] or part.Representation is None:
+                self._set_body(part, self._solid(quad, h, z0))
+            sig[label] = w
+        for parts in pool.values():   # 남은 엔티티는 지운다(관계에서는 이미 빠졌다)
+            for p in parts:
+                self._remove_product(p)
+        if keep:
+            self.parts[eid] = keep
+        else:
+            self.parts.pop(eid, None)
+            self._cw_sig.pop(eid, None)
+        self._cw_rels(eid, keep, {k: self._cw_cat(wanted[k]) for k in keep})
+        if not keep and ax is not None:   # 부속이 모두 갔으면 함께 쓰던 배치 축도(부속 삭제가 이미 지웠을 수 있다)
+            try:
+                if not f.get_inverse(ax):
+                    f.remove(ax)
+            except RuntimeError:
+                pass
+            self._cw_axis.pop(eid, None)
+
+    def _project_curtwall(self, eid, spec):
+        e = self.ents[eid]
+        e.Name = spec["name"]
+        self._contain(eid, spec["level"])
+        if e.ObjectPlacement is None:   # 배치는 레벨 좌표계 원점 그대로라 처음 한 번만 만든다(부속 배치가 이것을 가리킨다)
+            self._place(e, self.ents[spec["level"]].ObjectPlacement, (0.0, 0.0, 0.0), (1.0, 0.0, 0.0))
+        elif e.ObjectPlacement.PlacementRelTo != self.ents[spec["level"]].ObjectPlacement:
+            e.ObjectPlacement.PlacementRelTo = self.ents[spec["level"]].ObjectPlacement
+        if self.base_mode and eid in self.parts and eid not in self._cw_sig:   # 가져온 부속: 명세를 모르므로 한 번은 모두 다시 쓴다
+            self._cw_sig[eid] = {}
+        self._cw_sync(eid, spec)
 
     def _project_elevator(self, eid, spec):
         """승강기: 카(IfcTransportElement ELEVATOR)의 상자 몸체 하나. 카 바닥은 레벨 + base_offset, 배치는 레벨 좌표계 원점이다. 샤프트는 슬래브 구멍·벽이 표현한다."""
