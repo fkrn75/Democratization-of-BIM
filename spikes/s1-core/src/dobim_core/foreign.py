@@ -703,6 +703,16 @@ def _restore_defs(f, rows: dict, rels: set, taken: set, plan: "ImportPlan") -> N
                 skip(eid, "같은 속성셋.속성의 프로젝트 매개변수가 더 있다")
             else:
                 ok[eid] = parsed[eid]
+    # 재료 외관 정의(W2 다섯 번째 PR, DATA-05): 재료 이름이 겹치면 어느 쪽이 원본인지 알 수 없다
+    mkeys: dict = {}
+    for eid in sorted(e for e, d in parsed.items() if d["kind"] == "matdef"):
+        mkeys.setdefault(parsed[eid]["params"]["name"], []).append(eid)
+    for ids in mkeys.values():
+        for eid in ids:
+            if len(ids) > 1:
+                skip(eid, "같은 재료 이름의 외관 정의가 더 있다")
+            else:
+                ok[eid] = parsed[eid]
     # 법정 면적 객체(W1 연장, ARC-36): 바닥면적 대상은 가리키는 레벨이 저작 레벨이어야 한다(평면 뷰와 같은 규칙). 레벨이 파일에 없으면 고아로 되살린다
     for eid in sorted(e for e, d in parsed.items() if d["kind"] == "larea"):
         lv = parsed[eid]["params"].get("level")

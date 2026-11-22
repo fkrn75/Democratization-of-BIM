@@ -541,6 +541,7 @@ class IfcModel:
         self._cw_axis: dict[str, Any] = {}   # 커튼월 id -> 부속 배치가 함께 쓰는 단위 IfcAxis2Placement3D
         self.container_of: dict[str, str] = {}  # 요소 id -> 현재 담긴 층 id (투영 상태)
         self._mats: dict[str, Any] = {}         # 재료 이름 -> 엔티티
+        self._appearance: dict[str, tuple] = {}   # 재료 외관 정의(W2 다섯 번째 PR): 재료 이름 -> (r,g,b,투명도,광택). 엔진이 정의 행에서 맞춘다
         # 패밀리 투영 상태(S4): 요소 종류, 타입별 IfcRelDefinesByType, 인스턴스의 타입, 평면 문맥(필요할 때만 만든다)
         self.kinds: dict[str, str] = {}
         self.typerels: dict[str, Any] = {}
@@ -1033,13 +1034,119 @@ class IfcModel:
         if mat is None:
             mat = api_material.add_material(self.f, name=name)
             self._mats[name] = mat
-            rgb = AP.material_rgb(name)
-            if rgb is not None:   # 겉모습 표에 있는 재료(벽돌·동판·석재·유리 등, 18단계): 재료에 표면 스타일 색을 붙인다
-                st = api_style.add_style(self.f, name=name)
-                api_style.add_surface_style(self.f, style=st, ifc_class="IfcSurfaceStyleShading",
-                                            attributes={"SurfaceColour": {"Name": None, "Red": rgb[0] / 255.0, "Green": rgb[1] / 255.0, "Blue": rgb[2] / 255.0}})
-                api_style.assign_material_style(self.f, material=mat, style=st, context=self.body)
+            self._add_style(mat, name)
         return mat
+
+    # ------------------------------------------------------------ 재료 외관(18단계 표 + W2 다섯 번째 PR 외관 정의, DATA-05·VIS-07)
+    def style_want(self, name: str):
+        """재료 이름 name 의 IfcMaterial 이 가져야 할 표면 스타일 서명. 외관 정의가 있으면 ("R", r, g, b, 투명도, 광택)(IfcSurfaceStyleRendering),
+        없고 18단계 표에 맞으면 ("S", r, g, b)(IfcSurfaceStyleShading, 기존 그대로), 둘 다 아니면 None(스타일 없음)."""
+        ap = self._appearance.get(name)
+        if ap is not None:
+            return ("R",) + tuple(ap)
+        rgb = AP.material_rgb(name)
+        return None if rgb is None else ("S",) + tuple(rgb)
+
+    def _add_style(self, mat, name: str) -> None:
+        want = self.style_want(name)
+        if want is None:
+            return
+        f = self.f
+        st = api_style.add_style(f, name=name)
+        if want[0] == "S":   # 겉모습 표에 있는 재료(벽돌·동판·석재·유리 등, 18단계): 재료에 표면 스타일 색을 붙인다
+            api_style.add_surface_style(f, style=st, ifc_class="IfcSurfaceStyleShading",
+                                        attributes={"SurfaceColour": {"Name": None, "Red": want[1] / 255.0, "Green": want[2] / 255.0, "Blue": want[3] / 255.0}})
+        else:   # 외관 정의: 색·투명도·광택(광택 = 반사 색 비율, 거칠기 = 1 - 광택. 광택 0 이면 둘 다 비운다)
+            _, r, g, b, t, s = want
+            col = f.createIfcColourRgb(None, r / 255.0, g / 255.0, b / 255.0)
+            spec = f.create_entity("IfcNormalisedRatioMeasure", s) if s > 0 else None
+            rough = f.create_entity("IfcSpecularRoughness", round(1.0 - s, 6)) if s > 0 else None
+            rend = f.createIfcSurfaceStyleRendering(col, t, None, None, None, None, spec, rough, "NOTDEFINED")
+            st.Styles = list(st.Styles or ()) + [rend]
+        api_style.assign_material_style(f, material=mat, style=st, context=self.body)
+
+    @staticmethod
+    def style_sig(mat):
+        """재료에 지금 붙은 표면 스타일의 서명(style_want 와 같은 꼴). 스타일이 없으면 None, 코어가 만들 수 없는 모양(여러 스타일·텍스처·
+        IFC2x3 의 스타일 묶음 등)이면 "other"."""
+        reps = list(getattr(mat, "HasRepresentation", None) or ())
+        if not reps:
+            return None
+        items = [it for rep in reps for r in rep.Representations for it in r.Items]
+        sts = [st for it in items for st in (getattr(it, "Styles", None) or ())]
+        if len(sts) == 1 and sts[0].is_a("IfcPresentationStyleAssignment"):   # IFC2x3 에서 올린 파일: 스타일 묶음 하나는 벗겨 본다
+            sts = list(sts[0].Styles or ())
+        if len(reps) != 1 or len(items) != 1 or len(sts) != 1 or not sts[0].is_a("IfcSurfaceStyle") or len(sts[0].Styles or ()) != 1:
+            return "other"
+        ss = sts[0].Styles[0]
+        c = getattr(ss, "SurfaceColour", None)
+        if c is None or not c.is_a("IfcColourRgb"):
+            return "other"
+        rgb = tuple(int(round(max(0.0, min(1.0, v)) * 255)) for v in (c.Red, c.Green, c.Blue))
+        if ss.is_a() == "IfcSurfaceStyleShading":
+            return ("S",) + rgb if getattr(ss, "Transparency", None) is None else "other"
+        if ss.is_a() == "IfcSurfaceStyleRendering":
+            sp = ss.SpecularColour
+            s = float(sp.wrappedValue) if sp is not None and sp.is_a("IfcNormalisedRatioMeasure") else 0.0
+            if (sp is not None and not sp.is_a("IfcNormalisedRatioMeasure")) or any(getattr(ss, k) is not None for k in (
+                    "DiffuseColour", "TransmissionColour", "DiffuseTransmissionColour", "ReflectionColour")):
+                return "other"
+            return ("R",) + rgb + (float(ss.Transparency or 0.0), s)
+        return "other"
+
+    def appearance_owned(self, name: str) -> bool:
+        """이 이름의 재료 스타일을 코어가 바꿔도 되는가: IFC 에 그 재료가 없거나, 붙은 스타일이 지금 코어가 만들 모양과 같다.
+        가져온 파일의 재료가 다른 도구의 스타일(텍스처·여러 스타일 등)을 가지면 False(외관 정의가 그 스타일을 지우지 않게 한다)."""
+        mat = self._mats.get(name)
+        return mat is None or self.style_sig(mat) == self.style_want(name)
+
+    def appearance_of(self, name: str):
+        """IFC 재료에 지금 붙은 외관 {"color", "transparency", "shininess"} 또는 None(재료나 읽을 수 있는 색이 없다). 조회용."""
+        mat = self._mats.get(name)
+        sig = None if mat is None else self.style_sig(mat)
+        if sig is None or sig == "other":
+            return None
+        return {"color": list(sig[1:4]), "transparency": sig[4] if sig[0] == "R" else 0.0, "shininess": sig[5] if sig[0] == "R" else 0.0}
+
+    def set_appearance(self, amap: dict, restyle: bool = True) -> None:
+        """외관 정의 표({재료 이름: (r,g,b,투명도,광택)})를 바꾼다. restyle 이면 값이 달라진 이름의 IFC 재료 스타일을 다시 붙인다
+        (재료가 IFC 에 없으면 할 일이 없다: 처음 지정될 때 _named_material 이 새 표로 붙인다). 로그에서 투영을 다시 만들 때는 재료를
+        만들기 전에 restyle=False 로 표만 놓는다."""
+        old, self._appearance = self._appearance, dict(amap)
+        if not restyle:
+            return
+        for name in sorted(set(old) | set(amap)):
+            if old.get(name) == amap.get(name) or name not in self._mats:
+                continue
+            mat = self._mats[name]
+            if self.style_sig(mat) == self.style_want(name):
+                continue
+            self._strip_styles(mat)
+            self._add_style(mat, name)
+
+    def _strip_styles(self, mat) -> None:
+        """재료 표현(IfcMaterialDefinitionRepresentation)·표현·스타일 항목·스타일 묶음과, 다른 곳이 쓰지 않는 스타일을 지운다(고아 엔티티를 남기지 않는다)."""
+        f = self.f
+        for mdr in list(mat.HasRepresentation or ()):
+            reps = list(mdr.Representations or ())
+            items = [it for r in reps for it in (r.Items or ())]
+            psas, styles = [], []
+            for it in items:
+                for st in it.Styles or ():
+                    if st.is_a("IfcPresentationStyleAssignment"):
+                        psas.append(st)
+                        styles.extend(st.Styles or ())
+                    else:
+                        styles.append(st)
+            f.remove(mdr)
+            for x in reps + items + psas:   # 앞의 것을 지워야 뒤의 것이 고아가 된다(재료 표현 -> 표현 -> 항목 -> 묶음)
+                if not f.get_inverse(x):
+                    f.remove(x)
+            seen = set()
+            for st in styles:
+                if st.id() not in seen and not f.get_inverse(st):
+                    seen.add(st.id())
+                    api_style.remove_style(f, style=st)
 
     def _gc_material(self, mat) -> None:
         """사용처가 없는 재료는 지운다. 재료 목록이 상태의 함수가 되어야 취소 후 해시가 복원된다."""

@@ -44,6 +44,7 @@ _SH1 = ("sheet.define", {"id": F.SH1, "name": "A-101 1층 평면", "views": [F.V
 _CW1 = ("curtain.create", {"id": F.CW1, "level": F.LV1, "axis": [0, -2000, 6000, -2000], "height": 3000, "u_grid": {"rule": "spacing", "value": 1500}, "v_grid": {"rule": "count", "value": 2}})   # 커튼월 예시의 준비(W2 네 번째 PR, ARC-22)
 _OP1 = ("opening.wall", {"id": F.OP1, "host": F.W2, "offset": 2800, "sill": 900, "width": 800, "height": 1200})   # 독립 개구 예시의 준비(W2 세 번째 PR, ARC-34)
 _LA1 = ("area.define", {"id": F.LA1, "name": "발코니", "rule": "119-1-3-나", "level": F.LV1, "boundary": [[0, 4000], [6000, 4000], [6000, 5500], [0, 5500]], "contact_length": 6000})   # 법정 면적 객체 예시의 준비(ARC-36)
+_MD1 = ("material.define", {"name": "Concrete"})   # 재료 외관 예시의 준비(W2 다섯 번째 PR, DATA-05)
 _PP1 = ("param.define", {"pset": "Pset_ProjectCommon", "name": "Zone", "type": "text", "kinds": ["door", "wall"]})   # 프로젝트 매개변수 예시의 준비(DATA-03)
 _SI1 = ("site.create", {"id": F.SI1, "boundary": [[-6000, -6000], [18000, -6000], [18000, 14000], [-6000, 14000]], "name": "대지"})
 _SO1 = ("solid.create", {"id": F.SO1, "level": F.LV1, "category": "buttress", "form": "prism", "polygon": [[0, -900], [600, -900], [600, -100], [0, -100]], "z0": 0, "z1": 2400})   # 일반 솔리드 예시의 준비(18단계)
@@ -89,6 +90,7 @@ PRE = {**_DRAFT_PRE, "history.redo": [("history.undo", {})], "ifc.restore": [_EX
        "view.callout": [_V1], "sheet.viewport.set": [_V1, _SH1], "view.refs": [_V1, _SH1],
        "view.areas": [("view.area_plan", {"id": F.VA1, "name": "1F 바닥면적", "level": F.LV1, "scheme": "gross"})],
        "param.delete": [_PP1], "param.list": [_PP1],
+       "material.delete": [_MD1], "material.list": [_MD1], "material.appearance": [_MD1],
        "area.delete": [_LA1], "area.list": [_LA1], "area.legal": [_W4, _SI1, _LA1], "area.export": [_W4, _SI1, _LA1],
        "opening.vertical": [_S1], "opening.delete": [_OP1],
        **{c: [_CW1] for c in ("curtain.set", "curtain.grid", "curtain.mullion.set", "curtain.panel.set", "curtain.type.set", "curtain.move", "curtain.parts")}}

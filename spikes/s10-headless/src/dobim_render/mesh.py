@@ -24,6 +24,7 @@ class Mesh:
     elems: list[tuple[str, str]] = field(default_factory=list)   # (GlobalId, IFC 클래스)
     mats: list = field(default_factory=list)   # 요소별 (재료 이름 또는 None, IFC 재료 표면 스타일 색 (r,g,b) 0~255 또는 None). 해시에 넣지 않는다
     supers: list = field(default_factory=list)   # 요소별 IFC 클래스와 그 상위 클래스 이름들(21단계 범주 필터용). 해시에 넣지 않는다
+    alphas: list = field(default_factory=list)   # 요소별 재료 투명도 0~1(재료 외관 W2 다섯 번째 PR, 없으면 0.0). 해시에 넣지 않는다
 
     def sha256(self) -> str:
         """양자화한 메시의 해시(플랫폼 비교용)."""
@@ -54,15 +55,16 @@ def extract(path: str, threads: int = 1) -> Mesh:
                 v = np.array(sh.geometry.verts, dtype=np.float64).reshape(-1, 3)
                 t = np.array(sh.geometry.faces, dtype=np.int64).reshape(-1, 3)
                 if len(t):
-                    per[prod.GlobalId] = (cls, v, t, _material_name(ue, prod))
+                    per[prod.GlobalId] = (cls, v, t, _material_name(ue, prod), _material_alpha(ue, prod))
             if not it.next():
                 break
-    verts, faces, fe, elems, mats, sups = [], [], [], [], [], []
+    verts, faces, fe, elems, mats, sups, alphas = [], [], [], [], [], [], []
     base = 0
     chain: dict[str, tuple] = {}
     for gid in sorted(per):
-        cls, v, t, mname = per[gid]
+        cls, v, t, mname, alpha = per[gid]
         mats.append(mname)
+        alphas.append(alpha)
         if cls not in chain:
             chain[cls] = _supers(f, cls)
         sups.append(chain[cls])
@@ -73,7 +75,7 @@ def extract(path: str, threads: int = 1) -> Mesh:
         base += len(v)
     if not verts:
         return Mesh(np.zeros((0, 3)), np.zeros((0, 3), np.int32), np.zeros(0, np.int32), [])
-    return Mesh(np.concatenate(verts), np.concatenate(faces), np.concatenate(fe), elems, mats, sups)
+    return Mesh(np.concatenate(verts), np.concatenate(faces), np.concatenate(fe), elems, mats, sups, alphas)
 
 
 def _supers(f, cls):
@@ -105,14 +107,41 @@ def _material_name(ue, prod):
     return (m.Name, _style_rgb(m))
 
 
-def _style_rgb(mat):
-    """IFC 재료에 붙은 표면 스타일(IfcSurfaceStyleShading/Rendering)의 색 (r,g,b) 0~255, 없으면 None."""
+def _surface_styles(mat):
+    """IFC 재료에 붙은 표면 스타일 항목(IfcSurfaceStyleShading/Rendering 등)들. IFC2x3 의 스타일 묶음(IfcPresentationStyleAssignment)은 벗긴다."""
     for rep in (getattr(mat, "HasRepresentation", None) or ()):
         for r in rep.Representations:
             for it in r.Items:
                 for st in (it.Styles or ()):
-                    for ss in (getattr(st, "Styles", None) or ()):
-                        c = getattr(ss, "SurfaceColour", None)
-                        if c is not None:
-                            return tuple(int(round(max(0.0, min(1.0, v)) * 255)) for v in (c.Red, c.Green, c.Blue))
+                    inner = st.Styles if st.is_a("IfcPresentationStyleAssignment") else (st,)
+                    for s2 in inner or ():
+                        yield from (getattr(s2, "Styles", None) or ())
+
+
+def _style_rgb(mat):
+    """IFC 재료에 붙은 표면 스타일(IfcSurfaceStyleShading/Rendering)의 색 (r,g,b) 0~255, 없으면 None."""
+    for ss in _surface_styles(mat):
+        c = getattr(ss, "SurfaceColour", None)
+        if c is not None:
+            return tuple(int(round(max(0.0, min(1.0, v)) * 255)) for v in (c.Red, c.Green, c.Blue))
     return None
+
+
+def _material_alpha(ue, prod) -> float:
+    """요소 재료(층 구성이면 _material_name 과 같은 층)의 표면 스타일 투명도 0~1. 없으면 0.0(불투명: 이전과 같은 그림)."""
+    m = ue.get_material(prod, should_inherit=False)
+    if m is not None and m.is_a("IfcMaterialLayerSetUsage"):
+        m = m.ForLayerSet
+    if m is not None and m.is_a("IfcMaterialLayerSet"):
+        best = None
+        for ly in m.MaterialLayers:
+            if ly.Material is not None and (best is None or ly.LayerThickness > best.LayerThickness):
+                best = ly
+        m = best.Material if best else None
+    if m is None or not m.is_a("IfcMaterial"):
+        return 0.0
+    for ss in _surface_styles(m):
+        t = getattr(ss, "Transparency", None)
+        if getattr(ss, "SurfaceColour", None) is not None:
+            return float(max(0.0, min(1.0, t))) if t is not None else 0.0
+    return 0.0
