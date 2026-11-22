@@ -161,7 +161,7 @@ def _fresh_id(ctx, a, kind):
     if _in_split_history(ctx, a.id):   # 지워진 벽의 id 를 다시 쓰면 분할 이력을 따라가는 참조가 엉뚱한 새 벽을 가리킨다
         raise DobimError("CONSTRAINT", f"벽 분할 이력에 쓰인 id 라 다시 쓸 수 없다: {a.id}", path="/id",
                          hint="새 id 를 쓰거나 생략하세요")
-    if kind in ("view", "dim", "tag", "sheet", "grid", "draft", "revision", "vtemplate", "larea") and ctx.external_def(a.id):   # 가져온 파일에 되살리지 않은 외부 정의가 이 id 로 있다
+    if kind in ("view", "dim", "tag", "sheet", "grid", "draft", "revision", "vtemplate", "larea", "opening") and ctx.external_def(a.id):   # 가져온 파일에 되살리지 않은 외부 정의가 이 id 로 있다
         ctx.warn(f"가져온 파일에 이 id 의 {kind} 정의가 되살려지지 않은 채 남아 있다: 새 정의가 그 속성을 덮어쓴다(지우거나 되돌리면 원래 정의가 돌아온다)")
     return a.id
 
@@ -692,10 +692,16 @@ def _tee_mark(ctx, stem, host, on: bool):
     """줄기 벽 stem 의 params.tee 에 host 와의 조인 지점 쪽 끝을 넣거나 뺀다. 넣을 끝을 못 찾으면 None, 아니면 끝 이름."""
     r = ctx.st.el[stem]
     sp, hp = r["params"], ctx.st.el[host]["params"]
-    pt = _join_pt(stem, sp["axis"], host, hp["axis"]) if "arc" not in hp else _arc_hit(sp, hp)
-    if pt is None:
-        return None
-    side = Q.tee_end_at(_frame_of(sp["axis"]), list(K.WALL_TEE_ENDS), pt)
+    if "arc" in sp:   # 곡선 줄기(W2 ARC-04): 원과 몸통 축의 교점, 끝은 호 위 거리로 고른다
+        pt = any_join_pt(stem, sp, host, hp)
+        side = None if pt is None else any_tee_end(sp, list(K.WALL_TEE_ENDS), pt)
+        if side is None:
+            return None
+    else:
+        pt = _join_pt(stem, sp["axis"], host, hp["axis"]) if "arc" not in hp else _arc_hit(sp, hp)
+        if pt is None:
+            return None
+        side = Q.tee_end_at(_frame_of(sp["axis"]), list(K.WALL_TEE_ENDS), pt)
     if side is None:
         return None
     cur = list(sp.get("tee", ()))
@@ -723,8 +729,12 @@ def join_tee(ctx, a: JoinTee):
     if ctx.rels_out("on_level", lo) != ctx.rels_out("on_level", hi):
         raise DobimError("CONSTRAINT", "다른 레벨의 벽은 조인할 수 없다", path="/host")
     sp, hp = ctx.st.el[a.stem]["params"], ctx.st.el[a.host]["params"]
-    no_arc(ctx, a.stem, "T 조인 줄기", path="/stem")
-    if "arc" in hp:   # 곡선 몸통(W2 ARC-04): 줄기 축선과 호의 원이 만나는 점(줄기 끝에 가까운 쪽)
+    if "arc" in sp:   # 곡선 줄기(W2 ARC-04): 줄기의 원과 몸통 축(직선 또는 원)의 교점(두 벽 끝에 가까운 쪽)
+        pt = any_join_pt(a.stem, sp, a.host, hp)
+        if pt is None:
+            raise DobimError("CONSTRAINT", "곡선 줄기 벽의 원이 몸통 벽 축과 만나지 않는다", path="/host")
+        th, hl = any_u(hp, pt), wall_len(hp)
+    elif "arc" in hp:   # 곡선 몸통(W2 ARC-04): 줄기 축선과 호의 원이 만나는 점(줄기 끝에 가까운 쪽)
         from dobim_core import arcgeom as AG
         pt = _arc_hit(sp, hp)
         if pt is None:
@@ -853,6 +863,84 @@ def _trim_raw(wid, axis, partners, tees=None):
     return (start, end)
 
 
+# ---- 곡선 벽(W2 ARC-04)도 받는 원시 params 계산(queries 의 join_point·wall_trim·tee_end_at 과 같은 규칙). 직선 벽끼리는 위 함수 그대로다
+def any_u(p: dict, pt) -> float:
+    """세계 점 pt 의 벽 지역 u(직선 벽: 축선 투영, 곡선 벽: 호 위 거리)."""
+    if "arc" in p:
+        from dobim_core import arcgeom as AG
+        return AG.u_of(AG.info(p["axis"], p["arc"]), pt)
+    x, y, c, s, _ = _frame_of(p["axis"])
+    return (pt[0] - x) * c + (pt[1] - y) * s
+
+
+def any_join_pt(wa, pa: dict, wb, pb: dict):
+    """두 벽(직선·곡선)의 조인 교점(queries.join_point 와 같다). 만나지 않으면 None."""
+    if "arc" not in pa and "arc" not in pb:
+        return _join_pt(wa, pa["axis"], wb, pb["axis"])
+    from dobim_core import arcgeom as AG
+    if wa > wb:
+        wa, pa, wb, pb = wb, pb, wa, pa
+    aa = AG.info(pa["axis"], pa["arc"]) if "arc" in pa else None
+    ab = AG.info(pb["axis"], pb["arc"]) if "arc" in pb else None
+    if aa is not None and ab is not None:
+        cand = AG.circle_hits(aa, ab)
+    else:
+        arc, line = (aa, pb) if aa is not None else (ab, pa)
+        x, y, c, s, _ = _frame_of(line["axis"])
+        cand = AG.line_hits(arc, x, y, c, s)
+    if not cand:
+        return None
+
+    def cost(q):
+        return sum(min((q[0] - e[0]) ** 2 + (q[1] - e[1]) ** 2 for e in ((p["axis"][0], p["axis"][1]), (p["axis"][2], p["axis"][3]))) for p in (pa, pb))
+    return min(cand, key=cost)
+
+
+def any_tee_end(p: dict, tee, pt):
+    """점 pt 가 벽 p 의 줄기 끝(tee)인가: "start"|"end"|None(queries.tee_end_at 과 같은 규칙, 곡선 벽은 호 위 거리)."""
+    if not tee:
+        return None
+    if "arc" not in p:
+        return Q.tee_end_at(_frame_of(p["axis"]), tee, pt)
+    t, length = any_u(p, pt), wall_len(p)
+    end = "start" if abs(t) <= abs(t - length) else "end"
+    return end if end in tee and min(abs(t), abs(t - length)) <= Q.JOIN_MAX_EXT else None
+
+
+def trim_any(wid, p: dict, partners) -> tuple:
+    """queries.wall_trim 과 같은 규칙의 (시작, 끝). partners = [(상대 id, 상대 params)]. 곡선 벽도 받는다."""
+    length = wall_len(p)
+    start, end = 0.0, length
+    for oid, op in sorted(partners, key=lambda x: x[0]):
+        pt = any_join_pt(wid, p, oid, op)
+        if pt is None or any_tee_end(op, op.get("tee"), pt):
+            continue
+        t = any_u(p, pt)
+        if abs(t) <= abs(t - length):
+            if abs(t) <= Q.JOIN_MAX_EXT:
+                start = t
+        elif abs(t - length) <= Q.JOIN_MAX_EXT:
+            end = t
+    if end - start < Q.MIN_TRIMMED:
+        return (0.0, length)
+    return (start, end)
+
+
+def wall_void_ids(ctx, w: str) -> list:
+    """벽 w 를 가리키는 독립 벽 개구(W2 세 번째 PR, ARC-34) id 목록."""
+    return [o for o in sorted(ctx.st.by_kind.get("opening", ())) if ctx.st.el[o]["params"].get("mode") == "wall" and ctx.st.el[o]["params"]["host"] == w]
+
+
+def move_wall_voids(ctx, w: str, fn, host=None) -> None:
+    """벽 w 의 독립 벽 개구 offset 을 fn(offset) 으로 옮긴다(host 를 주면 그 벽으로 옮겨 단다). 길이 방향을 바꾸는 편집(분할·트림·대칭·간격띄우기)이 쓴다."""
+    for o in wall_void_ids(ctx, w):
+        r = ctx.st.el[o]
+        q = dict(r["params"], offset=round(fn(r["params"]["offset"]), 6) + 0.0)
+        if host is not None:
+            q["host"] = host
+        ctx.put_el(o, dict(r, params=q))
+
+
 def _xcut_refs(ctx, wid: str) -> list:
     """이 벽을 also_cuts(25단계)로 가리키는 패밀리 인스턴스 id(이 벽에 호스팅된 것은 벽과 함께 지워지므로 뺀다)."""
     own = set(ctx.rels_out("hosts", wid))
@@ -889,7 +977,6 @@ def wall_split(ctx, a: WallSplit):
     - 분할 이력은 관계 succ(W -> N)로 남는다. 주석 참조의 끝 역할(axis.end, trim.end)이 이 관계를 따라가 값이 변하지 않는다.
     - 지워진 벽도 이력에는 남으므로, 이력에 한 번이라도 쓰인 id 는 new_id 로 다시 쓸 수 없다(succ 순환·엉뚱한 부활 방지)."""
     r = ctx.authored(a.id, "wall", what="분할")   # S5 의 분할이 S2 의 저작 확인을 거치지 않던 틈
-    no_arc(ctx, a.id, "분할")
     p = r["params"]
     xcut = _xcut_refs(ctx, a.id)
     if xcut:   # 함께 자르는 벽(25단계): 나누면 어느 조각을 자를지 모호하다
@@ -897,15 +984,29 @@ def wall_split(ctx, a: WallSplit):
                          hint="family.set 으로 also_cuts 를 뗀 뒤 나누고 다시 지정하세요", details={"instances": xcut[:20]})
     x1, y1, x2, y2 = p["axis"]
     _, _, c, s, length = _frame_of(p["axis"])
+    arc_w = arc_n = None
+    if "arc" in p:   # 곡선 벽(W2 ARC-04): at 은 호 위 거리, 두 조각은 같은 원 위의 호(가운데 점을 다시 구한다)
+        from dobim_core import arcgeom as AG
+        ai = AG.info(p["axis"], p["arc"])
+        length = AG.length(ai)
     if a.at < 1.0 or length - a.at < 1.0:
         raise DobimError("CONSTRAINT", f"분할 위치는 양쪽 조각이 1mm 이상 남아야 한다(벽 길이 {length:.1f}mm)", path="/at")
+    if "arc" in p:
+        sx, sy = (round(v, 6) + 0.0 for v in AG.point(ai, a.at))
+        arc_w = [round(v, 6) + 0.0 for v in AG.point(ai, a.at / 2.0)]
+        arc_n = [round(v, 6) + 0.0 for v in AG.point(ai, (a.at + length) / 2.0)]
+        for ax_, mid_ in (([x1, y1, sx, sy], arc_w), ([sx, sy, x2, y2], arc_n)):
+            why = AG.problem(ax_, mid_, p["thickness"])
+            if why:
+                raise DobimError("CONSTRAINT", f"나눈 조각이 곡선 벽이 되지 못한다: {why}", path="/at", hint="조각이 너무 짧다: 분할 위치를 옮기세요")
     nid = a.new_id = a.new_id or ctx.new_id("wall")    # 로그에 새 벽 id 를 명시해 재생이 같은 id 를 만들게 한다
     if nid in ctx.st.el:
         raise DobimError("CONSTRAINT", f"이미 있는 id 다: {nid}", path="/new_id")
     if _in_split_history(ctx, nid):   # 지워진 후계 id 로 다시 나누면 succ(X -> X) 순환이 생긴다
         raise DobimError("CONSTRAINT", f"벽 분할 이력에 쓰인 id 라 다시 쓸 수 없다: {nid}", path="/new_id",
                          hint="new_id 를 생략하거나 새 id 를 쓰세요")
-    sx, sy = x1 + a.at * c, y1 + a.at * s
+    if arc_w is None:
+        sx, sy = x1 + a.at * c, y1 + a.at * s
     ax_w, ax_n = [x1, y1, sx, sy], [sx, sy, x2, y2]
     doors_n = []
     for d in sorted(ctx.rels_out("hosts", a.id)):
@@ -918,20 +1019,42 @@ def wall_split(ctx, a: WallSplit):
         else:
             raise DobimError("CONSTRAINT", f"분할 위치가 문을 가로지른다: {d}", path="/at")
     partners = sorted(ctx.rels_out("joins", a.id) + ctx.rels_in("joins", a.id))
-    pax = [(o, ctx.st.el[o]["params"]["axis"]) for o in partners]
-    to_n, keep_w = [], []
-    for o, oax in pax:
-        pt = _join_pt(a.id, p["axis"], o, oax)
-        t = None if pt is None else (pt[0] - x1) * c + (pt[1] - y1) * s
-        (to_n if t is not None and t >= a.at else keep_w).append((o, oax))
-    otee = {o: ctx.st.el[o]["params"].get("tee") for o in partners}
-    b0, b1 = _trim_raw(a.id, p["axis"], pax, otee)
-    w0, w1 = _trim_raw(a.id, ax_w, keep_w, otee)
-    n0, n1 = _trim_raw(nid, ax_n, to_n, otee)
-    tol = 1e-6
+    if arc_w is None and not any("arc" in ctx.st.el[o]["params"] for o in partners):   # 직선 벽끼리: 이전 계산 그대로
+        pax = [(o, ctx.st.el[o]["params"]["axis"]) for o in partners]
+        to_n, keep_w = [], []
+        for o, oax in pax:
+            pt = _join_pt(a.id, p["axis"], o, oax)
+            t = None if pt is None else (pt[0] - x1) * c + (pt[1] - y1) * s
+            (to_n if t is not None and t >= a.at else keep_w).append((o, oax))
+        otee = {o: ctx.st.el[o]["params"].get("tee") for o in partners}
+        b0, b1 = _trim_raw(a.id, p["axis"], pax, otee)
+        w0, w1 = _trim_raw(a.id, ax_w, keep_w, otee)
+        n0, n1 = _trim_raw(nid, ax_n, to_n, otee)
+        tol = 1e-6
+    else:   # 곡선 벽(W2 ARC-04)이 끼면 호 위 거리로 같은 검사를 한다(조각의 끝점은 소수 6자리라 허용 오차를 조금 넓힌다)
+        pp = [(o, ctx.st.el[o]["params"]) for o in partners]
+        to_n, keep_w = [], []
+        for o, op in pp:
+            pt = any_join_pt(a.id, p, o, op)
+            t = None if pt is None else any_u(p, pt)
+            (to_n if t is not None and t >= a.at else keep_w).append((o, op))
+        pw_ = dict(p, axis=ax_w, **({"arc": arc_w} if arc_w else {}))
+        pn_ = dict(p, axis=ax_n, **({"arc": arc_n} if arc_n else {}))
+        b0, b1 = trim_any(a.id, p, pp)
+        w0, w1 = trim_any(a.id, pw_, keep_w)
+        n0, n1 = trim_any(nid, pn_, to_n)
+        tol = 1e-4
+        to_n = [(o, op["axis"]) for o, op in to_n]
     if abs(w0 - b0) > tol or abs(w1 - a.at) > tol or abs(n0) > tol or abs(n1 - (b1 - a.at)) > tol:
         raise DobimError("CONSTRAINT", "이 위치에서 나누면 조인 정리(trim)가 달라진다", path="/at",
                          hint="조인 지점에서 1000mm 넘게 떨어진 곳에서 나누세요")
+    voids_n = []
+    for o in wall_void_ids(ctx, a.id):   # 독립 벽 개구(W2 세 번째 PR, ARC-34)도 놓인 쪽 벽으로 간다. 가로지르면 거절한다
+        vp = ctx.st.el[o]["params"]
+        if vp["offset"] - vp["width"] / 2.0 >= a.at:
+            voids_n.append(o)
+        elif vp["offset"] + vp["width"] / 2.0 > a.at:
+            raise DobimError("CONSTRAINT", f"분할 위치가 벽 개구를 가로지른다: {o}", path="/at")
     ops_w, ops_n = [], []
     for o in p.get("openings", ()):   # 모양 개구부(18단계)는 놓인 쪽 벽으로 간다. 가로지르면 거절한다
         h2 = o["width"] / 2.0
@@ -943,6 +1066,8 @@ def wall_split(ctx, a: WallSplit):
             raise DobimError("CONSTRAINT", "분할 위치가 모양 개구부를 가로지른다", path="/at")
     name = (p["name"][:62] + "-b")
     pw = dict(p, axis=ax_w)
+    if arc_w is not None:
+        pw["arc"] = arc_w
     tee_n = "end" in p.get("tee", ())   # T 조인 줄기 끝(W1 1-F 3차): 시작 끝은 W, 끝 쪽 끝은 새 벽이 가진다
     if "tee" in p:
         if "start" in p["tee"]:
@@ -966,6 +1091,8 @@ def wall_split(ctx, a: WallSplit):
             pw.pop("cuts")
     ctx.put_el(a.id, dict(r, params=pw))
     np_ = {"name": name, "axis": ax_n, "thickness": p["thickness"], "height": p["height"]}
+    if arc_n is not None:   # 곡선 벽(W2 ARC-04): 끝 쪽 조각도 같은 원 위의 호
+        np_["arc"] = arc_n
     if "base_offset" in p:   # 바닥 오프셋(22단계)은 끝 쪽 새 벽도 같다
         np_["base_offset"] = p["base_offset"]
     for k in ("top_level", "top_offset"):   # 상단 구속(24단계)도 끝 쪽 새 벽이 같다
@@ -983,6 +1110,9 @@ def wall_split(ctx, a: WallSplit):
         np_["tee"] = ["end"]
     ctx.put_el(nid, row("wall", "IfcWall", "wall.basic", np_))
     ctx.rel("on_level", nid, ctx.rels_out("on_level", a.id)[0], True)
+    for o in voids_n:
+        r_ = ctx.st.el[o]
+        ctx.put_el(o, dict(r_, params=dict(r_["params"], host=nid, offset=r_["params"]["offset"] - a.at)))
     for d in doors_n:
         dr = ctx.st.el[d]
         ctx.rel("hosts", a.id, d, False)
@@ -5267,3 +5397,4 @@ from dobim_core import commands_check  # noqa: E402,F401
 from dobim_core import commands_drawcheck  # noqa: E402,F401
 from dobim_core import commands_arch  # noqa: E402,F401
 from dobim_core import commands_arcwall  # noqa: E402,F401
+from dobim_core import commands_opening  # noqa: E402,F401   독립 개구 객체(W2 세 번째 PR, ARC-34)

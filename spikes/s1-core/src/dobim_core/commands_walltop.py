@@ -18,7 +18,7 @@ from dobim_core import queries as Q
 from dobim_core import solids as SO
 from dobim_core import wallcut as WC
 from dobim_core import walltop as WT
-from dobim_core.commands import A, Id, _hosted_under_top, _wall_checked, command
+from dobim_core.commands import A, Id, _hosted_under_top, _wall_checked, command, wall_len
 from dobim_core.errors import DobimError
 
 ATTACH_KINDS = ("roof", "solid", "slab")   # 붙일 수 있는 대상 종류
@@ -48,11 +48,15 @@ def wall_attach_top(ctx, a: WallAttachTop):
             raise DobimError("CONSTRAINT", f"저작 요소가 아니라(외래·분리됨) 형상을 읽을 수 없다: {t}", path=f"/targets/{i}")
         dz = ctx.g.q(Q.level_info, ctx.rels_out("on_level", t)[0])[1] - wall_elev
         faces += WT.target_faces(tr["kind"], tr["params"], a.face, dz)
-    prof, covered = WT.attach_profile(p["axis"], WT.base(p) + p["height"], faces, a.face)   # 바닥 오프셋(22단계): 덮이지 않은 구간 = 레벨 기준 윗면
+    if "arc" in p:   # 곡선 벽(W2 ARC-04): 조각 현마다 재서 호 위 거리 u 의 윤곽으로 잇는다
+        from dobim_core import arcgeom as AG
+        prof, covered = WT.attach_profile_arc(AG.info(p["axis"], p["arc"]), WT.base(p) + p["height"], faces, a.face)
+    else:
+        prof, covered = WT.attach_profile(p["axis"], WT.base(p) + p["height"], faces, a.face)   # 바닥 오프셋(22단계): 덮이지 않은 구간 = 레벨 기준 윗면
     if prof is None:
         raise DobimError("CONSTRAINT", "벽 축선이 대상 면 아래(위)를 지나지 않는다", path="/targets",
                          hint="평면에서 벽 축선이 대상 외곽 안을 지나야 한다")
-    why = WT.profile_problem(prof, sum((p["axis"][k + 2] - p["axis"][k]) ** 2 for k in (0, 1)) ** 0.5)
+    why = WT.profile_problem(prof, wall_len(p))
     if why:
         raise DobimError("CONSTRAINT", f"붙인 상단 윤곽이 올바르지 않다: {why}", path="/targets",
                          hint="대상 면이 벽 레벨보다 낮으면 붙일 수 없다")

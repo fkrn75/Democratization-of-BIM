@@ -17,6 +17,7 @@ from typing import Annotated, Literal
 
 from pydantic import Field, model_validator
 
+from dobim_core import arcgeom as AG
 from dobim_core import commands as C
 from dobim_core import fixture as F
 from dobim_core import kinds as K
@@ -179,6 +180,9 @@ def _transform(ctx, sel: list, xf: X.Xf) -> dict:
         if kind == "railing" and p.get("src") in s and e in followed:
             continue
         new = _check(kind, e, X.params(kind, p, xf))
+        if kind == "wall" and xf.mirror:   # 독립 벽 개구(W2 세 번째 PR, ARC-34): 축이 뒤집히면 u -> L - u
+            n = X.wall_len(p)
+            C.move_wall_voids(ctx, e, lambda u: n - u)
         if kind in ("stair", "slab"):
             fr = _follow_railings(ctx, e, p, new)
             followed.update(fr.get("moved", ()))
@@ -371,6 +375,7 @@ def element_array_radial(ctx, a: ElementArrayRadial):
 
 # ================================================================ 벽 간격띄우기·트림/연장(W1 1-F 2차, UI-03)
 def _walls(ctx, ids: list, what: str) -> None:
+    """곡선 벽(W2 ARC-04)도 받는다: 간격띄우기는 동심 호, 트림/연장은 호를 따라 늘이거나 자른다."""
     if len(set(ids)) != len(ids):
         raise DobimError("CONSTRAINT", "ids 에 같은 id 가 두 번 있다", path="/ids")
     for i, w in enumerate(ids):
@@ -378,7 +383,45 @@ def _walls(ctx, ids: list, what: str) -> None:
         if r is None or r["kind"] != "wall":
             raise DobimError("NOT_FOUND", f"벽을 찾을 수 없다: {w}", path=f"/ids/{i}")
         ctx.authored(w, "wall", what=what)
-        C.no_arc(ctx, w, what, path=f"/ids/{i}")
+
+
+def _arc_offset(p: dict, d: float, path: str) -> tuple:
+    """곡선 벽 params 를 축 왼쪽(+v)으로 d 만큼 띄운 동심 호 params 와 호 길이 비 k(= 새 반지름 / 반지름).
+    지역 u 로 잰 값(모양 개구부 offset, 상단 윤곽·잘라내기 u)은 같은 각도에 남도록 k 배 한다."""
+    ai = AG.info(p["axis"], p["arc"])
+    L = AG.length(ai)
+    r2 = ai[2] - ai[4] * d
+    if r2 - p["thickness"] / 2.0 < AG.ARC_INNER_MIN:
+        raise DobimError("CONSTRAINT", f"간격띄우기한 곡선 벽의 반지름({r2:.1f}mm)이 벽 두께의 반보다 작다", path=path,
+                         hint="곡선 벽을 중심 쪽으로 띄울 때는 반지름보다 작게 띄우세요")
+    k = r2 / ai[2]
+    a0 = AG.point(ai, 0.0, d)
+    a1 = AG.point(ai, L, d)
+    q = dict(p, axis=[X._r6(a0[0]), X._r6(a0[1]), X._r6(a1[0]), X._r6(a1[1])], arc=[X._r6(v) for v in AG.point(ai, L / 2.0, d)])
+    if "openings" in p:
+        q["openings"] = [dict(o, offset=X._r6(o["offset"] * k)) for o in p["openings"]]
+    if "top_profile" in p:
+        q["top_profile"] = [[X._r6(u * k), z] for u, z in p["top_profile"]]
+    if "cuts" in p:
+        q["cuts"] = [[X._r6(cu[0] * k), X._r6(cu[1] * k), *cu[2:]] for cu in p["cuts"]]
+    return q, k
+
+
+def _arc_offset_apply(ctx, w: str, q: dict, k: float, path: str) -> None:
+    """곡선 벽 w 를 동심 호 params q 로 바꾸고, 호스팅된 문·패밀리 인스턴스의 offset 을 k 배(같은 각도)로 옮긴다. 새 호 밖으로 나가면 거절."""
+    r = ctx.st.el[w]
+    _check("wall", w, q)
+    ctx.put_el(w, dict(r, params=q))
+    n = AG.length(AG.info(q["axis"], q["arc"]))
+    C.move_wall_voids(ctx, w, lambda u: u * k)   # 독립 벽 개구(W2 세 번째 PR, ARC-34)도 같은 각도에
+    for d in sorted(ctx.rels_out("hosts", w)):
+        dr = ctx.st.el[d]
+        if "offset" not in dr["params"]:
+            continue
+        ctx.put_el(d, dict(dr, params=dict(dr["params"], offset=X._r6(dr["params"]["offset"] * k))))
+        lo, hi = _hosted_span(ctx, d)
+        if lo < -1e-6 or hi > n + 1e-6:
+            raise DobimError("CONSTRAINT", f"간격띄우기한 곡선 벽({n:.1f}mm) 밖으로 호스팅 요소가 나간다: {d}", path=path)
 
 
 def _left(axis, d: float) -> tuple:
@@ -403,10 +446,16 @@ def wall_offset(ctx, a: WallOffset):
         raise DobimError("CONSTRAINT", "new_ids 는 keep 과 함께 쓴다", path="/new_ids")
     _walls(ctx, a.ids, "간격띄우기")
     st = ctx.st
-    moves = {w: _left(st.el[w]["params"]["axis"], a.distance) for w in a.ids}
+    # 곡선 벽(W2 ARC-04)은 동심 호(왼쪽이 중심 쪽이면 반지름이 distance 만큼 작아진다), 직선 벽은 평행 이동
+    arcs = {w: _arc_offset(st.el[w]["params"], a.distance, f"/ids/{i}") for i, w in enumerate(a.ids) if "arc" in st.el[w]["params"]}
+    moves = {w: _left(st.el[w]["params"]["axis"], a.distance) for w in a.ids if w not in arcs}
     if not a.keep:
-        for w in a.ids:
-            _transform(ctx, _pick(ctx, [w], "간격띄우기"), X.move(*moves[w]))
+        for i, w in enumerate(a.ids):
+            if w in arcs:
+                _pick(ctx, [w], "간격띄우기")
+                _arc_offset_apply(ctx, w, *arcs[w], f"/ids/{i}")
+            else:
+                _transform(ctx, _pick(ctx, [w], "간격띄우기"), X.move(*moves[w]))
         return {"count": len(a.ids)}
     sels = [_pick(ctx, [w], "간격띄우기", copy=True) for w in a.ids]
     n = sum(len(s) for s in sels)
@@ -414,8 +463,11 @@ def wall_offset(ctx, a: WallOffset):
         raise DobimError("CONSTRAINT", f"한 번에 {COPY_MAX}개까지 만든다(이번 {n}개)", path="/ids")
     ids = _new_ids(ctx, a.new_ids, n)
     out, mp, i = [], {}, 0
-    for w, sel in zip(a.ids, sels):
-        got = _copy_set(ctx, sel, X.move(*moves[w]), None, ids[i:i + len(sel)], [])
+    for j, (w, sel) in enumerate(zip(a.ids, sels)):
+        got = _copy_set(ctx, sel, X.move(0.0, 0.0) if w in arcs else X.move(*moves[w]), None, ids[i:i + len(sel)], [])
+        if w in arcs:   # 제자리 복사본을 동심 호로 바꾼다(이름은 복사 규칙 그대로)
+            q, k = arcs[w]
+            _arc_offset_apply(ctx, got[0], dict(q, name=st.el[got[0]]["params"]["name"]), k, f"/ids/{j}")
         i += len(sel)
         mp[w] = got[0]
         out += got
@@ -438,6 +490,36 @@ def _line_hit(ax, bx):
     return X._r6(x1 + t * c1), X._r6(y1 + t * s1)
 
 
+def _hits_any(pa: dict, pb: dict) -> list:
+    """두 벽 축(직선은 무한 직선, 곡선 벽은 원)의 교점 후보(소수 6자리). 곡선 벽(W2 ARC-04)이 낄 때만 쓴다."""
+    aa = AG.info(pa["axis"], pa["arc"]) if "arc" in pa else None
+    ab = AG.info(pb["axis"], pb["arc"]) if "arc" in pb else None
+    if aa is not None and ab is not None:
+        cand = AG.circle_hits(aa, ab)
+    else:
+        arc, line = (aa, pb) if aa is not None else (ab, pa)
+        x, y, c, s_, _ = C._frame_of(line["axis"])
+        cand = AG.line_hits(arc, x, y, c, s_)
+    return [(X._r6(q[0]), X._r6(q[1])) for q in cand]
+
+
+def _end_gap(p: dict, pt, end=None) -> float:
+    """교점 pt 가 벽 p 의 끝(end, 생략하면 가까운 끝)에서 축을 따라 떨어진 거리."""
+    t, n = C.any_u(p, pt), C.wall_len(p)
+    if end == "start":
+        return abs(t)
+    if end == "end":
+        return abs(t - n)
+    return min(abs(t), abs(t - n))
+
+
+def _near_end_any(p: dict, pt) -> str:
+    if "arc" not in p:
+        return _near_end(p["axis"], pt)
+    t, n = C.any_u(p, pt), C.wall_len(p)
+    return "start" if abs(t) < abs(t - n) else "end"
+
+
 def _near_end(axis, pt) -> str:
     x, y, c, s, n = C._frame_of(axis)
     t = (pt[0] - x) * c + (pt[1] - y) * s
@@ -449,13 +531,24 @@ def _to_point(ctx, w: str, end: str, pt, path: str) -> bool:
     (개구부·호스팅 요소 offset, 잘라내기 u)을 그만큼 당겨 제자리에 둔다. 나머지 검사는 wall.set 이 한다."""
     r = ctx.st.el[w]
     p = r["params"]
-    x, y, c, s, n = C._frame_of(p["axis"])
-    t = (pt[0] - x) * c + (pt[1] - y) * s
+    if "arc" in p:   # 곡선 벽(W2 ARC-04): 끝을 호를 따라 옮긴다(u 는 호 위 거리). 같은 원 위의 새 호가 된다
+        ai = AG.info(p["axis"], p["arc"])
+        n = AG.length(ai)
+        t = AG.u_of(ai, pt)
+    else:
+        x, y, c, s, n = C._frame_of(p["axis"])
+        t = (pt[0] - x) * c + (pt[1] - y) * s
     if (end == "end" and t < 1.0) or (end == "start" and t > n - 1.0):
         raise DobimError("CONSTRAINT", f"벽 {w} 의 {end} 끝을 옮기면 길이가 1mm 미만이거나 방향이 뒤집힌다", path=path)
     new = [p["axis"][0], p["axis"][1], pt[0], pt[1]] if end == "end" else [pt[0], pt[1], p["axis"][2], p["axis"][3]]
     if new == p["axis"]:
         return False
+    mid = None
+    if "arc" in p:
+        u0, u1 = (0.0, t) if end == "end" else (t, n)
+        if u1 - u0 >= AG.TWO_PI * ai[2] - 1.0:
+            raise DobimError("CONSTRAINT", f"곡선 벽 {w} 를 늘이면 원을 한 바퀴 넘게 돈다", path=path)
+        mid = [X._r6(v) for v in AG.point(ai, (u0 + u1) / 2.0)]
     if "top_profile" in p:
         raise DobimError("CONSTRAINT", f"벽 {w} 에 상단 윤곽이 있어 길이를 바꿀 수 없다", path=path, hint="wall.detach_top 으로 뗀 뒤 다시 붙이세요")
     sh = X._r6(t) if end == "start" else 0.0
@@ -470,8 +563,13 @@ def _to_point(ctx, w: str, end: str, pt, path: str) -> bool:
             dr = ctx.st.el[d]
             ctx.authored(d, what="트림/연장")
             ctx.put_el(d, dict(dr, params=dict(dr["params"], offset=X._r6(dr["params"]["offset"] - sh))))
+        C.move_wall_voids(ctx, w, lambda u: u - sh)   # 독립 벽 개구(W2 세 번째 PR, ARC-34)도 제자리에
     try:
-        C.wall_set(ctx, C.WallSet(id=w, axis=new))
+        if mid is not None:
+            from dobim_core import commands_arcwall as CA
+            CA.wall_arc_set(ctx, CA.WallArcSet(id=w, points=[new[:2], mid, new[2:]]))
+        else:
+            C.wall_set(ctx, C.WallSet(id=w, axis=new))
     except DobimError as ex:
         raise DobimError(ex.code, f"벽 {w}: {ex.message}", path=path, hint=ex.hint, details=ex.details) from None
     return True
@@ -479,7 +577,7 @@ def _to_point(ctx, w: str, end: str, pt, path: str) -> bool:
 
 class WallExtendTo(A):
     id: Id = Field(description="자르거나 늘일 벽")
-    to: Id = Field(description="경계 벽(축선을 무한 직선으로 본다)")
+    to: Id = Field(description="경계 벽(축선을 무한 직선으로 본다. 곡선 벽이면 그 원)")
     end: Literal["start", "end"] | None = Field(None, description="옮길 끝. 생략하면 교점에 가까운 끝")
 
 
@@ -490,7 +588,15 @@ def wall_extend_to(ctx, a: WallExtendTo):
         raise DobimError("CONSTRAINT", "경계는 다른 벽이어야 한다", path="/to")
     _walls(ctx, [a.id], "트림/연장")
     ctx.row(a.to, "wall")
-    C.no_arc(ctx, a.to, "트림/연장 경계", path="/to")
+    pa, pb = ctx.st.el[a.id]["params"], ctx.st.el[a.to]["params"]
+    if "arc" in pa or "arc" in pb:   # 곡선 벽(W2 ARC-04): 원과 축의 교점 중 옮길 끝(생략하면 가까운 끝)에서 축을 따라 가장 가까운 것
+        cand = _hits_any(pa, pb)
+        if not cand:
+            raise DobimError("CONSTRAINT", "벽 축이 경계 벽의 축(원)과 만나지 않는다", path="/to")
+        pt = min(cand, key=lambda q: (_end_gap(pa, q, a.end), q))
+        end = a.end or _near_end_any(pa, pt)
+        changed = _to_point(ctx, a.id, end, pt, "/id")
+        return {"id": a.id, "end": end, "point": list(pt), "changed": changed}
     pt = _line_hit(ctx.st.el[a.id]["params"]["axis"], ctx.st.el[a.to]["params"]["axis"])
     if pt is None:
         raise DobimError("CONSTRAINT", "두 벽이 평행해 만나지 않는다", path="/to")
@@ -511,12 +617,19 @@ def wall_corner(ctx, a: WallCorner):
     if a.a == a.b:
         raise DobimError("CONSTRAINT", "같은 벽끼리는 모서리를 만들 수 없다", path="/b")
     _walls(ctx, [a.a, a.b], "트림/연장")
-    pt = _line_hit(ctx.st.el[a.a]["params"]["axis"], ctx.st.el[a.b]["params"]["axis"])
+    pa, pb = ctx.st.el[a.a]["params"], ctx.st.el[a.b]["params"]
+    if "arc" in pa or "arc" in pb:   # 곡선 벽(W2 ARC-04): 교점 후보 중 두 벽 끝에서 축을 따라 잰 거리의 합이 가장 작은 것
+        cand = _hits_any(pa, pb)
+        if not cand:
+            raise DobimError("CONSTRAINT", "두 벽의 축(원)이 만나지 않는다", path="/b")
+        pt = min(cand, key=lambda q: (_end_gap(pa, q) + _end_gap(pb, q), q))
+    else:
+        pt = _line_hit(pa["axis"], pb["axis"])
     if pt is None:
         raise DobimError("CONSTRAINT", "두 벽이 평행해 만나지 않는다", path="/b")
     if a.join and ctx.rels_out("on_level", a.a) != ctx.rels_out("on_level", a.b):
         raise DobimError("CONSTRAINT", "다른 레벨의 벽은 조인할 수 없다", path="/b", hint="join 을 false 로 주세요")
-    ends = {w: _near_end(ctx.st.el[w]["params"]["axis"], pt) for w in (a.a, a.b)}
+    ends = {w: _near_end_any(ctx.st.el[w]["params"], pt) for w in (a.a, a.b)}
     for w, path in ((a.a, "/a"), (a.b, "/b")):
         _to_point(ctx, w, ends[w], pt, path)
     if a.join:

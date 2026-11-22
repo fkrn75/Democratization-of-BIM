@@ -139,8 +139,8 @@ def _level_params(p):
 WALL_TEE_ENDS = ("start", "end")
 
 
-ARC_EXCLUSIVE = ("openings", "top_profile", "cuts", "tee")   # 곡선 벽(W2 ARC-04)이 아직 함께 갖지 않는 키(모양 개구부·상단 윤곽·잘라내기·T 조인 줄기)
-ARC_EXCLUSIVE_LABEL = "모양 개구부·상단 윤곽·잘라내기·T 조인 줄기"
+ARC_EXCLUSIVE = ("cuts",)   # 곡선 벽(W2 ARC-04)이 아직 함께 갖지 않는 키(잘라내기). T 조인 줄기·상단 윤곽·사각 모양 개구부는 W2 세 번째 PR 부터 받는다
+ARC_EXCLUSIVE_LABEL = "잘라내기"
 
 
 def tee_ok(v) -> bool:
@@ -165,6 +165,8 @@ def _wall_params(p):
         why = AG.problem(p["axis"], p["arc"], p["thickness"])
         if why:
             return f"wall.arc: {why}"
+        if any(not isinstance(o, dict) or o.get("shape") != "rect" for o in p.get("openings", ())):   # 곡선 벽의 모양 개구부는 사각만(W2 세 번째 PR)
+            return "wall.openings: 곡선 벽의 모양 개구부는 사각(shape rect)만 된다"
     if err is None and "top_offset" in p and "top_level" not in p:   # 상단 구속(24단계): 오프셋은 상단 레벨과 함께만
         return "wall.top_offset 은 top_level 과 함께만 둔다"
     if err is None and "top_level" in p and "top_profile" in p:
@@ -174,14 +176,14 @@ def _wall_params(p):
     top = p.get("top_profile") if err is None else None   # 벽 상단 윤곽(21단계): 없으면 이전과 같다
     if top is not None:
         ax = p["axis"]
-        why = WT.profile_problem(top, sqrt((ax[2] - ax[0]) ** 2 + (ax[3] - ax[1]) ** 2))
+        why = WT.profile_problem(top, AG.length(AG.info(ax, p["arc"])) if "arc" in p else sqrt((ax[2] - ax[0]) ** 2 + (ax[3] - ax[1]) ** 2))   # 곡선 벽은 호 길이
         if why:
             return f"wall.top_profile: {why}"
         if "base_offset" in p and WT.zmin(top) <= p["base_offset"]:   # 바닥 오프셋(22단계): 윤곽은 벽 바닥보다 높아야 한다
             return "wall.top_profile: 상단 윤곽의 높이 z 는 벽 바닥(base_offset)보다 커야 한다"
     if err is None and "openings" in p:   # 모양 개구부(18단계): 벽 입면 사각형(축 길이 x 높이) 안, 서로 겹치지 않는다
         ax = p["axis"]
-        ln = sqrt((ax[2] - ax[0]) ** 2 + (ax[3] - ax[1]) ** 2)
+        ln = AG.length(AG.info(ax, p["arc"])) if "arc" in p else sqrt((ax[2] - ax[0]) ** 2 + (ax[3] - ax[1]) ** 2)   # 곡선 벽은 호 길이(u 는 호 위 거리)
         b0 = WT.base(p)   # 바닥 오프셋(22단계): 개구부 높이는 레벨 기준이고 벽은 b0 에서 시작한다
         outer = WT.loop(top, 0.0, ln, b0) if top is not None else [(0.0, b0), (ln, b0), (ln, b0 + p["height"]), (0.0, b0 + p["height"])]
         why = SO.openings_problem(outer, p["openings"], absolute_sill="base_offset" in p) or (WT.under_problem(top, p["openings"]) if top is not None else None)
@@ -1441,6 +1443,40 @@ def _larea_params(p):
     return None
 
 
+# ---------------------------------------------------------------- 독립 개구 객체(W2 세 번째 PR, ARC-34)
+# opening = Revit 의 수직 개구·샤프트 개구·벽 개구 도구가 만드는 독립 개구. 호스트(슬래브·벽)의 params 를 바꾸지 않고 객체로 남아,
+#   호스트를 그리고 IFC 로 낼 때 함께 뺀다(IFC 는 호스트마다 IfcOpeningElement + IfcRelVoidsElement 부속, GlobalId = part_guid(호스트, "void:<id>")).
+#   mode "vertical": 슬래브 하나(host)를 경계 다각형(boundary)으로 수직 관통. "shaft": 레벨(level) + base_offset 에서 height 까지의 z 범위에서
+#   경계 다각형이 경계 안에 드는 모든 저작 슬래브를 한 번에 관통. "wall": 벽 하나(host)에 사각(rect)·원(circle) 개구(문·창 없음, 호 위 거리 offset).
+#   비 IFC 의도 요소(뷰·법정 면적 객체와 같다): 정의는 DoBIM_Defs 로 왕복한다
+OPENING_MODES = ("vertical", "shaft", "wall")
+OPENING_WALL_SHAPES = ("rect", "circle")
+OPENINGS_OBJ_MAX = 500     # 독립 개구 객체 수 상한
+SHAFT_HEIGHT_MAX = 500000.0
+
+
+def _opening_params(p):
+    if not isinstance(p, dict) or p.get("mode") not in OPENING_MODES:
+        return "opening.mode 는 vertical·shaft·wall 중 하나다"
+    m = p["mode"]
+    if m == "vertical":
+        return _check_fields("opening", p, {"name": _name, "mode": lambda v: True, "host": id_ok, "boundary": _poly_pts_ok})
+    if m == "shaft":
+        err = _check_opt("opening", p, {"name": _name, "mode": lambda v: True, "level": id_ok, "boundary": _poly_pts_ok,
+                                        "height": lambda v: _pos(v) and v <= SHAFT_HEIGHT_MAX}, {"base_offset": lambda v: num_ok(v) and v != 0 and abs(v) <= WT.BASE_OFFSET_MAX})
+        return err
+    err = _check_fields("opening", p, {"name": _name, "mode": lambda v: True, "host": id_ok, "shape": lambda v: v in OPENING_WALL_SHAPES,
+                                       "offset": num_ok, "sill": num_ok, "width": _pos, "height": _pos})
+    if err is None and p["shape"] == "circle" and abs(p["width"] - p["height"]) > 1e-6:
+        return "opening: 원 개구는 폭과 높이가 같아야 한다"
+    return err
+
+
+def opening_shape(p) -> dict:
+    """벽 개구 객체를 벽 모양 개구부(walls openings 한 항목)와 같은 꼴로."""
+    return {"shape": p["shape"], "offset": p["offset"], "sill": p["sill"], "width": p["width"], "height": p["height"]}
+
+
 # 태그 대상 종류(annot.TAG_FIELDS 와 같다: 가져오기가 복원한 태그 대상을 이 종류로 검사한다)
 TAG_TARGET_KINDS = ("wall", "door", "slab", "space", "stair", "finst", "roof", "railing")
 
@@ -1500,6 +1536,9 @@ ELEMENT_KINDS: dict[str, ElementKind] = {k.name: k for k in (
     ElementKind("pparam", False, None, False, 6, _pparam_params),
     # 법정 면적 객체(W1 연장, ARC-36): 바닥면적 대상만 레벨을 가리킨다(평면 뷰의 level 과 같은 참조)
     ElementKind("larea", False, None, False, 6, _larea_params, refs=(("level", "id", None),), ref_kinds=(("level", ("level",)),)),
+    # 독립 개구 객체(W2 세 번째 PR, ARC-34): 수직(슬래브)·샤프트(레벨 범위의 슬래브들)·벽 개구. 호스트를 지우면 고아로 남는다(그리지 않는다)
+    ElementKind("opening", False, None, False, 6, _opening_params, refs=(("host", "id", None), ("level", "id", None)),
+                ref_kinds=(("host", ("slab", "wall")), ("level", ("level",)))),
 )}
 
 NON_IFC_KINDS = frozenset(k for k, v in ELEMENT_KINDS.items() if not v.ifc)      # 신원·속성셋·재료가 없는 의도 요소(뷰 정의, 치수·태그)

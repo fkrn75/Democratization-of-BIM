@@ -456,7 +456,27 @@ class _Inputs:
             return tuple(sorted(f for f, r in st.el.items() if r is not None and r["kind"] == "finst" and "also_cuts" in r["params"]))
         if t == "arc_walls":   # 곡선(원호) 벽(W2 ARC-04)
             return frozenset(w for w, r in st.el.items() if r is not None and r["kind"] == "wall" and "arc" in r["params"])
+        if t == "count":   # 독립 개구 객체(W2 세 번째 PR, ARC-34): 호스트 명세가 개구 객체를 센다
+            return st.count.get(key[1], 0)
+        if t == "bucket":
+            return tuple(st.bucket.get((key[1], key[2]), ()))
         raise KeyError(key)
+
+
+def _plan_openings(f, st, rows: dict) -> None:
+    """독립 개구 객체(W2 세 번째 PR, ARC-34)의 정의를 계획 상태에 미리 올린다: 호스트(슬래브·벽)의 투영 명세가 개구 부속을 담으므로
+    정의 없이 계산하면 들어온 형상과 달라 분리된다. 정의를 되살릴지는 뒤의 _restore_defs 가 정한다(경고는 거기서 한 번만 낸다)."""
+    import types
+    defs = _read_defs(f, types.SimpleNamespace(warnings=[]))
+    for eid in sorted(defs):
+        if eid in rows or not isinstance(defs[eid], str):
+            continue
+        try:
+            d = VD.parse_def(eid, defs[eid])
+        except ValueError:
+            continue
+        if d["kind"] == "opening":
+            st.apply_el(eid, None, {"kind": "opening", "ifc_class": "", "origin": "authored", "family_id": d["family_id"], "params": d["params"]})
 
 
 def _read_defs(f, plan: "ImportPlan") -> dict[str, object]:
@@ -672,6 +692,18 @@ def _restore_defs(f, rows: dict, rels: set, taken: set, plan: "ImportPlan") -> N
             skip(eid, "법정 면적 객체가 가리키는 레벨이 저작이 아니다(분리·외래·다른 종류)")
         else:
             ok[eid] = parsed[eid]
+    # 독립 개구 객체(W2 세 번째 PR, ARC-34): 가리키는 호스트(슬래브·벽)·레벨이 파일에 있으면 그 종류의 저작 요소여야 한다(없으면 고아로 되살린다)
+    for eid in sorted(e for e, d in parsed.items() if d["kind"] == "opening"):
+        p = parsed[eid]["params"]
+        why = None
+        for k, need in (("host", "wall" if p["mode"] == "wall" else "slab"), ("level", "level")):
+            st = state(p[k]) if k in p else None
+            if st is not None and (st[0] != need or st[1] != "authored"):
+                why = f"독립 개구가 가리키는 {k} 가 저작 {need} 가 아니다"
+        if why:
+            skip(eid, why)
+        else:
+            ok[eid] = parsed[eid]
     for eid, d in ok.items():
         rows[eid] = {"kind": d["kind"], "ifc_class": "", "origin": "authored", "family_id": d["family_id"], "params": d["params"],
                      "projection_hash": None}
@@ -806,6 +838,7 @@ def plan_import(data: bytes) -> ImportPlan:
         st.apply_el(g, None, r)
     for k, s_, d_ in rels:
         st.apply_rel(k, s_, d_, True)
+    _plan_openings(f, st, rows)
     graph = Graph(_Inputs(st))
 
     scratch = IfcModel(str(uuid.UUID(int=0)))
