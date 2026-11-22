@@ -185,6 +185,9 @@ def area_items(g, v):
     if cfg[5] == "gross":
         polys = []
         for w in g.q(D.scope_walls, v):
+            if "arc" in Q.el(g, w)["params"]:   # 곡선 벽(W2 ARC-04): 바깥·안쪽 면 호를 조각 꼭짓점으로 이은 윤곽
+                polys.append(g.q(D.wall_plan_poly, w))
+                continue
             x, y, c, s, _ = g.q(Q.wall_frame, w)
             poly = [(x + u * c - vv * s, y + u * s + vv * c) for u, vv in g.q(Q.wall_footprint, w)]
             if D._area2(poly) < 0:
@@ -274,6 +277,9 @@ def legal_floor_polys(g, lv):
     for w in sorted(Q.rel_in(g, "on_level", lv)):
         r = Q.el(g, w)
         if r is not None and r["kind"] == "wall" and r["origin"] == "authored":
+            if "arc" in r["params"]:   # 곡선 벽(W2 ARC-04): 중심선을 조각 현들로
+                walls.extend(D.AG.center_segs(w, r["params"]))
+                continue
             x1, y1, x2, y2 = r["params"]["axis"]
             walls.append((w, (x1, y1), (x2, y2), r["params"]["thickness"]))
     return tuple(faces_of(walls))

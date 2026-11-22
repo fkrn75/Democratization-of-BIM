@@ -11,7 +11,7 @@ params.gk(chain | baseline)를 둔다.
 높이 치수(단면·입면): 같은 at·간격의 높이 치수 칸들이라 치수선이 한 줄에 선다(기준선은 간격을 쌓는다).
 
 한계: 묶음은 칸들의 모음이다. 가운데 참조의 대상을 지우면 그 참조를 쓰는 칸만 고아가 된다(Revit 처럼 이웃 칸을 합치지 않는다).
-호 길이 치수는 곡선 모델 요소(곡선 벽)가 없어 아직 모델에 연관하지 않는다(2D 작도 dim_arc 는 있다).
+호 길이 치수는 annot.dim.create measure=arc 로 곡선 벽(W2 ARC-04)의 호 역할(wall:<id>#arc·arc.left·arc.right)을 잰다(묶음에는 넣지 않는다).
 """
 from __future__ import annotations
 

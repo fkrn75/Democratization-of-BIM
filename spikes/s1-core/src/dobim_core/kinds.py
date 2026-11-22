@@ -16,6 +16,7 @@ import zlib
 from math import isfinite, sqrt
 from typing import Callable, NamedTuple
 
+from dobim_core import arcgeom as AG
 from dobim_core import roofpoly as RP
 from dobim_core import solids as SO
 from dobim_core import wallcut as WC
@@ -138,6 +139,10 @@ def _level_params(p):
 WALL_TEE_ENDS = ("start", "end")
 
 
+ARC_EXCLUSIVE = ("openings", "top_profile", "cuts", "tee")   # 곡선 벽(W2 ARC-04)이 아직 함께 갖지 않는 키(모양 개구부·상단 윤곽·잘라내기·T 조인 줄기)
+ARC_EXCLUSIVE_LABEL = "모양 개구부·상단 윤곽·잘라내기·T 조인 줄기"
+
+
 def tee_ok(v) -> bool:
     """벽의 T 조인 줄기 끝(W1 1-F 3차): ["start"], ["end"], ["start", "end"] 중 하나. 그 끝이 조인 상대 벽의 중간에 닿는다."""
     return isinstance(v, list) and v in (["start"], ["end"], ["start", "end"])
@@ -151,7 +156,15 @@ def _wall_params(p):
                                                                                                          "base_offset": lambda v: num_ok(v) and abs(v) <= WT.BASE_OFFSET_MAX,
                                                                                                          "cuts": lambda v: WC.cuts_problem(v) is None,   # 벽 잘라내기(23단계)
                                                                                                          "top_level": id_ok, "top_offset": lambda v: num_ok(v) and v != 0,
-                                                                                                         "tee": tee_ok})   # T 조인 줄기 끝(W1 1-F 3차)
+                                                                                                         "tee": tee_ok,   # T 조인 줄기 끝(W1 1-F 3차)
+                                                                                                         "arc": _pt_ok})   # 곡선(원호) 벽(W2 ARC-04): 호 위의 점(가운데)
+    if err is None and "arc" in p:   # 곡선 벽(W2 ARC-04): 아직 받지 않는 형상 키와 함께 둘 수 없다. 축 검사는 arcgeom.problem
+        bad = [k for k in ARC_EXCLUSIVE if k in p]
+        if bad:
+            return f"wall.arc 와 {bad[0]} 는 함께 둘 수 없다(곡선 벽은 아직 {ARC_EXCLUSIVE_LABEL} 를 지원하지 않는다)"
+        why = AG.problem(p["axis"], p["arc"], p["thickness"])
+        if why:
+            return f"wall.arc: {why}"
     if err is None and "top_offset" in p and "top_level" not in p:   # 상단 구속(24단계): 오프셋은 상단 레벨과 함께만
         return "wall.top_offset 은 top_level 과 함께만 둔다"
     if err is None and "top_level" in p and "top_profile" in p:
@@ -317,7 +330,7 @@ def _ref(v) -> bool:
     return text_ok(v, 1, 80)
 
 
-DIM_MEASURES = ("angle", "radius", "diameter")   # 선형 밖의 치수 종류(annot.MEASURES 와 같다). 선형 치수는 measure 키가 없다
+DIM_MEASURES = ("angle", "radius", "diameter", "arc")   # 선형 밖의 치수 종류(annot.MEASURES 와 같다). 선형 치수는 measure 키가 없다
 DIM_CHAIN_KINDS = ("chain", "baseline")          # 연속·기준선 치수 묶음 종류(annot.CHAIN_KINDS 와 같다)
 
 
@@ -1617,6 +1630,8 @@ def _keys_el(e):
         out.add(("xcut_finsts",))   # 함께 자르는 벽(25단계)이 있는 인스턴스 목록 입력: 그런 인스턴스가 생기거나 바뀔 때만 바뀐다
     if any(r is not None and r["kind"] == "wall" and "top_level" in r["params"] for r in (e[2], e[3])):
         out.add(("tied_walls",))   # 상단 구속 벽(24단계) 목록 입력: 구속 벽이 생기거나 바뀔 때만 바뀐다(다른 벽 편집은 평면 캐시를 흔들지 않는다)
+    if any(r is not None and r["kind"] == "wall" and "arc" in r["params"] for r in (e[2], e[3])):
+        out.add(("arc_walls",))   # 곡선 벽(W2 ARC-04) 목록 입력: 곡선 벽이 생기거나 바뀔 때만 바뀐다
     return out
 
 

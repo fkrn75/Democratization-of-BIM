@@ -143,6 +143,10 @@ def _wall_polys(ctx, lv: str) -> list:
     for w in sorted(ctx.rels_in("on_level", lv)):
         r = ctx.st.el[w]
         if r["kind"] == "wall" and r["origin"] == "authored":
+            if "arc" in r["params"]:   # 곡선 벽(W2 ARC-04): 중심선을 조각 현들로
+                from dobim_core import arcgeom as AG
+                walls.extend(AG.center_segs(w, r["params"]))
+                continue
             x1, y1, x2, y2 = r["params"]["axis"]
             walls.append((w, (x1, y1), (x2, y2), r["params"]["thickness"]))
     return VP.faces_of(walls)

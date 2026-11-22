@@ -23,6 +23,7 @@ from math import sqrt
 
 from dobim_core import foreign_symbols as FSYM
 from dobim_core import kinds as K
+from dobim_core import arcgeom as AG
 from dobim_core import queries as Q
 from dobim_core import solids as SO
 from dobim_core import wallcut as WC
@@ -187,6 +188,16 @@ def wall_range(g, w):
     return g.q(Q.wall_extent, w)
 
 
+def wall_plan_poly(g, w):
+    """곡선 벽(W2 ARC-04)의 평면 윤곽 다각형(반시계): 오른쪽 면 호(시작 -> 끝)와 왼쪽 면 호(끝 -> 시작)를 조각 꼭짓점으로 잇는다. 면적 평면 gross 가 쓴다."""
+    ai = g.q(Q.wall_arc, w)
+    start, end = g.q(wall_range, w)
+    h = Q.el(g, w)["params"]["thickness"] / 2.0
+    us = AG.breaks(ai, start, end)
+    poly = [AG.point(ai, u, -h) for u in us] + [AG.point(ai, u, h) for u in reversed(us)]
+    return tuple(poly) if _area2(poly) > 0 else tuple(reversed(poly))
+
+
 def hosted_opening(g, d, elev):
     """벽에 호스팅된 요소 하나가 벽에 내는 개구부 (u0, u1, z0, z1)(벽 지역 길이 방향 u, 절대 높이 z). 개구부가 없으면 None.
     호스팅되는 것은 문(door: offset ± width/2, 문턱 sill)만이 아니다: 패밀리 인스턴스(finst)는 sill 이 없고 평가된 개구부 범위(cut)와
@@ -292,6 +303,10 @@ def wall_solid(g, w):
         zb, zt = b0, max(z for _, z in top)
     else:
         zb, zt = b0, b0 + p["height"]
+    if "arc" in p:   # 곡선(원호) 벽(W2 ARC-04): 13번째 칸 = 호 계산값(arcgeom.info). 띠의 속이 찬 구간은 조각(facet) 경계에서 나눠 조각마다 볼록한 사다리꼴이 된다
+        ai = g.q(Q.wall_arc, w)
+        bands = tuple((z0, z1, AG.split_ivs(ai, ivs)) for z0, z1, ivs in _bands(start, end, zb, zt, ops))
+        return (x, y, c, s, p["thickness"] / 2.0, start, end, zb, zt, ops, bands, top, ai)
     return (x, y, c, s, p["thickness"] / 2.0, start, end, zb, zt, ops, _bands(start, end, zb, zt, ops), top)
 
 
@@ -505,12 +520,100 @@ def _top_vedges(sol, pt):
 
 
 def _world(sol, u, v):
+    if len(sol) == 13:   # 곡선 벽(W2 ARC-04): 호 위 거리 u, 왼쪽 거리 v
+        return AG.point(sol[12], u, v)
     return (sol[0] + u * sol[2] - v * sol[3], sol[1] + u * sol[3] + v * sol[2])
 
 
 def _quad(sol, a, b):
     h = sol[4]
     return (_world(sol, a, -h), _world(sol, b, -h), _world(sol, b, h), _world(sol, a, h))   # 반시계
+
+
+def _span_quads(sol, a, b):
+    """u = a..b 의 벽 평면 조각들: 직선 벽은 사각형 하나, 곡선 벽은 조각(facet)마다 사다리꼴(모두 볼록, 반시계)."""
+    if len(sol) == 13:
+        us = AG.breaks(sol[12], a, b)
+        return [_quad(sol, u0, u1) for u0, u1 in zip(us, us[1:])]
+    return [_quad(sol, a, b)]
+
+
+def _tangent_sol(sol, uc):
+    """곡선 벽의 u = uc 접선 틀을 직선 벽 틀처럼 쓰는 형상 값(문 기호·문짝 선은 접선 틀에 곧게 그린다). 직선 벽이면 그대로."""
+    if len(sol) != 13:
+        return sol
+    px, py = AG.point(sol[12], uc, 0.0)
+    tx, ty = AG.tangent(sol[12], uc)
+    return (px - uc * tx, py - uc * ty, tx, ty) + sol[4:12]
+
+
+def _arc_items(items, step):
+    """곡선 벽에 호스팅된 패밀리의 평면 기호: 벽 길이 방향(u)으로 긴 선분을 step 이하로 나눠 호를 따라 휘게 한다(현이 벽 면에서 벗어나지 않게)."""
+    def cut(p0, p1):
+        n = max(1, int(abs(p1[0] - p0[0]) / step) + 1)
+        return [((p0[0] + (p1[0] - p0[0]) * i / n, p0[1] + (p1[1] - p0[1]) * i / n),
+                 (p0[0] + (p1[0] - p0[0]) * (i + 1) / n, p0[1] + (p1[1] - p0[1]) * (i + 1) / n)) for i in range(n)]
+    out = []
+    for it in items:
+        if it[0] == "line":
+            out.extend(("line", a, b, it[3]) for a, b in cut(it[1], it[2]))
+        elif it[0] == "poly":
+            pts = list(it[1])
+            segs = list(zip(pts, pts[1:])) + ([(pts[-1], pts[0])] if it[2] else [])
+            if it[2] and it[3] == "cut":   # 닫힌 절단 도형(채움)은 꼭짓점만 더해 다각형으로 둔다
+                dense = [a for p0, p1 in segs for a, _ in cut(p0, p1)]
+                out.append(("poly", tuple(dense), True, it[3]))
+            else:
+                out.extend(("line", a, b, it[3]) for p0, p1 in segs for a, b in cut(p0, p1))
+        else:
+            out.append(it)
+    return tuple(out)
+
+
+def hosted_items(sol, items):
+    """호스팅 패밀리 평면 기호를 벽 형상에 맞춘다: 곡선 벽이면 u 방향 선분을 조각 길이로 나눈다. 직선 벽이면 그대로."""
+    if len(sol) != 13:
+        return items
+    return _arc_items(items, AG.length(sol[12]) / AG.facet_n(sol[12]))
+
+
+def _arc_vedges(sol, pt, front):
+    """곡선 벽(W2 ARC-04)의 입면·단면 모서리(뷰 좌표 3D 선분): 양 끝 수직 모서리·끝면 두께선, 두 면의 밑·윗면 호(조각 선분),
+    면이 보는 쪽으로 돌아서는 곳(윤곽, 이웃 조각의 앞뒤가 바뀌는 조각 경계)의 수직선, 개구부 문설주·인방·문턱(호)·두께선.
+    front(u, vv) = 조각 가운데 u 에서 면 vv 가 관찰자를 향하는가."""
+    h, start, end, zb, zt, ops, bands = sol[4], sol[5], sol[6], sol[7], sol[8], sol[9], sol[10]
+    ai = sol[12]
+    raw = []
+    for u in (start, end):
+        for vv in (-h, h):
+            raw.append((pt(u, vv, zb), pt(u, vv, zt)))
+        for z in (zb, zt):
+            raw.append((pt(u, -h, z), pt(u, h, z)))
+    us = AG.breaks(ai, start, end)
+    for vv in (-h, h):
+        for z in (zb, zt):
+            for a, b in zip(us, us[1:]):
+                raw.append((pt(a, vv, z), pt(b, vv, z)))
+    for z0, z1, ivs in bands:   # 윤곽 수직선: 띠 안에서 이어진 두 조각의 앞뒤가 바뀌는 경계
+        for (a0, a1), (b0, b1) in zip(ivs, ivs[1:]):
+            if abs(a1 - b0) > 1e-9:
+                continue
+            for vv in (-h, h):
+                if front((a0 + a1) / 2.0, vv) != front((b0 + b1) / 2.0, vv):
+                    raw.append((pt(a1, vv, z0), pt(a1, vv, z1)))
+    for u0, u1, z0, z1 in ops:
+        zs = (z1,) + ((z0,) if z0 > zb + EPS else ())
+        ou = AG.breaks(ai, u0, u1)
+        for vv in (-h, h):
+            for u in (u0, u1):
+                raw.append((pt(u, vv, z0), pt(u, vv, z1)))        # 문설주
+            for z in zs:
+                for a, b in zip(ou, ou[1:]):
+                    raw.append((pt(a, vv, z), pt(b, vv, z)))      # 인방·문턱(호)
+        for u in (u0, u1):
+            for z in zs:
+                raw.append((pt(u, -h, z), pt(u, h, z)))           # 개구부 안쪽 면(두께 방향)
+    return raw
 
 
 # ================================================================ 기하 도우미
@@ -626,9 +729,9 @@ def plan_pieces(g, v, w):
             cut = [_quad_v(sol, q[0], q[1], q[2], q[3]) for q in g.q(_cut_at, w, cutz)]
     elif is_rcp(cfg):   # 반사 천장 평면: 바닥이 절단면 위 보이는 깊이 안에 있는 벽만 윤곽(아래에서 올려다본 밑면)
         if cutz + EPS < zb <= cutz + depth:
-            proj = [_quad(sol, sol[5], sol[6])]
+            proj = _span_quads(sol, sol[5], sol[6])
     elif zt < cutz - EPS and zt >= cutz - depth:
-        proj = [_quad(sol, sol[5], sol[6])]
+        proj = _span_quads(sol, sol[5], sol[6])
     return (tuple(cut), tuple(proj))
 
 
@@ -2645,9 +2748,16 @@ def plan_fire_lines(g, v, w):
     dash, gap = FIRE_DASH * cfg[4], FIRE_GAP * cfg[4]
     out = []
     t = start
+    ai = g.q(Q.wall_arc, w) if "arc" in Q.el(g, w)["params"] else None
     while t < end - SEG_MIN:
         t1 = min(t + dash, end)
-        out.append(("symbol", x + c * t, y + s * t, x + c * t1, y + s * t1))
+        if ai is not None:   # 곡선 벽(W2 ARC-04): 마디를 호 위 점들로(조각 경계에서 꺾는다)
+            us = AG.breaks(ai, t, t1)
+            for a, b in zip(us, us[1:]):
+                pa, pb = AG.point(ai, a), AG.point(ai, b)
+                out.append(("symbol", pa[0], pa[1], pb[0], pb[1]))
+        else:
+            out.append(("symbol", x + c * t, y + s * t, x + c * t1, y + s * t1))
         t = t1 + gap
     return tuple(out)
 
@@ -2664,12 +2774,18 @@ def plan_fire_labels(g, v, w):
     if fr is not None:
         start, end, _st = g.q(Q.wall_trim, w)
         m = (start + end) / 2.0
-        out.append((round(x + c * m - s * half, 3), round(y + s * m + c * half, 3), "FW " + fr, LABEL_FIRE_H, "middle"))
+        if "arc" in Q.el(g, w)["params"]:   # 곡선 벽(W2 ARC-04): 호 가운데 점의 왼쪽
+            px, py = g.q(Q.axis_pt, w, m, half)
+            out.append((round(px, 3), round(py, 3), "FW " + fr, LABEL_FIRE_H, "middle"))
+        else:
+            out.append((round(x + c * m - s * half, 3), round(y + s * m + c * half, 3), "FW " + fr, LABEL_FIRE_H, "middle"))
     for d in (() if is_rcp(cfg) else g.q(Q.wall_hosted, w)):   # 반사 천장 평면(W1 1-C 3차)에는 문이 없다
         row = Q.el(g, d)
         fd = fire_rating(g, d, "Pset_DoorCommon") if row is not None and row["kind"] == "door" else None
         if fd is not None:
             wx, wy, _z = g.q(Q.door_world, d)
+            if "arc" in Q.el(g, w)["params"]:   # 곡선 벽: 문 자리의 접선 기준 오른쪽
+                c, s = g.q(Q.axis_dir, w, Q.el(g, d)["params"]["offset"])
             out.append((round(wx + s * half, 3), round(wy - c * half, 3), "FD " + fd, LABEL_FIRE_H, "middle"))
     return tuple(out)
 
@@ -2764,6 +2880,7 @@ def _door_symbol(sol, op):
     """문 한 개의 평면 기호: 열린 문짝 선 + 1/4 원 호. +v 쪽으로 열리고 경첩은 개구부의 시작 쪽이다.
     호는 유리식 매개화로 sin/cos 없이 그린다: 각 = 2*atan(t) (t 0..1 -> 0..90도)."""
     u0, u1 = op[0], op[1]
+    sol = _tangent_sol(sol, (u0 + u1) / 2.0)   # 곡선 벽(W2 ARC-04): 문짝·호는 개구부 가운데 접선 틀에 곧게 그린다
     h = sol[4]
     width = u1 - u0
     hinge = (u0, h)
@@ -2799,7 +2916,7 @@ def plan_wall_lines(g, v, w):
                 lines += _door_symbol(sol, op)
         for f in g.q(hosted_fam, w):                              # 창·패밀리 문: 패밀리가 평가한 평면 기호(창은 벽 두께를 가로지르는 평행선)
             if f[2] <= cfg[2] + EPS and cfg[2] <= f[3] + EPS:
-                lines += _plan_items(f[6], lambda u, vv, _o=f[4]: _world(sol, _o + u, vv))
+                lines += _plan_items(hosted_items(sol, f[6]), lambda u, vv, _o=f[4]: _world(sol, _o + u, vv))
     return tuple(lines)
 
 
@@ -2867,12 +2984,19 @@ def plan_detail_lines(g, v, w):
         for a, b in ivs:
             for off in offs:
                 p0 = _world(sol, a, off)
+                ln = b - a
+                if len(sol) == 13:   # 곡선 벽(W2 ARC-04): 조각마다 그 면 위의 현
+                    p1 = _world(sol, b, off)
+                    ln = sqrt((p1[0] - p0[0]) ** 2 + (p1[1] - p0[1]) ** 2)
+                    if ln < SEG_MIN:
+                        continue
+                    ux, uy = (p1[0] - p0[0]) / ln, (p1[1] - p0[1]) / ln
                 cuts = []
                 for q in others:
-                    iv = _inside_interval(p0, ux, uy, b - a, q)
+                    iv = _inside_interval(p0, ux, uy, ln, q)
                     if iv is not None:
                         cuts.append(iv)
-                for q0, q1 in _keep(p0, ux, uy, b - a, cuts):
+                for q0, q1 in _keep(p0, ux, uy, ln, cuts):
                     out.append(("hatch", q0[0], q0[1], q1[0], q1[1]))
     leaf_of = g.q(_door_leaf_map, w)
     for op in g.q(wall_door_openings, w):
@@ -2880,9 +3004,10 @@ def plan_detail_lines(g, v, w):
             u0, u1 = op[0], op[1]
             width = u1 - u0
             leaf = leaf_of.get(op, LEAF_T)   # 문 속성(leaf)이 있으면 그 값, 없으면 규약값
+            ts = _tangent_sol(sol, (u0 + u1) / 2.0)   # 곡선 벽(W2 ARC-04): 문 기호와 같은 접선 틀
             for pa, pb in (((u0 + leaf, h), (u0 + leaf, h + width)), ((u0, h + width), (u0 + leaf, h + width))):   # 문짝 두께(경첩 쪽 문짝 옆선과 끝 마구리)
-                out.append(("symbol", *_world(sol, *pa), *_world(sol, *pb)))
-            out.append(("hatch", *_world(sol, u0, 0.0), *_world(sol, u1, 0.0)))    # 문턱선(개구부를 가로지르는 가는 선)
+                out.append(("symbol", *_world(ts, *pa), *_world(ts, *pb)))
+            out.append(("hatch", *_world(ts, u0, 0.0), *_world(ts, u1, 0.0)))    # 문턱선(개구부를 가로지르는 가는 선)
     return tuple(out)
 
 
@@ -3231,6 +3356,19 @@ def vedges(g, v, w):
         s_, w_ = _sw(cfg, _world(sol, u, vv))
         return (s_, w_, z)
 
+    if len(sol) == 13:   # 곡선 벽(W2 ARC-04): 조각 경계·윤곽 수직선
+        def front(u, vv):
+            out_v = vv + (1.0 if vv > 0 else -1.0)
+            return pt(u, out_v, zb)[1] < pt(u, vv, zb)[1]
+        raw = _arc_vedges(sol, pt, front)
+        out = []
+        for e0, e1 in raw:
+            if abs(e1[0] - e0[0]) < EPS and abs(e1[2] - e0[2]) < EPS:
+                continue
+            c = _clip_edge(e0, e1, near, far)
+            if c is not None:
+                out.append(c)
+        return tuple(out)
     raw = []
     corners = [(start, -h), (end, -h), (end, h), (start, h)]
     if sol[11] is not None:                                        # 상단 윤곽(21단계): 기울어진 윗변
@@ -5194,15 +5332,32 @@ def view_lines_hier(g, v):
     return _crop_if(g, v, merge_lines(segs))
 
 
+def _strip_polys(quads):
+    """곡선 벽 조각 사다리꼴(반시계: 오른쪽 면 a, b, 왼쪽 면 b, a) 중 이어진 것(앞 조각의 끝 변 = 다음 조각의 시작 변)을 한 다각형으로 잇는다."""
+    out, run = [], []
+    for q in quads:
+        if run and not (run[-1][1] == q[0] and run[-1][2] == q[3]):
+            out.append(tuple([run[0][0]] + [x[1] for x in run] + [x[2] for x in reversed(run)] + [run[0][3]]))
+            run = []
+        run.append(q)
+    if run:
+        out.append(tuple([run[0][0]] + [x[1] for x in run] + [x[2] for x in reversed(run)] + [run[0][3]]))
+    return out
+
+
 def view_fills(g, v):
     """절단 단면의 채움 다각형(평면: 벽 절단 사각형, 단면: 절단 사각형). 입면은 없음."""
     cfg = g.q(view_cfg, v)
     if cfg is None or cfg[0] == "site":
         return ()
     out = []
+    arcs = Q.arc_walls(g)
     for w in g.q(scope_walls, v):
         if cfg[0] == "plan":
-            out.extend(g.q(plan_pieces, v, w)[0])
+            if arcs and w in arcs:   # 곡선 벽(W2 ARC-04): 이어진 조각 사다리꼴을 한 다각형으로(조각 사이 채움 이음매가 없게)
+                out.extend(_strip_polys(g.q(plan_pieces, v, w)[0]))
+            else:
+                out.extend(g.q(plan_pieces, v, w)[0])
         else:
             out.extend(g.q(vcut_rects, v, w))
     for e in g.q(scope_fams, v):

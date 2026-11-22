@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from math import sqrt
 
+from dobim_core import arcgeom as AG
 from dobim_core.family import spec as FS
 from dobim_core import solids as SO
 from dobim_core import wallcut as WC
@@ -69,6 +70,11 @@ def tied_walls(g):
     return g.input(("tied_walls",))
 
 
+def arc_walls(g):
+    """곡선(원호) 벽 id 집합(W2 ARC-04). 비어 있으면 조인·도면 계산은 직선 벽 경로 그대로다(기존 모델의 값이 바이트까지 같다)."""
+    return g.input(("arc_walls",))
+
+
 def psets(g, eid):
     return g.input(("pset", eid))
 
@@ -89,6 +95,46 @@ def wall_frame(g, w):
     return (x1, y1, dx / length, dy / length, length)
 
 
+def wall_arc(g, w):
+    """곡선(원호) 벽 축의 계산값 arcgeom.info (cx, cy, r, a0, sg, sw). 직선 벽은 None.
+    wall_frame 은 곡선 벽에서도 시작점·현 방향·현 길이 틀(IFC 배치·직선 전용 경로의 폴백)이고, 축 위 거리 u 는 호를 따라 잰다."""
+    p = el(g, w)["params"]
+    return AG.info(p["axis"], p["arc"]) if "arc" in p else None
+
+
+def axis_u(g, w, p):
+    """세계 점 p 를 벽 축 지역 u 로(직선 벽: 축선 투영, 곡선 벽: 호 위 거리)."""
+    ai = g.q(wall_arc, w)
+    if ai is not None:
+        return AG.u_of(ai, p)
+    x, y, c, s, _ = g.q(wall_frame, w)
+    return (p[0] - x) * c + (p[1] - y) * s
+
+
+def axis_len(g, w):
+    """벽 축 길이(곡선 벽은 호 길이)."""
+    ai = g.q(wall_arc, w)
+    return AG.length(ai) if ai is not None else g.q(wall_frame, w)[4]
+
+
+def axis_dir(g, w, u):
+    """축 지역 u 에서의 단위 진행 방향."""
+    ai = g.q(wall_arc, w)
+    if ai is not None:
+        return AG.tangent(ai, u)
+    _, _, c, s, _ = g.q(wall_frame, w)
+    return (c, s)
+
+
+def axis_pt(g, w, u, v=0.0):
+    """벽 지역 (u, v) -> 세계 (x, y)."""
+    ai = g.q(wall_arc, w)
+    if ai is not None:
+        return AG.point(ai, u, v)
+    x, y, c, s, _ = g.q(wall_frame, w)
+    return (x + u * c - v * s, y + u * s + v * c)
+
+
 def wall_level(g, w):
     return rel_out(g, "on_level", w)[0]
 
@@ -98,8 +144,34 @@ def wall_joins(g, w):
     return tuple(sorted(rel_out(g, "joins", w) + rel_in(g, "joins", w)))
 
 
+def _ends(g, w):
+    p = el(g, w)["params"]["axis"]
+    return ((p[0], p[1]), (p[2], p[3]))
+
+
+def _arc_join_point(g, a, b):
+    """곡선 벽이 낀 조인의 교점(W2 ARC-04): 호의 원과 상대 축(직선 또는 원)의 교점 중 두 벽의 끝에 가장 가까운 것. 만나지 않으면 None."""
+    aa, ab = g.q(wall_arc, a), g.q(wall_arc, b)
+    if aa is not None and ab is not None:
+        cand = AG.circle_hits(aa, ab)
+    else:
+        arc, line = (aa, b) if aa is not None else (ab, a)
+        x, y, c, s, _ = g.q(wall_frame, line)
+        cand = AG.line_hits(arc, x, y, c, s)
+    if not cand:
+        return None
+
+    def cost(p):
+        return sum(min((p[0] - e[0]) ** 2 + (p[1] - e[1]) ** 2 for e in _ends(g, w)) for w in (a, b))
+    return min(cand, key=cost)
+
+
 def join_point(g, a, b):
-    """두 벽 축선의 교점. 벽 축선에서 계산하므로 벽끼리 순환하지 않는다 (ADR-0006)."""
+    """두 벽 축선의 교점. 벽 축선에서 계산하므로 벽끼리 순환하지 않는다 (ADR-0006).
+    곡선 벽(W2 ARC-04)이 끼면 원과 축의 교점(_arc_join_point). 곡선 벽이 없는 모델은 아래 직선 교점 그대로다."""
+    arcs = arc_walls(g)
+    if arcs and (a in arcs or b in arcs):
+        return _arc_join_point(g, a, b)
     x1, y1, cx1, sy1, _ = g.q(wall_frame, a)
     x2, y2, cx2, sy2, _ = g.q(wall_frame, b)
     det = cx1 * sy2 - sy1 * cx2
@@ -125,14 +197,19 @@ def _tee_of(g, w):
 
 
 def _is_stem_at(g, o, p):
-    """상대 벽 o 가 점 p 에서 T 조인 줄기인가."""
+    """상대 벽 o 가 점 p 에서 T 조인 줄기인가. 곡선 벽은 줄기가 될 수 없다(kinds.ARC_EXCLUSIVE: tee 키가 없다)."""
     tee = _tee_of(g, o)
     return bool(tee) and tee_end_at(g.q(wall_frame, o), tee, p) is not None
 
 
+
 def wall_trim(g, w):
     """(시작, 끝, 상태): 벽 지역 x 좌표. 원점은 축선 시작점이다.
-    T 조인(W1 1-F 3차): 조인 지점이 상대 벽의 줄기 끝(tee)이면 이 벽은 몸통이라 자르지 않는다."""
+    T 조인(W1 1-F 3차): 조인 지점이 상대 벽의 줄기 끝(tee)이면 이 벽은 몸통이라 자르지 않는다.
+    곡선 벽(W2 ARC-04)은 u 를 호를 따라 잰다(_arc_trim). 곡선 벽이 없는 모델은 아래 코드 그대로다."""
+    arcs = arc_walls(g)
+    if arcs and w in arcs:
+        return _arc_trim(g, w)
     x, y, c, s, length = g.q(wall_frame, w)
     start, end = 0.0, length
     for other in g.q(wall_joins, w):
@@ -152,11 +229,85 @@ def wall_trim(g, w):
     return (start, end, "ok")
 
 
+def _arc_trim(g, w):
+    """곡선 벽의 wall_trim: 조인 교점의 u 를 호 위 거리로 잰다(규칙은 직선 벽과 같다)."""
+    length = g.q(axis_len, w)
+    start, end = 0.0, length
+    for other in g.q(wall_joins, w):
+        p = g.q(join_point, min(w, other), max(w, other))
+        if p is None or _is_stem_at(g, other, p):
+            continue
+        t = g.q(axis_u, w, p)
+        if abs(t) <= abs(t - length):
+            if abs(t) <= JOIN_MAX_EXT:
+                start = t
+        elif abs(t - length) <= JOIN_MAX_EXT:
+            end = t
+    if end - start < MIN_TRIMMED:
+        return (0.0, length, "degenerate_join")
+    return (start, end, "ok")
+
+
+def _arc_extent(g, w):
+    """곡선 벽이 낀 wall_extent(W2 ARC-04): 직선 벽 규칙과 같되 u·방향을 axis_u·axis_dir 로 잰다(조인 지점의 접선 방향으로 사인을 잰다).
+    곡선 벽은 T 조인 줄기가 될 수 없고, 곡선 벽 몸통에 닿는 직선 줄기는 몸통 반 두께/|sin| 만큼 물러난다(조인 지점 접선 기준 근사)."""
+    start, end, status = g.q(wall_trim, w)
+    if not CORNER_EXTEND or status != "ok":
+        return (start, end)
+    length = g.q(axis_len, w)
+    tee = _tee_of(g, w)
+    if tee:   # 직선 줄기가 곡선 몸통에 닿는다
+        x, y, c, s, flen = g.q(wall_frame, w)
+        for o in g.q(wall_joins, w):
+            pt = g.q(join_point, min(w, o), max(w, o))
+            if pt is None or _is_stem_at(g, o, pt):
+                continue
+            side = tee_end_at((x, y, c, s, flen), tee, pt)
+            oc, os_ = g.q(axis_dir, o, g.q(axis_u, o, pt))
+            sin = c * os_ - s * oc
+            if side is None or abs(sin) < MIN_SIN:
+                continue
+            ext = el(g, o)["params"]["thickness"] / 2.0 / abs(sin)
+            if side == "start" and end - (start + ext) >= MIN_TRIMMED:
+                start += ext
+            elif side == "end" and (end - ext) - start >= MIN_TRIMMED:
+                end -= ext
+    for o in g.q(wall_joins, w):
+        if not w < o:
+            continue
+        pt = g.q(join_point, w, o)
+        if pt is None:
+            continue
+        if tee and tee_end_at(g.q(wall_frame, w), tee, pt) or _is_stem_at(g, o, pt):
+            continue
+        t = g.q(axis_u, w, pt)
+        to = g.q(axis_u, o, pt)
+        olen = g.q(axis_len, o)
+        if min(abs(to), abs(to - olen)) > JOIN_MAX_EXT:
+            continue                                      # 상대 벽의 중간에 닿는 T 조인: 연장 없음
+        c, s = g.q(axis_dir, w, t)
+        oc, os_ = g.q(axis_dir, o, to)
+        sin = c * os_ - s * oc
+        if abs(sin) < MIN_SIN:
+            continue
+        ext = el(g, o)["params"]["thickness"] / 2.0 / abs(sin)
+        if abs(t) <= abs(t - length):
+            if abs(t) <= JOIN_MAX_EXT:
+                start = min(start, t - ext)
+        elif abs(t - length) <= JOIN_MAX_EXT:
+            end = max(end, t + ext)
+    return (start, end)
+
+
 def wall_extent(g, w):
     """벽 형상의 지역 x 범위(시작, 끝). 조인 자르기(wall_trim)가 축선 교점에서 자르면 L 조인 바깥 모서리에 반 두께 노치가 남는다.
     그래서 id 가 작은 벽이 상대 벽 반 두께(/|sin|)만큼 더 나가 모서리를 닫는다. T 조인(상대 벽 중간에 닿음)·얕은 각·퇴화한 조인은 연장하지 않는다.
     IFC 투영의 벽 윤곽(wall_footprint)과 도면(drawing.wall_range)이 모두 이 값을 쓴다: 도면과 IFC 가 같은 형상이다.
-    wall_trim(논리 길이: 치수 참조·일람표 길이·문 범위)은 그대로 축선 교점이다."""
+    wall_trim(논리 길이: 치수 참조·일람표 길이·문 범위)은 그대로 축선 교점이다.
+    곡선 벽(W2 ARC-04)이 이 벽이거나 조인 상대면 _arc_extent(곡선 벽이 없는 모델은 아래 코드 그대로다)."""
+    arcs = arc_walls(g)
+    if arcs and (w in arcs or any(o in arcs for o in g.q(wall_joins, w))):
+        return _arc_extent(g, w)
     start, end, status = g.q(wall_trim, w)
     if not CORNER_EXTEND or status != "ok":
         return (start, end)
@@ -359,10 +510,14 @@ def door_host(g, d):
 def door_world(g, d):
     """문 원점의 세계 좌표. 호스트 축선 기준이므로 벽을 따라간다."""
     w = g.q(door_host, d)
-    x, y, c, s, _ = g.q(wall_frame, w)
     p = el(g, d)["params"]
     _, elev = g.q(level_info, g.q(wall_level, w))
     off = p["offset"]
+    ai = g.q(wall_arc, w)
+    if ai is not None:   # 곡선 벽(W2 ARC-04): 호 위 거리 offset 의 점
+        x, y = AG.point(ai, off)
+        return (x, y, elev + p["sill"])
+    x, y, c, s, _ = g.q(wall_frame, w)
     return (x + off * c, y + off * s, elev + p["sill"])
 
 
@@ -523,6 +678,28 @@ def intent_of(g, e):
     return out
 
 
+def wall_arc_local(g, w):
+    """곡선 벽 축을 IFC 배치 틀(원점 = 축 시작점, x = 현 방향) 안의 값으로: (중심 x, y, 반지름, 시작각, 방향, 중심각). 벽을 옮기거나 돌려도 같다."""
+    cx, cy, r, a0, sg, sw = g.q(wall_arc, w)
+    x, y, c, s, _ = g.q(wall_frame, w)
+    dx, dy = cx - x, cy - y
+    return (dx * c + dy * s, -dx * s + dy * c, r, a0 - AG.atan2(s, c), sg, sw)
+
+
+def host_at(g, w, u, half_w):
+    """곡선 벽(W2 ARC-04)에 호스팅된 요소의 IFC 배치: 벽 배치 틀 안의 축 위 점·접선 (x, y, 접선 x, 접선 y)과 개구부 상자가 벽 두께를 다 뚫는
+    반 깊이(호가 접선에서 휘어 나가는 만큼 더한다). 직선 벽이면 None(명세는 이전과 같다)."""
+    ai = g.q(wall_arc, w)
+    if ai is None:
+        return None
+    lcx, lcy, r, la0, sg, _ = g.q(wall_arc_local, w)
+    sn, cs = AG.sincos(la0 + sg * u / r)
+    half = el(g, w)["params"]["thickness"] / 2.0
+    ri = r - half
+    sag = ri - sqrt(ri * ri - half_w * half_w) if half_w < ri else ri
+    return (lcx + r * cs, lcy + r * sn, -sg * sn, sg * cs, half + sag + 10.0)
+
+
 def ifc_spec(g, e):
     """요소 하나를 IFC 로 투영할 내용. 저작 요소의 형상·배치는 이 값에서만 나온다 (ADR-0005).
 
@@ -545,7 +722,12 @@ def ifc_spec(g, e):
         if h:
             wp = el(g, h)["params"]
             host = {"host_thickness": wp["thickness"], "host_height": wp["height"]}
-        return {**FS.finst_spec(el(g, tid)["params"], p, tid, h, g.q(finst_level, e), host, tolerant=True), "intent": intent}
+        spec = {**FS.finst_spec(el(g, tid)["params"], p, tid, h, g.q(finst_level, e), host, tolerant=True), "intent": intent}
+        if h and "arc" in el(g, h)["params"]:   # 곡선 벽 호스트(W2 ARC-04): 축 위 점·접선에 놓는다. 직선 호스트면 명세는 이전과 같다
+            cut = spec.get("cut")
+            half_w = max(abs(cut["x"][0]), abs(cut["x"][1])) if cut else 0.0
+            spec["at"] = g.q(host_at, h, p["offset"], half_w)
+        return spec
     if kind == "wall":
         x, y, c, s, _ = g.q(wall_frame, e)
         spec = {"kind": kind, "name": p["name"], "level": g.q(wall_level, e), "origin": (x, y), "xdir": (c, s),
@@ -568,6 +750,9 @@ def ifc_spec(g, e):
         if "cuts" in p:   # 벽 잘라내기(23단계): 몸체에서 뺄 상자(형상 범위로 자른 값). 없으면 명세는 이전과 같다
             spec["cuts"] = g.q(wall_cut_boxes, e)
             spec["cut_range"] = (spec["footprint"][0][0], spec["footprint"][1][0], p["thickness"] / 2.0, WT.base(p), WT.top_rel(p))
+        if "arc" in p:   # 곡선 벽(W2 ARC-04): 배치 틀(시작점, 현 방향) 안의 호 (중심 x, y, 반지름, 시작각, 방향, 중심각). footprint 의 u 는 호 위 거리다
+            spec["arc"] = g.q(wall_arc_local, e)
+            spec["thickness"] = p["thickness"]
         return spec
     if kind == "solid":
         # 배치는 레벨 좌표계(원점·무회전)이고 형상 z 는 레벨 기준이므로 레벨 높이는 읽지 않는다. 형상은 solids.solid_mesh 가 정한다(도면과 같은 값)
@@ -624,8 +809,11 @@ def ifc_spec(g, e):
         return spec
     w = g.q(door_host, e)
     t = el(g, w)["params"]["thickness"]
-    return {"kind": kind, "name": p["name"], "host": w, "level": g.q(wall_level, w), "offset": p["offset"],
+    spec = {"kind": kind, "name": p["name"], "host": w, "level": g.q(wall_level, w), "offset": p["offset"],
             "sill": p["sill"], "width": p["width"], "height": p["height"], "wall_thickness": t, "intent": intent}
+    if "arc" in el(g, w)["params"]:   # 곡선 벽 호스트(W2 ARC-04): 축 위 점·접선에 놓는다. 직선 호스트면 명세는 이전과 같다
+        spec["at"] = g.q(host_at, w, p["offset"], p["width"] / 2.0)
+    return spec
 
 
 def derived_bundle(g, eids):
