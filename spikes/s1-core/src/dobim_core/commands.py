@@ -5083,6 +5083,7 @@ def _export_preview(ctx, a: IfcExport):
          args=IfcExport, preview=_export_preview, examples=[{"path": "export-example.ifc"}, {"path": "export-example-2x3.ifc", "schema": "IFC2X3"},
                                                      {"path": "export-example-seumteo.ifc", "seumteo_areas": {"use_code": "A00000"}}])   # A00000: 형식만 맞춘 자리표시 값
 def ifc_export(ctx, a: IfcExport):
+    from dobim_core import globalid as GI
     p = _target(ctx, a.path)
     ctx.eng.flush_ifc()   # 투영한 요소 수는 프로세스 상태(캐시 유무)에 따라 달라 결과에 넣지 않는다(패리티 C)
     seu = None
@@ -5107,14 +5108,17 @@ def ifc_export(ctx, a: IfcExport):
             raise DobimError("CONSTRAINT", f"IFC2x3 로 바꾸지 못했다({type(ex).__name__}: {str(ex)[:200]})", path="/schema")
         if seu is not None:
             SI.fix_2x3(f2)
+        remapped = GI.encode(f2)
         writer = f2.write
         out_f = f2
     elif seu is not None:
+        remapped = GI.encode(src)
         writer = src.write
         out_f = src
     else:
-        writer = ctx.eng.ifc.write
-        out_f = None
+        out_f, remapped = GI.encoded_copy(src)   # 무효한 GlobalId 가 없으면 정본 투영을 그대로 쓴다(출력 바이트 이전과 같다)
+        writer = ctx.eng.ifc.write if not remapped else out_f.write
+        out_f = out_f if remapped else None
     if seu is not None:   # 내보낼 파일을 저장소 krules 세움터 검사(면적 객체 4종)로 다시 본다
         try:
             seu["self_check"] = SI.self_check(out_f)
@@ -5127,6 +5131,9 @@ def ifc_export(ctx, a: IfcExport):
         _drop_snapshot(p, snap, ctx.eng.workspace)   # 쓰지 못했으면 방금 만든 스냅숏은 필요 없다(재시도마다 쌓이지 않게)
         raise
     out = {"path": p.name, "bytes": p.stat().st_size, "rev": ctx.eng.rev, "snapshot": snap}
+    if remapped:   # 무효한 GlobalId 가 없으면 응답은 이전과 같다(있으면 경고 한 줄만 더한다: 응답 키는 그대로)
+        ctx.warn(f"첫 글자가 0~3 이 아닌 id {remapped}개는 IFC GlobalId 로 무효라 파일에서는 유효한 값으로 바꿔 썼다. 원래 id 는 IfcProject 의 "
+                 f"{GI.IDMAP_PSET} 에 있고 ifc.import 가 되돌린다. 새 요소 id 는 첫 글자를 0~3 으로 쓰세요")
     if losses is not None:   # IFC4 응답은 이전과 같다
         out["schema"] = "IFC2X3"
         out["losses"] = losses[:40]
@@ -5151,6 +5158,7 @@ class IfcImport(A):
 def ifc_import(env, a: IfcImport):
     """새 프로젝트를 만든다(project.new 와 같다: 기존 프로젝트에 합치지 않는다). DoBIM_Intent 가 있고 투영이 들어온 형상과 같은 요소는
     authored, 의도가 있지만 형상이 다르면 detached(동결, 경고), 의도가 없거나 해석할 수 없으면 foreign. 원본 바이트는 SQLite 에 보존한다."""
+    from dobim_core import globalid as GI
     from dobim_core.engine import Engine
     from dobim_core.foreign import plan_import
     src = resolve_in_workspace(env.workspace, a.source, must_exist=True)
@@ -5174,6 +5182,8 @@ def ifc_import(env, a: IfcImport):
         if f0.schema == "IFC2X3":
             f4, conv_warn = X2.to_ifc4(f0)
             data, converted = f4.to_string().encode("utf-8"), conv_warn
+    n_bytes = len(data)
+    data = GI.prepare_import(data)   # DoBIM_IdMap 이 있으면 GlobalId 를 원래 id 로, 옛 'SweptSolid' 난간 표현은 'AdvancedSweptSolid' 로(그 밖에는 그대로)
     plan = plan_import(data)
     if converted is not None:
         plan.warnings[:0] = ["IFC2x3 파일을 IFC4 로 올려 가져왔다(외래 기반은 올린 IFC4)"] + converted
@@ -5181,7 +5191,7 @@ def ifc_import(env, a: IfcImport):
     try:
         counts = plan.counts()
         shown = [{"id": d["id"], "reasons": d["reasons"][:4]} for d in plan.detached[:20]]
-        return {"path": dst.name, "rev": eng.rev, "project_uuid": eng.project_guid_uuid, "schema": "IFC2X3" if converted is not None else plan.schema, "bytes": len(data),
+        return {"path": dst.name, "rev": eng.rev, "project_uuid": eng.project_guid_uuid, "schema": "IFC2X3" if converted is not None else plan.schema, "bytes": n_bytes,
                 "elements": counts, "skeleton": plan.skeleton, "detached": shown, "detached_total": len(plan.detached),
                 "warnings": [w[:240] for w in plan.warnings[:20]], "warnings_total": len(plan.warnings)}
     finally:

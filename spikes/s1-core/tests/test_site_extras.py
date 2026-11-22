@@ -3,9 +3,9 @@
 배치도의 영역 해치·면적·주차면·동선, 입면의 간판 사각형, 대지 단면의 지반선·GL·대지 경계, 증분 == 전체, IFC 왕복(해시 3종), 입력이 없으면 기존 도면 불변."""
 import sys
 
-import ifcopenshell
 
 from conftest import ROOT
+from dobim_core import globalid as GI   # 내보낸 IFC 를 원래 요소 id 로 연다(W2: 첫 글자가 무효한 id 는 파일에서 바뀐다)
 from dobim_core import drawing as D
 from dobim_core import fixture as F
 from dobim_core import kinds as K
@@ -265,7 +265,7 @@ def test_선택_속성과_대지_단면은_IFC로_왕복한다(tmp_path):
         h = b.hashes()
         before = b.run("element.get", {"id": F.SI1})["result"]["params"]
         b.export("s.ifc")
-        f = ifcopenshell.open(str(tmp_path / "s.ifc"))
+        f = GI.open_exported(str(tmp_path / "s.ifc"))
         assert f.by_guid(F.SI1).Name == "대지"
         r = b.import_ifc("s.ifc", "imp.dobim")
         assert r["ok"], r

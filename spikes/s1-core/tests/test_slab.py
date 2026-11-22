@@ -2,9 +2,9 @@
 """슬래브 종류(slab): 커맨드·검사, IFC 투영·가져오기 왕복, 모델 해시, 도면(평면 절단·단면 절단 사각형·입면 모서리), 증분 == 전체 재생성, 결정성."""
 import sys
 
-import ifcopenshell
 
 from conftest import ROOT
+from dobim_core import globalid as GI   # 내보낸 IFC 를 원래 요소 id 로 연다(W2: 첫 글자가 무효한 id 는 파일에서 바뀐다)
 from dobim_core import drawing as D
 from dobim_core import fixture as F
 
@@ -114,7 +114,7 @@ def test_IFC_투영은_IfcSlab_압출_두께와_레벨_소속을_갖는다(base,
     out = tmp_path / "s.ifc"
     base.eng.flush_ifc()
     base.eng.ifc.write(str(out))
-    f = ifcopenshell.open(str(out))
+    f = GI.open_exported(str(out))
     sl = f.by_guid(F.S1)
     assert sl.is_a("IfcSlab") and sl.PredefinedType == "FLOOR"
     solid = sl.Representation.Representations[0].Items[0]
@@ -153,7 +153,7 @@ def test_외부에서_슬래브_형상을_바꾸면_분리되고_도면은_그�
         S.build_authored(b)
         assert b.run("slab.create", {"id": F.S1, "level": F.LV2, "boundary": RECT})["ok"]
         b.export("s.ifc")
-        f = ifcopenshell.open(str(tmp_path / "s.ifc"))
+        f = GI.open_exported(str(tmp_path / "s.ifc"))
         f.by_guid(F.S1).Representation.Representations[0].Items[0].Depth = 999.0
         f.write(str(tmp_path / "t.ifc"))
         assert b.import_ifc("t.ifc", "imp.dobim")["ok"]

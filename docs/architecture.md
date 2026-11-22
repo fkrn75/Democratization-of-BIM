@@ -425,7 +425,7 @@ dobim list [--group model.wall] [--format json]
 dobim schema wall.move
 dobim run wall.move -p 프로젝트.dobim --json @args.json [--dry-run]
 dobim run wall.move -p 프로젝트.dobim id=<GlobalId> dx=600
-dobim script build.jsonl -p 프로젝트.dobim [--atomic]
+dobim script build.jsonl -p 프로젝트.dobim [--per-item]
 dobim job get <id>
 dobim mcp serve --workspace <dir>
 dobim install-agent --client claude|codex|all
@@ -452,7 +452,7 @@ ifcedit의 `list`·`docs`·`run` 구조와 같은 형태다. 350개 이상의 AP
 | 7 | 작업 시간 초과·취소 |
 | 70 | 내부 오류 |
 
-배치는 JSONL 스크립트로 한다. `--atomic`이면 전체가 하나의 트랜잭션이다.
+배치는 JSONL 스크립트로 한다. 기본은 전체가 하나의 트랜잭션이다(하나라도 실패하면 전부 되돌리고, 오류 경로 `/commands/<번호>`가 실패한 줄을 가리킨다). 원자적 스크립트에는 변경 커맨드만 넣을 수 있다. `--per-item`이면 예전처럼 항목마다 따로 커밋하고 첫 실패에서 멈춘다(앞 항목은 남는다, 조회·세션 커맨드를 섞을 수 있다). `--atomic`은 예전 스크립트 호환용으로 받는다(기본과 같다).
 
 ### 15.4 MCP 노출
 
@@ -515,7 +515,7 @@ ifcedit의 `list`·`docs`·`run` 구조와 같은 형태다. 350개 이상의 AP
 |---|---|
 | 안정적 식별자 | IFC GlobalId. 파생 엔티티는 결정적 ID. 이름 조회는 `element.query`. 면·모서리는 의미 참조(6절) |
 | dry-run | 모든 mutation에 `dry_run`. 세이브포인트에서 실행하고 T0 재생성까지 한 뒤 차이를 반환하고 되돌린다 |
-| 트랜잭션 | 원자적 배치가 기본(`dobim_execute`의 `commands[]`, `dobim script --atomic`). 호출을 넘는 트랜잭션 핸들은 두지 않는다. 잠금을 오래 쥐는 실패가 잦기 때문이다 |
+| 트랜잭션 | 원자적 배치가 기본(`dobim_execute`의 `commands[]`, `dobim script`). 호출을 넘는 트랜잭션 핸들은 두지 않는다. 잠금을 오래 쥐는 실패가 잦기 때문이다 |
 | 낙관적 동시성 | `expected_rev` 인자. 어긋나면 `REV_CONFLICT` |
 | 페이지네이션 | 불투명 커서, 기본 `limit=100`, `fields`로 필드 선택, 먼저 `count`와 요약. 응답 8,000토큰 이내 목표. 큰 결과는 파일 + 요약 |
 | 장시간 작업 | 응답 30초 이내. 넘으면 `job` 핸들 반환. `job.get`으로 진행률, 산출물, 오류 조회. MCP Tasks 확장과 progress 알림에 의존하지 않음 |

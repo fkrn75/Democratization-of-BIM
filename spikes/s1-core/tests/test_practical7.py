@@ -10,6 +10,7 @@ import pytest
 
 import kit  # noqa: F401
 from conftest import ROOT
+from dobim_core import globalid as GI   # 내보낸 IFC 를 원래 요소 id 로 연다(W2: 첫 글자가 무효한 id 는 파일에서 바뀐다)
 from dobim_core import drawing as D
 from dobim_core import fixture as F
 from dobim_core import solids as SO
@@ -175,7 +176,7 @@ def test_칸별_열림_방식은_IFC_창_패널에_칸마다_나가고_왕복한
         bad = b.run("family.place", {"family": "window.framed", "type_values": {"operation": "casement_in", "mullions": 1}, "host": F.W2, "offset": 3000})
         assert not bad["ok"] and bad["error"]["code"] == "FAMILY_INVALID"           # 여닫이 창의 멀리언은 여전히 거절
         h = b.hashes()
-        f = ifcopenshell.open(str(b.export("t.ifc")))
+        f = GI.open_exported(str(b.export("t.ifc")))
         t, pn = _panels(f, i1)
         assert t.PartitioningType == "TRIPLE_PANEL_VERTICAL"
         assert pn == [("FIXEDCASEMENT", "LEFT"), ("TOPHUNG", "MIDDLE"), ("FIXEDCASEMENT", "RIGHT")]
@@ -278,7 +279,7 @@ def test_쌓인_벽_개구부는_IFC_에_나가고_왕복한다(tmp_path):
         i = gid("b", 51)
         assert b.run("family.place", {**WIN, "id": i, "host": lo, "offset": 3000, "also_cuts": [hi]})["ok"]
         h = b.hashes()
-        f = ifcopenshell.open(str(b.export("t.ifc")))
+        f = GI.open_exported(str(b.export("t.ifc")))
         voids = [r.RelatedOpeningElement for r in f.by_type("IfcRelVoidsElement") if r.RelatingBuildingElement.GlobalId == hi]
         assert len(voids) == 1 and not voids[0].HasFillings                          # 채움 관계는 호스트 개구부 하나뿐
         r = b.import_ifc("t.ifc", "imp.dobim")
@@ -287,7 +288,7 @@ def test_쌓인_벽_개구부는_IFC_에_나가고_왕복한다(tmp_path):
         hi_ = b.hashes("imp.dobim")
         assert {k: v for k, v in hi_.items() if k != "rev"} == {k: v for k, v in h.items() if k != "rev"}
         assert params(b, i, "imp.dobim")["also_cuts"] == [hi]
-        f2 = ifcopenshell.open(str(b.export("t2.ifc", project="imp.dobim")))
+        f2 = GI.open_exported(str(b.export("t2.ifc", project="imp.dobim")))
         assert len(f2.by_type("IfcOpeningElement")) == len(f.by_type("IfcOpeningElement"))
     finally:
         b.close()
@@ -343,7 +344,7 @@ def test_위생기구_종류는_PredefinedType_으로_나가고_바꾸면_따라
             ids[cat] = gid("f", 70 + k)
             r = b.run("solid.create", {**BOX, "id": ids[cat], "name": cat, "category": cat})
             assert r["ok"], r
-        f = ifcopenshell.open(str(b.export("t.ifc")))
+        f = GI.open_exported(str(b.export("t.ifc")))
         for cat, pre in SAN.items():
             assert f.by_guid(ids[cat]).PredefinedType == pre
         # 같은 클래스 안에서 범주를 바꾸면 형식도 따라간다(종류 미지정으로 되돌리면 비운다)
@@ -351,7 +352,7 @@ def test_위생기구_종류는_PredefinedType_으로_나가고_바꾸면_따라
         assert b.run("solid.set", {"id": ids["bath"], "category": "sanitary_terminal"})["ok"]
         assert b.run("solid.set", {"id": ids["sanitary_terminal"], "category": "shower"})["ok"]
         h = b.hashes()
-        f = ifcopenshell.open(str(b.export("t2.ifc")))
+        f = GI.open_exported(str(b.export("t2.ifc")))
         assert f.by_guid(ids["toilet"]).PredefinedType == "WASHHANDBASIN"
         assert f.by_guid(ids["bath"]).PredefinedType is None
         assert f.by_guid(ids["sanitary_terminal"]).PredefinedType == "SHOWER"

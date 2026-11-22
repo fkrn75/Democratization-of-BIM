@@ -9,6 +9,7 @@ import pytest
 
 import kit  # noqa: F401
 from dobim_core import fixture as F
+from dobim_core import globalid as GI
 from dobim_core import ifc2x3 as X
 
 
@@ -78,7 +79,7 @@ def test_IFC2x3_내보내기는_스키마_검증을_통과하고_요소_수가_�
 
 def test_IFC4_에_없는_클래스는_대체하고_원래_분류를_ObjectType_에_남긴다(rich):
     r = export(rich, {"path": "m2.ifc", "schema": "IFC2X3"})["result"]
-    f2 = ifcopenshell.open(str(rich.path.parent / "m2.ifc"))
+    f2 = GI.open_exported(rich.path.parent / "m2.ifc")   # 첫 글자가 무효한 id 는 파일에서 바뀐다(W2): 원래 id 로 되돌려 연다
     by = {e.GlobalId: e for e in f2.by_type("IfcProduct")}
     assert by[gid("f", 11)].is_a() == "IfcFlowTerminal" and by[gid("f", 11)].ObjectType == "IfcSanitaryTerminal.TOILETPAN"
     assert by[gid("f", 12)].is_a() == "IfcFlowTerminal" and "IfcAirTerminal" in by[gid("f", 12)].ObjectType

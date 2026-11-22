@@ -166,7 +166,8 @@ def to_ifc2x3(src: ifcopenshell.file, version: str = "0", stamp: int = 0) -> tup
                 e.OperationType = pt if ok else "NOTDEFINED"
             if e.ParameterTakesPrecedence is None:
                 e.ParameterTakesPrecedence = False
-    # IFC2x3 의 IfcShapeRepresentationTypes 규칙: IfcSweptDiskSolid 는 'SweptSolid' 가 아니라 'AdvancedSweptSolid' 다(IFC4 는 SweptSolid 허용)
+    # IfcShapeRepresentationTypes 규칙: IfcSweptDiskSolid 는 'SweptSolid' 가 아니라 'AdvancedSweptSolid' 다(IFC4 도 같다. 투영은 W2 부터
+    # 처음부터 AdvancedSweptSolid 로 쓰고, 여기서는 그 전에 내보낸 파일을 가져온 사본 등에 남은 'SweptSolid' 를 고친다)
     for r in out.by_type("IfcShapeRepresentation"):
         if r.RepresentationType == "SweptSolid" and any(i.is_a("IfcSweptDiskSolid") for i in r.Items):
             r.RepresentationType = "AdvancedSweptSolid"

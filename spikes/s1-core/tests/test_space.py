@@ -2,9 +2,9 @@
 """공간 종류(space): 커맨드·검사, 복도 판정, IFC 투영(집합 관계)·가져오기 왕복, 평면 문자(실명·면적), 내보내기 문자 층, 증분 == 전체 재생성."""
 import sys
 
-import ifcopenshell
 
 from conftest import ROOT
+from dobim_core import globalid as GI   # 내보낸 IFC 를 원래 요소 id 로 연다(W2: 첫 글자가 무효한 id 는 파일에서 바뀐다)
 from dobim_core import drawing as D
 from dobim_core import drawing_export as DX
 from dobim_core import fixture as F
@@ -86,7 +86,7 @@ def test_IFC_투영은_IfcSpace_압출과_층_집합_관계를_갖는다(base, t
     out = tmp_path / "s.ifc"
     base.eng.flush_ifc()
     base.eng.ifc.write(str(out))
-    f = ifcopenshell.open(str(out))
+    f = GI.open_exported(str(out))
     sp = f.by_guid(F.SP1)
     assert sp.is_a("IfcSpace") and sp.PredefinedType == "INTERNAL" and sp.Name == "사무실" and sp.ObjectType == "복도"
     solid = sp.Representation.Representations[0].Items[0]
@@ -122,7 +122,7 @@ def test_외부에서_공간_형상을_바꾸면_분리된다(tmp_path):
         S.build_authored(b)
         assert b.run("space.create", {"id": F.SP1, "level": F.LV1, "boundary": RECT})["ok"]
         b.export("s.ifc")
-        f = ifcopenshell.open(str(tmp_path / "s.ifc"))
+        f = GI.open_exported(str(tmp_path / "s.ifc"))
         f.by_guid(F.SP1).Representation.Representations[0].Items[0].Depth = 999.0
         f.write(str(tmp_path / "t.ifc"))
         assert b.import_ifc("t.ifc", "imp.dobim")["ok"]

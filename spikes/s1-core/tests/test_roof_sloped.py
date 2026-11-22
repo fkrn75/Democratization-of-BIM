@@ -3,11 +3,11 @@
 도면(지붕 평면 용마루·물매 화살표, 단면 절단 띠, 입면 윤곽·가림), 파라펫(평면 절단 고리·단면 띠·입면 윤곽), 증분 == 전체 재생성."""
 import sys
 
-import ifcopenshell
 import pytest
 
 import kit
 from conftest import ROOT
+from dobim_core import globalid as GI   # 내보낸 IFC 를 원래 요소 id 로 연다(W2: 첫 글자가 무효한 id 는 파일에서 바뀐다)
 from dobim_core import drawing as D
 from dobim_core import fixture as F
 from dobim_core import kinds as K
@@ -148,7 +148,7 @@ def test_IFC는_지붕을_IfcRoof와_경사면_IfcSlab_ROOF로_내보낸다(base
     base.eng.flush_ifc()
     out = tmp_path / "r.ifc"
     base.eng.ifc.write(str(out))
-    f = ifcopenshell.open(str(out))
+    f = GI.open_exported(str(out))
     r = f.by_guid(F.RF1)
     assert r.is_a("IfcRoof") and r.PredefinedType == "HIP_ROOF" and r.Representation is None
     kids = [k for rel in r.IsDecomposedBy for k in rel.RelatedObjects]
@@ -164,7 +164,7 @@ def test_형식을_바꾸면_경사면_부속이_늘고_줄어든다(base, tmp_p
     def faces():
         base.eng.flush_ifc()
         base.eng.ifc.write(str(out))
-        f = ifcopenshell.open(str(out))
+        f = GI.open_exported(str(out))
         return sorted(k.Name for rel in f.by_guid(F.RF1).IsDecomposedBy for k in rel.RelatedObjects), f.by_guid(F.RF1).PredefinedType
     nm = base.run("element.get", {"id": F.RF1})["result"]["params"]["name"]
     assert faces() == ([f"{nm}-face1", f"{nm}-face2"], "GABLE_ROOF")
@@ -175,8 +175,8 @@ def test_형식을_바꾸면_경사면_부속이_늘고_줄어든다(base, tmp_p
     assert base.run("roof.delete", {"id": F.RF1})["ok"]
     base.eng.flush_ifc()
     base.eng.ifc.write(str(out))
-    assert not ifcopenshell.open(str(out)).by_type("IfcRoof")   # 지붕을 지우면 부속(경사면 슬래브)도 함께 간다
-    assert not [e for e in ifcopenshell.open(str(out)).by_type("IfcSlab") if e.PredefinedType == "ROOF"]
+    assert not GI.open_exported(str(out)).by_type("IfcRoof")   # 지붕을 지우면 부속(경사면 슬래브)도 함께 간다
+    assert not [e for e in GI.open_exported(str(out)).by_type("IfcSlab") if e.PredefinedType == "ROOF"]
 
 
 def test_지붕을_내보내고_가져오면_저작으로_되살아나고_해시_3종이_같다(tmp_path):
@@ -207,7 +207,7 @@ def test_지붕_경사면을_외부에서_바꾸면_분리된다(tmp_path):
         S.build_authored(b)
         assert b.run("roof.create", {**GABLE})["ok"]
         b.export("r.ifc")
-        f = ifcopenshell.open(str(tmp_path / "r.ifc"))
+        f = GI.open_exported(str(tmp_path / "r.ifc"))
         f.by_guid(F.RF1).PredefinedType = "HIP_ROOF"
         f.write(str(tmp_path / "t.ifc"))
         assert b.import_ifc("t.ifc", "imp.dobim")["ok"]
@@ -384,7 +384,7 @@ def test_파라펫을_내보내고_가져오면_되살아나고_해시_3종이_�
         assert b.run("slab.create", {**ROOFSLAB, "parapet": {"height": 900, "thickness": 200}, "openings": [[[500, 500], [1500, 500], [1500, 1500], [500, 1500]]]})["ok"]
         h = b.hashes()
         b.export("r.ifc")
-        f = ifcopenshell.open(str(tmp_path / "r.ifc"))
+        f = GI.open_exported(str(tmp_path / "r.ifc"))
         kids = [k for rel in f.by_guid(F.S1).IsDecomposedBy for k in rel.RelatedObjects]
         assert len(kids) == 1 and kids[0].is_a("IfcWall") and kids[0].PredefinedType == "PARAPET"
         r = b.import_ifc("r.ifc", "imp.dobim")

@@ -148,6 +148,34 @@ def _clip_issue(i: dict) -> dict:
     return {k: (limits.clip_chars(v, 300) if isinstance(v, str) else v) for k, v in i.items()}
 
 
+_GATE_CACHE: dict[str, list] = {}   # 레시피 다이제스트 -> family.validate(static) 의 오류 목록(같은 레시피를 거듭 올릴 때 표본 평가를 다시 하지 않는다)
+_GATE_CACHE_MAX = 256
+
+
+def _static_errors(data: dict) -> list:
+    """family.validate(level=static) 와 같은 판정의 오류 목록(Issue 사전). 구조·식·참조·표본(기본값·min/max·열거값·호스트 두께)의 값·형상."""
+    from dobim_core.family.validate import validate_recipe
+    key = FE.digest(data)
+    hit = _GATE_CACHE.get(key)
+    if hit is None:
+        hit = validate_recipe(data, "static")["errors"]
+        if len(_GATE_CACHE) >= _GATE_CACHE_MAX:
+            _GATE_CACHE.pop(next(iter(_GATE_CACHE)))
+        _GATE_CACHE[key] = hit
+    return hit
+
+
+def _gate_recipe(data: dict) -> None:
+    """프로젝트에 새 레시피를 올리기 전에 family.validate(static) 와 같은 판정을 한다(W2 실사용 결함 5).
+    예전에는 register 가 기본·지정 타입 값 하나만 평가해, 허용 범위의 극값에서 제약·형상이 깨지는 레시피도 올라갔다."""
+    errs = _static_errors(data)
+    if errs:
+        first = errs[0]
+        raise DobimError("FAMILY_INVALID", f"레시피 검증 실패: {first['message']}", path=first.get("path") or None, hint=first.get("hint"),
+                         details={"total": len(errs), "issues": [_clip_issue(i) for i in errs[:5]],
+                                  "check": "family.validate(level=static) 와 같은 판정이다: family.validate 로 전체 오류를 보세요"})
+
+
 # ---------------------------------------------------------------- 공통: 타입 만들기
 def _recipe_of(ctx, family_id: str) -> dict:
     """프로젝트에 올라온 타입에서, 없으면 기본 라이브러리에서 레시피를 찾는다."""
@@ -407,6 +435,8 @@ def family_register(ctx, a: FamilyRegister):
         r, plan = FE.load_recipe(data)
     except FamilyError as ex:
         raise _fam_error(ex) from None
+    if a.family is None:   # 사용자 레시피(path·recipe)는 family.validate(static) 와 같은 판정을 거친다. 기본 라이브러리는 시험이 지킨다
+        _gate_recipe(data)
     tvals = _expand_type(r, a)
     try:
         tv, _ = FE.resolve_values(r, tvals, None)
@@ -461,6 +491,10 @@ def _read_dir_recipes(folder, rejected: list) -> dict:
         try:
             data = load_json_text(p.read_text(encoding="utf-8"))
             r, _ = FE.load_recipe(data)
+            errs = _static_errors(data)   # family.validate(static) 와 같은 판정(W2 실사용 결함 5)
+            if errs:
+                _reject(rejected, p.name, "invalid", f"{errs[0]['message']}" + (f" ({errs[0]['path']})" if errs[0].get("path") else ""))
+                continue
         except UnicodeDecodeError:
             _reject(rejected, p.name, "invalid", "UTF-8 이 아니다")
             continue

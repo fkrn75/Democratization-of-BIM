@@ -2,9 +2,9 @@
 """계단 종류(stair): 커맨드·검사, IFC 투영·가져오기 왕복, 도면(평면 기호·절단선, 단면 절단 채움, 입면 윤곽), 증분 == 전체 재생성, 결정성."""
 import sys
 
-import ifcopenshell
 
 from conftest import ROOT
+from dobim_core import globalid as GI   # 내보낸 IFC 를 원래 요소 id 로 연다(W2: 첫 글자가 무효한 id 는 파일에서 바뀐다)
 from dobim_core import drawing as D
 from dobim_core import fixture as F
 
@@ -78,7 +78,7 @@ def test_IFC_투영은_IfcStair_톱니_옆모습_압출을_갖는다(base, tmp_p
     out = tmp_path / "s.ifc"
     base.eng.flush_ifc()
     base.eng.ifc.write(str(out))
-    f = ifcopenshell.open(str(out))
+    f = GI.open_exported(str(out))
     st = f.by_guid(F.ST1)
     assert st.is_a("IfcStair") and st.PredefinedType == "STRAIGHT_RUN_STAIR"
     solid = st.Representation.Representations[0].Items[0]
@@ -119,7 +119,7 @@ def test_외부에서_계단_형상을_바꾸면_분리된다(tmp_path):
         S.build_authored(b)
         assert b.run("stair.create", {"id": F.ST1, "level": F.LV1, "run": RUN})["ok"]
         b.export("s.ifc")
-        f = ifcopenshell.open(str(tmp_path / "s.ifc"))
+        f = GI.open_exported(str(tmp_path / "s.ifc"))
         f.by_guid(F.ST1).Representation.Representations[0].Items[0].Depth = 999.0
         f.write(str(tmp_path / "t.ifc"))
         assert b.import_ifc("t.ifc", "imp.dobim")["ok"]

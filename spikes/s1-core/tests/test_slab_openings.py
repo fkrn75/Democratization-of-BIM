@@ -2,10 +2,10 @@
 """슬래브 구멍(openings): 검사, 면적 제외, IFC(IfcOpeningElement + IfcRelVoidsElement) 투영·왕복, 도면(평면 X 표시·단면 구간 제외), 증분 == 전체 재생성."""
 import sys
 
-import ifcopenshell
 import pytest
 
 from conftest import ROOT
+from dobim_core import globalid as GI   # 내보낸 IFC 를 원래 요소 id 로 연다(W2: 첫 글자가 무효한 id 는 파일에서 바뀐다)
 from dobim_core import drawing as D
 from dobim_core import fixture as F
 
@@ -87,7 +87,7 @@ def test_IFC_투영은_슬래브에_IfcOpeningElement를_IfcRelVoidsElement로_�
     base.eng.flush_ifc()
     out = tmp_path / "s.ifc"
     base.eng.ifc.write(str(out))
-    f = ifcopenshell.open(str(out))
+    f = GI.open_exported(str(out))
     sl = f.by_guid(F.S1)
     ops = sorted((r.RelatedOpeningElement for r in sl.HasOpenings), key=lambda o: o.Name)
     assert [o.is_a() for o in ops] == ["IfcOpeningElement"] * 2
@@ -98,11 +98,11 @@ def test_IFC_투영은_슬래브에_IfcOpeningElement를_IfcRelVoidsElement로_�
     assert base.run("slab.set", {"id": F.S1, "openings": [HOLE]})["ok"]
     base.eng.flush_ifc()
     base.eng.ifc.write(str(out))
-    assert len(ifcopenshell.open(str(out)).by_type("IfcOpeningElement")) == 1 + 0 + 0 + 2   # 문 둘의 개구부 + 구멍 하나(기준 프로젝트에는 문이 둘)
+    assert len(GI.open_exported(str(out)).by_type("IfcOpeningElement")) == 1 + 0 + 0 + 2   # 문 둘의 개구부 + 구멍 하나(기준 프로젝트에는 문이 둘)
     assert base.run("slab.set", {"id": F.S1, "clear_openings": True})["ok"]
     base.eng.flush_ifc()
     base.eng.ifc.write(str(out))
-    assert len(ifcopenshell.open(str(out)).by_type("IfcOpeningElement")) == 2
+    assert len(GI.open_exported(str(out)).by_type("IfcOpeningElement")) == 2
 
 
 def test_슬래브를_지우면_구멍_부속도_사라진다(base, tmp_path):
@@ -111,11 +111,11 @@ def test_슬래브를_지우면_구멍_부속도_사라진다(base, tmp_path):
     assert base.run("slab.delete", {"id": F.S1})["ok"]
     base.eng.flush_ifc()
     base.eng.ifc.write(str(tmp_path / "s.ifc"))
-    assert len(ifcopenshell.open(str(tmp_path / "s.ifc")).by_type("IfcOpeningElement")) == 2
+    assert len(GI.open_exported(str(tmp_path / "s.ifc")).by_type("IfcOpeningElement")) == 2
     assert base.run("history.undo", {})["ok"]
     base.eng.flush_ifc()
     base.eng.ifc.write(str(tmp_path / "s.ifc"))
-    assert len(ifcopenshell.open(str(tmp_path / "s.ifc")).by_type("IfcOpeningElement")) == 3
+    assert len(GI.open_exported(str(tmp_path / "s.ifc")).by_type("IfcOpeningElement")) == 3
 
 
 def test_구멍_있는_슬래브를_내보내고_가져오면_저작으로_되살아나고_해시_3종이_같다(tmp_path):
@@ -144,7 +144,7 @@ def test_외부에서_구멍_형상을_바꾸면_분리된다(tmp_path):
         S.build_authored(b)
         assert b.run("slab.create", {"id": F.S1, "level": F.LV1, "boundary": BOUND, "thickness": 200, "openings": [HOLE]})["ok"]
         b.export("s.ifc")
-        f = ifcopenshell.open(str(tmp_path / "s.ifc"))
+        f = GI.open_exported(str(tmp_path / "s.ifc"))
         op = f.by_guid(F.S1).HasOpenings[0].RelatedOpeningElement
         op.Representation.Representations[0].Items[0].Depth = 999.0
         f.write(str(tmp_path / "t.ifc"))

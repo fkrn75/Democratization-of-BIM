@@ -134,7 +134,7 @@ def test_7_CLI_script_150건은_상한_안이고_중간_실패는_종료코드�
     (tmp_path / "bad.jsonl").write_text("\n".join(bad), encoding="utf-8")
 
     def cli(name):
-        p = subprocess.run([sys.executable, "-m", "dobim_core", "--workspace", str(tmp_path), "script", "-p", "p.dobim", str(tmp_path / name)],
+        p = subprocess.run([sys.executable, "-m", "dobim_core", "--workspace", str(tmp_path), "script", "-p", "p.dobim", "--per-item", str(tmp_path / name)],
                            capture_output=True, env=ENV, stdin=subprocess.DEVNULL, cwd=tmp_path, timeout=300)
         return p.returncode, p.stdout, json.loads(p.stdout)
     rc, raw, out = cli("ok.jsonl")

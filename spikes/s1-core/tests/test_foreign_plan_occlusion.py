@@ -8,9 +8,9 @@
 import sys
 from pathlib import Path
 
-import ifcopenshell
 import pytest
 
+from dobim_core import globalid as GI   # 내보낸 IFC 를 원래 요소 id 로 연다(W2: 첫 글자가 무효한 id 는 파일에서 바뀐다)
 from dobim_core import dispatch
 from dobim_core import drawing as D
 from dobim_core import fixture as F
@@ -55,7 +55,7 @@ def _mixed(ws: Path, foreign_ids) -> dispatch.Env:
         _conf(s.run, name, args)
     _conf(s.run, "ifc.export", {"path": "src.ifc"})
     s.close()
-    f = ifcopenshell.open(str(ws / "src.ifc"))
+    f = GI.open_exported(str(ws / "src.ifc"))
     for el in f.by_type("IfcProduct"):
         if el.GlobalId in foreign_ids:
             for rel in list(el.IsDefinedBy or ()):

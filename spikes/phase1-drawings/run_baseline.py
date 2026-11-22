@@ -52,6 +52,7 @@ sys.path.insert(0, str(HERE.parent / "s1-core" / "tools"))
 
 import s3lib  # noqa: E402
 from dobim_core import drawing as D  # noqa: E402
+from dobim_core import globalid as GI  # noqa: E402
 
 
 def ok(r):
@@ -108,7 +109,7 @@ def cornerprobe(sess, log, work):
     sess.eng.sync()
     sess.eng._touch_pending()
     g = sess.eng.g
-    f = ifcopenshell.open(str(work / "corner.ifc"))
+    f = GI.open_exported(work / "corner.ifc")   # 첫 글자가 무효한 id 는 내보낸 파일에서 바뀌어 있다(W2): 원래 id 로 되돌려 찾는다
     st = ifcopenshell.geom.settings()
     st.set("use-world-coords", True)
     rows = []
@@ -305,7 +306,7 @@ def after8(sess, ids, views, log, out, work, spec, site=True):
         import ifcopenshell
         import ifcopenshell.geom
         ifc_out(sess, "site.ifc")
-        f = ifcopenshell.open(str(work / "site.ifc"))
+        f = GI.open_exported(work / "site.ifc")   # 첫 글자가 무효한 id 는 내보낸 파일에서 바뀌어 있다(W2): 원래 id 로 되돌려 찾는다
         st_ = f.by_guid(sid)
         pts = [tuple(p.Coordinates) for p in st_.Representation.Representations[0].Items[0].Elements[0].Points][:-1]
         gs = ifcopenshell.geom.settings()
@@ -441,7 +442,7 @@ def after9(sess, ids, views, log, out, work, spec):
     probe["ceiling_lines"] = [list(x) for sp in spaces for x in g.q(D.space_ceiling_lines, v_sec, sp)]
     # ---- 독립 검산: 내보낸 IFC 를 열어(엔진 코드와 독립) 층 구성 두께 합이 형상의 실제 두께와 같은지, 슬래브 층이 형상 두께와 같은지
     ifc_out(sess, "after9.ifc")
-    f = ifcopenshell.open(str(work / "after9.ifc"))
+    f = GI.open_exported(work / "after9.ifc")   # 첫 글자가 무효한 id 는 내보낸 파일에서 바뀌어 있다(W2): 원래 id 로 되돌려 찾는다
     gs = ifcopenshell.geom.settings()
     gs.set("use-world-coords", True)
     rows = []
@@ -509,7 +510,7 @@ def after11(sess, ids, views, log, out, work, spec):
         probe[nm] = {"view": v, "ev_labels": labels.count("EV"), "lines": len(g.q(D.view_lines, v))}
     ifc_out(sess, "after11.ifc")
     import ifcopenshell
-    f = ifcopenshell.open(str(work / "after11.ifc"))
+    f = GI.open_exported(work / "after11.ifc")   # 첫 글자가 무효한 id 는 내보낸 파일에서 바뀌어 있다(W2): 원래 id 로 되돌려 찾는다
     probe["ifc_check"] = {"transport": [(e.is_a(), e.PredefinedType) for e in f.by_type("IfcTransportElement")], "roof_slabs": [e.GlobalId for e in f.by_type("IfcSlab") if e.PredefinedType == "ROOF"]}
     h0 = ok(sess.run("model.hash", {}))
     imp = ok(dispatch.run(sess.env, "ifc.import", {"source": "after11.ifc", "path": "after11-imp.dobim"}))
@@ -572,7 +573,7 @@ def after12(sess, ids, views, log, out, work, spec):
                        "terrain_points": len(terrain)}
     # ---- 독립 검산 1: 내보낸 IFC 의 DoBIM_Intent 를 열어 영역 면적·주차 대수·간판 수를 다시 센다
     ifc_out(sess, "after12.ifc")
-    f = ifcopenshell.open(str(work / "after12.ifc"))
+    f = GI.open_exported(work / "after12.ifc")   # 첫 글자가 무효한 id 는 내보낸 파일에서 바뀌어 있다(W2): 원래 id 로 되돌려 찾는다
     import ifcopenshell.util.element as ue
     it = json.loads(ue.get_pset(f.by_guid(sid), "DoBIM_Intent")["Intent"])
     ip = it["params"]
@@ -692,7 +693,7 @@ def after13(sess, ids, views, log, out, work, spec):
     probe["section_aa_openings"] = crossing(2000.0, -1000.0, 9000.0)
     # ---- 독립 검산: 내보낸 IFC 의 의도에서 계단·승강기 값을 다시 읽는다
     ifc_out(sess, "after13.ifc")
-    f = ifcopenshell.open(str(work / "after13.ifc"))
+    f = GI.open_exported(work / "after13.ifc")   # 첫 글자가 무효한 id 는 내보낸 파일에서 바뀌어 있다(W2): 원래 id 로 되돌려 찾는다
     ist = json.loads(ue.get_pset(f.by_guid(sid), "DoBIM_Intent")["Intent"])["params"]
     iev = json.loads(ue.get_pset(f.by_guid(eid), "DoBIM_Intent")["Intent"])["params"]
     probe["ifc_intent"] = {"stair": {k: ist[k] for k in ("run", "width", "risers", "height")}, "elevator": {k: iev[k] for k in ("shaft", "cab", "base_offset", "rise")}}
@@ -808,7 +809,7 @@ def after14(sess, ids, views, log, out, work, spec):
     probe["z_sets"] = {k: sorted({round(z, 3) for ln in g.q(D.view_lines, ids14[k]) for z in (ln[2], ln[4])}) for k in ("section-EE", "elev-S-roof", "elev-E-roof")}
     # ---- 독립 검산: 내보낸 IFC 의 의도에서 지붕·파라펫·승강기를 다시 읽는다(math.tan, 엔진 코드 없음)
     ifc_out(sess, "after14.ifc")
-    f = ifcopenshell.open(str(work / "after14.ifc"))
+    f = GI.open_exported(work / "after14.ifc")   # 첫 글자가 무효한 id 는 내보낸 파일에서 바뀌어 있다(W2): 원래 id 로 되돌려 찾는다
     intent = lambda gid: json.loads(ue.get_pset(f.by_guid(gid), "DoBIM_Intent")["Intent"])["params"]   # noqa: E731
     lv2 = ok(sess.run("element.get", {"id": two}))["params"]["elevation"]
     exp = {}
@@ -993,7 +994,7 @@ def after15(sess, ids, views, log, out, work, spec):
                           "hole_center_covered": any(inside(list(t), c) for t in tris for c in cx)}
     # ---- 독립 검산: 내보낸 IFC 의 의도·몸체에서 다시 읽는다
     ifc_out(sess, "after15.ifc")
-    f = ifcopenshell.open(str(work / "after15.ifc"))
+    f = GI.open_exported(work / "after15.ifc")   # 첫 글자가 무효한 id 는 내보낸 파일에서 바뀌어 있다(W2): 원래 id 로 되돌려 찾는다
     intent = lambda gid: json.loads(ue.get_pset(f.by_guid(gid), "DoBIM_Intent")["Intent"])["params"]   # noqa: E731
     ip = intent(ids["RF-ANNEX"])
     t = math.tan(math.radians(ip["pitch"]))

@@ -252,7 +252,7 @@ def t_bom() -> dict:
     cmd = [str(C.PY), "-m", "dobim_core", "--workspace", str(ws), "run", "element.get", "-p", "p.dobim", "--json", "@" + str(a)]
     p = subprocess.run(cmd, capture_output=True, env={**os.environ, **C.server_env()}, stdin=subprocess.DEVNULL)
     ok1 = json.loads(p.stdout.decode("utf-8")).get("ok")
-    cmd = [str(C.PY), "-m", "dobim_core", "--workspace", str(ws), "script", str(s), "-p", "p.dobim"]
+    cmd = [str(C.PY), "-m", "dobim_core", "--workspace", str(ws), "script", str(s), "-p", "p.dobim", "--per-item"]   # 조회가 든 스크립트(기본은 원자적·변경만)
     p = subprocess.run(cmd, capture_output=True, env={**os.environ, **C.server_env()}, stdin=subprocess.DEVNULL)
     ok2 = json.loads(p.stdout.decode("utf-8")).get("ok")
     return {"cli_json_file_with_bom_ok": ok1, "cli_script_file_with_bom_ok": ok2}
