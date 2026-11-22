@@ -644,12 +644,37 @@ def schedule_sorted(g, kind):
     return tuple(rows)
 
 
+def finst_ifc_class(g, e):
+    """패밀리 인스턴스의 IFC 클래스(타입이 가진 레시피의 ifc.class)."""
+    rec = el(g, g.q(finst_type, e))["params"].get("recipe") or {}
+    return (rec.get("ifc") or {}).get("class")
+
+
+def bucket_finst_classes(g, b):
+    """버킷 하나의 패밀리 인스턴스를 IFC 클래스별로 센 값((클래스, 수), ...). 인스턴스 하나가 바뀌면 그 버킷만 다시 센다."""
+    n: dict = {}
+    for e in g.q(bucket_ids, "finst", b):
+        c = g.q(finst_ifc_class, e)
+        n[c] = n.get(c, 0) + 1
+    return tuple(sorted(n.items(), key=lambda kv: str(kv[0])))
+
+
 def model_stats(g):
     out = {k: g.q(count, k) for k in ("level", "wall", "door")}
     for k in ("slab", "stair", "space", "railing", "elevator", "roof", "site", "solid"):
         n = g.q(count, k)
         if n:   # 슬래브·계단·공간·난간·대지가 없는 프로젝트의 응답·해시는 그대로다
             out[k] = n
+    nf = g.q(count, "finst")
+    if nf:   # 패밀리로 놓은 문(IfcDoor 레시피)도 문으로 센다(W2 실사용 결함 4). 창은 window, 인스턴스 전체는 finst. 인스턴스가 없으면 그대로다
+        by: dict = {}
+        for b in range(NB):
+            for c, n in g.q(bucket_finst_classes, b):
+                by[c] = by.get(c, 0) + n
+        out["door"] += by.get("IfcDoor", 0)
+        if by.get("IfcWindow"):
+            out["window"] = by["IfcWindow"]
+        out["finst"] = nf
     return out
 
 

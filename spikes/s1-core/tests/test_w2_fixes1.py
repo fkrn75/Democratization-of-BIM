@@ -167,6 +167,35 @@ def test_3_기본_script에_조회를_섞으면_per_item을_안내한다(ws):
     assert code == 0 and out["ok"]
 
 
+# ---------------------------------------------------------------- 4. model.stats 와 패밀리 문
+def test_4_model_stats는_패밀리로_놓은_문도_센다(base):
+    n0 = ok(base.run("model.stats", {}))["counts"]["door"]
+    ok(base.run("family.place", {"family": "door.single", "host": F.W3, "offset": 1500}))
+    ok(base.run("family.place", {"family": "window.fixed", "host": F.W3, "offset": 3500}))
+    c = ok(base.run("model.stats", {}))["counts"]
+    assert c["door"] == n0 + 1 and c["window"] == 1 and c["finst"] == 2
+
+
+# ---------------------------------------------------------------- 5. family.validate == family.register
+def _bad_recipe():
+    r = copy.deepcopy(library.load("appliance.washer"))
+    r["id"] = "user.washer_wide_door"
+    r["params"]["door_r"]["max"] = 400   # 문 반지름 최대 400: 극값 표본에서 제약(door_r*2 < width - 60)이 깨진다
+    return r
+
+
+def test_5_validate가_실패하는_레시피는_register도_거절한다(base):
+    v = ok(base.run("family.validate", {"recipe": _bad_recipe(), "level": "static"}))
+    assert not v["ok"] and v["checks"]["values"] == "fail"
+    r = base.run("family.register", {"recipe": _bad_recipe()})
+    assert not r["ok"] and r["error"]["code"] == "FAMILY_INVALID", r
+    assert r["error"]["details"]["issues"][0]["code"] == v["errors"][0]["code"]
+    good = copy.deepcopy(_bad_recipe())
+    good["params"]["door_r"]["max"] = 240
+    assert ok(base.run("family.validate", {"recipe": good, "level": "static"}))["ok"]
+    assert ok(base.run("family.register", {"recipe": good}))["created"]
+
+
 # ---------------------------------------------------------------- 6. 재료 전파
 def test_6_꺾인_계단의_단_묶음과_참은_계단의_재료를_따른다(base):
     sid = "0" + F.ST1[1:]
