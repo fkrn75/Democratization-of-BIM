@@ -3357,9 +3357,10 @@ def vedges(g, v, w):
         return (s_, w_, z)
 
     if len(sol) == 13:   # 곡선 벽(W2 ARC-04): 조각 경계·윤곽 수직선
-        def front(u, vv):
-            out_v = vv + (1.0 if vv > 0 else -1.0)
-            return pt(u, out_v, zb)[1] < pt(u, vv, zb)[1]
+        def front(u, vv):   # 면 vv 의 바깥 법선(왼쪽 면은 진행 방향 왼쪽)이 관찰자 쪽(뷰 깊이 w 가 줄어드는 쪽)인가
+            tx, ty = AG.tangent(sol[12], u)
+            sgn = 1.0 if vv > 0 else -1.0
+            return (-ty * cfg[3] + tx * cfg[4]) * sgn < 0.0
         raw = _arc_vedges(sol, pt, front)
         out = []
         for e0, e1 in raw:
@@ -3519,6 +3520,7 @@ def _wall_occluders(g, v, w):
     return occ
 
 
+BYZ_MIN = 64   # 가림 후보가 이보다 많으면(곡선 벽 W2 ARC-04 의 조각 등) 수평 선분의 후보를 높이별로 미리 거른다(값과 무관, 속도만)
 CULL_PROBE = (2, 8, 32)   # 앞에서부터 이만큼 모았을 때마다 다 가려졌는지 본다(값과 무관, 속도만)
 CULL_TOL = 1.0e-3   # 가림 후보 거르기 여유(mm). 판정식의 부동소수 오차(1e-9 수준)보다 훨씬 커서 거른 조각은 실제로 아무 구간도 가리지 않는다
 
@@ -3626,11 +3628,18 @@ def vwall_lines(g, v, w):
             boxed += [b for b in _occ_boxed(solid) if b[2] < w_cut]
             boxed.sort(key=_W_KEY)   # 이미 정렬된 묶음을 이어 붙인 목록이라 정렬이 빠르다
         fo = g.q(_fview, v)   # 외래 요소가 저작 선을 가린다(IO-04 4차). 뷰에 외래 요소가 없으면 None 이라 값은 이전과 같다
+        by_z = {} if len(boxed) > BYZ_MIN else None
         for e0, e1 in edges:
             slanted = abs(e1[2] - e0[2]) > 1e-9 and (abs(e1[0] - e0[0]) > 1e-9 or abs(e1[1] - e0[1]) > 1e-9)   # 아치 윤곽의 현(18단계)
             if slanted and full is None:
                 full = [b[5] for b in wall_boxes] + occ     # 비스듬한 선은 전체 조각으로 판정한다(가려진 구간을 정렬하므로 순서와 무관)
-            for t0, t1 in _fvis(fo, e0, e1, _visible_slanted(e0, e1, full) if slanted else _visible_culled(e0, e1, boxed)):
+            bx = boxed
+            if by_z is not None and e0[2] == e1[2] and not (abs(e1[0] - e0[0]) < 1e-9 and abs(e1[1] - e0[1]) < 1e-9):
+                bx = by_z.get(e0[2])   # 수평 선분: _visible_culled 가 높이로 건너뛸 조각을 미리 뺀 목록(순서 그대로라 값이 같다)
+                if bx is None:
+                    ez = e0[2]
+                    bx = by_z[ez] = [b for b in boxed if b[3] + EPS < ez < b[4] - EPS]
+            for t0, t1 in _fvis(fo, e0, e1, _visible_slanted(e0, e1, full) if slanted else _visible_culled(e0, e1, bx)):
                 x0, z0 = e0[0] + t0 * (e1[0] - e0[0]), e0[2] + t0 * (e1[2] - e0[2])
                 x1, z1 = e0[0] + t1 * (e1[0] - e0[0]), e0[2] + t1 * (e1[2] - e0[2])
                 lines.append(("proj", x0, z0, x1, z1))

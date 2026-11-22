@@ -300,3 +300,15 @@ def test_IFC_는_복합_곡선_몸체와_원호_축이고_부피가_맞으며_�
         assert b.export("t2.ifc", "imp.dobim").read_bytes() == out.read_bytes()
     finally:
         b.close()
+
+
+def test_수평_선분_후보_미리_거르기는_값이_같다(ab, monkeypatch):
+    """가림 후보가 많을 때(BYZ_MIN 초과) 수평 선분의 후보를 높이로 미리 거르는 속도 경로가 거르지 않은 값과 같다."""
+    ok(ab.run("door.place", {"id": AD, "host": AW, "offset": 1500, "width": 900, "height": 2100}))
+    ok(ab.run("wall.arc", {"level": F.LV1, "points": [[-4000, 5000], [-5000, 2000], [-4000, -1000]]}))
+    got = {}
+    for lim in (0, 10 ** 9):
+        monkeypatch.setattr(D, "BYZ_MIN", lim)
+        full = s3lib.RefGraph(s3lib._Inputs(ab.eng))
+        got[lim] = [full.q(D.view_lines, v) for v in (VS, VE)]
+    assert got[0] == got[10 ** 9] and all(got[0])

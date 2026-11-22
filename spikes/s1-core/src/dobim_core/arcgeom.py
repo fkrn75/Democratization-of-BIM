@@ -23,16 +23,30 @@ ARC_INNER_MIN = 1.0                 # 안쪽 면 반지름(r - 두께/2)의 하�
 
 
 # ---------------------------------------------------------------- 결정적 삼각함수(사칙연산과 sqrt 만)
+_SC: dict = {}          # sincos 값 기억(같은 각은 늘 같은 값이라 결과와 무관, 속도만). 너무 커지면 비운다
+_SC_MAX = 200000
+
+
 def sincos(t: float) -> tuple:
-    """(sin t, cos t). t 를 [-π, π] 로 줄인 뒤 테일러 급수 고정 항수(annot._sincos 와 같은 알고리즘)."""
-    t -= round(t / TWO_PI) * TWO_PI
-    sn, cs, term_s, term_c, t2 = 0.0, 0.0, t, 1.0, t * t
-    for n in range(22):
-        sn += term_s
-        cs += term_c
-        term_s *= -t2 / ((2 * n + 2) * (2 * n + 3))
-        term_c *= -t2 / ((2 * n + 1) * (2 * n + 2))
-    return sn, cs
+    """(sin t, cos t). 90도 단위로 줄여 |x| <= π/4 에서 테일러 급수 고정 12항(사칙연산만, kinds.sincos_deg 와 같은 방식의 라디안판)."""
+    v = _SC.get(t)
+    if v is not None:
+        return v
+    k = round(t / (PI / 2.0))
+    x = t - k * (PI / 2.0)
+    x2 = x * x
+    sn = cs = 0.0
+    tn, tc = x, 1.0
+    for i in range(1, 13):
+        sn += tn
+        cs += tc
+        tn = -tn * x2 / ((2 * i) * (2 * i + 1))
+        tc = -tc * x2 / ((2 * i - 1) * (2 * i))
+    v = ((sn, cs), (cs, -sn), (-sn, -cs), (-cs, sn))[k % 4]
+    if len(_SC) >= _SC_MAX:
+        _SC.clear()
+    _SC[t] = v
+    return v
 
 
 def _atan_small(z: float) -> float:
