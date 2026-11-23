@@ -152,6 +152,17 @@ def roof(p: dict, xf: Xf) -> dict:
     if "slopes" in p and xf.mirror:   # 대칭이면 외곽을 뒤집는다: 뒤집은 외곽의 변 j = 원래 변 n-2-j
         n = len(p["slopes"])
         q["slopes"] = [p["slopes"][(n - 2 - j) % n] for j in range(n)]
+    if "axis" in p:   # 압출 지붕(W2 여덟 번째 PR): 축을 옮기고, 대칭이면 프로파일의 왼쪽·오른쪽이 바뀐다(s -> -s, 순서 뒤집기)
+        a0, a1 = xf.pt(p["axis"][0], p["axis"][1]), xf.pt(p["axis"][2], p["axis"][3])
+        q["axis"] = [a0[0], a0[1], a1[0], a1[1]]
+        if xf.mirror:
+            q["profile"] = [[-s, z] for s, z in reversed(p["profile"])]
+    if xf.mirror and ("overhangs" in p or "eaves" in p):   # 외곽선 지붕의 변마다 내밀기·처마 부속의 변 번호(W2 여덟 번째 PR)도 같은 변을 따라 옮긴다
+        n = len(p["boundary"])
+        if "overhangs" in p:
+            q["overhangs"] = [p["overhangs"][(n - 2 - j) % n] for j in range(n)]
+        if "eaves" in p:
+            q["eaves"] = {k: dict(d, edges=sorted((n - 2 - i) % n for i in d["edges"])) for k, d in p["eaves"].items()}
     return q
 
 

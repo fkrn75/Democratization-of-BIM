@@ -25,6 +25,7 @@ from dobim_core import foreign_symbols as FSYM
 from dobim_core import kinds as K
 from dobim_core import arcgeom as AG
 from dobim_core import queries as Q
+from dobim_core import roofeaves as RE
 from dobim_core import solids as SO
 from dobim_core import wallcut as WC
 from dobim_core import walltop as WT
@@ -2361,7 +2362,10 @@ def roof_info(g, r):
             "zlow": gm["zlow"] + lv, "ztop": gm["ztop"] + lv, "t": p["thickness"], "pitch": p["pitch"], "form": p["form"],
             # 다각형 외곽(W1 1-F 4차): 골, 면의 볼록 조각(가림·절단 띠는 볼록 조각으로 계산한다), 면마다 물매. 직사각형은 조각 = 면이라 값이 같다
             "valleys": tuple((up(a), up(b)) for a, b in gm["valleys"]), "fpitch": tuple(gm["fpitch"]),
-            "pieces": tuple((tuple(up(q) for q in fc), (a, b, c + lv)) for fc, (a, b, c) in gm["pieces"])}
+            "pieces": tuple((tuple(up(q) for q in fc), (a, b, c + lv)) for fc, (a, b, c) in gm["pieces"]),
+            # 처마 부속 조각(W2 여덟 번째 PR): (이름표, 종류, 평면 사각형, 바닥 z, 윗면 z) 절대 높이. 없으면 빈 튜플이라 도면은 이전과 같다
+            "eaves": tuple((lb, kd, quad, tuple(z + lv for z in zb), tuple(z + lv for z in zt)) for lb, kd, quad, zb, zt in K.roof_eave_pieces(p)),
+            "layers": tuple((x["material"], x["thickness"]) for x in p.get("layers", ()))}
 
 
 def all_roofs(g):
@@ -2407,7 +2411,7 @@ def roof_slices(g, r):
     out = []
     for i in range(ROOF_SLICES):
         z0, z1 = zl + (zt - zl) * i / ROOF_SLICES, zl + (zt - zl) * (i + 1) / ROOF_SLICES
-        if info["form"] == "poly":   # 다각형 외곽은 외곽이 오목할 수 있어 볼록 조각마다 자른다(조각 수만큼 기둥 조각)
+        if info["form"] in ("poly", "footprint", "extrusion"):   # 다각형 외곽(외곽선·압출 지붕 포함)은 볼록 조각마다 자른다(조각 수만큼 기둥 조각)
             for fc, (a, b, c) in info["pieces"]:
                 poly = _clip_half([(q[0], q[1]) for q in fc], a, b, c - z1)
                 if len(poly) >= 3 and abs(_area2(poly)) > 2 * EPS:
@@ -2502,6 +2506,9 @@ def roof_edges3(g, r):
         a, b = pm[i], pm[(i + 1) % len(pm)]
         add((a[0], a[1], a[2] - t), (b[0], b[1], b[2] - t))
         add((a[0], a[1], a[2] - t), a)
+    for pc in info["eaves"]:   # 처마 부속(W2 여덟 번째 PR): 조각 육면체의 모서리
+        for a, b in RE.piece_edges(pc):
+            add(a, b)
     return tuple(out)
 
 
@@ -2511,6 +2518,54 @@ def roof_cut_rects(g, v, r):
     info = g.q(roof_info, r)
     if info is None or cfg is None or cfg[0] == "plan" or not cfg[9]:
         return ()
+    out = list(_roof_face_cuts(cfg, info))
+    for pc in info["eaves"]:   # 처마 부속(W2 여덟 번째 PR): 절단면이 자른 조각 단면(볼록 다각형)
+        poly = _eave_cut(cfg, pc)
+        if poly is not None:
+            out.append(poly)
+    return tuple(out)
+
+
+def _eave_cut(cfg, pc):
+    """처마 부속 조각(볼록 육면체)을 절단면 w = near 로 자른 단면 ((s, z) 반시계) 또는 None."""
+    near = cfg[7]
+    pts = []
+    for a, b in RE.piece_edges(pc):
+        sa, sb = _sw(cfg, a), _sw(cfg, b)
+        if (sa[1] - near) * (sb[1] - near) > 0.0 or abs(sb[1] - sa[1]) < 1e-12:
+            continue
+        t = (near - sa[1]) / (sb[1] - sa[1])
+        pts.append((sa[0] + t * (sb[0] - sa[0]), a[2] + t * (b[2] - a[2])))
+    if len(pts) < 3:
+        return None
+    hull = _hull(pts)
+    if len(hull) < 3 or _area2(hull) <= 2 * EPS:
+        return None
+    return tuple(hull)
+
+
+def _hull(pts):
+    """점들의 볼록 껍질(반시계, 단조 사슬)."""
+    ps = sorted(set((round(x, 6), round(y, 6)) for x, y in pts))
+    if len(ps) < 3:
+        return ps
+
+    def cross(o, a, b):
+        return (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0])
+    lo, hi = [], []
+    for q in ps:
+        while len(lo) >= 2 and cross(lo[-2], lo[-1], q) <= 0:
+            lo.pop()
+        lo.append(q)
+    for q in reversed(ps):
+        while len(hi) >= 2 and cross(hi[-2], hi[-1], q) <= 0:
+            hi.pop()
+        hi.append(q)
+    return lo[:-1] + hi[:-1]
+
+
+def _roof_face_cuts(cfg, info):
+    """단면: 절단면이 경사면 볼록 조각을 자른 띠(수직 두께) 사각형들."""
     near = cfg[7]
     out = []
     for fc, _pl in info["pieces"]:   # 볼록 조각마다 띠 하나(직사각형 지붕은 면 그대로)
@@ -2528,6 +2583,22 @@ def roof_cut_rects(g, v, r):
         (sa, za), (sb, zb) = xs[0], xs[-1]
         if sb - sa > EPS:
             out.append(((sa, za - info["t"]), (sb, zb - info["t"]), (sb, zb), (sa, za)))
+    return out
+
+
+def roof_detail_lines(g, v, r):
+    """단면에서 층 구성(layers, W2 여덟 번째 PR)이 있는 지붕의 층 경계선: 경사면 절단 띠 안에서 윗면을 층 두께(수직)만큼 내린 선. 큰 축척의 단면만."""
+    cfg = g.q(view_cfg, v)
+    if cfg is None or cfg[0] != "sec" or cfg[10] > DETAIL_SCALE or not cfg[9]:
+        return ()
+    info = g.q(roof_info, r)
+    if info is None or not info["layers"]:
+        return ()
+    bounds = K.layer_bounds([{"material": m, "thickness": t} for m, t in info["layers"]])
+    out = []
+    for (sa, za_), (sb, zb_), (_s2, zb), (_s3, za) in _roof_face_cuts(cfg, info):
+        for c in bounds[1:-1]:
+            out.append(("hatch", sa, za - c, sb, zb - c))
     return tuple(out)
 
 
@@ -2544,6 +2615,11 @@ def roof_plan_parts(g, v, r):
         segs += [("proj", ring[i][0], ring[i][1], ring[(i + 1) % n][0], ring[(i + 1) % n][1]) for i in range(n)]
     for a, b in info["ridges"] + info["hips"] + info["valleys"]:   # 골(다각형 외곽의 오목 꼭짓점)도 같은 투영선
         segs.append(("proj", a[0], a[1], b[0], b[1]))
+    for pc in info["eaves"]:   # 처마 부속(W2 여덟 번째 PR): 위에서 본 조각 윤곽(처마 반자는 지붕에 가려 그리지 않는다)
+        if pc[1] == "soffit":
+            continue
+        q = pc[2]
+        segs += [("proj", q[i][0], q[i][1], q[(i + 1) % 4][0], q[(i + 1) % 4][1]) for i in range(4)]
     if info["ridges"]:
         a, b = info["ridges"][0]
         labels.append((round((a[0] + b[0]) / 2.0, 3), round((a[1] + b[1]) / 2.0 + 0.6 * sc, 3), "용마루", LABEL_SUB_H, "middle"))
@@ -3271,6 +3347,8 @@ def view_detail_lines(g, v):
             segs.extend(g.q(vwall_detail, v, w))
         for sl in g.q(scope_slabs, v):
             segs.extend(g.q(slab_detail_lines, v, sl))
+        for rf in g.q(scope_roofs, v):   # 지붕 층 구성(W2 여덟 번째 PR): 없으면 아무것도 더하지 않는다
+            segs.extend(g.q(roof_detail_lines, v, rf))
         for sp in g.q(all_spaces):
             segs.extend(g.q(space_ceiling_lines, v, sp))
     else:
@@ -5537,7 +5615,7 @@ def views_depending_on(g, input_keys, vids, include_not_fresh=True):
 
 # 뷰 하나에 딸린 질의 노드의 함수들 (첫 인자가 뷰 id). 뷰를 지우면 이 노드들을 그래프에서 치운다.
 VIEW_SCOPED = frozenset({view_cfg, scope_walls, view_omitted, plan_pieces, plan_bbox, plan_nbr_index, plan_nbrs, vnbr_index, plan_wall_lines, plan_detail_lines, view_detail_lines, vpieces, vbbox, vnbrs,
-                         vwall_detail, slab_detail_lines, space_ceiling_lines, vwin_detail, view_lines_hier,
+                         vwall_detail, slab_detail_lines, roof_detail_lines, space_ceiling_lines, vwin_detail, view_lines_hier,
                          vcut_rects, _vcut_top, vedges, vwall_lines, _bridges, _wall_occ_boxes, vnbrs_front, _other_occ_boxes, view_lines, view_fills,
                          scope_fams, plan_fam_parts, _fam_vpieces, vfam_bbox, vfam_cut_rects, vfam_edges, vfam_nbr_pieces, fam_lines,
                          scope_solids, _solid_vpieces, solid_lines, _occ_index, plan_wall_glazing,

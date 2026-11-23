@@ -192,7 +192,7 @@ def target_faces(kind: str, p: dict, face: str, dz: float) -> list:
 
     if kind == "roof":
         from dobim_core.kinds import roof_geom   # 늦게 읽는다(kinds 가 이 모듈을 쓴다)
-        q = {k: p[k] for k in ("boundary", "form", "pitch", "overhang", "base_offset", "ridge", "dir", "slopes") if k in p}
+        q = {k: p[k] for k in ("boundary", "form", "pitch", "overhang", "base_offset", "ridge", "dir", "slopes", "overhangs", "axis", "profile") if k in p}   # 외곽선·압출 지붕(W2 여덟 번째 PR)
         gm = roof_geom(q)
         sub = 0.0 if face == "top" else float(p["thickness"])
         for fc, (a, b, c) in zip(gm["faces"], gm["planes"]):

@@ -83,7 +83,7 @@ def psets(g, eid):
 def material(g, eid):
     """재료 이름표. 층 구성이 있는 벽·슬래브는 층 구성이 재료를 정한다(가장 두꺼운 층의 재료): 층 구성은 요소 파라미터(의도)라 이 값도 그 입력 하나에서 나온다."""
     row = g.input(("el", eid))
-    if row is not None and row["kind"] in ("wall", "slab") and "layers" in row["params"]:
+    if row is not None and row["kind"] in ("wall", "slab", "roof") and "layers" in row["params"]:   # 지붕 층 구성: W2 여덟 번째 PR
         return layers_label(row["params"]["layers"])
     return g.input(("mat", eid))
 
@@ -795,7 +795,7 @@ def model_stats(g):
         st = [g.q(curtain_stats, c) for c in g.q(curtain_ids)]
         out["mullion"] = sum(s[0] for s in st)
         out["curtain_panel"] = sum(s[1] for s in st)
-    for k in ("walltype", "stackwall"):   # 벽 유형·스택 벽(W2 일곱 번째 PR): 없으면 응답은 그대로다
+    for k in ("walltype", "stackwall", "rooftype"):   # 벽 유형·스택 벽(W2 일곱 번째 PR)·지붕 유형(W2 여덟 번째 PR): 없으면 응답은 그대로다
         n = g.q(count, k)
         if n:
             out[k] = n
@@ -946,6 +946,16 @@ def ifc_spec(g, e):
                 spec[k] = p[k]
         if "slopes" in p:   # 다각형 외곽 지붕(W1 1-F 4차): 없으면 명세는 이전과 같다
             spec["slopes"] = tuple(p["slopes"])
+        if "overhangs" in p:   # 외곽선 지붕의 변마다 내밀기(W2 여덟 번째 PR): 없으면 명세는 이전과 같다
+            spec["overhangs"] = tuple(p["overhangs"])
+        if "axis" in p:   # 압출 지붕(W2 여덟 번째 PR): 축·프로파일
+            spec["axis"] = tuple(p["axis"])
+            spec["profile"] = tuple(tuple(q) for q in p["profile"])
+        if "layers" in p:   # 지붕 층 구성(W2 여덟 번째 PR): 윗면부터 ((재료, 두께), ...). 없으면 명세는 이전과 같다
+            spec["layers"] = tuple((x["material"], x["thickness"]) for x in p["layers"])
+        if "eaves" in p:   # 처마 부속 조각(W2 여덟 번째 PR): (이름표, 종류, 평면 사각형, 바닥 z, 윗면 z). 없으면 명세는 이전과 같다
+            from dobim_core.kinds import roof_eave_pieces
+            spec["eaves"] = tuple(roof_eave_pieces(p))
         return spec
     if kind == "stackwall":   # 스택 벽(W2 일곱 번째 PR): 형상 없이 레벨 좌표계에 놓이고 부분 벽(구간 순서)을 집합한다
         return {"kind": kind, "name": p["name"], "level": g.q(stack_level, e), "parts": tuple(p["parts"]), "intent": intent}

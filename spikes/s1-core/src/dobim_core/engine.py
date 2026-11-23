@@ -262,14 +262,14 @@ class Ctx:
 
     def material(self, eid):
         row = self.eng.st.el.get(eid)
-        if row is not None and row["kind"] in ("wall", "slab") and "layers" in row["params"]:
-            return layers_label(row["params"]["layers"])   # 층 구성이 재료를 정한다(투영 여부와 무관)
+        if row is not None and row["kind"] in ("wall", "slab", "roof") and "layers" in row["params"]:
+            return layers_label(row["params"]["layers"])   # 층 구성이 재료를 정한다(투영 여부와 무관). 지붕 층 구성은 W2 여덟 번째 PR
         return self.eng.ifc.get_material(eid) if self._in_ifc(eid) else None
 
     def layered(self, eid) -> bool:
-        """층 구성(재료·두께 목록)을 가진 벽·슬래브인가. 이런 요소의 재료는 wall.layers·slab.layers 가 정한다."""
+        """층 구성(재료·두께 목록)을 가진 벽·슬래브·지붕인가. 이런 요소의 재료는 wall.layers·slab.layers·roof.layers 가 정한다."""
         row = self.eng.st.el.get(eid)
-        return row is not None and row["kind"] in ("wall", "slab") and "layers" in row["params"]
+        return row is not None and row["kind"] in ("wall", "slab", "roof") and "layers" in row["params"]
 
     def det_id(self, label: str) -> str:
         """라벨에서 결정적으로 얻는 GlobalId(같은 프로젝트·같은 라벨이면 같은 값). 내용 주소 id 에 쓴다."""
@@ -1024,6 +1024,19 @@ class Engine:
             out[t] = (p["name"], p.get("function"), float(p["thickness"]), layers, walls)
         return out
 
+    def rooftype_map(self) -> dict:
+        """지붕 유형 행(rooftype, W2 여덟 번째 PR) -> {유형 id: (이름, 기능, 두께, 층 구성, 그 유형을 쓰는 IFC 지붕 id 들)}. 유형이 없으면 빈 표."""
+        tids = self.st.by_kind.get("rooftype")
+        if not tids:
+            return {}
+        out = {}
+        for t in sorted(tids):
+            p = self.st.el[t]["params"]
+            roofs = tuple(sorted(r for r in self.st.inn.get(("of_type", t), ()) if r in self.ifc.ents and self.st.el[r]["origin"] == "authored"))
+            layers = tuple((x["material"], float(x["thickness"])) for x in p.get("layers", ()))
+            out[t] = (p["name"], p.get("function"), float(p["thickness"]), layers, roofs)
+        return out
+
     def _flush_defs(self) -> None:
         """뷰·치수·태그의 정의를 IFC 프로젝트 속성셋에 맞춘다(ADR-0015). 정의가 없으면 아무것도 하지 않는다(IFC 가 그대로다).
         행은 불변이라 같은 객체면 텍스트를 다시 만들지 않는다. 바뀐 정의의 속성만 쓴다."""
@@ -1038,6 +1051,7 @@ class Engine:
             self.ifc.sync_defs({eid: t for eid, (_, t) in cache.items()})
             self.ifc.set_appearance(self.appearance_map())   # 재료 외관 정의(W2 다섯 번째 PR): 값이 바뀐 재료의 IFC 표면 스타일만 다시 붙인다
             self.ifc.sync_wall_types(self.walltype_map())   # 벽 유형(W2 일곱 번째 PR): IfcWallType·층 집합·타입 지정 관계. 유형이 없으면 아무것도 하지 않는다
+            self.ifc.sync_roof_types(self.rooftype_map())   # 지붕 유형(W2 여덟 번째 PR): IfcRoofType. 유형이 없으면 아무것도 하지 않는다
         except BaseException as ex:
             self._taint("정의 속성", ex)
             try:
@@ -1060,7 +1074,7 @@ class Engine:
     def _material_label(self, eid: str):
         """재료 이름표. 층 구성이 있는 벽·슬래브는 투영 여부와 무관하게 층 구성(의도)에서 나온다(투영이 늦어도 해시가 같다)."""
         row = self.st.el[eid]
-        if row["kind"] in ("wall", "slab") and "layers" in row["params"]:
+        if row["kind"] in ("wall", "slab", "roof") and "layers" in row["params"]:
             return layers_label(row["params"]["layers"])
         return self.ifc.get_material(eid)
 

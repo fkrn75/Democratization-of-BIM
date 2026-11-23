@@ -50,6 +50,7 @@ _WT1 = ("walltype.create", {"id": F.WT1, "name": "외벽 RC", "layers": [{"mater
 _WT2 = ("walltype.create", {"id": F.WT2, "name": "칸막이 100", "thickness": 100})
 _SW1 = ("stackwall.create", {"id": F.SW1, "level": F.LV1, "axis": [0, -3000, 6000, -3000], "height": 3000, "line": "finish_ext",
                              "segments": [{"type": F.WT1, "height": 1000}, {"type": F.WT2}]})   # 스택 벽 예시의 준비(W2 일곱 번째 PR, ARC-09)
+_RT1 = ("rooftype.create", {"id": F.RT1, "name": "처마 복합", "layers": [{"material": "방수", "thickness": 10}, {"material": "단열재", "thickness": 190}]})   # 지붕 유형 예시의 준비(W2 여덟 번째 PR)
 _PP1 = ("param.define", {"pset": "Pset_ProjectCommon", "name": "Zone", "type": "text", "kinds": ["door", "wall"]})   # 프로젝트 매개변수 예시의 준비(DATA-03)
 _SI1 = ("site.create", {"id": F.SI1, "boundary": [[-6000, -6000], [18000, -6000], [18000, 14000], [-6000, 14000]], "name": "대지"})
 _SO1 = ("solid.create", {"id": F.SO1, "level": F.LV1, "category": "buttress", "form": "prism", "polygon": [[0, -900], [600, -900], [600, -100], [0, -100]], "z0": 0, "z1": 2400})   # 일반 솔리드 예시의 준비(18단계)
@@ -101,6 +102,8 @@ PRE = {**_DRAFT_PRE, "history.redo": [("history.undo", {})], "ifc.restore": [_EX
        "walltype.set": [_WT1], "walltype.duplicate": [_WT1], "walltype.delete": [_WT1, ("wall.type.set", {"ids": [F.W1], "type": F.WT1})],
        "walltype.list": [_WT1], "wall.type.set": [_WT1], "wall.location": [_WT1, ("wall.type.set", {"ids": [F.W1], "type": F.WT1})],
        "stackwall.create": [_WT1, _WT2], "stackwall.set": [_WT1, _WT2, _SW1],
+       "rooftype.set": [_RT1], "rooftype.duplicate": [_RT1], "rooftype.delete": [_RF1, _RT1, ("roof.type.set", {"ids": [F.RF1], "type": F.RT1})],
+       "rooftype.list": [_RT1], "roof.type.set": [_RF1, _RT1], "roof.layers": [_RF1], "roof.eaves.set": [_RF1], "roof.eaves": [_RF1],   # W2 여덟 번째 PR
        "area.delete": [_LA1], "area.list": [_LA1], "area.legal": [_W4, _SI1, _LA1], "area.export": [_W4, _SI1, _LA1],
        "opening.vertical": [_S1], "opening.delete": [_OP1],
        **{c: [_CW1] for c in ("curtain.set", "curtain.grid", "curtain.mullion.set", "curtain.panel.set", "curtain.type.set", "curtain.move", "curtain.parts")}}

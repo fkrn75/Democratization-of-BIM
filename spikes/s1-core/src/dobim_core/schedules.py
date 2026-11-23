@@ -527,7 +527,7 @@ def takeoff_parts(g, e) -> tuple:
         return ()
     p = Q.el(g, e)["params"]
     area, vol = r.get("area"), r.get("volume")
-    if r["kind"] in ("wall", "slab") and "layers" in p:
+    if r["kind"] in ("wall", "slab", "roof") and "layers" in p:   # 지붕 층 구성: W2 여덟 번째 PR
         t = p["thickness"]
         return tuple((r["category"], x["material"] or "(미지정)", area, (vol or 0.0) * x["thickness"] / t if t else 0.0) for x in p["layers"])
     return ((r["category"], r.get("material") or "(미지정)", area, vol),)

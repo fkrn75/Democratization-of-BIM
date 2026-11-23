@@ -19,6 +19,9 @@ from typing import Callable, NamedTuple
 from dobim_core import arcgeom as AG
 from dobim_core import curtain as CW
 from dobim_core import roofpoly as RP
+from dobim_core import roofeaves as RE
+from dobim_core import roofext as RX
+from dobim_core import roofskel as RS
 from dobim_core import solids as SO
 from dobim_core import wallcut as WC
 from dobim_core import walltop as WT
@@ -879,10 +882,18 @@ def elevator_door_edge(p):
 
 
 # ---------------------------------------------------------------- 경사 지붕 (kinds "roof", 설계: elements-design.md 16절)
-ROOF_FORMS = ("gable", "hip", "shed", "poly")   # 박공(맞배)·모임(우진각)·외쪽·다각형 외곽(변마다 물매 또는 박공, W1 1-F 4차)
+ROOF_FORMS = ("gable", "hip", "shed", "poly", "footprint", "extrusion")   # 박공(맞배)·모임(우진각)·외쪽·다각형 외곽(변마다 물매 또는 박공, W1 1-F 4차)·외곽선 지붕·압출 지붕(W2 여덟 번째 PR)
+ROOF_POLY_FORMS = ("poly", "footprint")   # 변마다 물매(slopes)를 갖는 형식
 ROOF_PITCH_MAX = 75.0       # 물매 각도 상한(도)
 ROOF_OVERHANG_MAX = 3000.0  # 처마 내밀기 상한 mm
 ROOF_SIDE_MIN = 500.0       # 외곽 직사각형의 최소 변 길이 mm
+# 외곽선 지붕(footprint, W2 여덟 번째 PR, ARC-19): 가중 직선 골격(roofskel). 변마다 물매·처마 내밀기, 짧은 변(1mm 이상)·오목 외곽·물매가 다른 변 모두
+# 처마 부속(ARC-20): 지붕 변을 따라가는 fascia(처마 널)·gutter(홈통)·soffit(처마 반자). 지붕 params.eaves 에 종류마다 {edges: 외곽 변 번호들, 치수}
+EAVE_KINDS = ("fascia", "gutter", "soffit")
+EAVE_DIMS = {"fascia": ("width", "depth"), "gutter": ("width", "depth"), "soffit": ("thickness",)}
+EAVE_DEFAULT = {"fascia": {"width": 30.0, "depth": 250.0}, "gutter": {"width": 150.0, "depth": 120.0}, "soffit": {"thickness": 15.0}}
+EAVE_DIM_MAX = 2000.0       # 처마 부속 치수 상한 mm
+ROOFTYPES_MAX = 1000        # 지붕 유형 수 상한
 
 
 def roof_rect_problem(b) -> str | None:
@@ -919,15 +930,67 @@ def roof_tans(slopes) -> list:
     return out
 
 
+def eaves_ok(v, n: int) -> bool:
+    """처마 부속 {종류: {"edges": [외곽 변 번호, ...](오름차순·겹침 없음), 치수...}}."""
+    if not isinstance(v, dict) or not v or not set(v) <= set(EAVE_KINDS):
+        return False
+    for k, d in v.items():
+        dims = EAVE_DIMS[k]
+        if not isinstance(d, dict) or set(d) != {"edges", *dims}:
+            return False
+        es = d["edges"]
+        if not (isinstance(es, list) and es and all(type(x) is int and 0 <= x < n for x in es) and es == sorted(set(es))):
+            return False
+        if not all(_pos(d[x]) and d[x] <= EAVE_DIM_MAX for x in dims):
+            return False
+    return True
+
+
+def roof_overhangs(p) -> list:
+    """외곽선 지붕의 변마다 처마 내밀기(없으면 모두 overhang)."""
+    return [float(x) for x in p["overhangs"]] if "overhangs" in p else [float(p["overhang"])] * len(p["boundary"])
+
+
 def _roof_params(p):
-    err = _check_opt("roof", p, {"name": _name, "boundary": lambda v: isinstance(v, list) and 3 <= len(v) <= RP.POLY_PTS_MAX and all(_pt_ok(q) for q in v),
+    pts_max = RS.PTS_MAX if isinstance(p, dict) and p.get("form") == "footprint" else RP.POLY_PTS_MAX
+    err = _check_opt("roof", p, {"name": _name, "boundary": lambda v: isinstance(v, list) and 3 <= len(v) <= pts_max and all(_pt_ok(q) for q in v),
                                  "form": lambda v: v in ROOF_FORMS,
                                  "pitch": lambda v: _pos(v) and v <= ROOF_PITCH_MAX, "overhang": lambda v: num_ok(v) and 0 <= v <= ROOF_OVERHANG_MAX,
                                  "base_offset": num_ok, "thickness": _pos},
                      {"ridge": lambda v: v == "short", "dir": num_ok,
-                      "slopes": lambda v: isinstance(v, list) and len(v) == len(p.get("boundary", ())) and all(_slope_ok(x) for x in v)})
+                      "slopes": lambda v: isinstance(v, list) and len(v) == len(p.get("boundary", ())) and all(_slope_ok(x) for x in v),
+                      # 외곽선 지붕·지붕 유형·층 구성·처마 부속(W2 여덟 번째 PR): 없으면 행은 이전과 같다
+                      "overhangs": lambda v: isinstance(v, list) and len(v) == len(p.get("boundary", ())) and all(num_ok(x) and 0 <= x <= ROOF_OVERHANG_MAX for x in v),
+                      "rtype": id_ok, "layers": layers_ok, "eaves": lambda v: eaves_ok(v, len(p.get("boundary", ()))),
+                      "axis": lambda v: isinstance(v, list) and len(v) == 4 and all(num_ok(x) for x in v),
+                      "profile": lambda v: isinstance(v, list) and all(_pt_ok(q) for q in v)})
     if err is not None:
         return err
+    if p["form"] == "extrusion" or "axis" in p or "profile" in p:   # 압출 지붕(W2 여덟 번째 PR): 입면 프로파일을 axis 방향으로 돌출, 외곽은 그 직사각형
+        if p["form"] != "extrusion":
+            return "roof.axis·roof.profile 은 압출 지붕(extrusion)에만 둘 수 있다"
+        if "axis" not in p or "profile" not in p:
+            return "roof: 압출 지붕(extrusion)은 axis 와 profile 이 필요하다"
+        if any(k in p for k in ("slopes", "overhangs", "ridge", "dir")) or p["overhang"] != 0:
+            return "roof: 압출 지붕(extrusion)은 slopes·overhangs·ridge·dir·처마 내밀기를 쓰지 않는다(프로파일이 정한다)"
+        if why := RX.problem(p["axis"], p["profile"]):
+            return f"roof.profile: {why}"
+        want = sorted((round(q[0], 2), round(q[1], 2)) for q in RX.rect(p["axis"], p["profile"]))
+        if len(p["boundary"]) != 4 or sorted((round(q[0], 2), round(q[1], 2)) for q in p["boundary"]) != want:
+            return "roof.boundary 는 압출 지붕의 평면 직사각형(axis x 프로파일 폭)이어야 한다"
+        return None
+    if "layers" in p and abs(layers_total(p["layers"]) - p["thickness"]) > LAYER_SUM_TOL:
+        return "roof.layers 두께의 합이 지붕 두께와 다르다"
+    if "overhangs" in p and p["form"] != "footprint":
+        return "roof.overhangs(변마다 처마 내밀기)는 외곽선 지붕(footprint)에만 둘 수 있다"
+    if p["form"] == "footprint":
+        if "slopes" not in p:
+            return "roof: 외곽선 지붕(footprint)은 변마다 물매 slopes 가 필요하다"
+        if "ridge" in p or "dir" in p:
+            return "roof.ridge·roof.dir 은 외곽선 지붕(footprint)에 둘 수 없다"
+        if why := RS.problem(p["boundary"], roof_tans(p["slopes"]), roof_overhangs(p)):
+            return f"roof.boundary: {why}"
+        return None
     if p["form"] == "poly":
         if "slopes" not in p:
             return "roof: 다각형 외곽 지붕(poly)은 변마다 물매 slopes 가 필요하다"
@@ -1003,6 +1066,10 @@ def roof_geom(p) -> dict:
     form "poly"(다각형 외곽, 변마다 물매 slopes, 0 = 박공 변)는 roofpoly.geom 이 같은 꼴로 만든다."""
     if p["form"] == "poly":   # 다각형 외곽: 변마다 경사면(roofpoly). faces 는 오목할 수 있고 볼록 조각은 pieces, 골은 valleys
         return RP.geom(p["boundary"], p["slopes"], roof_tans(p["slopes"]), p["overhang"], p["base_offset"])
+    if p["form"] == "extrusion":   # 압출 지붕(W2 여덟 번째 PR): 프로파일 선분마다 평면 사각형
+        return RX.geom(p["axis"], p["profile"], p["base_offset"], sincos_deg)
+    if p["form"] == "footprint":   # 외곽선 지붕(W2 여덟 번째 PR): 가중 직선 골격(roofskel). eave_src = 처마 윤곽 변마다 원래 외곽 변 번호
+        return RS.geom(p["boundary"], p["slopes"], roof_tans(p["slopes"]), roof_overhangs(p), p["base_offset"])
     b = p["boundary"]
     t_s, t_c = sincos_deg(float(p["pitch"]))
     t = t_s / t_c
@@ -1063,6 +1130,14 @@ def roof_geom(p) -> dict:
     return {"faces": faces, "ridges": ridges, "hips": hips, "valleys": [], "perimeter": perim, "arrows": arrows, "outline": outline, "planes": planes,
             "pieces": list(zip(faces, planes)), "fpitch": [float(p["pitch"])] * len(faces),
             "zlow": min(q[2] for q in perim), "ztop": max(q[2] for fc in faces for q in fc)}
+
+
+def roof_eave_pieces(p) -> list:
+    """지붕 params 의 처마 부속 조각들(roofeaves.pieces, 레벨 기준 z). 처마 부속이 없으면 빈 목록."""
+    if "eaves" not in p:
+        return []
+    oh = roof_overhangs(p) if p["form"] == "footprint" else [float(p["overhang"])] * len(p["boundary"])
+    return RE.pieces(p, roof_geom(p), oh)
 
 
 CORRIDOR_WORDS = ("복도", "corridor", "hallway")
@@ -1459,6 +1534,18 @@ def _walltype_params(p):
     return err
 
 
+# 지붕 유형(W2 여덟 번째 PR, ARC-11·ARC-19 지붕 층 구성): 벽 유형과 같은 설계. 이름 붙은 두께 또는 층 구성(윗면부터) + 기능(지붕 피복) + 재료.
+# 지붕 행이 유형의 두께·층 구성을 복사해 갖고(params.rtype + 관계 of_type) 유형을 고치면 그 유형의 지붕 행을 모두 다시 쓴다. IFC 투영은 IfcRoofType
+ROOF_FUNCTIONS = ("roof", "canopy", "eave", "glazing")   # 일반 지붕·캐노피·처마·유리 지붕
+
+
+def _rooftype_params(p):
+    err = _check_opt("rooftype", p, {"name": _name, "thickness": _pos}, {"layers": layers_ok, "function": lambda v: v in ROOF_FUNCTIONS})
+    if err is None and "layers" in p and abs(layers_total(p["layers"]) - p["thickness"]) > LAYER_SUM_TOL:
+        return "rooftype.layers 두께의 합이 유형 두께와 다르다"
+    return err
+
+
 def _stack_seg_ok(v) -> bool:
     return (isinstance(v, dict) and set(v) == {"type", "height", "offset"} and id_ok(v["type"]) and num_ok(v["offset"])
             and (v["height"] is None or _pos(v["height"])))
@@ -1622,7 +1709,8 @@ ELEMENT_KINDS: dict[str, ElementKind] = {k.name: k for k in (
     ElementKind("stair", True, "IfcStair", True, 1, _stair_params, geometric=True),
     ElementKind("space", True, "IfcSpace", True, 1, _space_params, geometric=True),
     ElementKind("elevator", True, "IfcTransportElement", True, 1, _elevator_params, geometric=True, refs=(("stops", "ids", None), ("hole_slabs", "ids", None))),
-    ElementKind("roof", True, "IfcRoof", True, 1, _roof_params, geometric=True),
+    ElementKind("roof", True, "IfcRoof", True, 1, _roof_params, geometric=True,
+                refs=(("rtype", "id", "of_type"),), ref_kinds=(("rtype", ("rooftype",)),)),   # 지붕 유형(W2 여덟 번째 PR)
     ElementKind("railing", True, "IfcRailing", True, 1, _railing_params, geometric=True, refs=(("src", "id", None),), ref_kinds=(("src", ("stair", "slab")),)),
     ElementKind("site", True, "IfcSite", True, 0, _site_params),
     # 일반 솔리드(18단계): 돌출·로프트·판·스윕·메시. IFC 클래스는 범주(category)가 정한다(행마다 다르다)
@@ -1664,6 +1752,8 @@ ELEMENT_KINDS: dict[str, ElementKind] = {k.name: k for k in (
     ElementKind("walltype", False, None, False, 0, _walltype_params),
     # 스택 벽(W2 일곱 번째 PR, ARC-09): 부분 벽(보통 벽 행)을 모으는 형상 없는 IfcWall. 부분 벽보다 뒤에 투영한다(집합 관계가 부분 엔티티를 가리킨다)
     ElementKind("stackwall", True, "IfcWall", True, 2, _stackwall_params, refs=(("parts", "ids", None),)),
+    # 지붕 유형(W2 여덟 번째 PR): 벽 유형과 같은 비 IFC 의도 요소(정의는 DoBIM_Defs). 지붕보다 먼저 만든다
+    ElementKind("rooftype", False, None, False, 0, _rooftype_params),
 )}
 
 NON_IFC_KINDS = frozenset(k for k, v in ELEMENT_KINDS.items() if not v.ifc)      # 신원·속성셋·재료가 없는 의도 요소(뷰 정의, 치수·태그)
@@ -1774,7 +1864,7 @@ REL_KINDS: dict[str, RelKind] = {r.name: r for r in (
     RelKind("succ", _fs("wall"), _fs("wall"), dangling_ok=True),
     RelKind("annot_of", _fs("dim", "tag", "draft"), _fs("view"), violation="VIEW_DELETED", message="주석이 속한 뷰가 지워졌다"),
     # 벽 -> 벽 유형(W2 일곱 번째 PR, ARC-11)도 같은 관계다(Revit 의 타입 지정)
-    RelKind("of_type", _fs("finst", "wall"), _fs("ftype", "walltype"), violation="TYPE_DELETED", message="인스턴스의 패밀리 타입이 지워졌다"),
+    RelKind("of_type", _fs("finst", "wall", "roof"), _fs("ftype", "walltype", "rooftype"), violation="TYPE_DELETED", message="인스턴스의 패밀리 타입이 지워졌다"),
 )}
 REL_NAMES = tuple(REL_KINDS)
 READ_REL_NAMES = ("on_level", "joins", "hosts", "of_type")   # element.get / relation.list 가 보이는 관계(주석·분할 이력은 따로 읽는다)

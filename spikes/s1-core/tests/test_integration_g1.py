@@ -448,6 +448,9 @@ def test_9_종류_레지스트리가_모든_모듈과_맞는다(tmp_path):
         _ok(b.run("material.define", {"name": "유리"}, project=p))   # 재료 외관 정의(W2 다섯 번째 PR, DATA-05)
         _ok(b.run("walltype.create", {"id": F.WT1, "name": "외벽", "layers": [{"material": "벽돌", "thickness": 90}, {"material": "콘크리트", "thickness": 200}]}, project=p))   # 벽 유형(W2 일곱 번째 PR)
         _ok(b.run("walltype.create", {"id": F.WT2, "name": "칸막이", "thickness": 100}, project=p))
+        _ok(b.run("rooftype.create", {"id": F.RT1, "name": "처마", "layers": [{"material": "방수", "thickness": 10}, {"material": "콘크리트", "thickness": 190}]}, project=p))   # 지붕 유형(W2 여덟 번째 PR)
+        _ok(b.run("roof.type.set", {"ids": [F.RF1], "type": F.RT1}, project=p))
+        _ok(b.run("roof.eaves.set", {"id": F.RF1, "fascia": {"edges": "all"}}, project=p))   # 처마 부속(W2 여덟 번째 PR)
         _ok(b.run("stackwall.create", {"id": F.SW1, "level": F.LV1, "axis": [0, -6000, 6000, -6000], "height": 3000,
                                        "segments": [{"type": F.WT1, "height": 1000}, {"type": F.WT2}]}, project=p))   # 스택 벽(W2 일곱 번째 PR)
     finally:
