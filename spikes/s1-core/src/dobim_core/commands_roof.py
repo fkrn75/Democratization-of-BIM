@@ -334,21 +334,28 @@ def roof_layers(ctx, a: RoofLayers):
 
 
 # ---------------------------------------------------------------- 처마 부속
+EAVE_MAT_DESC = ("이 종류 부속의 재료 이름(W2 아홉 번째 PR). 생략하면 지붕 재료를 따른다(단순 재료면 그 재료, 층 구성이면 그 층 집합). "
+                 "IFC 는 종류마다 IfcRelAssociatesMaterial 하나")
+
+
 class _Fascia(A):
     edges: list[Annotated[int, Field(strict=True, ge=0, lt=128)]] | Literal["all"] = Field(description="붙일 외곽 변 번호들(변 i = 꼭짓점 i→i+1) 또는 all")
     width: Pos = Field(K.EAVE_DEFAULT["fascia"]["width"], le=K.EAVE_DIM_MAX, description="널 두께(처마 선에서 바깥으로) mm")
     depth: Pos = Field(K.EAVE_DEFAULT["fascia"]["depth"], le=K.EAVE_DIM_MAX, description="지붕 윗면 모서리에서 아래로 mm")
+    material: Name | None = Field(None, description=EAVE_MAT_DESC)
 
 
 class _Gutter(A):
     edges: list[Annotated[int, Field(strict=True, ge=0, lt=128)]] | Literal["all"] = Field(description="붙일 외곽 변 번호들 또는 all(수평 처마 조각에만 단다)")
     width: Pos = Field(K.EAVE_DEFAULT["gutter"]["width"], le=K.EAVE_DIM_MAX, description="홈통 폭 mm(fascia 바깥으로)")
     depth: Pos = Field(K.EAVE_DEFAULT["gutter"]["depth"], le=K.EAVE_DIM_MAX, description="홈통 깊이 mm")
+    material: Name | None = Field(None, description=EAVE_MAT_DESC)
 
 
 class _Soffit(A):
     edges: list[Annotated[int, Field(strict=True, ge=0, lt=128)]] | Literal["all"] = Field(description="붙일 외곽 변 번호들 또는 all(수평 처마이고 내밀기가 있는 변만)")
     thickness: Pos = Field(K.EAVE_DEFAULT["soffit"]["thickness"], le=K.EAVE_DIM_MAX, description="처마 반자 판 두께 mm")
+    material: Name | None = Field(None, description=EAVE_MAT_DESC)
 
 
 class RoofEavesSet(A):
@@ -358,6 +365,8 @@ class RoofEavesSet(A):
     gutter: _Gutter | None = Field(None, description="홈통")
     soffit: _Soffit | None = Field(None, description="처마 반자")
     clear: Annotated[list[Literal["fascia", "gutter", "soffit"]], Field(max_length=3)] | None = Field(None, description="뗄 처마 부속 종류")
+    numbering: Literal["stored", "input"] = Field("stored", description="edges 번호의 기준. stored(기본) = 저장된 외곽(반시계) 순서, input = roof.create·roof.set 에 준 외곽 순서. "
+                                                  "둘은 외곽을 시계 방향으로 준 지붕에서만 다르다(반시계로 뒤집어 저장: 저장 변 j = 입력 변 n-2-j). roof.eaves 의 input_edge 로 대응을 본다")
 
     @model_validator(mode="after")
     def _any(self):
@@ -378,7 +387,9 @@ def roof_eaves_set(ctx, a: RoofEavesSet):
     r = ctx.authored(a.id, "roof", what="처마 부속 지정")
     p = dict(r["params"])
     n = len(p["boundary"])
+    flip = bool(p.get("cw_input"))
     ev = {k: dict(v) for k, v in p.get("eaves", {}).items()}
+    warned = False
     for kind in K.EAVE_KINDS:
         v = getattr(a, kind)
         if kind in (a.clear or ()):
@@ -387,13 +398,22 @@ def roof_eaves_set(ctx, a: RoofEavesSet):
         if v is None:
             continue
         d = v.model_dump()
+        if d.get("material") is None:
+            d.pop("material", None)
         es = list(range(n)) if d["edges"] == "all" else d["edges"]
         if any(x >= n for x in es):
             raise DobimError("CONSTRAINT", f"{kind}.edges 의 변 번호는 0~{n - 1} 이어야 한다(외곽 꼭짓점 {n}개)", path=f"/{kind}/edges")
+        if flip and d["edges"] != "all":
+            if a.numbering == "input":   # 입력 외곽 번호 -> 저장 번호(W2 아홉 번째 PR, 실사용 결함 5)
+                es = [stored_edge(x, n) for x in es]
+            elif not warned:
+                warned = True
+                ctx.warn(f"이 지붕은 외곽을 시계 방향으로 받아 뒤집어 저장했다: edges 는 저장 순서 번호로 읽었다(입력 변 i = 저장 변 {n - 2}-i mod {n}). "
+                         "입력 외곽 번호로 주려면 numbering=input")
         if len(set(es)) != len(es):
             raise DobimError("CONSTRAINT", f"{kind}.edges 에 같은 변이 두 번 있다", path=f"/{kind}/edges")
         d["edges"] = sorted(es)
-        ev[kind] = {k: (float(x) if k != "edges" else x) for k, x in d.items()}
+        ev[kind] = {k: (float(x) if k not in ("edges", "material") else x) for k, x in d.items()}
     if ev:
         p["eaves"] = ev
     else:
@@ -416,6 +436,11 @@ class RoofEaves(A):
     id: Id
 
 
+def stored_edge(i: int, n: int) -> int:
+    """시계 방향으로 받은 외곽의 입력 변 i 가 뒤집어 저장한 외곽에서 몇 번 변인가(자기 역함수다: 저장 변 j 의 입력 번호도 같은 식)."""
+    return (n - 2 - i) % n
+
+
 @command("roof.eaves", kind="query", risk="read", group="model.roof",
          summary="지붕 변마다 물매·처마 내밀기·처마 길이·처마 높이 구간과 단 처마 부속, 종류별 조각 수·길이", args=RoofEaves, idempotent=True, since="0.20",
          examples=[{"id": F.RF1}])
@@ -436,6 +461,9 @@ def roof_eaves(ctx, a: RoofEaves):
             ln += sqrt((q1[0] - q0[0]) ** 2 + (q1[1] - q0[1]) ** 2)
             zs += [z for _, (_x, _y, z) in RE._top_line(gm, q0, q1)]
         e = {"edge": i, "overhang": oh[i], "eave_length": round(ln, 3), "on": [k for k in K.EAVE_KINDS if i in ev.get(k, {}).get("edges", ())]}
+        if p.get("cw_input"):   # 시계 방향으로 받은 외곽: 이 변의 입력 번호와 양 끝점(W2 아홉 번째 PR). 반시계 입력이면 응답은 그대로다
+            e["input_edge"] = stored_edge(i, n)
+            e["from"], e["to"] = list(p["boundary"][i]), list(p["boundary"][(i + 1) % n])
         if "slopes" in p:
             e["slope"] = p["slopes"][i]
         if zs:

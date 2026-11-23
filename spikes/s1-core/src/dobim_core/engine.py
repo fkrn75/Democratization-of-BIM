@@ -258,6 +258,9 @@ class Ctx:
         return row is None or row["kind"] not in Q.NON_IFC_KINDS
 
     def psets(self, eid) -> dict:
+        row = self.eng.st.el.get(eid)
+        if row is not None and row["kind"] == "opening":   # 독립 개구(W2 아홉 번째 PR): 속성은 의도(params.psets)에 두고 IFC 는 IfcOpeningElement 부속에 투영한다
+            return {ps: dict(props) for ps, props in (row["params"].get("psets") or {}).items()}
         return self.eng.ifc.get_psets(eid) if self._in_ifc(eid) else {}
 
     def material(self, eid):
@@ -327,6 +330,28 @@ class Ctx:
         return True
 
     def set_prop(self, eid: str, pset: str, prop: str, value) -> bool:
+        row = self.eng.st.el.get(eid)
+        if row is not None and row["kind"] == "opening":   # 독립 개구(W2 아홉 번째 PR, 실사용 결함 6): 의도 행(params.psets)을 고친다(실행 취소·왕복은 행이 맡는다)
+            from dobim_core.ifc_model import check_value
+            if value is not None:
+                check_value(value)
+            ps = {k: dict(v) for k, v in (row["params"].get("psets") or {}).items()}
+            cur = ps.get(pset, {}).get(prop)
+            if cur == value and type(cur) is type(value):
+                return False
+            if value is None:
+                ps.get(pset, {}).pop(prop, None)
+                if pset in ps and not ps[pset]:
+                    ps.pop(pset)
+            else:
+                ps.setdefault(pset, {})[prop] = value
+            p = dict(row["params"])
+            if ps:
+                p["psets"] = {k: dict(sorted(v.items())) for k, v in sorted(ps.items())}
+            else:
+                p.pop("psets", None)
+            self.put_el(eid, dict(row, params=p))
+            return True
         if not self._in_ifc(eid):
             raise DobimError("CONSTRAINT", f"속성을 가질 수 없는 요소다: {eid}", path="/id")
         old = self.eng.ifc.get_psets(eid).get(pset, {}).get(prop)

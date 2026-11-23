@@ -795,11 +795,46 @@ def model_stats(g):
         st = [g.q(curtain_stats, c) for c in g.q(curtain_ids)]
         out["mullion"] = sum(s[0] for s in st)
         out["curtain_panel"] = sum(s[1] for s in st)
+        # 커튼월 문 패널도 IFC 에서는 IfcDoor 다: counts.door = IFC 의 IfcDoor 수(W2 아홉 번째 PR, 실사용 결함 3). 문 패널이 없으면 그대로다
+        out["door"] += sum(s[3].get("door", (0, 0.0))[0] for s in st)
     for k in ("walltype", "stackwall", "rooftype"):   # 벽 유형·스택 벽(W2 일곱 번째 PR)·지붕 유형(W2 여덟 번째 PR): 없으면 응답은 그대로다
         n = g.q(count, k)
         if n:
             out[k] = n
     return out
+
+
+def door_summary(g):
+    """model.stats 의 door 요약: IFC 의 IfcDoor 전체(저작 문 + IfcDoor 패밀리 인스턴스 + 커튼월 문 패널)의 수와 폭 합(W2 아홉 번째 PR, 실사용 결함 3).
+    count 는 counts.door 와 같다. 패밀리 문의 폭은 벽을 뚫는 개구부 폭(호스트 없는 인스턴스는 values 의 width, 없으면 0), 문 패널의 폭은 패널 현 길이다.
+    저작 문 밖의 문이 있을 때만 by_source(door·family·curtain_panel 별 수)를 더한다(저작 문만 있는 프로젝트의 응답은 그대로다).
+    일람표 요약(schedule_summary "door")은 저작 문 일람표 그대로다."""
+    s = g.q(schedule_summary, "door")
+    n, w = s["count"], s["total_width"]
+    nf, wf = 0, 0.0
+    if g.q(count, "finst"):
+        for b in range(NB):
+            for e in g.q(bucket_ids, "finst", b):
+                if g.q(finst_ifc_class, e) != "IfcDoor":
+                    continue
+                spec = g.q(ifc_spec, e)
+                cut = spec.get("cut")
+                nf += 1
+                if cut:
+                    wf += cut["x"][1] - cut["x"][0]
+                else:
+                    v = (el(g, e)["params"].get("values") or {}).get("width")
+                    wf += float(v) if isinstance(v, (int, float)) and not isinstance(v, bool) else 0.0
+    nc, wc = 0, 0.0
+    if g.q(count, "curtwall"):
+        for c in g.q(curtain_ids):
+            for _k, kind, q, _z0, _z1, _c, _t in g.q(curtain_layout, c)["panels"]:
+                if kind == "door":
+                    nc += 1
+                    wc += sqrt((q[1][0] - q[0][0]) ** 2 + (q[1][1] - q[0][1]) ** 2)
+    if not nf and not nc:
+        return s
+    return {"count": n + nf + nc, "total_width": w + wf + wc, "by_source": {"door": n, "family": nf, "curtain_panel": nc}}
 
 
 def t0_state(g):
@@ -848,6 +883,16 @@ def host_at(g, w, u, half_w):
     ri = r - half
     sag = ri - sqrt(ri * ri - half_w * half_w) if half_w < ri else ri
     return (lcx + r * cs, lcy + r * sn, -sg * sn, sg * cs, half + sag + 10.0)
+
+
+def _void_psets(g, oids):
+    """독립 개구들의 속성 ((개구 id, ((속성셋, ((속성, 값), ...)), ...)), ...). 속성이 없는 개구는 뺀다(W2 아홉 번째 PR)."""
+    out = []
+    for o in oids:
+        ps = el(g, o)["params"].get("psets")
+        if ps:
+            out.append((o, tuple((k, tuple(sorted(v.items()))) for k, v in sorted(ps.items()))))
+    return tuple(out)
 
 
 def ifc_spec(g, e):
@@ -904,6 +949,9 @@ def ifc_spec(g, e):
         if vs:   # 독립 벽 개구(W2 세 번째 PR, ARC-34): (개구 id, 이름, 지역 (u, z) 윤곽, 곡선 벽이면 host_at). 없으면 명세는 이전과 같다
             spec["voids"] = tuple((o, n, tuple(SO.opening_loop(d)), g.q(host_at, e, d["offset"], d["width"] / 2.0)) for o, n, d in vs)
             spec["thickness"] = p["thickness"]
+            vp = _void_psets(g, [v[0] for v in vs])
+            if vp:   # 독립 개구의 속성(W2 아홉 번째 PR): IfcOpeningElement 부속의 속성셋. 없으면 명세는 이전과 같다
+                spec["void_psets"] = vp
         if "stack" in p:   # 스택 벽 부분 벽(W2 일곱 번째 PR): 층이 아니라 스택 벽에 집합된다. 없으면 명세는 이전과 같다
             spec["part_of"] = p["stack"]
         if "arc" in p:   # 곡선 벽(W2 ARC-04): 배치 틀(시작점, 현 방향) 안의 호 (중심 x, y, 반지름, 시작각, 방향, 중심각). footprint 의 u 는 호 위 거리다
@@ -932,6 +980,9 @@ def ifc_spec(g, e):
         vs = g.q(slab_voids, e) if g.q(opening_objs) else ()
         if vs:   # 독립 수직·샤프트 개구(W2 세 번째 PR, ARC-34): (개구 id, 이름, 경계). 없으면 명세는 이전과 같다
             spec["voids"] = vs
+            vp = _void_psets(g, [v[0] for v in vs])
+            if vp:   # 독립 개구의 속성(W2 아홉 번째 PR): 없으면 명세는 이전과 같다
+                spec["void_psets"] = vp
         if "use" in p:   # 지붕 슬래브(PredefinedType ROOF). 물매·배수구는 IFC 가 아니라 의도로만 왕복한다(명세에 넣지 않는다)
             spec["use"] = p["use"]
         if "parapet" in p:   # 파라펫: 슬래브에 집합한 IfcWall(PARAPET) 부속. 없으면 명세는 이전과 같다
@@ -956,6 +1007,9 @@ def ifc_spec(g, e):
         if "eaves" in p:   # 처마 부속 조각(W2 여덟 번째 PR): (이름표, 종류, 평면 사각형, 바닥 z, 윗면 z). 없으면 명세는 이전과 같다
             from dobim_core.kinds import roof_eave_pieces
             spec["eaves"] = tuple(roof_eave_pieces(p))
+            em = tuple(sorted((k, d["material"]) for k, d in p["eaves"].items() if "material" in d))
+            if em:   # 처마 부속 종류별 재료(W2 아홉 번째 PR): 없으면 명세는 이전과 같다(부속은 지붕 재료를 따른다)
+                spec["eave_materials"] = em
         return spec
     if kind == "stackwall":   # 스택 벽(W2 일곱 번째 PR): 형상 없이 레벨 좌표계에 놓이고 부분 벽(구간 순서)을 집합한다
         return {"kind": kind, "name": p["name"], "level": g.q(stack_level, e), "parts": tuple(p["parts"]), "intent": intent}

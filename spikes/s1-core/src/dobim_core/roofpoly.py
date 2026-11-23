@@ -291,7 +291,7 @@ class _Snap:
         return len(self.pts) - 1
 
 
-def _on_seg(a, b, p) -> float | None:
+def _on_seg(a, b, p, tol=ON_TOL) -> float | None:
     """p 가 선분 a-b 위(끝점 제외)에 있으면 매개변수 t, 아니면 None."""
     dx, dy = b[0] - a[0], b[1] - a[1]
     l2 = dx * dx + dy * dy
@@ -301,7 +301,7 @@ def _on_seg(a, b, p) -> float | None:
     if t <= 1e-9 or t >= 1.0 - 1e-9:
         return None
     cx, cy = a[0] + t * dx - p[0], a[1] + t * dy - p[1]
-    return t if cx * cx + cy * cy <= ON_TOL * ON_TOL else None
+    return t if cx * cx + cy * cy <= tol * tol else None
 
 
 def _split_edges(edges, snap):
@@ -449,9 +449,10 @@ def _build(b, ks, o, z0):
     return _finish(faces, snap, planes, [e[2] for e in ed], outline)
 
 
-def _finish(faces, snap, planes, normals, outline):
+def _finish(faces, snap, planes, normals, outline, on_tol=ON_TOL):
     """면 고리들(면마다 (변 번호, snap 번호 고리))을 검사하고 마무리한다: 면이 외곽을 빈틈없이 덮는가, 면 경계에서 높이가 이어지는가,
-    용마루·추녀마루·골 분류, 윗면 바깥 둘레, 물매 화살표. planes[i]·normals[i](안쪽 법선)는 변 i 의 것. 거절이면 이유 문장(외곽선 지붕 roofskel 도 쓴다)."""
+    용마루·추녀마루·골 분류, 윗면 바깥 둘레, 물매 화살표. planes[i]·normals[i](안쪽 법선)는 변 i 의 것. 거절이면 이유 문장(외곽선 지붕 roofskel 도 쓴다).
+    on_tol = 점이 선분 위에 있다고 보는 거리(외곽선 지붕은 점 맞춤 허용치만큼 넓힌다: 맞춘 점이 그만큼 선에서 비켜날 수 있다)."""
     n = len(outline)
     tot = sum(_area2([snap.pts[k] for k in lp]) for _, lp in faces)
     want = _area2(outline)
@@ -462,7 +463,7 @@ def _finish(faces, snap, planes, normals, outline):
     allk = sorted({k for _, lp in faces for k in lp})
     for fi, (i, lp) in enumerate(faces):
         es = [(lp[j], lp[(j + 1) % len(lp)]) for j in range(len(lp))]
-        for e in _split_edges_with(es, snap, allk):
+        for e in _split_edges_with(es, snap, allk, on_tol):
             owner[e] = fi
     zat = {}
     inner = []
@@ -474,7 +475,7 @@ def _finish(faces, snap, planes, normals, outline):
         if fj is None:
             a, c = snap.pts[ka], snap.pts[kb]
             m = ((a[0] + c[0]) / 2.0, (a[1] + c[1]) / 2.0)
-            if not any(_dist_seg(outline[j], outline[(j + 1) % n], m) <= ON_TOL for j in range(n)):
+            if not any(_dist_seg(outline[j], outline[(j + 1) % n], m) <= on_tol for j in range(n)):
                 return "이 외곽에서는 경사면 사이에 틈이 생긴다(지붕을 둘 이상으로 나눠라)"
             continue
         j = faces[fj][0]
@@ -551,7 +552,7 @@ def _finish(faces, snap, planes, normals, outline):
     for j in range(n):
         a, c = outline[j], outline[(j + 1) % n]
         ka = snap.key(a)
-        mids = sorted((t, k) for k in allk if k != ka and (t := _on_seg(a, c, snap.pts[k])) is not None)
+        mids = sorted((t, k) for k in allk if k != ka and (t := _on_seg(a, c, snap.pts[k], on_tol)) is not None)
         for k in [ka] + [k for _, k in mids]:
             if k not in zat:
                 return "이 외곽에서는 처마 둘레의 높이를 정할 수 없다"
@@ -562,11 +563,11 @@ def _finish(faces, snap, planes, normals, outline):
             chains(kinds["valley"]), tuple(perim), tuple(arrows), tuple(outline), zl, zt)
 
 
-def _split_edges_with(edges, snap, keys):
+def _split_edges_with(edges, snap, keys, tol=ON_TOL):
     out = []
     for ka, kb in edges:
         a, b = snap.pts[ka], snap.pts[kb]
-        mids = sorted((t, k) for k in keys if k not in (ka, kb) and (t := _on_seg(a, b, snap.pts[k])) is not None)
+        mids = sorted((t, k) for k in keys if k not in (ka, kb) and (t := _on_seg(a, b, snap.pts[k], tol)) is not None)
         chain = [ka] + [k for _, k in mids] + [kb]
         out.extend((chain[j], chain[j + 1]) for j in range(len(chain) - 1))
     return out

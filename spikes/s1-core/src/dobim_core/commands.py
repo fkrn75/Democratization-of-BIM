@@ -2086,12 +2086,16 @@ def _rail_ids(ctx, ids, n: int) -> list:
     return list(ids)
 
 
-RailIds = Field(None, max_length=64, description="만들 난간의 id 목록(생성 순서대로, 개수가 같아야 한다). 비우면 자동")
+RailIds = Field(None, max_length=64, description="만들 난간의 id 목록(생성 순서대로, 개수가 같아야 한다). 비우면 자동. 응답 created 가 만든 id(생성 순서)다. "
+                                                  "원자 script 처럼 응답을 읽을 수 없는 곳에서 뒤 커맨드가 난간 id 를 쓰려면 ids 로 미리 정한다: 개수·순서는 같은 입력이면 같으므로 "
+                                                  "dry_run 으로 한 번 보거나(created 의 수), 재료만 필요하면 material 을 함께 준다")
+RailMaterial = Field(None, description="만든 난간 모두에 줄 재료 이름(material.set 과 같다, W2 아홉 번째 PR). id 를 몰라도 한 커맨드로 재료까지 정한다")
 
 
 class RailingFromStair(A):
     stair: Id
     ids: list[Id] | None = RailIds
+    material: Name | None = RailMaterial
     side: Literal["both", "left", "right"] = Field("both", description="어느 쪽에 둘지(단 묶음 걸음 방향의 왼쪽·오른쪽·양쪽)")
     inset: Num = Field(50.0, ge=0, description="계단 옆면에서 안쪽으로 들이는 거리 mm")
     height: Pos = K.RAILING_HEIGHT_DEFAULT
@@ -2099,8 +2103,9 @@ class RailingFromStair(A):
 
 
 @command("railing.from_stair", kind="mutation", risk="write", group="model.railing",
-         summary="계단의 단 묶음 옆(과 꺾인 계단 층참의 트인 가장자리)에 난간을 자동 생성. 같은 입력이면 같은 id·순서",
-         args=RailingFromStair, since="0.3", examples=[{"stair": F.ST1, "side": "both"}])
+         summary="계단의 단 묶음 옆(과 꺾인 계단 층참의 트인 가장자리)에 난간을 자동 생성. 같은 입력이면 같은 id·순서. 응답 created = 만든 난간 id(생성 순서), "
+                 "ids 로 id 를 미리 정하고 material 로 재료까지 한 번에 줄 수 있다",
+         args=RailingFromStair, since="0.3", examples=[{"stair": F.ST1, "side": "both"}, {"stair": F.ST1, "side": "both", "material": "스테인리스"}])
 def railing_from_stair(ctx, a: RailingFromStair):
     r = ctx.authored(a.stair, "stair", what="난간을 붙이는 것")
     level = ctx.rels_out("on_level", a.stair)[0]
@@ -2108,19 +2113,29 @@ def railing_from_stair(ctx, a: RailingFromStair):
     specs = _stair_rail_specs(r["params"], a.side, a.inset, a.landing)
     for s, rid in zip(specs, _rail_ids(ctx, a.ids, len(specs))):
         out.append(_new_railing(ctx, level, "RL", s["path"], a.height, s["base_offset"], s["rise"], {"src": a.stair, "src_tag": s["tag"], "src_inset": float(a.inset)}, rid))
-    return {"created": out}
+    return _rail_done(ctx, out, a.material)
+
+
+def _rail_done(ctx, out: list, material) -> dict:
+    """자동 생성 난간의 응답. material 을 주면 만든 난간 모두에 재료를 준다(W2 아홉 번째 PR, 실사용 결함 8). 주지 않으면 응답은 이전과 같다."""
+    if material is None:
+        return {"created": out}
+    for rid in out:
+        ctx.set_material(rid, material)
+    return {"created": out, "material": material}
 
 
 class RailingFromSlab(A):
     slab: Id
     ids: list[Id] | None = RailIds
+    material: Name | None = RailMaterial
     opening: int | None = Field(None, ge=0, le=31, description="구멍 번호(0부터). 비우면 슬래브 바깥 경계")
     edges: list[Annotated[int, Field(ge=0, le=255)]] | None = Field(None, max_length=256, description="난간을 둘 변 번호(꼭짓점 i 와 i+1 사이가 변 i). 비우면 모든 변(닫힌 한 줄)")
     height: Pos = K.RAILING_HEIGHT_DEFAULT
 
 
 @command("railing.from_slab", kind="mutation", risk="write", group="model.railing",
-         summary="슬래브 가장자리(바깥 경계 또는 구멍)에 난간을 자동 생성. 이어진 변은 한 난간이다. 같은 입력이면 같은 id·순서",
+         summary="슬래브 가장자리(바깥 경계 또는 구멍)에 난간을 자동 생성. 이어진 변은 한 난간이다. 같은 입력이면 같은 id·순서. 응답 created = 만든 난간 id, material 로 재료까지",
          args=RailingFromSlab, since="0.3", examples=[{"slab": F.S1, "edges": [0, 1]}])
 def railing_from_slab(ctx, a: RailingFromSlab):
     r = ctx.authored(a.slab, "slab", what="난간을 붙이는 것")
@@ -2142,7 +2157,7 @@ def railing_from_slab(ctx, a: RailingFromSlab):
     runs = _slab_rail_runs(ring, chosen if len(chosen) < n else None)
     out = [_new_railing(ctx, level, "RL", pts, a.height, top, 0.0, {"src": a.slab, "src_tag": _slab_tag(a.opening, tag)}, rid)
            for (tag, pts), rid in zip(runs, _rail_ids(ctx, a.ids, len(runs)))]
-    return {"created": out}
+    return _rail_done(ctx, out, a.material)
 
 
 class SpaceFromWalls(A):
@@ -2600,6 +2615,20 @@ def _roof_boundary(pts, form: str = "gable", slopes=None, overhangs=None):
     return b, sl
 
 
+def _mark_cw(ctx, p: dict, given) -> None:
+    """시계 방향으로 받은 외곽(반시계로 뒤집어 저장한다)을 표시한다(W2 아홉 번째 PR, 실사용 결함 5): roof.eaves.set 의 edges 는 저장 순서 번호라
+    뒤집힌 지붕에서는 입력 번호와 다르다. 표시(cw_input)가 있으면 roof.eaves.set 이 numbering=input 을 받고, 저장 번호로 주면 경고한다.
+    반시계 입력이면 키를 두지 않는다(지금까지 만든 지붕·반시계 지붕의 행은 그대로다)."""
+    b = [[float(x), float(y)] for x, y in given]
+    if polygon_area2(b) < 0:
+        p["cw_input"] = True
+        n = len(b)
+        ctx.warn(f"외곽이 시계 방향이라 반시계로 뒤집어 저장했다: 저장 변 j = 입력 변 {n - 2}-j (mod {n}). slopes·overhangs 는 입력 순서로 받아 옮겼고, "
+                 "roof.eaves.set 의 edges 는 저장 순서 번호다(numbering=input 이면 입력 번호, roof.eaves 의 input_edge 로 대응을 본다)")
+    else:
+        p.pop("cw_input", None)
+
+
 def _roof_checked(p: dict) -> dict:
     why = K.row_params_error("roof", p)
     if why:
@@ -2668,6 +2697,7 @@ def roof_create(ctx, a: RoofCreate):
             raise DobimError("CONSTRAINT", f"thickness 는 유형 두께({tp['thickness']:g})를 따른다: 함께 주지 않는다", path="/thickness")
     thick = tp["thickness"] if tp is not None else (a.thickness if a.thickness is not None else 200.0)
     p = _roof_row(a.form, b, a.pitch, a.overhang, a.base_offset, thick, a.ridge, a.dir, a.name, sl, oh)
+    _mark_cw(ctx, p, a.boundary)
     if tp is not None:
         from dobim_core import commands_roof as CR
         p = _roof_checked(CR.with_type(p, a.type, tp))
@@ -2733,6 +2763,8 @@ def roof_set(ctx, a: RoofSet):
             oh = [float(v) for v in a.overhangs]
             if len(oh) != len(p["boundary"]):
                 raise DobimError("CONSTRAINT", f"overhangs 는 외곽의 변 수({len(p['boundary'])})만큼 있어야 한다", path="/overhangs")
+    if a.boundary is not None:
+        _mark_cw(ctx, p, a.boundary)
     if len(p["boundary"]) != old_n and "eaves" in p:   # 처마 부속(W2 여덟 번째 PR)은 변 번호로 붙는다
         raise DobimError("CONSTRAINT", "외곽 꼭짓점 수가 바뀌면 처마 부속의 변 번호가 어긋난다", path="/boundary", hint="roof.eaves.set 으로 처마 부속을 먼저 떼세요")
     if p["form"] == "footprint":   # 외곽선 지붕(W2 여덟 번째 PR): 변마다 내밀기
@@ -3740,7 +3772,7 @@ def relation_list(ctx, a: RelationList):
          args=Empty, idempotent=True, examples=[{}])
 def model_stats(ctx, a):
     g = ctx.g
-    return {"counts": g.q(Q.model_stats), "door": g.q(Q.schedule_summary, "door"),
+    return {"counts": g.q(Q.model_stats), "door": g.q(Q.door_summary),   # door = IfcDoor 전체(counts.door 와 같은 수, W2 아홉 번째 PR)
             "wall": g.q(Q.schedule_summary, "wall")}
 
 

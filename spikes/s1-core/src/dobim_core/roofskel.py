@@ -53,6 +53,8 @@ class _Sweep:
     def __init__(self, pts, lines, eps):
         self.lines = lines
         self.eps = eps
+        self.h = 0.0
+        self.ptol = 100.0 * eps   # 거의 한 점에서 만나는 선들의 어긋남 허용(반올림된 좌표가 만드는 크기, 40m 지붕이면 0.4mm)
         self.snap = RP._Snap(tol=max(RP.SNAP, eps * 4.0))
         self.arcs = []      # (in 선, out 선, 시작 점 key, 끝 점 key, in 선이 움직였나, out 선이 움직였나)
         self.bottoms = []   # (선, 시작 key, 끝 key): 선이 출발할 때 그 선 위 파면 변(면의 아랫변 = 처마 선 또는 출발 높이의 선)
@@ -110,16 +112,133 @@ class _Sweep:
         ua, ub = self._dir(vt["a"]), self._dir(vt["b"])
         return ua[0] * ub[1] - ua[1] * ub[0] < -1e-12
 
+    def _meet(self, vts, h, extra=()):
+        """여러 꼭짓점이 한 점에서 만날 때의 위치(W2 아홉 번째 PR). 움직이는 꼭짓점의 위치는 사건 높이의 반올림만큼 어긋나지만
+        움직이지 않는 선(박공·연결 변·아직 출발하지 않은 경사 변) 위의 점은 정확하다: 관련 선 가운데 움직이지 않는 선이 둘(평행이 아닌)이면
+        그 교점, 하나면 꼭짓점 평균을 그 선 위로 내린 점, 없으면 평균. extra = 만나는 점이 놓일 선(분할 사건에서 닿은 변)."""
+        px = sum(vt["p"][0] for vt in vts) / len(vts)
+        py = sum(vt["p"][1] for vt in vts) / len(vts)
+        fx = []
+        for j in sorted({x for vt in vts for x in (vt["a"], vt["b"])} | set(extra)):
+            if self.speed(j, h) <= 0.0:
+                fx.append(j)
+        for x in range(len(fx)):
+            for y in range(x + 1, len(fx)):
+                la, lb = self.lines[fx[x]], self.lines[fx[y]]
+                if abs(la[0] * lb[1] - la[1] * lb[0]) < PAR_SIN:
+                    continue
+                q = _isect(la, self.C(fx[x], h), lb, self.C(fx[y], h))
+                if q is not None and abs(q[0] - px) + abs(q[1] - py) <= 4.0 * self.ptol:
+                    return q
+        if fx:
+            la = self.lines[fx[0]]
+            f = la[0] * px + la[1] * py - self.C(fx[0], h)
+            if abs(f) <= 4.0 * self.ptol:
+                return (px - la[0] * f, py - la[1] * f)
+        return (px, py)
+
     # ---- 기록
     def _end(self, vt, key):
         if vt["k"] != key:
-            ma, mb = vt["m"] if vt["m"] is not None else (False, False)
+            # 같은 높이에서 생겼다 끝난 꼭짓점(m 이 아직 없다)은 지금 높이의 선 움직임으로 본다: 만나는 점(_meet)으로 옮긴 만큼의 짧은 호도
+            # 그 면의 경계가 된다(W2 아홉 번째 PR. 전에는 버려서 면이 열렸다)
+            ma, mb = vt["m"] if vt["m"] is not None else (self.speed(vt["a"], self.h) > 0.0, self.speed(vt["b"], self.h) > 0.0)
             self.arcs.append((vt["a"], vt["b"], vt["k"], key, ma, mb))
 
-    def _collapse(self, loop):
-        """고리가 사라진다: 남은 변마다 윗변(끝 꼭짓점 -> 시작 꼭짓점)을 그 면에 남기고 꼭짓점의 호를 닫는다."""
+    def _peak(self, loop, h):
+        """고리의 선들이 (거의) 한 점에서 만나는 곳: 선마다 n.p - w h = c - w hs 를 최소 제곱으로 푼 점(움직이지 않는 선은 무게를 크게).
+        모든 선이 그 점에서 ptol 안이면 그 점, 아니면(용마루처럼 선으로 사라지는 고리) None. 3x3 크라메르 공식(사칙연산만)."""
+        rows = []
+        for j in sorted({vt["a"] for vt in loop} | {vt["b"] for vt in loop}):
+            nx, ny, c, w, hs = self.lines[j]
+            if self.speed(j, h) > 0.0:
+                rows.append((nx, ny, -w, c - w * hs, 1.0))
+            else:
+                rows.append((nx, ny, 0.0, c, 1e6))
+        m = [[0.0] * 3 for _ in range(3)]
+        r = [0.0] * 3
+        for a0, a1, a2, bb, wt in rows:
+            av = (a0, a1, a2)
+            for x in range(3):
+                r[x] += wt * av[x] * bb
+                for y in range(3):
+                    m[x][y] += wt * av[x] * av[y]
+
+        def det3(q):
+            return (q[0][0] * (q[1][1] * q[2][2] - q[1][2] * q[2][1]) - q[0][1] * (q[1][0] * q[2][2] - q[1][2] * q[2][0])
+                    + q[0][2] * (q[1][0] * q[2][1] - q[1][1] * q[2][0]))
+        if any(rw[2] != 0.0 for rw in rows):
+            dd = det3(m)
+            if abs(dd) <= 1e-12 * max(abs(m[0][0] * m[1][1] * m[2][2]), 1e-300):
+                return None
+            sol = []
+            for x in range(3):
+                q = [row[:] for row in m]
+                for y in range(3):
+                    q[y][x] = r[y]
+                sol.append(det3(q) / dd)
+        else:   # 움직이는 선이 없다(정리 단계에서는 생기지 않지만 지켜 둔다)
+            return None
+        p = (sol[0], sol[1])
+        for a0, a1, a2, bb, wt in rows:
+            if abs(a0 * p[0] + a1 * p[1] + a2 * sol[2] - bb) > self.ptol:
+                return None
+        return p
+
+    def _collapse(self, loop, h):
+        """고리가 사라진다: 남은 변마다 윗변(끝 꼭짓점 -> 시작 꼭짓점)을 그 면에 남기고 꼭짓점의 호를 닫는다.
+        넓이로 사라졌다고 본 고리가 아직 작은 크기를 가지면(거의 동시 사건: 반올림된 좌표의 거의 평행한 변들) 꼭짓점마다 다른 점으로 닫을 때
+        윗변들이 그 크기만큼 구멍을 남긴다(W2 아홉 번째 PR). 그래서 ptol 안의 꼭짓점은 한 점으로 모으고(한 무리면 선들이 만나는 점 _peak),
+        다른 점의 윗변 바로 옆(ptol 안)에 남은 점은 그 윗변 위로 옮겨 윗변들이 서로 맞물리게 한다. 움직이지 않는 두 선(박공·연결 변)에
+        묶인 꼭짓점은 위치가 정확하므로 옮기지 않고 그 점으로 모은다."""
         n = len(loop)
-        keys = [self.snap.key(vt["p"]) for vt in loop]
+        ps = [vt["p"] for vt in loop]
+        fixed = [self.lines[vt["a"]][3] <= 0.0 and self.lines[vt["b"]][3] <= 0.0 for vt in loop]
+        tol = self.ptol
+        par = list(range(n))
+
+        def find(x):
+            while par[x] != x:
+                par[x] = par[par[x]]
+                x = par[x]
+            return x
+        for i in range(n):
+            for j in range(i + 1, n):
+                if _d(ps[i], ps[j]) <= tol:
+                    ri, rj = find(i), find(j)
+                    if ri != rj:
+                        par[max(ri, rj)] = min(ri, rj)
+        grp = {}
+        for i in range(n):
+            grp.setdefault(find(i), []).append(i)
+        rep = {}
+        for g, mem in grp.items():
+            fx = [ps[i] for i in mem if fixed[i]]
+            src = fx if fx else [ps[i] for i in mem]
+            rep[g] = (sum(p[0] for p in src) / len(src), sum(p[1] for p in src) / len(src))
+        if len(grp) == 1 and n >= 3 and not any(fixed):
+            pk = self._peak(loop, h)
+            if pk is not None and max(_d(pk, q) for q in ps) <= tol:
+                rep[0] = pk
+        elif len(grp) > 2:   # 선으로 사라지는 고리: 다른 무리 둘을 잇는 윗변 바로 옆의 무리를 그 윗변 위로
+            for g, mem in sorted(grp.items()):
+                if any(fixed[i] for i in mem):
+                    continue
+                p = rep[g]
+                for i in range(n):
+                    g1, g2 = find(i), find((i + 1) % n)
+                    if g in (g1, g2) or g1 == g2:
+                        continue
+                    a, c = rep[g1], rep[g2]
+                    dx, dy = c[0] - a[0], c[1] - a[1]
+                    l2 = dx * dx + dy * dy
+                    t = ((p[0] - a[0]) * dx + (p[1] - a[1]) * dy) / l2
+                    if 0.0 < t < 1.0:
+                        q = (a[0] + t * dx, a[1] + t * dy)
+                        if _d(p, q) <= tol:
+                            rep[g] = q
+                            break
+        keys = [self.snap.key(rep[find(i)]) for i in range(n)]
         for i in range(n):
             vt, nx = loop[i], loop[(i + 1) % n]
             if n >= 2 and vt["b"] == nx["a"] and keys[i] != keys[(i + 1) % n]:
@@ -217,6 +336,7 @@ class _Sweep:
     def _settle(self, h):
         """같은 높이의 사건을 정리한다: 합치기·가시 자르기·분할을 바뀌지 않을 때까지."""
         eps = self.eps
+        self.h = h
         guard = 0
         while True:
             guard += 1
@@ -226,15 +346,16 @@ class _Sweep:
             for li, lp in enumerate(self.loops):
                 n = len(lp)
                 if n < 3 or abs(RP._area2([vt["p"] for vt in lp])) <= eps * _perim(lp):
-                    self._collapse(lp)
+                    self._collapse(lp, h)
                     self.loops.pop(li)
                     changed = True
                     break
-                for i in range(n):   # 같은 점이 된 이웃 꼭짓점(변 사건)
-                    v1, v2 = lp[i], lp[(i + 1) % n]
-                    if _d(v1["p"], v2["p"]) <= eps:
-                        m = ((v1["p"][0] + v2["p"][0]) / 2.0, (v1["p"][1] + v2["p"][1]) / 2.0)
-                        k = self.snap.key(m)
+                for i in range(n):   # 같은 점이 된 이웃 꼭짓점(변 사건). 변 방향으로 이미 엇갈린 짧은 변(반올림으로 사건 높이를 지나친 것)도
+                    v1, v2 = lp[i], lp[(i + 1) % n]   # 합친다: 안 그러면 그 변 사건이 같은 높이에서 끝없이 다시 잡힌다(W2 아홉 번째 PR)
+                    dd = _d(v1["p"], v2["p"])
+                    u = self._dir(v1["b"])
+                    if dd <= eps or (dd <= self.ptol and (v2["p"][0] - v1["p"][0]) * u[0] + (v2["p"][1] - v1["p"][1]) * u[1] <= 0.0):
+                        k = self.snap.key(self._meet((v1, v2), h))
                         self._end(v1, k)
                         self._end(v2, k)
                         nv = self._vertex(v1["a"], v2["b"], self.snap.pts[k], k)
@@ -310,20 +431,22 @@ class _Sweep:
                 L = (v2["p"][0] - v1["p"][0]) * u[0] + (v2["p"][1] - v1["p"][1]) * u[1]
                 if not -eps <= s <= L + eps:
                     continue
-                k = self.snap.key(r["p"])
-                self._end(r, k)
                 # 고리 순서: r, r+1, ..., i(v1), i+1(v2), ..., r-1
                 seq = [lp[(ri + j) % n] for j in range(n)]
                 pi = (i - ri) % n          # v1 의 seq 위치
                 if _d(r["p"], v1["p"]) <= eps or _d(r["p"], v2["p"]) <= eps:   # 꼭짓점끼리 만났다
                     qi = pi if _d(r["p"], v1["p"]) <= eps else (pi + 1) % n
                     q = seq[qi]
+                    k = self.snap.key(self._meet((r, q), h))
+                    self._end(r, k)
                     self._end(q, k)
                     xa = self._vertex(r["a"], q["b"], self.snap.pts[k], k)
                     xb = self._vertex(q["a"], r["b"], self.snap.pts[k], k)
                     la = [xa] + seq[qi + 1:]
                     lb = [xb] + seq[1:qi]
                 else:
+                    k = self.snap.key(self._meet((r,), h, (e,)))
+                    self._end(r, k)
                     xa = self._vertex(r["a"], e, self.snap.pts[k], k)   # r 의 앞 변 -> 닿은 변(뒤쪽 반)
                     xb = self._vertex(e, r["b"], self.snap.pts[k], k)   # 닿은 변(앞쪽 반) -> r 의 뒤 변
                     la = [xa] + seq[pi + 1:]
@@ -444,7 +567,7 @@ def _build(b, ks, os, z0):
         return "경사면이 하나도 만들어지지 않는다"
     if len(faces) > FACES_MAX:
         return f"경사면이 {FACES_MAX}개를 넘는다(외곽을 단순하게 하라)"
-    r = RP._finish(faces, snap, planes, normals, [tuple(q) for q in pts])
+    r = RP._finish(faces, snap, planes, normals, [tuple(q) for q in pts], max(RP.ON_TOL, snap.tol))
     if isinstance(r, str):
         return r
     return r + (tuple(src),)
