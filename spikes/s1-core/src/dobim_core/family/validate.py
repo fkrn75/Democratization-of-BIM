@@ -38,7 +38,9 @@ def _status(issues: list[Issue], prefixes: tuple[str, ...] | None = None) -> str
     return "fail" if any(i.level == "error" and (prefixes is None or i.code.startswith(prefixes)) for i in issues) else "pass"
 
 
-def validate_recipe(data: Any, level: str = "full", time_budget: float | None = None) -> dict:
+def validate_recipe(data: Any, level: str = "full", time_budget: float | None = None, ifc_schema: bool = False) -> dict:
+    """ifc_schema=True 이면 static 에 IFC4 스키마 대조(ifc_schema: 클래스·PredefinedType·USERDEFINED 의 ElementType/ObjectType)를 더한다
+    (family.register 의 관문, W2 아홉 번째 PR: full 은 거절하는 레시피를 register 가 받던 결함)."""
     t0 = time.perf_counter()
     deadline = t0 + (BUDGET_S.get(level, 45.0) if time_budget is None else time_budget)
 
@@ -110,13 +112,15 @@ def validate_recipe(data: Any, level: str = "full", time_budget: float | None = 
     issues += void_issues
     if void_issues:
         checks["geometry"] = "fail"
-    if any(i.level == "error" for i in sample_issues + void_issues) or not good or level == "static":
+    if any(i.level == "error" for i in sample_issues + void_issues) or not good or (level == "static" and not ifc_schema):
         return done(r)
 
     # ---- IFC 스키마 대조
     si = check_ifc_schema(r, good)
     issues += si
     checks["ifc_schema"] = _status(si)
+    if level == "static":   # register 관문(ifc_schema=True): 스키마 대조까지만
+        return done(r)
     pi = check_psets_standard(r, good)
     issues += pi
     checks["psets_standard"] = _status(pi)

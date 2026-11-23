@@ -936,7 +936,9 @@ def eaves_ok(v, n: int) -> bool:
         return False
     for k, d in v.items():
         dims = EAVE_DIMS[k]
-        if not isinstance(d, dict) or set(d) != {"edges", *dims}:
+        if not isinstance(d, dict) or set(d) - {"material"} != {"edges", *dims}:   # material: 종류별 재료 이름(W2 아홉 번째 PR, 선택)
+            return False
+        if "material" in d and not _name(d["material"]):
             return False
         es = d["edges"]
         if not (isinstance(es, list) and es and all(type(x) is int and 0 <= x < n for x in es) and es == sorted(set(es))):
@@ -962,6 +964,7 @@ def _roof_params(p):
                       # 외곽선 지붕·지붕 유형·층 구성·처마 부속(W2 여덟 번째 PR): 없으면 행은 이전과 같다
                       "overhangs": lambda v: isinstance(v, list) and len(v) == len(p.get("boundary", ())) and all(num_ok(x) and 0 <= x <= ROOF_OVERHANG_MAX for x in v),
                       "rtype": id_ok, "layers": layers_ok, "eaves": lambda v: eaves_ok(v, len(p.get("boundary", ()))),
+                      "cw_input": lambda v: v is True,   # 시계 방향으로 받은 외곽(W2 아홉 번째 PR): 형상·IFC 형상과 무관, 처마 부속 변 번호 대응에만
                       "axis": lambda v: isinstance(v, list) and len(v) == 4 and all(num_ok(x) for x in v),
                       "profile": lambda v: isinstance(v, list) and all(_pt_ok(q) for q in v)})
     if err is not None:
@@ -1602,7 +1605,36 @@ OPENINGS_OBJ_MAX = 500     # 독립 개구 객체 수 상한
 SHAFT_HEIGHT_MAX = 500000.0
 
 
+OPENING_PSETS_MAX = 64   # 독립 개구 하나의 속성 수 상한(W2 아홉 번째 PR)
+
+
+def _opening_psets_ok(v) -> bool:
+    """독립 개구의 속성 {속성셋: {속성: 값}}(값 = bool·int64·유한 float·문자열 255자 이하). 비어 있으면 키를 두지 않는다."""
+    import re
+    nm = re.compile(r"^[A-Za-z][A-Za-z0-9_]{0,63}$")
+    if not isinstance(v, dict) or not v:
+        return False
+    n = 0
+    for ps, props in v.items():
+        if not (isinstance(ps, str) and nm.match(ps) and ps != "DoBIM_Intent" and isinstance(props, dict) and props):
+            return False
+        for k, x in props.items():
+            n += 1
+            if not (isinstance(k, str) and nm.match(k) and k != "id"):
+                return False
+            if isinstance(x, bool) or (isinstance(x, int) and -2**63 <= x < 2**63) or (isinstance(x, float) and num_ok(x)):
+                continue
+            if isinstance(x, str) and len(x) <= 255 and "\x00" not in x:
+                continue
+            return False
+    return n <= OPENING_PSETS_MAX
+
+
 def _opening_params(p):
+    if isinstance(p, dict) and "psets" in p:   # 속성(W2 아홉 번째 PR, 선택): 없으면 행은 이전과 같다
+        if not _opening_psets_ok(p["psets"]):
+            return "opening.psets 는 {속성셋: {속성: 값}} 이어야 한다(값은 bool·정수·유한 실수·255자 이하 문자열)"
+        p = {k: v for k, v in p.items() if k != "psets"}
     if not isinstance(p, dict) or p.get("mode") not in OPENING_MODES:
         return "opening.mode 는 vertical·shaft·wall 중 하나다"
     m = p["mode"]

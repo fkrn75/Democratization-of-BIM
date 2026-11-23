@@ -369,8 +369,13 @@ class CurtainParts(A):
     id: Id
     what: Literal["mullions", "panels", "grid", "summary"] = Field("summary", description="mullions 멀리언, panels 패널, grid 격자선 위치, summary 유형별 집계만")
     key: Key | None = Field(None, description="이 키 하나만(조회)")
-    limit: int = Field(200, ge=1, le=5000, description="최대 개수. 응답 크기 상한에 걸리면 이보다 적게 돌려주고 page.truncated 로 알린다")
+    limit: int = Field(200, ge=1, le=5000, description="최대 개수. 응답 크기 상한(약 8,000토큰)에 걸리면 이보다 적게 돌려주고 page.truncated=true 와 "
+                       "page.next_cursor(다음 쪽)를 준다. 한 번에 더 많이 받으려면 compact=true(배열 행, 약 4배)·summary=false")
     cursor: str | None = Field(None, max_length=2048, description="이전 응답의 page.next_cursor")
+    offset: int | None = Field(None, ge=0, le=10_000_000, description="커서 대신 몇 번째 항목부터(0부터). 원자 script 처럼 앞 응답을 못 읽는 곳에서 "
+                               "offset 을 미리 나눠 부른다(응답의 next_offset 이 다음 시작, 잘렸으면 page.truncated=true). cursor 와 함께 줄 수 없다")
+    compact: bool = Field(False, description="true 면 items 를 열 이름(result.columns) 순서의 배열로 준다(키 이름을 되풀이하지 않아 한 쪽에 약 4배)")
+    summary: bool = Field(True, description="false 면 집계(summary)를 빼고 목록만(쪽마다 같은 집계를 다시 받지 않는다)")
 
 
 def _seg_len(q) -> float:
@@ -409,12 +414,36 @@ def curtain_parts(ctx, a: CurtainParts):
         rows = [x for x in rows if x.get("key") == a.key]
         if not rows:
             raise DobimError("NOT_FOUND", f"이 커튼월에 없는 키다: {a.key}", path="/key")
-    start = C_dec(a.cursor)
+    if a.offset is not None and a.cursor is not None:
+        raise DobimError("CONSTRAINT", "offset 과 cursor 는 함께 줄 수 없다", path="/offset")
+    start = a.offset if a.offset is not None else C_dec(a.cursor)
+    base = {"summary": summary} if a.summary else {}
+    cols = None
+    if a.compact:   # 열 이름 한 벌 + 배열 행(W2 아홉 번째 PR, 실사용 결함 4: 4,721 패널을 쪽 수십 번에 다 받는다)
+        cols = list(_COLS[a.what])
+        rows = [[_cv(x.get(c)) for c in cols] for x in rows]
+        base["columns"] = cols
     sub = rows[start:start + a.limit]
     from dobim_core import limits
-    items, cut = limits.fit(sub, base={"summary": summary}, cursor_of=lambda k: limits.enc_cursor(start + k + 1))
+    hint = a.offset is not None or a.compact
+    extra = {"next_offset": 10_000_000} if hint else {}
+    items, cut = limits.fit(sub, base={**base, **extra}, cursor_of=lambda k: limits.enc_cursor(start + k + 1))
     more = start + len(items) < len(rows)
-    return {"summary": summary, "items": items, "page": limits.page(limits.enc_cursor(start + len(items)) if more else None, len(rows), cut)}
+    out = {**base, "items": items}
+    if hint:   # 다음 시작 번호(끝이면 null). 잘렸는지는 page.truncated, 다음 쪽 커서는 page.next_cursor
+        out["next_offset"] = start + len(items) if more else None
+    out["page"] = limits.page(limits.enc_cursor(start + len(items)) if more else None, len(rows), cut)
+    return out
+
+
+def _cv(v):
+    """배열 행의 값: 정수인 실수는 정수로(1200.0 -> 1200, 한 쪽에 더 담는다)."""
+    return int(v) if isinstance(v, float) and v.is_integer() and abs(v) < 2**53 else v
+
+
+_COLS = {"mullions": ("key", "dir", "type", "at", "from", "to", "length"),   # label = "m:"+key, 가로 멀리언의 to 는 null
+         "panels": ("key", "type", "z0", "z1", "width", "area_m2"),          # label = "p:"+key
+         "grid": ("dir", "at")}
 
 
 def C_dec(c) -> int:

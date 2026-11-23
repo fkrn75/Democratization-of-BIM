@@ -554,6 +554,7 @@ class IfcModel:
         self._wt_scanned = False              # 가져온 파일의 낡은 벽 유형을 한 번 훑었는가
         self._rt_sig: dict[str, tuple] = {}   # 지붕 유형 id -> 마지막으로 맞춘 (이름, 기능, 두께, 층 구성) (W2 여덟 번째 PR)
         self._rt_scanned = False
+        self._eave_mats: dict[str, dict] = {}   # 지붕 id -> {처마 부속 종류: 재료 이름} (W2 아홉 번째 PR, 마지막 투영의 값)
         self.container_of: dict[str, str] = {}  # 요소 id -> 현재 담긴 층 id (투영 상태)
         self._mats: dict[str, Any] = {}         # 재료 이름 -> 엔티티
         self._appearance: dict[str, tuple] = {}   # 재료 외관 정의(W2 다섯 번째 PR): 재료 이름 -> (r,g,b,투명도,광택). 엔진이 정의 행에서 맞춘다
@@ -854,6 +855,7 @@ class IfcModel:
             self._cw_axis.pop(eid, None)
         if eid in self.parts:   # 부속(단 묶음·층참·슬래브 구멍)이 먼저 간다
             self._sync_parts(eid, {})
+        self._gc_names(self._eave_mats.pop(eid, None) or {})
         lost = []
         for rel in list(getattr(e, "HasOpenings", None) or ()):
             op = rel.RelatedOpeningElement.id()   # 엔티티 래퍼는 접근할 때마다 새로 만들어지므로 번호로 비교한다
@@ -1163,6 +1165,17 @@ class IfcModel:
                     seen.add(st.id())
                     api_style.remove_style(f, style=st)
 
+    def _gc_names(self, names: dict) -> None:
+        """처마 부속 종류별 재료(W2 아홉 번째 PR) 가운데 이제 아무도 쓰지 않는 것을 지운다. 부속을 지울 때 관계가 함께 사라져
+        _mirror_material 이 옛 재료를 보지 못하는 경로(지붕 삭제·처마 부속 떼기·재료 바꾸기)를 맡는다."""
+        for name in sorted(set(names.values())):
+            mat = self._mats.get(name)
+            if mat is not None:
+                try:
+                    self._gc_material(mat)
+                except RuntimeError:
+                    pass   # 이미 지웠다
+
     def _gc_material(self, mat) -> None:
         """사용처가 없는 재료는 지운다. 재료 목록이 상태의 함수가 되어야 취소 후 해시가 복원된다."""
         if mat.is_a("IfcMaterial") and not [x for x in self.f.get_inverse(mat) if not x.is_a("IfcMaterialDefinitionRepresentation")]:
@@ -1175,11 +1188,13 @@ class IfcModel:
                     api_style.remove_style(self.f, style=st)
         elif our_usage(mat) and not self.f.get_inverse(mat):   # 지정이 끊긴 코어 층 구성: 층·층 집합·쓰던 재료까지 치운다
             self._drop_layer_set(mat.ForLayerSet)
+        elif mat.is_a("IfcMaterialLayerSet") and getattr(mat, "Description", None) == LAYER_MARK:   # 지붕 부속이 쓰던 층 집합(W2 아홉 번째 PR)
+            self._drop_layer_set(mat)
 
     def _drop_layer_set(self, ls) -> None:
         """코어 층 구성(IfcMaterialLayerSet)을 지운다. 다른 지정이 아직 쓰면 둔다. 층이 쓰던 재료는 사용처가 없으면 함께 지운다."""
-        if any(r.is_a("IfcMaterialLayerSetUsage") for r in self.f.get_inverse(ls)):
-            return
+        if any(r.is_a("IfcMaterialLayerSetUsage") or r.is_a("IfcRelAssociatesMaterial") for r in self.f.get_inverse(ls)):
+            return   # 아직 쓰는 지정이 있다(층 사용, 또는 지붕 부속의 층 집합 지정: W2 아홉 번째 PR)
         mats = [ly.Material for ly in ls.MaterialLayers if ly.Material is not None]
         api_material.remove_material_set(self.f, material=ls)
         for m in mats:
@@ -1519,6 +1534,8 @@ class IfcModel:
             for oid, oname, lp, at in spec.get("voids", ()):   # 독립 벽 개구(W2 세 번째 PR, ARC-34): 이름표 void:<개구 id>, 곡선 벽은 접선 틀
                 wanted[f"void:{oid}"] = {"cls": "IfcOpeningElement", "name": f"{oname}-void:{oid}", "rel": "void",
                                          "solid": (lambda lp=lp, at=at: self._vprofile_solid(lp, half, 2.0 * half) if at is None else self._vprofile_solid_at(lp, at))}
+            for oid, ps in spec.get("void_psets", ()):   # 독립 개구의 속성(W2 아홉 번째 PR)
+                wanted[f"void:{oid}"]["psets"] = ps
             self._sync_parts(eid, wanted)
 
     # ------------------------------------------------------------ 곡선 벽(W2 ARC-04)
@@ -1722,6 +1739,8 @@ class IfcModel:
         for oid, oname, o in spec.get("voids", ()):   # 독립 수직·샤프트 개구(W2 세 번째 PR, ARC-34): 이름표 void:<개구 id>
             wanted[f"void:{oid}"] = {"cls": "IfcOpeningElement", "name": f"{oname}-void:{oid}", "rel": "void",
                                      "solid": (lambda o=o: self._solid(o, depth, z0=z0))}
+        for oid, ps in spec.get("void_psets", ()):   # 독립 개구의 속성(W2 아홉 번째 PR)
+            wanted[f"void:{oid}"]["psets"] = ps
         if "parapet" in spec:   # 지붕 슬래브 둘레의 파라펫: 슬래브에 집합한 IfcWall(PARAPET). 바깥 경계와 안쪽 고리 사이를 윗면 위로 높이만큼 압출한다
             ph, pt = spec["parapet"]
             ring = parapet_ring([list(q) for q in spec["boundary"]], pt)
@@ -1819,51 +1838,106 @@ class IfcModel:
             self._set_body(part, w["solid"]())
             if "reptype" in w and part.Representation.Representations[0].RepresentationType != w["reptype"]:   # 처마 부속(W2 여덟 번째 PR)은 Brep
                 part.Representation.Representations[0].RepresentationType = w["reptype"]
+            if "psets" in w or label.startswith("void:"):   # 독립 개구의 속성(W2 아홉 번째 PR): 개구 부속 IfcOpeningElement 의 속성셋
+                self._part_psets(part, w.get("psets", ()))
         self._mirror_material(eid)
         if not have:
             self.parts.pop(eid, None)
 
+    def _part_psets(self, part, want) -> None:
+        """투영 소유 부속의 속성셋을 want(((속성셋, ((속성, 값), ...)), ...))에 맞춘다. 같으면 건드리지 않고, 다르면 지우고 정렬된 순서로 다시 만든다
+        (부속 속성은 의도 행이 정본이고 이것은 투영이다)."""
+        f = self.f
+        have = {n: {k: plain(v) for k, v in props.items() if k != "id"} for n, props in ue.get_psets(part, psets_only=True, should_inherit=False).items()}
+        want_d = {n: dict(props) for n, props in want}
+        if have == want_d:
+            return
+        for n, props in ue.get_psets(part, psets_only=True, should_inherit=False).items():
+            api_pset.remove_pset(f, product=part, pset=f.by_id(props["id"]))
+        for n, props in want:
+            ps = api_pset.add_pset(f, product=part, name=n)
+            api_pset.edit_pset(f, pset=ps, properties=dict(props))
+
     def _mirror_material(self, eid: str) -> None:
         """집합 부속(꺾인 계단의 단 묶음·참·돌음, 지붕 경사면, 슬래브 파라펫)이 요소의 단순 재료(IfcMaterial)를 따르게 한다(W2 실사용 결함 6).
-        부속의 재료 지정은 요소마다 관계 하나(GlobalId = part_guid(요소, "material"), 부속 전부)로만 둔다: 어떤 순서로 만들고 고쳐도 IFC 가
+        부속의 재료 지정은 무리마다 관계 하나(GlobalId = part_guid(요소, "material"), 부속 전부)로만 둔다: 어떤 순서로 만들고 고쳐도 IFC 가
         같은 모양이라 증분 == 전체 재생성·실행 취소 후 해시가 지켜진다. 요소에 재료가 없거나 층 구성이면 부속의 재료 지정을 뗀다.
-        개구부(빼기 부속)는 재료를 갖지 않는다."""
+        개구부(빼기 부속)는 재료를 갖지 않는다.
+        지붕(W2 아홉 번째 PR, 실사용 결함 2): 층 구성 지붕은 부속이 그 층 집합(IfcMaterialLayerSet)을 따른다. 경사면 IfcSlab 은 면마다 기울어진
+        일반 IfcSlab(표준 판이 아니다)이라 층 사용(Usage)이 아니라 층 집합 자체를 지정한다(IFC4·IFC2X3 IfcMaterialSelect 가 받는 형식).
+        처마 부속 종류에 재료를 주면(roof.eaves.set material) 그 종류는 관계 하나(part_guid(요소, "material:eave:<종류>"))로 그 재료를 갖는다."""
         if self.kinds.get(eid) == "curtwall":   # 커튼월 부속(W2 ARC-22)은 종류마다 제 재료를 갖는다(_cw_rels)
             return
         f = self.f
-        parts = [p for _, p in sorted((self.parts.get(eid) or {}).items()) if not p.is_a("IfcFeatureElementSubtraction")]
+        labeled = [(lb, p) for lb, p in sorted((self.parts.get(eid) or {}).items()) if not p.is_a("IfcFeatureElementSubtraction")]
         host = self.ents.get(eid)
         m = ue.get_material(host, should_inherit=False) if host is not None else None
         want = m if (m is not None and m.is_a("IfcMaterial")) else None
+        if want is None and self.kinds.get(eid) == "roof" and our_usage(m):
+            want = m.ForLayerSet
         gid = part_guid(eid, "material")
-        canon, old_mats = None, []
-        for p in parts:
+        em = self._eave_mats.get(eid) if self.kinds.get(eid) == "roof" else {}
+        if em is None:   # 이 세션에서 아직 투영하지 않은 지붕(가져온 파일): 파일에 있는 종류별 관계에서 읽는다
+            em = {}
+            for k in EAVE_IFC:
+                try:
+                    r = f.by_guid(part_guid(eid, f"material:eave:{k}"))
+                except RuntimeError:
+                    continue
+                if r.is_a("IfcRelAssociatesMaterial") and r.RelatingMaterial is not None and r.RelatingMaterial.is_a("IfcMaterial"):
+                    em[k] = r.RelatingMaterial.Name
+        groups = {gid: [[], want]}   # 관계 GlobalId -> [부속들, 재료]
+        gof = {}
+        for lb, p in labeled:
+            g = gid
+            if lb.startswith("eave:") and lb.split(":")[1] in em:
+                k = lb.split(":")[1]
+                g = part_guid(eid, f"material:eave:{k}")
+                if g not in groups:
+                    groups[g] = [[], self._named_material(em[k])]
+            groups[g][0].append(p)
+            gof[p.id()] = g
+        if self.kinds.get(eid) == "roof":   # 부속이 없어진(또는 재료를 뗀) 처마 종류의 관계도 찾아 지운다
+            for k in EAVE_IFC:
+                groups.setdefault(part_guid(eid, f"material:eave:{k}"), [[], None])
+        canon, old_mats = {}, []
+        for g in groups:
+            try:
+                r = f.by_guid(g)
+            except RuntimeError:
+                r = None
+            if r is not None and r.is_a("IfcRelAssociatesMaterial"):
+                canon[g] = r
+        mine = {r.id() for r in canon.values()}
+        for _lb, p in labeled:
             for r in list(p.HasAssociations or ()):
-                if not r.is_a("IfcRelAssociatesMaterial") or r == canon:
+                if not r.is_a("IfcRelAssociatesMaterial") or r == canon.get(gof[p.id()]):
                     continue
-                if r.GlobalId == gid and canon is None:
-                    canon = r
-                    continue
-                old_mats.append(r.RelatingMaterial)   # 부속에 따로 붙은 재료 지정(외부 도구 등)은 뗀다
+                if r.id() not in mine:
+                    old_mats.append(r.RelatingMaterial)   # 부속에 따로 붙은 재료 지정(외부 도구 등)은 뗀다
                 rest = tuple(x for x in r.RelatedObjects if x != p)
                 if rest:
                     r.RelatedObjects = rest
+                elif r.id() in mine:
+                    r.RelatedObjects = ()   # 다른 무리의 관계: 아래에서 그 무리를 맞출 때 다시 채우거나 지운다
                 else:
                     f.remove(r)
-        if want is None or not parts:
-            if canon is not None:
-                old_mats.append(canon.RelatingMaterial)
-                f.remove(canon)
-        elif canon is None:
-            f.createIfcRelAssociatesMaterial(gid, None, None, None, parts, want)
-        else:
-            if canon.RelatingMaterial != want:
-                old_mats.append(canon.RelatingMaterial)
-                canon.RelatingMaterial = want
-            if list(canon.RelatedObjects) != parts:
-                canon.RelatedObjects = parts
+        for g, (ps, w) in groups.items():
+            c = canon.get(g)
+            if w is None or not ps:
+                if c is not None:
+                    old_mats.append(c.RelatingMaterial)
+                    f.remove(c)
+            elif c is None:
+                f.createIfcRelAssociatesMaterial(g, None, None, None, ps, w)
+            else:
+                if c.RelatingMaterial != w:
+                    old_mats.append(c.RelatingMaterial)
+                    c.RelatingMaterial = w
+                if list(c.RelatedObjects) != ps:
+                    c.RelatedObjects = ps
         for om in old_mats:   # 이제 아무도 쓰지 않는 재료는 지운다(재료 목록이 상태의 함수여야 취소 후 해시가 복원된다)
-            if om is not None and om != want:
+            if om is not None and all(om != w for _, w in groups.values()):
                 try:
                     self._gc_material(om)
                 except RuntimeError:
@@ -2025,12 +2099,17 @@ class IfcModel:
             cls, attrs = EAVE_IFC[pc[1]]
             wanted[f"eave:{pc[0]}"] = {"cls": cls, "name": f"{spec['name']}-eave:{pc[0]}", "rel": "aggregate", "attrs": attrs, "reptype": "Brep",
                                        "solid": (lambda pc=pc: self._brep(*RE.piece_mesh(pc)))}
+        old_em = self._eave_mats.get(eid) or {}
+        self._eave_mats[eid] = dict(spec.get("eave_materials", ()))   # 처마 부속 종류별 재료(W2 아홉 번째 PR)
         self._sync_parts(eid, wanted)
         layers = spec.get("layers")   # 지붕 층 구성(W2 여덟 번째 PR): 윗면부터 준다. IfcRoof 에 IfcMaterialLayerSetUsage(AXIS3, 윗면에서 아래로)
         if layers:
             self._assign_layers(e, tuple(layers), "AXIS3", "NEGATIVE", float(spec["base_offset"]), pairs_label(layers))
         else:
             self._clear_layers(e)
+        if eid in self.parts:   # 층 구성이 바뀌었으면 부속(경사면·처마 부속)의 층 집합 지정도 따라간다(W2 아홉 번째 PR, 실사용 결함 2)
+            self._mirror_material(eid)
+        self._gc_names({k: v for k, v in old_em.items() if v not in self._eave_mats[eid].values()})
 
     # ------------------------------------------------------------ 커튼월(W2 네 번째 PR, ARC-22)
     # IfcCurtainWall 자신은 형상이 없고(레벨 좌표계 배치), 부속(멀리언 IfcMember MULLION·패널 IfcPlate CURTAIN_PANEL·문 패널 IfcDoor)이

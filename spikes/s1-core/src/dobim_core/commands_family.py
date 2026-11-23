@@ -153,12 +153,13 @@ _GATE_CACHE_MAX = 256
 
 
 def _static_errors(data: dict) -> list:
-    """family.validate(level=static) 와 같은 판정의 오류 목록(Issue 사전). 구조·식·참조·표본(기본값·min/max·열거값·호스트 두께)의 값·형상."""
+    """family.validate(level=static) 와 같은 판정에 IFC4 스키마 대조(full 의 ifc_schema)를 더한 오류 목록(Issue 사전).
+    구조·식·참조·표본(기본값·min/max·열거값·호스트 두께)의 값·형상, 클래스·PredefinedType·USERDEFINED 의 ElementType/ObjectType."""
     from dobim_core.family.validate import validate_recipe
     key = FE.digest(data)
     hit = _GATE_CACHE.get(key)
     if hit is None:
-        hit = validate_recipe(data, "static")["errors"]
+        hit = validate_recipe(data, "static", ifc_schema=True)["errors"]   # IFC4 스키마 대조까지(W2 아홉 번째 PR, 실사용 결함 7)
         if len(_GATE_CACHE) >= _GATE_CACHE_MAX:
             _GATE_CACHE.pop(next(iter(_GATE_CACHE)))
         _GATE_CACHE[key] = hit
@@ -173,7 +174,7 @@ def _gate_recipe(data: dict) -> None:
         first = errs[0]
         raise DobimError("FAMILY_INVALID", f"레시피 검증 실패: {first['message']}", path=first.get("path") or None, hint=first.get("hint"),
                          details={"total": len(errs), "issues": [_clip_issue(i) for i in errs[:5]],
-                                  "check": "family.validate(level=static) 와 같은 판정이다: family.validate 로 전체 오류를 보세요"})
+                                  "check": "family.validate(level=static) 판정 + IFC4 스키마 대조(full 의 ifc_schema)다: family.validate 로 전체 오류를 보세요"})
 
 
 # ---------------------------------------------------------------- 공통: 타입 만들기

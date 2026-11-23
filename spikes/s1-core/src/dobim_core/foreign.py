@@ -368,7 +368,7 @@ def _parse_intent(kind: str, text: str) -> dict:
         if why:
             raise ValueError(f"난간이 올바르지 않다({why})")
     elif kind == "roof":
-        if (set(p) - {"ridge", "dir", "slopes", "overhangs", "rtype", "layers", "eaves", "axis", "profile"} != {"name", "boundary", "form", "pitch", "overhang", "base_offset", "thickness"}
+        if (set(p) - {"ridge", "dir", "slopes", "overhangs", "rtype", "layers", "eaves", "axis", "profile", "cw_input"} != {"name", "boundary", "form", "pitch", "overhang", "base_offset", "thickness"}
                 or not isinstance(p["boundary"], list)
                 or not 3 <= len(p["boundary"]) <= K.RS.PTS_MAX or any(not isinstance(q, list) or len(q) != 2 for q in p["boundary"])
                 or ("slopes" in p and (not isinstance(p["slopes"], list) or len(p["slopes"]) != len(p["boundary"])))
@@ -398,7 +398,9 @@ def _parse_intent(kind: str, text: str) -> dict:
         if "eaves" in p:   # 처마 부속(W2 여덟 번째 PR): 치수는 float 로 맞추고 변 번호는 정수 그대로
             if not isinstance(p["eaves"], dict) or any(not isinstance(d, dict) for d in p["eaves"].values()):
                 raise ValueError("지붕 처마 부속이 올바르지 않다")
-            out["eaves"] = {k: {x: (list(v) if x == "edges" else _num(v, pos=True)) for x, v in d.items()} for k, d in p["eaves"].items()}
+            out["eaves"] = {k: {x: (list(v) if x == "edges" else (v if x == "material" else _num(v, pos=True))) for x, v in d.items()} for k, d in p["eaves"].items()}
+        if "cw_input" in p:   # 시계 방향으로 받은 외곽(W2 아홉 번째 PR): 값 검사는 코어 행 검사가 한다(True 만)
+            out["cw_input"] = p["cw_input"]
         why = K.row_params_error("roof", out)
         if why:
             raise ValueError(f"지붕이 올바르지 않다({why})")
