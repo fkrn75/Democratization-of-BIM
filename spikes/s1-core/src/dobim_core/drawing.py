@@ -24,6 +24,7 @@ from math import sqrt
 from dobim_core import foreign_symbols as FSYM
 from dobim_core import kinds as K
 from dobim_core import arcgeom as AG
+from dobim_core import curtain as CW
 from dobim_core import queries as Q
 from dobim_core import roofeaves as RE
 from dobim_core import solids as SO
@@ -5324,12 +5325,52 @@ def _circle_segs(cls, c, r):
     return [(cls, pts[k][0], pts[k][1], pts[(k + 1) % CIRC_N][0], pts[(k + 1) % CIRC_N][1]) for k in range(CIRC_N)]
 
 
+def _grid_arc_marks(cfg, p):
+    """원호 통심선(W2 열 번째 PR, ARC-38)의 평면 (선분들, 문자들): 호를 도면 조각(곡선 벽과 같은 나눔)으로 잇는 1점쇄선(마디는 호를 따라 이어진다)과
+    양 끝 바깥(접선 방향)에 붙는 원 기호. 입면·단면에는 그리지 않는다(보는 방향과 나란한 직선 통심선만 세로선이 된다)."""
+    if cfg[0] != "plan":
+        return ((), ())
+    sc = cfg[4]
+    ai = AG.info(p["line"], p["arc"])
+    n = AG.length(ai)
+    us = AG.breaks(ai, 0.0, n)
+    pts = [AG.point(ai, u) for u in us]
+    pat = ((GRID_DASH * sc, True), (GRID_GAP * sc, False), (GRID_DOT * sc, True), (GRID_GAP * sc, False))
+    segs, i, left = [], 0, pat[0][0]
+    for a, b in zip(pts, pts[1:]):
+        dx, dy = b[0] - a[0], b[1] - a[1]
+        ln = sqrt(dx * dx + dy * dy)
+        t = 0.0
+        while ln - t > 1e-9:
+            step = min(left, ln - t)
+            if pat[i % 4][1] and step > SEG_MIN:
+                segs.append(("symbol", a[0] + dx * t / ln, a[1] + dy * t / ln, a[0] + dx * (t + step) / ln, a[1] + dy * (t + step) / ln))
+            t += step
+            left -= step
+            if left <= 1e-9:
+                i += 1
+                left = pat[i % 4][0]
+    r = GRID_R * sc
+    labels = []
+    ends = {"both": (0, 1), "start": (0,), "end": (1,), "none": ()}[p["bubbles"]]
+    for k in ends:
+        e = pts[0] if k == 0 else pts[-1]
+        tx, ty = AG.tangent(ai, 0.0 if k == 0 else n)
+        sg = -1.0 if k == 0 else 1.0
+        c = (e[0] + sg * tx * r, e[1] + sg * ty * r)
+        segs.extend(_circle_segs("symbol", c, r))
+        labels.append((round(c[0], 3), round(c[1] - 0.35 * GRID_TEXT_H * sc, 3), p["name"], GRID_TEXT_H, "middle"))
+    return (tuple(segs), tuple(labels))
+
+
 def grid_marks(g, v, gr):
     """통심선 하나의 (선분들, 문자들) — 뷰 좌표(평면 x,y / 입면·단면 s,z)."""
     cfg = g.q(view_cfg, v)
     if cfg is None or cfg[0] == "site":
         return ((), ())
     p = Q.el(g, gr)["params"]
+    if "arc" in p:   # 원호 통심선(W2 열 번째 PR). 없으면 이전과 같다
+        return _grid_arc_marks(cfg, p)
     x1, y1, x2, y2 = p["line"]
     sc = cfg[4] if cfg[0] == "plan" else cfg[10]
     r = GRID_R * sc
@@ -6374,8 +6415,136 @@ def all_curtains(g):
 
 
 def curtain_info(g, c):
-    """(배치, 바닥 절대 z)."""
-    return (g.q(Q.curtain_layout, c), g.q(Q.curtain_z, c)[0])
+    """(배치, 바닥 절대 z). 경사 커튼 시스템(W2 열 번째 PR)은 기준선 높이(부속 z 의 기준)."""
+    return (g.q(Q.curtain_layout, c), g.q(Q.curtain_base, c))
+
+
+# ---------------------------------------------------------------- 모양 부속(W2 열 번째 PR: 경사 커튼 시스템·상단 윤곽에서 잘린 부속)
+# 틀 다각형을 기울어진(또는 잘린) 면에서 돌출한 각기둥이다. 수직 면(e2 = 위)은 평면 절단을 사각형으로 정확히 잘라 기존 각기둥과 같게 그리고,
+# 그 밖(경사 면)은 솔리드처럼 메시의 절단선·위를 향한 면의 모서리를 그린다. 입면·단면은 멀리언 = 보이는 면의 모서리, 패널 = 보는 쪽 넓은 면의
+# 멀리언이 덮지 않은 변(기존 패널 규칙)과 단면 절단선. 모양 부속은 다른 요소를 가리지 않는다(알려진 한계: 불투명 모양 패널의 가림).
+def _cw_upright(sh) -> bool:
+    return abs(sh[3][0]) < 1e-12 and abs(sh[3][1]) < 1e-12
+
+
+def _cw_mesh(sh, zb):
+    verts, faces = CW.shape_mesh(sh, zb)
+    edges, nrm = SO.feature_edges(verts, faces)
+    return verts, faces, edges, nrm
+
+
+def _cw_hits(pl, z):
+    """수직 모양 다각형(a, b = 높이)을 높이 z 에서 자른 a 구간들."""
+    xs = []
+    n = len(pl)
+    for k in range(n):
+        (a0, b0), (a1, b1) = pl[k], pl[(k + 1) % n]
+        if (b0 > z) != (b1 > z):
+            xs.append(a0 + (a1 - a0) * (z - b0) / (b1 - b0))
+    xs.sort()
+    return [(xs[i], xs[i + 1]) for i in range(0, len(xs) - 1, 2) if xs[i + 1] - xs[i] > EPS]
+
+
+def _cw_at(sh, a, h):
+    o, e1, nv = sh[1], sh[2], sh[4]
+    return (o[0] + a * e1[0] + h * nv[0], o[1] + a * e1[1] + h * nv[1])
+
+
+def _cw_shape_plan(sh, zb, cut, lo, rcp, panel, lines, fills, cover=(False, False), trims=(0.0, 0.0), chord=0.0):
+    """모양 부속 하나의 평면 선·채움. 절단되면 True. 수직 패널은 기존 패널처럼 두 면 선(멀리언이 덮은 끝은 trims 만큼 뺀다)과 덮이지 않은 끝 선."""
+    hit = False
+    if _cw_upright(sh):
+        zr = cut - zb - sh[1][2]
+        for pl in sh[0]:
+            for a0, a1 in _cw_hits(pl, zr):
+                hit = True
+                q = (_cw_at(sh, a0, sh[5]), _cw_at(sh, a1, sh[5]), _cw_at(sh, a1, sh[6]), _cw_at(sh, a0, sh[6]))
+                if panel:
+                    s0 = max(a0, trims[0]) if a0 <= EPS else a0
+                    s1 = min(a1, chord - trims[1]) if a1 >= chord - EPS else a1
+                    if s1 - s0 > SEG_MIN:
+                        for h in (sh[5], sh[6]):
+                            p0, p1 = _cw_at(sh, s0, h), _cw_at(sh, s1, h)
+                            lines.append(("cut", p0[0], p0[1], p1[0], p1[1]))
+                    if not (a0 <= EPS and cover[0]):
+                        lines.append(("cut", q[0][0], q[0][1], q[3][0], q[3][1]))
+                    if not (a1 >= chord - EPS and cover[1]):
+                        lines.append(("cut", q[1][0], q[1][1], q[2][0], q[2][1]))
+                else:
+                    lines.extend(_quad_edges("cut", q))
+                    fills.append(q)
+        return hit
+    verts, faces, edges, nrm = _cw_mesh(sh, zb)
+    for a, b in SO.plane_section(verts, faces, nrm, (0.0, 0.0, 1.0), cut):
+        if sqrt((b[0] - a[0]) ** 2 + (b[1] - a[1]) ** 2) > SEG_MIN:
+            lines.append(("cut", a[0], a[1], b[0], b[1]))
+            hit = True
+    if rcp:
+        return hit
+    for ia, ib, fl in edges:
+        if len(fl) == 2 and all(nrm[f][2] <= 1e-6 for f in fl):
+            continue
+        a, b = verts[ia], verts[ib]
+        t0, t1 = 0.0, 1.0
+        dz = b[2] - a[2]
+        for bound, keep_le in ((cut, True), (lo, False)):
+            da = a[2] - bound
+            if abs(dz) < 1e-12:
+                if (da > EPS) if keep_le else (da < -EPS):
+                    t0, t1 = 1.0, 0.0
+                continue
+            t = -da / dz
+            if (dz > 0) == keep_le:
+                t1 = min(t1, t)
+            else:
+                t0 = max(t0, t)
+        if t1 - t0 <= 1e-9:
+            continue
+        ax, ay = a[0] + (b[0] - a[0]) * t0, a[1] + (b[1] - a[1]) * t0
+        bx, by = a[0] + (b[0] - a[0]) * t1, a[1] + (b[1] - a[1]) * t1
+        if sqrt((bx - ax) ** 2 + (by - ay) ** 2) > SEG_MIN:
+            lines.append(("proj", ax, ay, bx, by))
+    return hit
+
+
+def _cw_shape_v(cfg, sh, zb, panel, door, edges, csegs):
+    """모양 부속 하나의 입면·단면 3D 선분 (s, w, z)(edges 에 더한다)과 단면 절단선 ((s0, z0), (s1, z1))(csegs)."""
+    sec, near, far = cfg[9], cfg[7], cfg[8]
+    d = (cfg[3], cfg[4], 0.0)
+    verts, faces, medges, nrm = _cw_mesh(sh, zb)
+    ws = [_sw(cfg, v)[1] for v in verts]
+    if min(ws) > far or (sec and max(ws) <= near + EPS):
+        return
+    if sec and min(ws) < near - EPS:
+        c = cfg[1] * d[0] + cfg[2] * d[1] + near
+        for a, b in SO.plane_section(verts, faces, nrm, d, c):
+            sa, sb = _sw(cfg, a), _sw(cfg, b)
+            if sqrt((sb[0] - sa[0]) ** 2 + (b[2] - a[2]) ** 2) > SEG_MIN:
+                csegs.append(((sa[0], a[2]), (sb[0], b[2])))
+
+    def put(a, b):
+        pa, pb = _sw(cfg, a), _sw(cfg, b)
+        e0, e1 = (pa[0], pa[1], a[2]), (pb[0], pb[1], b[2])
+        if abs(e1[0] - e0[0]) < EPS and abs(e1[2] - e0[2]) < EPS:
+            return
+        cl = _clip_edge(e0, e1, near, far)
+        if cl is not None:
+            edges.append(cl)
+    if not panel:
+        for ia, ib, fl in medges:
+            if len(fl) == 2 and all(nrm[f][0] * d[0] + nrm[f][1] * d[1] >= -1e-9 for f in fl):
+                continue
+            put(verts[ia], verts[ib])
+        return
+    nv = sh[4]
+    h = sh[6] if nv[0] * d[0] + nv[1] * d[1] <= 0 else sh[5]   # 보는 쪽 넓은 면
+    o, e1, e2 = sh[1], sh[2], sh[3]
+    for pl, cov in zip(sh[0], sh[7][0]):
+        n = len(pl)
+        pts = [(o[0] + a * e1[0] + b * e2[0] + h * nv[0], o[1] + a * e1[1] + b * e2[1] + h * nv[1], o[2] + zb + a * e1[2] + b * e2[2] + h * nv[2]) for a, b in pl]
+        for k in range(n):
+            if door or not cov[k]:
+                put(pts[k], pts[(k + 1) % n])
 
 
 def scope_curtains(g, v):
@@ -6444,7 +6613,11 @@ def curtain_plan(g, v, c):
 
     def is_cut(z0, z1):
         return z0 + zb <= cut + EPS and cut < z1 + zb - EPS
+    shp = lay.get("shapes") or {}
     for _k, d, _t, q, z0, z1 in lay["mullions"]:
+        if _k in shp:   # 모양 부속(W2 열 번째 PR)
+            cutted = _cw_shape_plan(shp[_k], zb, cut, lo, rcp, False, lines, fills) or cutted
+            continue
         if is_cut(z0, z1):
             lines.extend(_quad_edges("cut", q))
             fills.append(q)
@@ -6453,6 +6626,10 @@ def curtain_plan(g, v, c):
             lines.extend(_quad_edges("proj", q))
     below = []
     for _k, kind, q, z0, z1, cover, trims in lay["panels"]:
+        if _k in shp:   # 모양 부속(W2 열 번째 PR): 절단 아래 패널 윗면은 그리지 않는다
+            cutted = _cw_shape_plan(shp[_k], zb, cut, lo, rcp, True, lines, fills, cover, trims,
+                                    sqrt((q[1][0] - q[0][0]) ** 2 + (q[1][1] - q[0][1]) ** 2)) or cutted
+            continue
         if is_cut(z0, z1):
             cutted = True
             if kind == "door":
@@ -6548,7 +6725,8 @@ def curtain_vparts(g, v, c):
     cfg = g.q(view_cfg, v)
     lay, zb = g.q(curtain_info, c)
     sec, far = cfg[9], cfg[8]
-    edges, cuts = [], []
+    edges, cuts, csegs = [], [], []
+    shp = lay.get("shapes") or {}
 
     def take(q, z0, z1, sides=None):
         if sec:
@@ -6562,8 +6740,14 @@ def curtain_vparts(g, v, c):
             return
         edges.extend(_cw_prism_edges(cfg, q, z0, z1, sides))
     for _k, _d, _t, q, z0, z1 in lay["mullions"]:
+        if _k in shp:   # 모양 부속(W2 열 번째 PR)
+            _cw_shape_v(cfg, shp[_k], zb, False, False, edges, csegs)
+            continue
         take(q, z0 + zb, z1 + zb)
     for _k, kind, q, z0, z1, cover, _tr in lay["panels"]:
+        if _k in shp:
+            _cw_shape_v(cfg, shp[_k], zb, True, kind == "door", edges, csegs)
+            continue
         sides = (True, True, True, True) if kind == "door" else tuple(not x for x in cover)
         if sec or any(sides):
             take(q, z0 + zb, z1 + zb, sides)
@@ -6581,7 +6765,7 @@ def curtain_vparts(g, v, c):
     for (z, w), ivs in sorted(horz.items()):
         out.extend(((a, w, z), (b, w, z)) for a, b in _ivs_merge(ivs))
     out.extend(rest)
-    return (tuple(out), tuple(cuts))
+    return (tuple(out), tuple(cuts), tuple(csegs))
 
 
 def curtain_vpieces(g, v, c):
@@ -6589,8 +6773,9 @@ def curtain_vpieces(g, v, c):
     cfg = g.q(view_cfg, v)
     lay, zb = g.q(curtain_info, c)
     out = []
+    shp = lay.get("shapes") or {}
     for _k, kind, q, z0, z1, _c, _t in lay["panels"]:
-        if kind in ("opaque", "door"):
+        if kind in ("opaque", "door") and _k not in shp:   # 모양 부속(W2 열 번째 PR)은 가리지 않는다
             poly = _clip_w([_sw(cfg, p) for p in q], cfg[7], cfg[8])
             if len(poly) >= 3 and _area2(poly) > 2 * EPS:
                 out.append((z0 + zb, z1 + zb, tuple(poly)))
@@ -6602,7 +6787,7 @@ def curtain_lines(g, v, c):
     cfg = g.q(view_cfg, v)
     if cfg[0] == "plan":
         return g.q(curtain_plan, v, c)[0]
-    edges, cuts = g.q(curtain_vparts, v, c)
+    edges, cuts, csegs = g.q(curtain_vparts, v, c)
     idx = g.q(_occ_index, v)
     fo = g.q(_fview, v)
     out = []
@@ -6611,6 +6796,7 @@ def curtain_lines(g, v, c):
             out.append(("proj", e0[0] + t0 * (e1[0] - e0[0]), e0[2] + t0 * (e1[2] - e0[2]), e0[0] + t1 * (e1[0] - e0[0]), e0[2] + t1 * (e1[2] - e0[2])))
     for r in cuts:
         out.extend(("cut", r[k][0], r[k][1], r[(k + 1) % 4][0], r[(k + 1) % 4][1]) for k in range(4))
+    out.extend(("cut", a[0], a[1], b[0], b[1]) for a, b in csegs)   # 모양 부속의 단면 절단선(W2 열 번째 PR). 없으면 선분은 이전과 같다
     return tuple(out)
 
 

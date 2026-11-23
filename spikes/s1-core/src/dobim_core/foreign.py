@@ -114,6 +114,11 @@ def _openings(v) -> list:
     return out
 
 
+def _grid_gid(building_gid: str) -> str:
+    from dobim_core.ifc_model import part_guid
+    return part_guid(building_gid, "grid")
+
+
 def _curtwall_intent(p) -> dict:
     """커튼월 의도 params(W2 ARC-22)를 저작 행 모양으로(숫자는 모두 float). 값 검사는 코어 행 검사가 한다."""
     if not isinstance(p, dict):
@@ -1031,6 +1036,8 @@ def plan_import(data: bytes) -> ImportPlan:
                     owned.add(rel.RelatingOpeningElement.GlobalId)
         elif r["origin"] == "authored" and r["kind"] in ("slab", "stair", "roof", "wall", "curtwall"):   # 커튼월의 멀리언·패널(W2 ARC-22), 벽의 모양 개구부(18단계), 저작 슬래브의 구멍·파라펫·꺾인 계단의 단 묶음·층참·지붕의 경사면도 그 요소의 클로저에 속한다
             owned.update(p.GlobalId for p in scratch.parts.get(g, {}).values())
+    owned |= {p.GlobalId for p in prods if p.is_a("IfcGrid") and isinstance(getattr(p, "Description", None), str)
+              and p.Description.startswith("DoBIM grid") and sk is not None and p.GlobalId == _grid_gid(sk[1].GlobalId)}   # 통심선 IfcGrid 투영(W2 열 번째 PR)
     for p in prods:
         g = p.GlobalId
         if g in rows:

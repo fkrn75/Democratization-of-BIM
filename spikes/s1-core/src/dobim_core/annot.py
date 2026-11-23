@@ -179,6 +179,8 @@ def ref_resolve(g, ref):
         return ("z", g.q(Q.level_info, g.q(Q.space_level, eid))[1] + ch)
     if kind == "grid":
         x1, y1, x2, y2 = row["params"]["line"]
+        if role == "line" and "arc" in row["params"]:   # 원호 통심선(W2 열 번째 PR)은 직선 참조가 없다: 끝점(start·end)만 잰다
+            return ("orphan", "bad_ref")
         if role == "start":
             return ("pt", x1, y1)
         if role == "end":

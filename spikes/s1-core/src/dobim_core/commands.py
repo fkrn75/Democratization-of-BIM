@@ -18,6 +18,7 @@ from pydantic import (AfterValidator, BaseModel, BeforeValidator, ConfigDict, Fi
                       ValidationInfo, field_validator, model_validator)
 
 from dobim_core import annot as AN
+from dobim_core import arcgeom as AG
 from dobim_core import drawing as D
 from dobim_core import drawing_export as DX
 from dobim_core import fixture as F
@@ -2942,6 +2943,8 @@ class GridSet(A):
     name: Annotated[str, Field(min_length=1, max_length=16)] | None = None
     line: Annotated[list[GridCoord], Field(min_length=4, max_length=4)] | None = None
     bubbles: Literal["both", "start", "end", "none"] | None = None
+    arc_through: Annotated[list[GridCoord], Field(min_length=2, max_length=2)] | None = Field(None, description="원호 통심선으로(W2 열 번째 PR): 호 위의 한 점 [x,y]. "
+                                                                                                "line 만 주면 원호 통심선은 직선이 된다")
 
 
 @command("grid.set", kind="mutation", risk="write", group="model.grid", summary="통심선 기호·선분·원 위치 변경", args=GridSet, since="0.6",
@@ -2954,6 +2957,12 @@ def grid_set(ctx, a: GridSet):
         p["name"] = a.name
     if a.line is not None:
         p["line"] = [float(v) for v in a.line]
+        p.pop("arc", None)
+    if a.arc_through is not None:
+        why = AG.problem(p["line"], a.arc_through, 0.0)
+        if why:
+            raise DobimError("CONSTRAINT", f"원호 통심선이 올바르지 않다: {why}", path="/arc_through")
+        p["arc"] = AG.canonical_mid(p["line"], a.arc_through)
     if a.bubbles is not None:
         p["bubbles"] = a.bubbles
     why = K.row_params_error("grid", p)
@@ -2974,8 +2983,84 @@ class GridMove(A):
 def grid_move(ctx, a: GridMove):
     r = ctx.row(a.id, "grid")
     x1, y1, x2, y2 = r["params"]["line"]
-    ctx.put_el(a.id, dict(r, params=dict(r["params"], line=[x1 + a.dx, y1 + a.dy, x2 + a.dx, y2 + a.dy])))
+    q = dict(r["params"], line=[x1 + a.dx, y1 + a.dy, x2 + a.dx, y2 + a.dy])
+    if "arc" in q:   # 원호 통심선(W2 열 번째 PR)
+        q["arc"] = [q["arc"][0] + a.dx, q["arc"][1] + a.dy]
+    ctx.put_el(a.id, dict(r, params=q))
     return {"id": a.id}
+
+
+class GridCreateArc(A):
+    id: Id | None = None
+    name: Annotated[str, Field(min_length=1, max_length=16)] = Field(description="통심선 기호(모델 안에서 유일)")
+    line: Annotated[list[GridCoord], Field(min_length=4, max_length=4)] | None = Field(None, description="호의 시작·끝 [x1,y1,x2,y2] mm(arc_through 와 함께)")
+    arc_through: Annotated[list[GridCoord], Field(min_length=2, max_length=2)] | None = Field(None, description="호 위의 한 점 [x,y]")
+    center: Annotated[list[GridCoord], Field(min_length=2, max_length=2)] | None = Field(None, description="또는 중심 [x,y] + radius + start_angle·end_angle")
+    radius: Annotated[float, Field(gt=0, le=1e7, allow_inf_nan=False)] | None = None
+    start_angle: Annotated[float, Field(ge=-720, le=720, allow_inf_nan=False)] | None = Field(None, description="시작각(도, x 축에서 반시계 +)")
+    end_angle: Annotated[float, Field(ge=-720, le=720, allow_inf_nan=False)] | None = Field(None, description="끝각(도): 끝 - 시작이 음수면 시계 방향")
+    bubbles: Literal["both", "start", "end", "none"] = Field("both", description="기호 원을 둘 끝")
+
+
+@command("grid.create_arc", kind="mutation", risk="write", group="model.grid",
+         summary="원호 통심선(그리드) 생성(ARC-38): 시작·끝 + 호 위 한 점, 또는 중심·반지름·각도 범위. 평면에 호 1점쇄선 + 양 끝 원 기호, IFC 는 IfcGrid 의 IfcGridAxis(IfcTrimmedCurve)",
+         args=GridCreateArc, since="0.21",
+         examples=[{"name": "A", "center": [0, 0], "radius": 12000, "start_angle": 0, "end_angle": 90},
+                   {"name": "B", "line": [15000, 0, 0, 15000], "arc_through": [10606.6, 10606.6]}])
+def grid_create_arc(ctx, a: GridCreateArc):
+    _fresh_id(ctx, a, "grid")
+    _grid_name_free(ctx, a.name)
+    if a.center is not None:
+        if a.line is not None or a.arc_through is not None or None in (a.radius, a.start_angle, a.end_angle):
+            raise DobimError("CONSTRAINT", "center 는 radius·start_angle·end_angle 과 함께, line·arc_through 없이 준다", path="/center")
+        if not 0.0 < abs(a.end_angle - a.start_angle) < 360.0:
+            raise DobimError("CONSTRAINT", "각도 범위는 0 ~ 360도 사이여야 한다", path="/end_angle")
+        line, mid = AG.from_center(a.center[0], a.center[1], a.radius, a.start_angle, a.end_angle)
+    else:
+        if a.line is None or a.arc_through is None:
+            raise DobimError("CONSTRAINT", "line 과 arc_through, 또는 center·radius·start_angle·end_angle 을 준다", path="/line")
+        line, mid = [float(v) for v in a.line], list(a.arc_through)
+    why = AG.problem(line, mid, 0.0)
+    if why:
+        raise DobimError("CONSTRAINT", f"원호 통심선이 올바르지 않다: {why}", path="/arc_through")
+    p = {"name": a.name, "line": [float(v) for v in line], "bubbles": a.bubbles, "arc": AG.canonical_mid(line, mid)}
+    why = K.row_params_error("grid", p)
+    if why:
+        raise DobimError("CONSTRAINT", f"통심선이 올바르지 않다: {why}", path="/line")
+    ctx.put_el(a.id, row("grid", "", "grid.basic", p))
+    ai = AG.info(p["line"], p["arc"])
+    return {"id": a.id, "center": [round(ai[0], 3), round(ai[1], 3)], "radius": round(ai[2], 3), "length": round(AG.length(ai), 3)}
+
+
+class GridRadial(A):
+    center: Annotated[list[GridCoord], Field(min_length=2, max_length=2)] = Field(description="중심 [x,y] mm")
+    angles: Annotated[list[Annotated[float, Field(ge=-720, le=720, allow_inf_nan=False)]], Field(min_length=1, max_length=360)] = Field(description="방사선 각도들(도, x 축에서 반시계 +)")
+    r0: Annotated[float, Field(ge=0, le=1e7, allow_inf_nan=False)] = Field(description="안쪽 끝 반지름 mm(선의 시작)")
+    r1: Annotated[float, Field(gt=0, le=1e7, allow_inf_nan=False)] = Field(description="바깥 끝 반지름 mm(선의 끝)")
+    names: Annotated[list[Annotated[str, Field(min_length=1, max_length=16)]], Field(min_length=1, max_length=360)] = Field(description="기호들(angles 와 같은 수, 모델 안에서 유일)")
+    bubbles: Literal["both", "start", "end", "none"] = Field("end", description="기호 원을 둘 끝(기본 바깥 끝)")
+
+
+@command("grid.radial", kind="mutation", risk="write", group="model.grid",
+         summary="방사 통심선 여러 개 생성(ARC-38): 중심에서 각도마다 안쪽 반지름 ~ 바깥 반지름의 직선 통심선. 원호 통심선(grid.create_arc)과 함께 방사형 격자를 만든다",
+         args=GridRadial, since="0.21", examples=[{"center": [0, 0], "angles": [0, 30, 60, 90], "r0": 2000, "r1": 14000, "names": ["R1", "R2", "R3", "R4"]}])
+def grid_radial(ctx, a: GridRadial):
+    if len(a.names) != len(a.angles):
+        raise DobimError("CONSTRAINT", "names 와 angles 의 수가 같아야 한다", path="/names")
+    if len(set(a.names)) != len(a.names):
+        raise DobimError("CONSTRAINT", "같은 기호가 두 번 있다", path="/names")
+    if a.r1 - a.r0 < 1.0:
+        raise DobimError("CONSTRAINT", "r1 은 r0 보다 1mm 이상 커야 한다", path="/r1")
+    ids = []
+    for nm, ang in zip(a.names, a.angles):
+        _grid_name_free(ctx, nm)
+        sn, cs = AG.sincos(ang * AG.PI / 180.0)
+        cx, cy = a.center
+        line = [round(cx + a.r0 * cs, 6) + 0.0, round(cy + a.r0 * sn, 6) + 0.0, round(cx + a.r1 * cs, 6) + 0.0, round(cy + a.r1 * sn, 6) + 0.0]
+        gid = ctx.new_id("grid")
+        ctx.put_el(gid, row("grid", "", "grid.basic", {"name": nm, "line": line, "bubbles": a.bubbles}))
+        ids.append(gid)
+    return {"ids": ids}
 
 
 @command("grid.delete", kind="mutation", risk="write", group="model.grid", summary="통심선 삭제", args=IdArg, since="0.6", examples=[{"id": "g" + "0" * 21}])

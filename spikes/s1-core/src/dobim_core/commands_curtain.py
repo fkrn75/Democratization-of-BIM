@@ -9,6 +9,9 @@ curtain.panel.set    패널(칸)을 유리·불투명·문·빈 칸으로 바꾼
 curtain.type.set     멀리언 유형(사각 단면 폭·깊이)을 더하거나 고친다.
 curtain.parts        멀리언·패널·격자선 목록과 유형별 집계(일람표). 쪽 나누기.
 curtain.move         평행 이동. 지우기는 element.delete.
+curtain.create_sloped  경사 커튼 시스템(유리지붕): 기준선 + 물매 + 볼록 외곽 위의 커튼 그리드(W2 열 번째 PR).
+curtain.attach       커튼월 상단을 지붕·슬래브·솔리드 면에 붙인다(상단 윤곽 top_profile, 윤곽 위 칸·멀리언은 잘린다). curtain.detach 는 뗀다.
+curtain.material.set 커튼월별 부속 재료(멀리언·유리·불투명·문 패널).
 
 저장: kind "curtwall" 행 하나(params 는 curtain.py 머리말). 멀리언·패널은 행이 아니라 키("V<u>:<z0>"·"H<z>:<u0>"·"P<u0>:<z0>")로 가리키는 부속이고
 IFC 는 IfcCurtainWall 아래 IfcRelAggregates 로 IfcMember·IfcPlate·IfcDoor 가 매달린다(GlobalId = part_guid(커튼월, "m:키"·"p:키")).
@@ -32,7 +35,7 @@ Axis = Annotated[list[Coord], Field(min_length=4, max_length=4, description="축
 Pt = Annotated[list[Coord], Field(min_length=2, max_length=2)]
 Dim = Annotated[float, Field(gt=0, le=CW.TYPE_DIM_MAX, allow_inf_nan=False)]
 TypeName = Annotated[str, Field(min_length=1, max_length=32)]
-Key = Annotated[str, Field(min_length=2, max_length=K.CW_KEY_MAX, pattern=r"^[VHP][0-9.\-]+:[0-9.\-]+$")]
+Key = Annotated[str, Field(min_length=2, max_length=K.CW_KEY_MAX, pattern=r"^[VHPE][0-9.\-]+:[0-9.\-]+$")]   # E = 경사 커튼 시스템의 외곽 변 멀리언(W2 열 번째 PR)
 
 
 class Grid(BaseModel):
@@ -80,8 +83,14 @@ def _arc_mid(axis, through):
 
 def _summary(ctx, cid: str) -> dict:
     lay = CW.layout(ctx.st.el[cid]["params"])
-    return {"id": cid, "length": round(lay["length"], 3), "u_lines": [round(u, 3) for u in lay["us"][1:-1]][:50], "v_lines": [round(z, 3) for z in lay["zs"][1:-1]][:50],
-            "cells": (len(lay["us"]) - 1) * (len(lay["zs"]) - 1), "mullions": len(lay["mullions"]), "panels": len(lay["panels"])}
+    out = {"id": cid, "length": round(lay["length"], 3), "u_lines": [round(u, 3) for u in lay["us"][1:-1]][:50], "v_lines": [round(z, 3) for z in lay["zs"][1:-1]][:50],
+           "cells": (len(lay["us"]) - 1) * (len(lay["zs"]) - 1), "mullions": len(lay["mullions"]), "panels": len(lay["panels"])}
+    if "shapes" in lay:   # 모양 부속(W2 열 번째 PR): 경사 커튼 시스템·상단 윤곽에서 잘린 부속 수. 없으면 응답은 이전과 같다
+        out["shaped"] = len(lay["shapes"])
+        if lay.get("form") == "sloped":
+            out["form"] = "sloped"
+            out["slope_length"] = round(lay["height"], 3)
+    return out
 
 
 class CurtainCreate(A):
@@ -147,10 +156,13 @@ class CurtainSet(A):
     border_type: TypeName | None = Field(None, description="외곽 멀리언 유형 이름, 또는 none(외곽 멀리언 없음)")
     join: Literal["vertical", "horizontal"] | None = None
     panel_thickness: Annotated[float, Field(gt=0, le=CW.PANEL_T_MAX, allow_inf_nan=False)] | None = None
+    slope: Annotated[float, Field(ge=0, le=CW.SLOPE_MAX, allow_inf_nan=False)] | None = Field(None, description="경사 커튼 시스템만: 물매 각(도)")
+    boundary: Annotated[list[Pt], Field(min_length=3, max_length=CW.BOUNDARY_MAX)] | None = Field(None, description="경사 커튼 시스템만: 평면 외곽(볼록 다각형)")
 
     @model_validator(mode="after")
     def _any(self):
-        if all(getattr(self, k) is None for k in ("name", "axis", "arc_through", "height", "base_offset", "u_grid", "v_grid", "interior_type", "border_type", "join", "panel_thickness")):
+        if all(getattr(self, k) is None for k in ("name", "axis", "arc_through", "height", "base_offset", "u_grid", "v_grid", "interior_type", "border_type", "join", "panel_thickness",
+                                                  "slope", "boundary")):
             raise ValueError("바꿀 필드가 하나도 없다")
         return self
 
@@ -193,6 +205,17 @@ def curtain_set(ctx, a: CurtainSet):
         else:
             m["border"] = a.border_type
     p["mullion"] = m
+    sloped = p.get("form") == "sloped"
+    if sloped and (a.height is not None or a.arc_through is not None):
+        raise DobimError("CONSTRAINT", "경사 커튼 시스템에는 높이·곡선 축이 없다", path="/height" if a.height is not None else "/arc_through", hint="slope·boundary 를 고치세요")
+    if not sloped and (a.slope is not None or a.boundary is not None):
+        raise DobimError("CONSTRAINT", "slope·boundary 는 경사 커튼 시스템(curtain.create_sloped)에만", path="/slope" if a.slope is not None else "/boundary")
+    if a.slope is not None:
+        p["slope"] = float(a.slope)
+    if a.boundary is not None:
+        p["boundary"] = [[float(x), float(y)] for x, y in a.boundary]
+    if "top_profile" in p and (a.axis is not None or a.arc_through is not None):   # 상단 윤곽은 축 위 거리로 적혀 있다: 축을 바꾸면 뗀다(다시 붙이세요)
+        p.pop("top_profile")
     ctx.put_el(a.id, dict(r, params=_checked(p)))
     return _summary(ctx, a.id)
 
@@ -361,8 +384,189 @@ def curtain_move(ctx, a: CurtainMove):
     p["axis"] = [x1 + a.dx, y1 + a.dy, x2 + a.dx, y2 + a.dy]
     if "arc" in p:
         p["arc"] = [p["arc"][0] + a.dx, p["arc"][1] + a.dy]
+    if "boundary" in p:   # 경사 커튼 시스템(W2 열 번째 PR): 외곽도 함께
+        p["boundary"] = [[x + a.dx, y + a.dy] for x, y in p["boundary"]]
     ctx.put_el(a.id, dict(r, params=_checked(p)))
     return {"id": a.id, "axis": p["axis"]}
+
+
+# ---------------------------------------------------------------- W2 열 번째 PR(ARC-22 잔여): 경사 커튼 시스템·상단 붙이기·커튼월별 재료
+class CurtainSloped(A):
+    id: Id | None = None
+    level: Id = Field(description="놓인 레벨(기준선 높이 = 레벨 + base_offset)")
+    axis: Axis = Field(description="기준선 [x1,y1,x2,y2] mm: u 격자 방향이고 이 선 위 높이가 0 이다. 면은 기준선의 왼쪽으로 오른다")
+    slope: Annotated[float, Field(ge=0, le=CW.SLOPE_MAX, allow_inf_nan=False)] = Field(description="물매 각(도): 0 = 수평 유리지붕")
+    boundary: Annotated[list[Pt], Field(min_length=3, max_length=CW.BOUNDARY_MAX)] = Field(description="평면 외곽 [[x,y], ...] mm(볼록 다각형): 면을 위에서 본 모양")
+    base_offset: Num = Field(0.0, description="레벨에서 기준선까지 mm")
+    u_grid: Grid = Field(description="기준선 방향 격자선 규칙(외곽의 기준선 방향 최소에서 잰다)")
+    v_grid: Grid = Field(description="오르는 방향 격자선 규칙(면 위 실길이, 외곽의 최소에서 잰다)")
+    mullion_width: Dim = Field(60.0, description="기본 멀리언 폭 mm(면 위)")
+    mullion_depth: Dim = Field(150.0, description="기본 멀리언 깊이 mm(면에 수직)")
+    border: Literal["same", "none", "other"] = Field("same", description="외곽 변 멀리언: same 기본 유형, none 없음, other 외곽 유형(border_width·border_depth)")
+    border_width: Dim | None = None
+    border_depth: Dim | None = None
+    join: Literal["vertical", "horizontal"] = Field("vertical", description="교차부 우선순위: vertical 오르는 방향 연속, horizontal 기준선 방향 연속")
+    panel_thickness: Annotated[float, Field(gt=0, le=CW.PANEL_T_MAX, allow_inf_nan=False)] = Field(24.0, description="패널 두께 mm")
+    name: Name | None = None
+
+
+@command("curtain.create_sloped", kind="mutation", risk="write", group="model.curtain",
+         summary="경사 커튼 시스템(유리지붕) 생성: 기준선 + 물매 각 + 볼록 외곽 위의 커튼 그리드. 멀리언(격자선 칸·외곽 변)·패널(칸 ∩ 외곽)은 면 위의 부속, IFC 는 IfcCurtainWall 아래 IfcMember·IfcPlate",
+         args=CurtainSloped, since="0.21",
+         examples=[{"level": F.LV2, "axis": [0, 0, 6000, 0], "slope": 20, "boundary": [[0, 0], [6000, 0], [6000, 4000], [0, 4000]],
+                    "u_grid": {"rule": "spacing", "value": 1500}, "v_grid": {"rule": "max_spacing", "value": 2000}}])
+def curtain_create_sloped(ctx, a: CurtainSloped):
+    _fresh_id(ctx, a, "curtwall")
+    ctx.authored(a.level, "level", what="레벨에 경사 커튼 시스템을 추가하는 것")
+    a.name = a.name or f"CS-{a.id[-6:]}"
+    types = {"기본": {"width": float(a.mullion_width), "depth": float(a.mullion_depth)}}
+    mullion = {"interior": "기본"}
+    if a.border == "same":
+        mullion["border"] = "기본"
+    elif a.border == "other":
+        if a.border_width is None or a.border_depth is None:
+            raise DobimError("CONSTRAINT", "border other 는 border_width·border_depth 가 필요하다", path="/border_width")
+        types["외곽"] = {"width": float(a.border_width), "depth": float(a.border_depth)}
+        mullion["border"] = "외곽"
+    p = {"name": a.name, "form": "sloped", "axis": [float(x) for x in a.axis], "slope": float(a.slope), "boundary": [[float(x), float(y)] for x, y in a.boundary],
+         "u_grid": _grid(a.u_grid), "v_grid": _grid(a.v_grid), "types": types, "mullion": mullion, "join": a.join, "panel_thickness": float(a.panel_thickness)}
+    if a.base_offset:
+        p["base_offset"] = float(a.base_offset)
+    ctx.put_el(a.id, row("curtwall", "IfcCurtainWall", "curtwall.basic", _checked(p)))
+    ctx.rel("on_level", a.id, a.level, True)
+    return _summary(ctx, a.id)
+
+
+ATTACH_KINDS = ("roof", "solid", "slab")
+
+
+class CurtainAttach(A):
+    id: Id
+    targets: Annotated[list[Id], Field(min_length=1, max_length=16, description="붙일 대상 id 목록: 지붕(roof)·솔리드(경사 판 등)·슬래브")]
+    face: Literal["bottom", "top"] = Field("bottom", description="bottom 대상의 아랫면(기본, 지붕 아래 붙이기), top 윗면")
+    extend: bool = Field(True, description="true 면 대상 면이 커튼월 윗면보다 높은 곳까지 높이를 늘인다(상용 도구의 붙이기), false 면 지금 높이 아래만 자른다")
+
+
+def _cap(prof, h):
+    """윤곽을 높이 h 아래로(넘는 구간은 h 에서 수평): 교차점을 넣는다."""
+    out = []
+    for k, (s, z) in enumerate(prof):
+        if k:
+            s0, z0 = prof[k - 1]
+            if s > s0 and (z0 - h) * (z - h) < 0:
+                out.append([s0 + (s - s0) * (h - z0) / (z - z0), h])
+        out.append([s, min(z, h)])
+    simp = []
+    for s, z in out:   # 같은 점이 이어지면(넘던 단이 h 로 눌렸다) 하나로, 같은 높이 h 가 이어지면 가운데 점을 뺀다
+        q = [round(s, 3) + 0.0, round(z, 3) + 0.0]
+        if simp and simp[-1] == q:
+            continue
+        if len(simp) >= 2 and simp[-1][1] == simp[-2][1] == q[1] and simp[-2][0] < simp[-1][0] < q[0]:
+            simp[-1] = q
+            continue
+        simp.append(q)
+    return simp
+
+
+@command("curtain.attach", kind="mutation", risk="write", group="model.curtain",
+         summary="커튼월 상단을 지붕·경사 판·슬래브에 붙인다: 축 위에서 대상 면 높이로 상단 윤곽을 채우고 윤곽 위 칸·멀리언은 없애며 걸친 칸·멀리언은 윤곽에서 자른다(사다리꼴 유리·잘린 멀리언, 윗면 외곽 멀리언은 윤곽을 따른다)",
+         args=CurtainAttach, since="0.21", examples=[{"id": F.CW1, "targets": [F.RF1]}])
+def curtain_attach(ctx, a: CurtainAttach):
+    from dobim_core import queries as Q
+    from dobim_core import walltop as WT
+    r = ctx.authored(a.id, "curtwall", what="상단 붙이기")
+    p = dict(r["params"])
+    if p.get("form") == "sloped":
+        raise DobimError("CONSTRAINT", "경사 커튼 시스템은 상단을 붙이지 않는다", path="/id")
+    zb = ctx.g.q(Q.level_info, ctx.rels_out("on_level", a.id)[0])[1] + p.get("base_offset", 0.0)
+    faces = []
+    for i, t in enumerate(dict.fromkeys(a.targets)):
+        tr = ctx.row(t)
+        if tr["kind"] not in ATTACH_KINDS:
+            raise DobimError("CONSTRAINT", f"커튼월 상단을 붙일 수 없는 종류다({tr['kind']}): {t}", path=f"/targets/{i}", hint="지붕(roof)·솔리드·슬래브에 붙일 수 있다")
+        if tr["origin"] != "authored":
+            raise DobimError("CONSTRAINT", f"저작 요소가 아니라(외래·분리됨) 형상을 읽을 수 없다: {t}", path=f"/targets/{i}")
+        faces += WT.target_faces(tr["kind"], tr["params"], a.face, ctx.g.q(Q.level_info, ctx.rels_out("on_level", t)[0])[1] - zb)
+    h = p["height"]
+    if "arc" in p:
+        prof, covered = WT.attach_profile_arc(AG.info(p["axis"], p["arc"]), h, faces, a.face)
+    else:
+        prof, covered = WT.attach_profile(p["axis"], h, faces, a.face)
+    if prof is None:
+        raise DobimError("CONSTRAINT", "커튼월 축이 대상 면 아래(위)를 지나지 않는다", path="/targets", hint="평면에서 커튼월 축이 대상 외곽 안을 지나야 한다")
+    top = max(z for _, z in prof)
+    if a.extend and top > h:
+        p["height"] = float(top)
+        prof = [[s, z] for s, z in prof]
+    else:
+        prof = _cap(prof, h)
+    if min(z for _, z in prof) <= 0:
+        raise DobimError("CONSTRAINT", "대상 면이 커튼월 바닥보다 낮은 곳이 있다", path="/targets", hint="커튼월 바닥(레벨 + base_offset) 위의 면에만 붙일 수 있다")
+    if all(abs(z - p["height"]) < 1e-9 for _, z in prof):
+        p.pop("top_profile", None)   # 윤곽이 평평하게 윗면과 같다: 윤곽 없이 높이만
+    else:
+        p["top_profile"] = prof
+    p2 = _checked(p)
+    changed = p2 != r["params"]
+    if changed:
+        ctx.put_el(a.id, dict(r, params=p2))
+    lay = CW.layout(p2)
+    return {**_summary(ctx, a.id), "changed": changed, "height": p2["height"], "covered": covered, "points": len(prof),
+            "top_min": round(min(z for _, z in prof), 3), "top_max": round(max(z for _, z in prof), 3), "trimmed": len(lay.get("shapes", {}))}
+
+
+class CurtainDetach(A):
+    id: Id
+
+
+@command("curtain.detach", kind="mutation", risk="write", group="model.curtain", summary="커튼월 상단 윤곽을 뗀다(윗면이 높이에서 수평, 잘린 칸·멀리언이 되살아난다). 윤곽이 없으면 바꾸지 않는다",
+         args=CurtainDetach, since="0.21", examples=[{"id": F.CW1}])
+def curtain_detach(ctx, a: CurtainDetach):
+    r = ctx.authored(a.id, "curtwall")
+    if "top_profile" not in r["params"]:
+        return {**_summary(ctx, a.id), "changed": False}
+    p = {k: v for k, v in r["params"].items() if k != "top_profile"}
+    ctx.put_el(a.id, dict(r, params=_checked(p)))
+    return {**_summary(ctx, a.id), "changed": True}
+
+
+class CurtainMaterialSet(A):
+    id: Id
+    mullion: Name | None = Field(None, description="멀리언 재료 이름(기본 알루미늄). 빈 문자열은 줄 수 없다: default 로 기본 재료로 되돌린다")
+    glass: Name | None = Field(None, description="유리 패널 재료(기본 유리)")
+    opaque: Name | None = Field(None, description="불투명 패널 재료(기본 불투명 패널)")
+    door: Name | None = Field(None, description="문 패널 재료(기본 문)")
+    default: list[Literal["mullion", "glass", "opaque", "door"]] | None = Field(None, description="기본 재료로 되돌릴 종류들")
+
+    @model_validator(mode="after")
+    def _any(self):
+        if all(getattr(self, k) is None for k in ("mullion", "glass", "opaque", "door", "default")):
+            raise ValueError("바꿀 재료가 하나도 없다")
+        return self
+
+
+@command("curtain.material.set", kind="mutation", risk="write", group="model.curtain",
+         summary="커튼월별 부속 재료: 멀리언·유리·불투명·문 패널 종류마다 재료 이름(재료 외관 material.define 과 같은 이름이면 색·투명도가 따라간다). 주지 않은 종류는 기본 재료",
+         args=CurtainMaterialSet, since="0.21", examples=[{"id": F.CW1, "glass": "로이 복층유리", "mullion": "알루미늄 압출 흑색"}])
+def curtain_material_set(ctx, a: CurtainMaterialSet):
+    r = ctx.authored(a.id, "curtwall")
+    p = dict(r["params"])
+    m = dict(p.get("materials", {}))
+    for c in a.default or ():
+        m.pop(c, None)
+    for c in CW.MATERIAL_CATS:
+        v = getattr(a, c)
+        if v is not None:
+            m[c] = v
+    if m:
+        p["materials"] = dict(sorted(m.items()))
+    else:
+        p.pop("materials", None)
+    ctx.put_el(a.id, dict(r, params=_checked(p)))
+    return {"id": a.id, "materials": {c: m.get(c, d) for c, d in sorted(CW_DEFAULT_MATERIALS.items())}}
+
+
+CW_DEFAULT_MATERIALS = {"mullion": "알루미늄", "glass": "유리", "opaque": "불투명 패널", "door": "문"}   # ifc_model.IfcModel.CW_MATERIALS 와 같다(이 모듈은 ifcopenshell 을 import 하지 않는다)
 
 
 class CurtainParts(A):
@@ -395,7 +599,7 @@ def curtain_parts(ctx, a: CurtainParts):
     summary = {"mullions": nm, "panels": npn,
                "by_type": {t: {"count": c, "length_m": round(s / 1000.0, 3), **p["types"][t]} for t, (c, s) in sorted(by_t.items())},
                "by_panel": {k: {"count": c, "area_m2": round(s, 3)} for k, (c, s) in sorted(by_p.items())},
-               "join": p["join"], "length": round(lay["length"], 3), "height": p["height"]}
+               "join": p["join"], "length": round(lay["length"], 3), "height": p["height"] if "height" in p else round(lay["height"], 3)}
     if a.what == "summary":
         return summary
     if a.what == "grid":
@@ -403,13 +607,13 @@ def curtain_parts(ctx, a: CurtainParts):
     elif a.what == "mullions":
         rows = [{"key": k, "label": f"m:{k}", "dir": d, "type": t, "at": float(k[1:].split(":")[0]),
                  "from": round(z0, 3) if d == "V" else float(k.split(":")[1]), "to": round(z1, 3) if d == "V" else None,
-                 "length": round((z1 - z0) if d == "V" else _seg_len(q), 3)} for k, d, t, q, z0, z1 in lay["mullions"]]
+                 "length": round(CW.part_length(lay, m), 3)} for m in lay["mullions"] for k, d, t, q, z0, z1 in (m,)]
         for x in rows:
             if x["to"] is None:
                 x.pop("to")
     else:
-        rows = [{"key": k, "label": f"p:{k}", "type": t, "z0": round(z0, 3), "z1": round(z1, 3), "width": round(_seg_len(q), 3),
-                 "area_m2": round(_seg_len(q) * (z1 - z0) / 1e6, 6)} for k, t, q, z0, z1, _c, _t in lay["panels"]]
+        rows = [{"key": x[0], "label": f"p:{x[0]}", "type": x[1], "z0": round(x[3], 3), "z1": round(x[4], 3), "width": round(CW.panel_width(lay, x), 3),
+                 "area_m2": round(CW.panel_area(lay, x) / 1e6, 6)} for x in lay["panels"]]
     if a.key is not None:
         rows = [x for x in rows if x.get("key") == a.key]
         if not rows:
