@@ -23,6 +23,7 @@ VD1 = _id("9", 9)   # 제도 뷰 예시용 고정 id(W1 연장 VIEW-07, SCRIPT �
 OP1 = _id("9", 21)   # 독립 개구 예시용 고정 id(W2 세 번째 PR ARC-34, SCRIPT 에는 넣지 않는다)
 CW1 = _id("9", 22)   # 커튼월 예시용 고정 id(W2 네 번째 PR ARC-22, SCRIPT 에는 넣지 않는다)
 WT1, WT2, SW1 = _id("9", 23), _id("9", 24), _id("9", 25)   # 벽 유형·스택 벽 예시용 고정 id(W2 일곱 번째 PR ARC-11·ARC-09, SCRIPT 에는 넣지 않는다)
+RT1 = _id("9", 27)   # 지붕 유형 예시용 고정 id(W2 여덟 번째 PR, SCRIPT 에는 넣지 않는다)
 SP1 = _id("8", 1)   # 공간 예시용 고정 id (SCRIPT 에는 넣지 않는다)
 SI1 = _id("a", 1)   # 대지 예시용 고정 id (SCRIPT 에는 넣지 않는다)
 ST1 = _id("7", 1)   # 계단 예시용 고정 id (SCRIPT 에는 넣지 않는다)

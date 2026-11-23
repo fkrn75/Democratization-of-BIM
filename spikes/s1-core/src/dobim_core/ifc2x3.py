@@ -33,6 +33,7 @@ CLASS_MAP = {
     "IfcGeographicElement": "IfcBuildingElementProxy",
     "IfcFurniture": "IfcFurnishingElement",
     "IfcDoorType": "IfcDoorStyle", "IfcWindowType": "IfcWindowStyle",
+    "IfcRoofType": "IfcSlabType",   # 지붕 유형(W2 여덟 번째 PR): IFC2x3 에 IfcRoofType 이 없다. IfcSlabType(ROOF)로 내린다
 }
 
 APP = ("DoBIM", "DoBIM", "DoBIM IFC2x3 export")   # (개발 조직, 응용 프로그램 식별자, 전체 이름)
@@ -153,6 +154,8 @@ def to_ifc2x3(src: ifcopenshell.file, version: str = "0", stamp: int = 0) -> tup
             e.ObjectType = f"{otype}:{tag}" if otype and otype != tag else tag
         elif note and "ElementType" in attrs and not getattr(e, "ElementType", None):
             e.ElementType = ".".join(note)
+        if cls0 == "IfcRoofType" and new_cls == "IfcSlabType":   # 지붕 유형(W2 여덟 번째 PR): 지붕 판 유형으로 적는다
+            e.PredefinedType = "ROOF"
         if new_cls in ("IfcDoorStyle", "IfcWindowStyle"):   # IFC2x3 필수 속성
             if e.ConstructionType is None:
                 e.ConstructionType = "NOTDEFINED"

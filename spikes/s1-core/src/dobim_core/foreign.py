@@ -368,9 +368,11 @@ def _parse_intent(kind: str, text: str) -> dict:
         if why:
             raise ValueError(f"난간이 올바르지 않다({why})")
     elif kind == "roof":
-        if (set(p) - {"ridge", "dir", "slopes"} != {"name", "boundary", "form", "pitch", "overhang", "base_offset", "thickness"} or not isinstance(p["boundary"], list)
-                or not 3 <= len(p["boundary"]) <= 32 or any(not isinstance(q, list) or len(q) != 2 for q in p["boundary"])
-                or ("slopes" in p and (not isinstance(p["slopes"], list) or len(p["slopes"]) != len(p["boundary"])))):
+        if (set(p) - {"ridge", "dir", "slopes", "overhangs", "rtype", "layers", "eaves", "axis", "profile"} != {"name", "boundary", "form", "pitch", "overhang", "base_offset", "thickness"}
+                or not isinstance(p["boundary"], list)
+                or not 3 <= len(p["boundary"]) <= K.RS.PTS_MAX or any(not isinstance(q, list) or len(q) != 2 for q in p["boundary"])
+                or ("slopes" in p and (not isinstance(p["slopes"], list) or len(p["slopes"]) != len(p["boundary"])))
+                or ("overhangs" in p and (not isinstance(p["overhangs"], list) or len(p["overhangs"]) != len(p["boundary"])))):
             raise ValueError("지붕 params 가 다르다")
         out = {"name": _name(p["name"]), "boundary": [[_num(q[0]), _num(q[1])] for q in p["boundary"]], "form": p["form"], "pitch": _num(p["pitch"], pos=True),
                "overhang": _num(p["overhang"], nonneg=True), "base_offset": _num(p["base_offset"]), "thickness": _num(p["thickness"], pos=True)}
@@ -380,6 +382,23 @@ def _parse_intent(kind: str, text: str) -> dict:
             out["dir"] = _num(p["dir"])
         if "slopes" in p:   # 다각형 외곽 지붕(W1 1-F 4차)의 변마다 물매
             out["slopes"] = [_num(v, nonneg=True) for v in p["slopes"]]
+        if "overhangs" in p:   # 외곽선 지붕(W2 여덟 번째 PR)의 변마다 내밀기
+            out["overhangs"] = [_num(v, nonneg=True) for v in p["overhangs"]]
+        if "axis" in p or "profile" in p:   # 압출 지붕(W2 여덟 번째 PR)
+            if not isinstance(p.get("axis"), list) or not isinstance(p.get("profile"), list) or any(not isinstance(q, list) or len(q) != 2 for q in p["profile"]):
+                raise ValueError("압출 지붕 축·프로파일이 올바르지 않다")
+            out["axis"] = [_num(v) for v in p["axis"]]
+            out["profile"] = [[_num(q[0]), _num(q[1])] for q in p["profile"]]
+        if "rtype" in p:   # 지붕 유형(W2 여덟 번째 PR): 값 검사는 코어 행 검사가 한다(정의가 없으면 아래 _restore_roof_types 가 뗀다)
+            out["rtype"] = p["rtype"]
+        if "layers" in p:   # 지붕 층 구성(W2 여덟 번째 PR)
+            if not isinstance(p["layers"], list) or any(not isinstance(x, dict) or set(x) != {"material", "thickness"} for x in p["layers"]):
+                raise ValueError("지붕 층 구성이 올바르지 않다")
+            out["layers"] = [{"material": x["material"], "thickness": _num(x["thickness"], pos=True)} for x in p["layers"]]
+        if "eaves" in p:   # 처마 부속(W2 여덟 번째 PR): 치수는 float 로 맞추고 변 번호는 정수 그대로
+            if not isinstance(p["eaves"], dict) or any(not isinstance(d, dict) for d in p["eaves"].values()):
+                raise ValueError("지붕 처마 부속이 올바르지 않다")
+            out["eaves"] = {k: {x: (list(v) if x == "edges" else _num(v, pos=True)) for x, v in d.items()} for k, d in p["eaves"].items()}
         why = K.row_params_error("roof", out)
         if why:
             raise ValueError(f"지붕이 올바르지 않다({why})")
@@ -468,6 +487,22 @@ def _restore_wall_types(rows: dict, rels: set, plan: "ImportPlan") -> None:
             r["params"] = {k: v for k, v in r["params"].items() if k != "wtype"}
             r.pop("spec_hash", None)
             plan.warnings.append(f"{g}: 벽 유형 {str(tid)[:22]} 정의를 되살리지 못해 벽에서 유형을 뗐다(층 구성은 남는다)")
+
+
+def _restore_roof_types(rows: dict, rels: set, plan: "ImportPlan") -> None:
+    """지붕 유형(W2 여덟 번째 PR): 저작 지붕의 params.rtype 이 되살린 지붕 유형 정의를 가리키면 타입 관계(of_type)를 잇고, 아니면 유형만 뗀다
+    (층 구성·두께는 지붕에 남는다)."""
+    for g in sorted(rows):
+        r = rows[g]
+        tid = r["params"].get("rtype") if r["kind"] == "roof" and isinstance(r.get("params"), dict) else None
+        if tid is None:
+            continue
+        if rows.get(tid, {}).get("kind") == "rooftype":
+            rels.add(("of_type", g, tid))
+        else:
+            r["params"] = {k: v for k, v in r["params"].items() if k != "rtype"}
+            r.pop("spec_hash", None)
+            plan.warnings.append(f"{g}: 지붕 유형 {str(tid)[:22]} 정의를 되살리지 못해 지붕에서 유형을 뗐다(층 구성은 남는다)")
 
 
 def _finst_dependency_error(g: str, it: dict, cand: dict, cls_of: dict) -> str | None:
@@ -746,16 +781,17 @@ def _restore_defs(f, rows: dict, rels: set, taken: set, plan: "ImportPlan") -> N
                 skip(eid, "같은 재료 이름의 외관 정의가 더 있다")
             else:
                 ok[eid] = parsed[eid]
-    # 벽 유형(W2 일곱 번째 PR, ARC-11): 유형 이름은 유일하다(walltype.create 의 규칙). 겹치면 어느 쪽이 원본인지 알 수 없다
-    tkeys: dict = {}
-    for eid in sorted(e for e, d in parsed.items() if d["kind"] == "walltype"):
-        tkeys.setdefault(parsed[eid]["params"]["name"], []).append(eid)
-    for ids in tkeys.values():
-        for eid in ids:
-            if len(ids) > 1:
-                skip(eid, "같은 이름의 벽 유형이 더 있다")
-            else:
-                ok[eid] = parsed[eid]
+    # 벽 유형(W2 일곱 번째 PR, ARC-11)·지붕 유형(W2 여덟 번째 PR): 유형 이름은 유일하다(walltype·rooftype.create 의 규칙). 겹치면 어느 쪽이 원본인지 알 수 없다
+    for tk, what in (("walltype", "벽 유형"), ("rooftype", "지붕 유형")):
+        tkeys: dict = {}
+        for eid in sorted(e for e, d in parsed.items() if d["kind"] == tk):
+            tkeys.setdefault(parsed[eid]["params"]["name"], []).append(eid)
+        for ids in tkeys.values():
+            for eid in ids:
+                if len(ids) > 1:
+                    skip(eid, f"같은 이름의 {what}이 더 있다")
+                else:
+                    ok[eid] = parsed[eid]
     # 법정 면적 객체(W1 연장, ARC-36): 바닥면적 대상은 가리키는 레벨이 저작 레벨이어야 한다(평면 뷰와 같은 규칙). 레벨이 파일에 없으면 고아로 되살린다
     for eid in sorted(e for e, d in parsed.items() if d["kind"] == "larea"):
         lv = parsed[eid]["params"].get("level")
@@ -1012,6 +1048,7 @@ def plan_import(data: bytes) -> ImportPlan:
     elif _read_defs(f, plan):   # 정의의 값(mm)도 길이 단위가 밀리미터일 때만 해석한다(요소의 의도와 같은 이유)
         plan.warnings.append("길이 단위가 밀리미터가 아니라 뷰·주석 정의를 되살리지 않는다")
     _restore_wall_types(rows, rels, plan)   # 벽 유형(W2 일곱 번째 PR): 정의를 되살린 뒤에 벽의 타입 관계를 잇는다
+    _restore_roof_types(rows, rels, plan)   # 지붕 유형(W2 여덟 번째 PR)
     # 5) 공간 소속(on_level): 외래·분리 요소도 층에 담긴 관계를 남긴다(레벨 삭제 검사와 element.query level 필터가 쓴다)
     for p in prods:
         g = p.GlobalId

@@ -272,17 +272,19 @@ def _face_cells(i, parts, valid, planes, ks):
 class _Snap:
     """가까운 점(SNAP 안)을 한 점으로 맞춘다(먼저 들어온 점이 대표)."""
 
-    def __init__(self):
+    def __init__(self, tol=SNAP):
         self.pts = []
         self.grid = {}
+        self.tol = tol   # 외곽선 지붕(roofskel)은 좌표 크기에 맞춘 허용치를 준다(1mm 미만)
 
     def key(self, p):
         gx, gy = int(p[0] // 1.0), int(p[1] // 1.0)
+        tol = self.tol
         for dx in (-1, 0, 1):
             for dy in (-1, 0, 1):
                 for k in self.grid.get((gx + dx, gy + dy), ()):
                     q = self.pts[k]
-                    if abs(q[0] - p[0]) <= SNAP and abs(q[1] - p[1]) <= SNAP:
+                    if abs(q[0] - p[0]) <= tol and abs(q[1] - p[1]) <= tol:
                         return k
         self.pts.append((p[0], p[1]))
         self.grid.setdefault((gx, gy), []).append(len(self.pts) - 1)
@@ -444,6 +446,13 @@ def _build(b, ks, o, z0):
         return "경사면이 하나도 만들어지지 않는다"
     if len(faces) > FACES_MAX:
         return f"경사면이 {FACES_MAX}개를 넘는다(외곽을 단순하게 하라)"
+    return _finish(faces, snap, planes, [e[2] for e in ed], outline)
+
+
+def _finish(faces, snap, planes, normals, outline):
+    """면 고리들(면마다 (변 번호, snap 번호 고리))을 검사하고 마무리한다: 면이 외곽을 빈틈없이 덮는가, 면 경계에서 높이가 이어지는가,
+    용마루·추녀마루·골 분류, 윗면 바깥 둘레, 물매 화살표. planes[i]·normals[i](안쪽 법선)는 변 i 의 것. 거절이면 이유 문장(외곽선 지붕 roofskel 도 쓴다)."""
+    n = len(outline)
     tot = sum(_area2([snap.pts[k] for k in lp]) for _, lp in faces)
     want = _area2(outline)
     if abs(tot - want) > 1e-6 * want + 2.0:
@@ -535,7 +544,7 @@ def _build(b, ks, o, z0):
         if not _point_in(ring, (cx, cy)):   # 오목한 면은 가장 큰 볼록 조각의 무게중심
             big = max(cps, key=_area2)
             cx, cy = sum(q[0] for q in big) / len(big), sum(q[1] for q in big) / len(big)
-        nv = ed[i][2]
+        nv = normals[i]
         arrows.append(((cx, cy), (-nv[0], -nv[1])))
     # 윗면 바깥 둘레: 내민 외곽의 꼭짓점과 그 변 위에 놓인 면 꼭짓점(박공 끝의 용마루 끝 등)
     perim = []

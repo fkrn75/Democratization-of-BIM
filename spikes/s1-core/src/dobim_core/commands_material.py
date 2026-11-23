@@ -48,7 +48,7 @@ def _usage(ctx) -> dict:
             continue
         for e in st.by_kind.get(k, ()):
             p = st.el[e]["params"]
-            if k in ("wall", "slab") and "layers" in p:
+            if k in ("wall", "slab", "roof") and "layers" in p:   # 지붕 층 구성: W2 여덟 번째 PR
                 names = {x["material"] for x in p["layers"]}
             elif k == "curtwall":
                 names = set(ctx.eng.ifc.CW_MATERIALS.values())
@@ -192,7 +192,7 @@ def material_appearance(ctx, a: MatAppearance):
         m = ctx.material(eid)
         ap, src = effective(ctx, m)
         it = {"id": eid, "kind": r["kind"], "material": m, "appearance": ap, "source": src}
-        if r["kind"] in ("wall", "slab") and "layers" in r["params"]:
+        if r["kind"] in ("wall", "slab", "roof") and "layers" in r["params"]:   # 지붕 층 구성: W2 여덟 번째 PR
             it["layers"] = [{"material": x["material"], "thickness": x["thickness"], "appearance": effective(ctx, x["material"])[0]} for x in r["params"]["layers"]]
         elif r["kind"] == "curtwall":   # 커튼월 부속(W2 ARC-22)은 종류별 재료를 따른다
             it["parts"] = {c: {"material": n, "appearance": effective(ctx, n)[0]} for c, n in sorted(ctx.eng.ifc.CW_MATERIALS.items())}
