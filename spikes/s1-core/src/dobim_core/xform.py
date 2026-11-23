@@ -167,7 +167,10 @@ def roof(p: dict, xf: Xf) -> dict:
 
 
 def grid(p: dict, xf: Xf) -> dict:
-    return dict(p, line=_line(xf, p["line"], False))
+    q = dict(p, line=_line(xf, p["line"], False))
+    if "arc" in p:   # 원호 통심선(W2 열 번째 PR): 호 위의 가운데 점도 옮긴다(대칭이어도 가운데 점은 가운데 점이다)
+        q["arc"] = xf.pt(*p["arc"])
+    return q
 
 
 def finst_free(p: dict, xf: Xf) -> dict:

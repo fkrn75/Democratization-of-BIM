@@ -573,10 +573,18 @@ def curtain_layout(g, c):
     return CW.layout(el(g, c)["params"])
 
 
+def curtain_base(g, c):
+    """커튼월 바닥(경사 커튼 시스템은 기준선)의 절대 높이 = 레벨 + base_offset. 부속 z 는 이 높이 기준이다."""
+    return g.q(level_info, g.q(curtain_level, c))[1] + el(g, c)["params"].get("base_offset", 0.0)
+
+
 def curtain_z(g, c):
-    """커튼월의 (바닥, 윗면) 절대 높이."""
+    """커튼월의 (바닥, 윗면) 절대 높이. 경사 커튼 시스템(W2 열 번째 PR)은 부속이 차지하는 범위."""
     p = el(g, c)["params"]
     z0 = g.q(level_info, g.q(curtain_level, c))[1] + p.get("base_offset", 0.0)
+    if p.get("form") == "sloped":
+        lo, hi = CW.zrange(g.q(curtain_layout, c))
+        return (z0 + lo, z0 + hi)
     return (z0, z0 + p["height"])
 
 
@@ -584,14 +592,15 @@ def curtain_stats(g, c):
     """(멀리언 수, 패널 수, 유형별 멀리언 수 {유형: (개수, 길이 합 mm)}, 종류별 패널 수 {종류: (개수, 면적 합 m2)})."""
     lay = g.q(curtain_layout, c)
     by_t, by_p = {}, {}
-    for _k, d, t, q, z0, z1 in lay["mullions"]:
-        n = (z1 - z0) if d == "V" else sqrt((q[1][0] - q[0][0]) ** 2 + (q[1][1] - q[0][1]) ** 2)
+    for m in lay["mullions"]:
+        t = m[2]
+        n = CW.part_length(lay, m)   # 모양 부속(W2 열 번째 PR)은 잘린 길이. 없으면 이전과 같은 식
         a, b = by_t.get(t, (0, 0.0))
         by_t[t] = (a + 1, b + n)
-    for _k, kind, q, z0, z1, _c, _t in lay["panels"]:
-        w = sqrt((q[1][0] - q[0][0]) ** 2 + (q[1][1] - q[0][1]) ** 2)
+    for x in lay["panels"]:
+        kind = x[1]
         a, b = by_p.get(kind, (0, 0.0))
-        by_p[kind] = (a + 1, b + w * (z1 - z0) / 1e6)
+        by_p[kind] = (a + 1, b + CW.panel_area(lay, x) / 1e6)
     return (len(lay["mullions"]), len(lay["panels"]), by_t, by_p)
 
 
@@ -828,10 +837,11 @@ def door_summary(g):
     nc, wc = 0, 0.0
     if g.q(count, "curtwall"):
         for c in g.q(curtain_ids):
-            for _k, kind, q, _z0, _z1, _c, _t in g.q(curtain_layout, c)["panels"]:
-                if kind == "door":
+            lay = g.q(curtain_layout, c)
+            for x in lay["panels"]:
+                if x[1] == "door":
                     nc += 1
-                    wc += sqrt((q[1][0] - q[0][0]) ** 2 + (q[1][1] - q[0][1]) ** 2)
+                    wc += CW.panel_width(lay, x)
     if not nf and not nc:
         return s
     return {"count": n + nf + nc, "total_width": w + wf + wc, "by_source": {"door": n, "family": nf, "curtain_panel": nc}}
@@ -1018,9 +1028,17 @@ def ifc_spec(g, e):
         # 부속 = (이름표, IFC 클래스, 유형 또는 패널 종류, 평면 사각형(레벨 좌표), 바닥 z(레벨 기준), 높이). 이름표 순서라 결정적이다
         lay = g.q(curtain_layout, e)
         base = p.get("base_offset", 0.0)
-        parts = [(f"m:{k}", "IfcMember", t, q, z0 + base, z1 - z0) for k, _d, t, q, z0, z1 in lay["mullions"]]
-        parts += [(f"p:{k}", "IfcDoor" if pk == "door" else "IfcPlate", pk, q, z0 + base, z1 - z0) for k, pk, q, z0, z1, _c, _t in lay["panels"]]
-        return {"kind": kind, "name": p["name"], "level": g.q(curtain_level, e), "parts": tuple(sorted(parts)), "intent": intent}
+        shp = lay.get("shapes", {})
+
+        def sh(k):   # 모양 부속(W2 열 번째 PR: 경사 커튼 시스템·상단 윤곽에서 잘린 부속): 틀 원점 z 에 바닥 오프셋을 더한 모양을 끝에 붙인다. 없으면 부속 명세는 이전과 같다
+            s_ = shp.get(k)
+            return () if s_ is None else ((s_[0], (s_[1][0], s_[1][1], s_[1][2] + base)) + s_[2:7],)
+        parts = [(f"m:{k}", "IfcMember", t, q, z0 + base, z1 - z0) + sh(k) for k, _d, t, q, z0, z1 in lay["mullions"]]
+        parts += [(f"p:{k}", "IfcDoor" if pk == "door" else "IfcPlate", pk, q, z0 + base, z1 - z0) + sh(k) for k, pk, q, z0, z1, _c, _t in lay["panels"]]
+        spec = {"kind": kind, "name": p["name"], "level": g.q(curtain_level, e), "parts": tuple(sorted(parts)), "intent": intent}
+        if "materials" in p:   # 커튼월별 부속 재료(W2 열 번째 PR): 없으면 명세는 이전과 같다(기본 재료)
+            spec["materials"] = tuple(sorted(p["materials"].items()))
+        return spec
     if kind == "site":
         # 배치는 건물 아래 뼈대 대지 좌표계(원점·무회전)다. 방위·도로는 IFC 가 아니라 의도(DoBIM_Intent)로 왕복한다
         return {"kind": kind, "name": p["name"], "boundary": tuple(tuple(q) for q in p["boundary"]), "elevation": p["elevation"], "intent": intent}

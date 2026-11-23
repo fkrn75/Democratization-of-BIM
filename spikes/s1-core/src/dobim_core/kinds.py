@@ -1294,13 +1294,17 @@ GRID_BUBBLES = ("both", "start", "end", "none")
 
 def _grid_params(p):
     """통심선(grid, 19단계): 기호 문자(1~16자), 평면 선분 [x1,y1,x2,y2](길이 1mm 이상), 기호 원 위치. 비 IFC 의도 요소(도면이 평면·입면·단면에 그린다)."""
-    err = _check_fields("grid", p, {"name": lambda v: text_ok(v, 1, 16), "line": lambda v: isinstance(v, list) and len(v) == 4 and all(num_ok(x) for x in v),
-                                    "bubbles": lambda v: v in GRID_BUBBLES})
+    err = _check_opt("grid", p, {"name": lambda v: text_ok(v, 1, 16), "line": lambda v: isinstance(v, list) and len(v) == 4 and all(num_ok(x) for x in v),
+                                 "bubbles": lambda v: v in GRID_BUBBLES}, {"arc": _pt_ok})
     if err:
         return err
     x1, y1, x2, y2 = p["line"]
     if (x2 - x1) ** 2 + (y2 - y1) ** 2 < 1.0:
         return "grid.line 길이는 1mm 이상이어야 한다"
+    if "arc" in p:   # 원호 통심선(W2 열 번째 PR, ARC-38): line = 호의 시작·끝, arc = 호의 가운데 점(곡선 벽과 같은 규칙)
+        why = AG.problem(p["line"], p["arc"], 0.0)
+        if why:
+            return f"grid.arc: {why}"
     return None
 
 
@@ -1688,17 +1692,32 @@ def _cw_list_ok(v) -> bool:
 
 def _cw_keys_ok(v, vals) -> bool:
     return (isinstance(v, dict) and 1 <= len(v) <= 2 * CW.CELLS_MAX + 4 * CW.LINES_MAX
-            and all(text_ok(k, 2, CW_KEY_MAX) and k[0] in "VHP" and x in vals for k, x in v.items()))
+            and all(text_ok(k, 2, CW_KEY_MAX) and k[0] in "VHPE" and x in vals for k, x in v.items()))
+
+
+def _cw_profile_ok(v) -> bool:
+    """상단 윤곽(W2 열 번째 PR): [[u, z], ...] 숫자 쌍. 모양 규칙(벽 상단 윤곽과 같다)은 curtain.layout 이 본다."""
+    return isinstance(v, list) and 2 <= len(v) <= WT.TOP_PTS_MAX and all(isinstance(q, list) and len(q) == 2 and all(num_ok(x) for x in q) for q in v)
+
+
+def _cw_materials_ok(v) -> bool:
+    """커튼월별 부속 재료(W2 열 번째 PR): {종류: 재료 이름} 1~4개."""
+    return isinstance(v, dict) and 1 <= len(v) <= len(CW.MATERIAL_CATS) and all(k in CW.MATERIAL_CATS and text_ok(x, 1, NAME_MAX) for k, x in v.items())
 
 
 def _curtwall_params(p):
-    err = _check_opt("curtwall", p, {"name": _name, "axis": lambda v: isinstance(v, list) and len(v) == 4 and all(num_ok(x) and abs(x) <= 1e7 for x in v),
-                                     "height": lambda v: _pos(v) and v <= CW.HEIGHT_MAX, "u_grid": _cw_rule_ok, "v_grid": _cw_rule_ok, "types": _cw_types_ok,
-                                     "mullion": lambda v: isinstance(v, dict) and "interior" in v and set(v) <= {"interior", "border"} and all(isinstance(x, str) for x in v.values()),
-                                     "join": lambda v: v in CW.JOINS, "panel_thickness": lambda v: _pos(v) and v <= CW.PANEL_T_MAX},
-                     {"arc": _pt_ok, "base_offset": lambda v: num_ok(v) and v != 0 and abs(v) <= WT.BASE_OFFSET_MAX,
-                      "u_add": _cw_list_ok, "u_remove": _cw_list_ok, "v_add": _cw_list_ok, "v_remove": _cw_list_ok,
-                      "mullion_overrides": lambda v: True, "panel_overrides": lambda v: True})
+    common = {"name": _name, "axis": lambda v: isinstance(v, list) and len(v) == 4 and all(num_ok(x) and abs(x) <= 1e7 for x in v),
+              "u_grid": _cw_rule_ok, "v_grid": _cw_rule_ok, "types": _cw_types_ok,
+              "mullion": lambda v: isinstance(v, dict) and "interior" in v and set(v) <= {"interior", "border"} and all(isinstance(x, str) for x in v.values()),
+              "join": lambda v: v in CW.JOINS, "panel_thickness": lambda v: _pos(v) and v <= CW.PANEL_T_MAX}
+    opt = {"base_offset": lambda v: num_ok(v) and v != 0 and abs(v) <= WT.BASE_OFFSET_MAX,
+           "u_add": _cw_list_ok, "u_remove": _cw_list_ok, "v_add": _cw_list_ok, "v_remove": _cw_list_ok,
+           "mullion_overrides": lambda v: True, "panel_overrides": lambda v: True, "materials": _cw_materials_ok}
+    if isinstance(p, dict) and p.get("form") == "sloped":   # 경사 커튼 시스템(W2 열 번째 PR): 높이·곡선·상단 윤곽 대신 물매·외곽
+        err = _check_opt("curtwall", p, {**common, "form": lambda v: v in CW.FORMS, "slope": num_ok,
+                                         "boundary": lambda v: isinstance(v, list) and 3 <= len(v) <= CW.BOUNDARY_MAX and all(_pt_ok(q) and all(abs(x) <= 1e7 for x in q) for q in v)}, opt)
+    else:
+        err = _check_opt("curtwall", p, {**common, "height": lambda v: _pos(v) and v <= CW.HEIGHT_MAX}, {**opt, "arc": _pt_ok, "top_profile": _cw_profile_ok})
     if err is not None:
         return err
     types = p["types"]

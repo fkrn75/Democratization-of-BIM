@@ -51,7 +51,7 @@ def _usage(ctx) -> dict:
             if k in ("wall", "slab", "roof") and "layers" in p:   # 지붕 층 구성: W2 여덟 번째 PR
                 names = {x["material"] for x in p["layers"]}
             elif k == "curtwall":
-                names = set(ctx.eng.ifc.CW_MATERIALS.values())
+                names = set({**ctx.eng.ifc.CW_MATERIALS, **p.get("materials", {})}.values())   # 커튼월별 재료(W2 열 번째 PR)
             else:
                 m = ctx.material(e)
                 names = {m} if isinstance(m, str) else set()
@@ -195,6 +195,6 @@ def material_appearance(ctx, a: MatAppearance):
         if r["kind"] in ("wall", "slab", "roof") and "layers" in r["params"]:   # 지붕 층 구성: W2 여덟 번째 PR
             it["layers"] = [{"material": x["material"], "thickness": x["thickness"], "appearance": effective(ctx, x["material"])[0]} for x in r["params"]["layers"]]
         elif r["kind"] == "curtwall":   # 커튼월 부속(W2 ARC-22)은 종류별 재료를 따른다
-            it["parts"] = {c: {"material": n, "appearance": effective(ctx, n)[0]} for c, n in sorted(ctx.eng.ifc.CW_MATERIALS.items())}
+            it["parts"] = {c: {"material": n, "appearance": effective(ctx, n)[0]} for c, n in sorted({**ctx.eng.ifc.CW_MATERIALS, **r["params"].get("materials", {})}.items())}
         out.append(it)
     return {"items": out}

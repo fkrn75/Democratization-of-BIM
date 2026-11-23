@@ -42,6 +42,7 @@ _RL1 = ("railing.create", {"id": F.RL1, "level": F.LV1, "path": [[0, 0], [3000, 
 _SP1 = ("space.create", {"id": F.SP1, "level": F.LV1, "boundary": [[0, 0], [6000, 0], [6000, 4000], [0, 4000]], "name": "사무실", "category": "사무실"})
 _SH1 = ("sheet.define", {"id": F.SH1, "name": "A-101 1층 평면", "views": [F.V1], "paper": "A3", "project_name": "예시 프로젝트", "sheet_number": "A-101", "date": "2026-01-01"})
 _CW1 = ("curtain.create", {"id": F.CW1, "level": F.LV1, "axis": [0, -2000, 6000, -2000], "height": 3000, "u_grid": {"rule": "spacing", "value": 1500}, "v_grid": {"rule": "count", "value": 2}})   # 커튼월 예시의 준비(W2 네 번째 PR, ARC-22)
+_CWR = ("curtain.create", {"id": F.CW1, "level": F.LV1, "axis": [3000, -500, 3000, 4500], "height": 7000, "u_grid": {"rule": "spacing", "value": 1000}, "v_grid": {"rule": "spacing", "value": 1500}})   # 상단 붙이기 예시의 준비(W2 열 번째 PR)
 _OP1 = ("opening.wall", {"id": F.OP1, "host": F.W2, "offset": 2800, "sill": 900, "width": 800, "height": 1200})   # 독립 개구 예시의 준비(W2 세 번째 PR, ARC-34)
 _LA1 = ("area.define", {"id": F.LA1, "name": "발코니", "rule": "119-1-3-나", "level": F.LV1, "boundary": [[0, 4000], [6000, 4000], [6000, 5500], [0, 5500]], "contact_length": 6000})   # 법정 면적 객체 예시의 준비(ARC-36)
 _MD1 = ("material.define", {"name": "Concrete"})   # 재료 외관 예시의 준비(W2 다섯 번째 PR, DATA-05)
@@ -106,7 +107,9 @@ PRE = {**_DRAFT_PRE, "history.redo": [("history.undo", {})], "ifc.restore": [_EX
        "rooftype.list": [_RT1], "roof.type.set": [_RF1, _RT1], "roof.layers": [_RF1], "roof.eaves.set": [_RF1], "roof.eaves": [_RF1],   # W2 여덟 번째 PR
        "area.delete": [_LA1], "area.list": [_LA1], "area.legal": [_W4, _SI1, _LA1], "area.export": [_W4, _SI1, _LA1],
        "opening.vertical": [_S1], "opening.delete": [_OP1],
-       **{c: [_CW1] for c in ("curtain.set", "curtain.grid", "curtain.mullion.set", "curtain.panel.set", "curtain.type.set", "curtain.move", "curtain.parts")}}
+       **{c: [_CW1] for c in ("curtain.set", "curtain.grid", "curtain.mullion.set", "curtain.panel.set", "curtain.type.set", "curtain.move", "curtain.parts",
+                                "curtain.detach", "curtain.material.set")},   # 커튼월 상단 떼기·커튼월별 재료(W2 열 번째 PR)
+       "curtain.attach": [_RF1, _CWR]}   # 지붕 아래를 지나는 커튼월(W2 열 번째 PR)
 ERROR_CASES = [
     ("없는 커맨드", "no.such.command", {}, {}),
     ("스키마 오류(타입)", "wall.move", {"id": F.W1, "dx": "abc"}, {}),

@@ -1062,6 +1062,15 @@ class Engine:
             out[t] = (p["name"], p.get("function"), float(p["thickness"]), layers, roofs)
         return out
 
+    def grid_map(self) -> dict:
+        """통심선 행 -> {id: (기호, 선분, 원호 정보 또는 None)}(W2 열 번째 PR, IfcGrid 투영). 없으면 빈 표."""
+        from dobim_core import arcgeom as AG
+        out = {}
+        for gid in sorted(self.st.by_kind.get("grid", ())):
+            p = self.st.el[gid]["params"]
+            out[gid] = (p["name"], tuple(p["line"]), AG.info(p["line"], p["arc"]) if "arc" in p else None)
+        return out
+
     def _flush_defs(self) -> None:
         """뷰·치수·태그의 정의를 IFC 프로젝트 속성셋에 맞춘다(ADR-0015). 정의가 없으면 아무것도 하지 않는다(IFC 가 그대로다).
         행은 불변이라 같은 객체면 텍스트를 다시 만들지 않는다. 바뀐 정의의 속성만 쓴다."""
@@ -1077,6 +1086,7 @@ class Engine:
             self.ifc.set_appearance(self.appearance_map())   # 재료 외관 정의(W2 다섯 번째 PR): 값이 바뀐 재료의 IFC 표면 스타일만 다시 붙인다
             self.ifc.sync_wall_types(self.walltype_map())   # 벽 유형(W2 일곱 번째 PR): IfcWallType·층 집합·타입 지정 관계. 유형이 없으면 아무것도 하지 않는다
             self.ifc.sync_roof_types(self.rooftype_map())   # 지붕 유형(W2 여덟 번째 PR): IfcRoofType. 유형이 없으면 아무것도 하지 않는다
+            self.ifc.sync_grids(self.grid_map())   # 통심선 IfcGrid(W2 열 번째 PR, ARC-38). 통심선이 없으면 아무것도 하지 않는다
         except BaseException as ex:
             self._taint("정의 속성", ex)
             try:

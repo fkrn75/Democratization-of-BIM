@@ -146,6 +146,7 @@ def pairs_label(layers) -> str:
 
 
 LAYER_MARK = "DoBIM"   # 코어가 투영한 층 구성(IfcMaterialLayerSet)의 Description. 외래 파일의 층 구성과 구분한다
+GRID_MARK = "DoBIM grid"   # 통심선 IfcGrid 투영(W2 열 번째 PR)의 Description 머리: 투영이 소유한다는 표식(뒤에 명세 서명)
 WALLTYPE_MARK = "DoBIM wall type"   # 벽 유형 투영(W2 일곱 번째 PR)의 IfcRelDefinesByType·유형 층 집합 Description: 투영이 소유한다는 표식
 ROOFTYPE_MARK = "DoBIM roof type"   # 지붕 유형 투영(W2 여덟 번째 PR)의 표식(벽 유형과 같은 쓰임)
 # 처마 부속(W2 여덟 번째 PR, ARC-20)의 IFC 클래스·PredefinedType·ObjectType. IFC4 IfcCoveringTypeEnum 에 FASCIA·SOFFIT 가 없어 USERDEFINED + ObjectType 로 적는다
@@ -550,10 +551,14 @@ class IfcModel:
         self.parts: dict[str, dict[str, Any]] = {}   # 요소 id -> {이름표: 부속 엔티티} (꺾인 계단의 단 묶음·층참, 슬래브 구멍. 투영 소유)
         self._cw_sig: dict[str, dict[str, tuple]] = {}   # 커튼월 id -> {이름표: 마지막으로 투영한 부속 명세} (같으면 다시 쓰지 않는다, W2 ARC-22)
         self._cw_axis: dict[str, Any] = {}   # 커튼월 id -> 부속 배치가 함께 쓰는 단위 IfcAxis2Placement3D
+        self._cw_mats: dict[str, dict] = {}   # 커튼월 id -> {부속 종류: 재료 이름} 커튼월별 재료(W2 열 번째 PR, 없으면 기본 재료)
         self._wt_sig: dict[str, tuple] = {}   # 벽 유형 id -> 마지막으로 맞춘 (이름, 기능, 두께, 층 구성) (W2 일곱 번째 PR)
         self._wt_scanned = False              # 가져온 파일의 낡은 벽 유형을 한 번 훑었는가
         self._rt_sig: dict[str, tuple] = {}   # 지붕 유형 id -> 마지막으로 맞춘 (이름, 기능, 두께, 층 구성) (W2 여덟 번째 PR)
         self._rt_scanned = False
+        self._grid_ent = None                 # 투영한 IfcGrid(W2 열 번째 PR, ARC-38) 또는 None
+        self._grid_sig: str | None = None     # 그 IfcGrid 의 명세 서명(Description 끝에 적는다: 같으면 다시 쓰지 않는다)
+        self._grid_scanned = False            # 가져온 파일의 투영 IfcGrid 를 한 번 훑었는가
         self._eave_mats: dict[str, dict] = {}   # 지붕 id -> {처마 부속 종류: 재료 이름} (W2 아홉 번째 PR, 마지막 투영의 값)
         self.container_of: dict[str, str] = {}  # 요소 id -> 현재 담긴 층 id (투영 상태)
         self._mats: dict[str, Any] = {}         # 재료 이름 -> 엔티티
@@ -666,7 +671,7 @@ class IfcModel:
         import_types = 시작 상태 기록(seq 0)에 요소(ftype)로 들어 있던 패밀리 타입의 id: 지금 요소가 아니면 지워진 것이다.
         요소로 들어오지 않은 타입(외래 타입)은 제품이 아니므로 건드리지 않는다."""
         keep = (set(self.ents) | self.infra | {o.GlobalId for o in self.openings.values()}
-                | {p.GlobalId for ps in self.parts.values() for p in ps.values()})
+                | {p.GlobalId for ps in self.parts.values() for p in ps.values()} | self.grid_owned_gids())   # 통심선 IfcGrid(W2 열 번째 PR)는 정의 동기화가 맞춘다
         gone = [g for g in self._by_gid if g not in keep]
         mats, lsets = [], []
         for g in sorted(gone, key=lambda g: (not self._by_gid[g].is_a("IfcOpeningElement"), g)):
@@ -853,6 +858,7 @@ class IfcModel:
         if self.kinds.get(eid) == "curtwall":   # 커튼월 부속(멀리언·패널, W2 ARC-22)과 집합·재료 관계
             self._cw_sync(eid, None)
             self._cw_axis.pop(eid, None)
+            self._cw_mats.pop(eid, None)
         if eid in self.parts:   # 부속(단 묶음·층참·슬래브 구멍)이 먼저 간다
             self._sync_parts(eid, {})
         self._gc_names(self._eave_mats.pop(eid, None) or {})
@@ -1474,6 +1480,101 @@ class IfcModel:
                 self._wt_material(tid, t, name, layers, "rooftype", ROOFTYPE_MARK)
                 self._rt_sig[tid] = sig
             self._wt_rel(tid, t, roofs, "rooftype", ROOFTYPE_MARK)
+
+    # ------------------------------------------------------------ 통심선 IfcGrid(W2 열 번째 PR, ARC-38)
+    # 통심선(grid)은 비 IFC 의도 요소(정의는 DoBIM_Defs)이고 이것은 그 투영이다: 모델 전체에 IfcGrid 하나(GlobalId = part_guid(건물, "grid"),
+    # 건물에 담긴다(IfcRelContainedInSpatialStructure, part_guid(건물, "grid:contain")), 배치 = 건물 좌표계). 축은 IfcGridAxis(AxisTag = 기호,
+    # 직선 = 2D IfcPolyline, 원호 = IfcTrimmedCurve(IfcCircle, 끝은 직교 좌표 점)). U 축 = 세로에 가까운 직선(|dy| > |dx|), V 축 = 나머지 직선과 원호,
+    # 축마다 기호·id 순서. IFC 는 U·V 축이 모두 하나 이상이어야 해서 한 방향 통심선만 있으면 IfcGrid 를 내보내지 않는다. 형상 표현은 두지 않는다(축 곡선이 정본).
+    # 명세 서명을 Description("DoBIM grid <서명>")에 적어, 가져온 파일의 IfcGrid 가 지금 명세와 같으면 그대로 둔다(내보내기 바이트가 같다)
+    def _grid_owned(self, e) -> bool:
+        d = getattr(e, "Description", None)
+        return self.building is not None and e.GlobalId == part_guid(self.building.GlobalId, "grid") and isinstance(d, str) and d.startswith(GRID_MARK)
+
+    @staticmethod
+    def grid_want(m: dict):
+        """{통심선 id: (기호, 선분, 원호 정보 또는 None)} -> (U 축들, V 축들) 또는 None(한 방향만). 축 = (기호, ("line", x1, y1, x2, y2) | ("arc", ...))."""
+        us, vs = [], []
+        for gid in sorted(m, key=lambda k: (m[k][0], k)):
+            name, ln, ai = m[gid]
+            if ai is not None:
+                cx, cy, r, a0, sg, sw = ai
+                p0, p1 = (float(ln[0]), float(ln[1])), (float(ln[2]), float(ln[3]))
+                vs.append((name, ("arc", float(cx), float(cy), float(r), p0, p1, sg > 0)))
+            else:
+                ax = (name, ("line",) + tuple(float(x) for x in ln))
+                (us if abs(ln[3] - ln[1]) > abs(ln[2] - ln[0]) else vs).append(ax)
+        if (not us or not vs) and len(us) + len(vs) >= 2:   # 한 묶음뿐(방사 통심선 부채꼴 등): 방향각(0~180도) 평균의 양쪽으로 나눈다
+            allx = [x for x in us + vs if x[1][0] == "line"]
+            if len(allx) == len(us) + len(vs):
+                def ang(x):
+                    _, x1, y1, x2, y2 = x[1]
+                    return AG.atan2(y2 - y1, x2 - x1) % AG.PI
+                mean = sum(ang(x) for x in allx) / len(allx)
+                us = [x for x in allx if ang(x) < mean - 1e-9]
+                vs = [x for x in allx if ang(x) >= mean - 1e-9]
+        if not us or not vs:
+            return None
+        return (tuple(us), tuple(vs))
+
+    def _grid_drop(self, e) -> None:
+        f = self.f
+        for ax in list(e.UAxes or ()) + list(e.VAxes or ()) + list(getattr(e, "WAxes", None) or ()):
+            cur = ax.AxisCurve
+            f.remove(ax)
+            ue.remove_deep2(f, cur)
+        for r in list(f.get_inverse(e)):
+            if r.is_a("IfcRelContainedInSpatialStructure"):
+                if len(r.RelatedElements) <= 1:
+                    f.remove(r)
+                else:
+                    r.RelatedElements = [x for x in r.RelatedElements if x != e]
+        pl = e.ObjectPlacement
+        f.remove(e)
+        if pl is not None and not f.get_inverse(pl):
+            ue.remove_deep2(f, pl)
+
+    def sync_grids(self, m: dict) -> None:
+        """m = {통심선 id: (기호, 선분 [x1,y1,x2,y2], 원호 정보 (cx,cy,r,a0,sg,sw) 또는 None)} 에 IfcGrid 를 맞춘다(엔진 flush 가 투영 뒤에 부른다).
+        통심선이 없으면(투영한 적도 없으면) 아무것도 하지 않는다(기존 프로젝트의 IFC 그대로)."""
+        if self.building is None:
+            return
+        want = self.grid_want(m) if m else None
+        sig = None if want is None else hashlib.sha256(json.dumps(want).encode("utf-8")).hexdigest()[:16]
+        if self.base_mode and not self._grid_scanned:
+            self._grid_scanned = True
+            for e in list(self.f.by_type("IfcGrid")):
+                if self._grid_owned(e):
+                    if sig is not None and e.Description == f"{GRID_MARK} {sig}" and self._grid_ent is None:
+                        self._grid_ent, self._grid_sig = e, sig
+                    else:
+                        self._grid_drop(e)
+        if sig == self._grid_sig:
+            return
+        if self._grid_ent is not None:
+            self._grid_drop(self._grid_ent)
+            self._grid_ent, self._grid_sig = None, None
+        if want is None:
+            return
+        f = self.f
+        bg = self.building.GlobalId
+
+        def curve(c):
+            if c[0] == "line":
+                return f.createIfcPolyline([f.createIfcCartesianPoint([c[1], c[2]]), f.createIfcCartesianPoint([c[3], c[4]])])
+            _, cx, cy, r, p0, p1, ccw = c
+            circ = f.createIfcCircle(f.createIfcAxis2Placement2D(f.createIfcCartesianPoint([cx, cy]), None), r)
+            return f.createIfcTrimmedCurve(circ, [f.createIfcCartesianPoint(list(p0))], [f.createIfcCartesianPoint(list(p1))], ccw, "CARTESIAN")
+        us = [f.createIfcGridAxis(name, curve(c), True) for name, c in want[0]]
+        vs = [f.createIfcGridAxis(name, curve(c), True) for name, c in want[1]]
+        pl = f.createIfcLocalPlacement(self.building.ObjectPlacement, f.createIfcAxis2Placement3D(f.createIfcCartesianPoint([0.0, 0.0, 0.0]), None, None))
+        e = f.create_entity("IfcGrid", GlobalId=part_guid(bg, "grid"), Name="Grid", Description=f"{GRID_MARK} {sig}", ObjectPlacement=pl, UAxes=us, VAxes=vs)
+        f.create_entity("IfcRelContainedInSpatialStructure", GlobalId=part_guid(bg, "grid:contain"), RelatedElements=[e], RelatingStructure=self.building)
+        self._grid_ent, self._grid_sig = e, sig
+
+    def grid_owned_gids(self) -> set:
+        """투영이 만든 IfcGrid 의 GlobalId(가져오기·가지치기가 요소로 세지 않는다)."""
+        return {e.GlobalId for e in self.f.by_type("IfcGrid") if self._grid_owned(e)}
 
     def flush_rels(self) -> None:
         """일괄 모드에서 모아 둔 층 담기·타입 관계 추가를 반영한다(모은 것이 없으면 아무것도 하지 않는다)."""
@@ -2151,7 +2252,9 @@ class IfcModel:
             f.createIfcRelAggregates(gid, None, None, None, e, want)
         elif list(rel.RelatedObjects) != want:
             rel.RelatedObjects = want
+        mine = self._cw_mats.get(eid) or {}
         for c, mname in sorted(self.CW_MATERIALS.items()):
+            mname = mine.get(c, mname)   # 커튼월별 재료(W2 열 번째 PR)
             mg = part_guid(eid, f"material:{c}")
             try:
                 mr = f.by_guid(mg)
@@ -2165,13 +2268,34 @@ class IfcModel:
                     self._gc_material(mat)
             elif mr is None:
                 f.createIfcRelAssociatesMaterial(mg, None, None, None, objs, self._named_material(mname))
-            elif list(mr.RelatedObjects) != objs:
-                mr.RelatedObjects = objs
+            else:
+                if list(mr.RelatedObjects) != objs:
+                    mr.RelatedObjects = objs
+                old = mr.RelatingMaterial
+                if not (old.is_a("IfcMaterial") and old.Name == mname):   # 재료를 바꿨다: 새 재료로 잇고 안 쓰이게 된 옛 재료는 치운다
+                    mr.RelatingMaterial = self._named_material(mname)
+                    self._gc_material(old)
+
+    def _shape_solids(self, shape) -> list:
+        """모양 부속(W2 열 번째 PR) -> 다각형마다 IfcExtrudedAreaSolid: 틀 (e1, e2) 평면의 다각형 프로필을 원점 + h0·n 에서 n 방향으로 (h1 - h0) 돌출(SweptSolid).
+        배치 축 = n, 참조 방향 = e1 이라 프로필의 y 축이 e2 다(n = e1 x e2)."""
+        f = self.f
+        polys, o, e1, _e2, n, h0, h1 = shape
+        out = []
+        for pl in polys:
+            line = f.createIfcPolyline([f.createIfcCartesianPoint([float(a), float(b)]) for a, b in list(pl) + [pl[0]]])
+            prof = f.createIfcArbitraryClosedProfileDef("AREA", None, line)
+            pos = f.createIfcAxis2Placement3D(f.createIfcCartesianPoint([float(o[0] + n[0] * h0), float(o[1] + n[1] * h0), float(o[2] + n[2] * h0)]),
+                                              f.createIfcDirection([float(x) for x in n]), f.createIfcDirection([float(x) for x in e1]))
+            out.append(f.createIfcExtrudedAreaSolid(prof, pos, f.createIfcDirection([0.0, 0.0, 1.0]), float(h1 - h0)))
+        return out
 
     def _cw_sync(self, eid: str, spec: dict | None) -> None:
         """커튼월 부속을 명세(spec["parts"], None 이면 모두 지운다)에 맞춘다."""
         f = self.f
         e = self.ents[eid]
+        if spec is not None:   # 커튼월별 부속 재료(W2 열 번째 PR): 없으면 기본 재료(CW_MATERIALS)
+            self._cw_mats[eid] = dict(spec.get("materials", ()))
         have = self.parts.get(eid, {})
         sig = self._cw_sig.setdefault(eid, {})
         wanted = {} if spec is None else {w[0]: w[1:] for w in spec["parts"]}
@@ -2213,7 +2337,8 @@ class IfcModel:
                 part.GlobalId = part_guid(eid, label)
                 keep[label] = part
             part.Name = pname
-            cls, sub, quad, z0, h = w
+            cls, sub, quad, z0, h = w[:5]
+            shape = w[5] if len(w) > 5 else None   # 모양 부속(W2 열 번째 PR): 틀 다각형을 기울어진(또는 잘린) 면에서 돌출한다
             if cls == "IfcMember":
                 part.PredefinedType, part.ObjectType = "MULLION", sub
             elif cls == "IfcPlate":
@@ -2223,7 +2348,7 @@ class IfcModel:
                 part.OverallHeight = float(h)
                 part.OverallWidth = float(math.sqrt((quad[1][0] - quad[0][0]) ** 2 + (quad[1][1] - quad[0][1]) ** 2))
             if sig.get(label, (None, None, None, None, None))[2:] != w[2:] or part.Representation is None:
-                self._set_body(part, self._solid(quad, h, z0))
+                self._set_body(part, self._shape_solids(shape) if shape is not None else self._solid(quad, h, z0))
             sig[label] = w
         for parts in pool.values():   # 남은 엔티티는 지운다(관계에서는 이미 빠졌다)
             for p in parts:
