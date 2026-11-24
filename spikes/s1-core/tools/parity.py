@@ -69,6 +69,9 @@ _VT1 = ("view.template.create", {"id": F.VT1, "name": "평면 1:100 기본", "sc
 _VF1 = ("view.filter.set", {"id": F.V1, "name": "두꺼운 벽", "cats": ["wall"], "rules": [{"field": "thickness", "op": "ge", "value": "200"}], "color": "#0050c0"})
 _W5 = ("wall.create", {"id": "1" + "0" * 20 + "5", "level": F.LV1, "axis": [4500, 0, 4500, 3000], "thickness": 200, "height": 3000})   # T 조인 예시의 준비(W1 1-F 3차): W1 중간에 닿는 줄기 벽
 _CL1 = ("ceiling.create", {"id": F.SO1, "level": F.LV1, "boundary": [[0, 0], [6000, 0], [6000, 4000], [0, 4000]], "height": 2400})   # 천장 고치기 예시의 준비(W1 1-F 3차)
+_MG1 = ("mgroup.create", {"id": F.MG1, "ids": [F.W1, F.W2], "name": "세대 A"})   # 모델 그룹 예시의 준비(W2 열한 번째 PR, ARC-46)
+_AS1 = ("assembly.create", {"id": F.AS1, "ids": [F.W1, F.D1], "name": "현관 벽체", "type": "벽체 유닛"})   # 조립품 예시의 준비(W2 열한 번째 PR, COL-11)
+_CWM = ("curtain.merge", {"id": F.CW1, "keys": ["P0:0", "P1500:1500"]})   # 칸 나누기 예시의 준비(W2 열한 번째 PR)
 _DRAFT_PRE = {"draft.create": [_V1], "draft.set": [_V1, _DR1], "draft.move": [_V1, _DR1], "draft.copy": [_V1, _DR1], "draft.rotate": [_V1, _DR1],
               "draft.mirror": [_V1, _DR1], "draft.delete": [_V1, _DR1], "draft.offset": [_V1, _DR1], "draft.trim": [_V1, _DR1, _DR2],
               "draft.extend": [_V1, _DR1, _DR3], "draft.group": [_V1, _DR1], "draft.list": [_V1, _DR1], "draft.layer.delete": [_DRL],
@@ -109,7 +112,11 @@ PRE = {**_DRAFT_PRE, "history.redo": [("history.undo", {})], "ifc.restore": [_EX
        "opening.vertical": [_S1], "opening.delete": [_OP1],
        **{c: [_CW1] for c in ("curtain.set", "curtain.grid", "curtain.mullion.set", "curtain.panel.set", "curtain.type.set", "curtain.move", "curtain.parts",
                                 "curtain.detach", "curtain.material.set")},   # 커튼월 상단 떼기·커튼월별 재료(W2 열 번째 PR)
-       "curtain.attach": [_RF1, _CWR]}   # 지붕 아래를 지나는 커튼월(W2 열 번째 PR)
+       "curtain.attach": [_RF1, _CWR],   # 지붕 아래를 지나는 커튼월(W2 열 번째 PR)
+       "curtain.merge": [_CW1], "curtain.unmerge": [_CW1, _CWM],   # 칸 합치기(W2 열한 번째 PR)
+       **{c: [_MG1] for c in ("mgroup.place", "mgroup.move", "mgroup.rotate", "mgroup.mirror", "mgroup.sync", "mgroup.exclude", "mgroup.add",
+                                "mgroup.ungroup", "mgroup.list")},   # 모델 그룹(W2 열한 번째 PR)
+       "assembly.set": [_AS1], "assembly.list": [_AS1]}   # 조립품(W2 열한 번째 PR)
 ERROR_CASES = [
     ("없는 커맨드", "no.such.command", {}, {}),
     ("스키마 오류(타입)", "wall.move", {"id": F.W1, "dx": "abc"}, {}),

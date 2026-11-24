@@ -20,10 +20,11 @@ from dobim_core import annot as AN
 from dobim_core import kinds as K
 from dobim_core.family.recipe import FamilyError, load_json_text
 
-DEF_KINDS = ("view", "dim", "tag", "sheet", "grid", "dlayer", "draft", "revision", "keynote", "vtemplate", "pparam", "larea", "opening", "matdef", "walltype", "rooftype")   # 정의를 IFC 에 싣는 종류(kinds.NON_IFC_KINDS 와 같은 집합)
+DEF_KINDS = ("view", "dim", "tag", "sheet", "grid", "dlayer", "draft", "revision", "keynote", "vtemplate", "pparam", "larea", "opening", "matdef", "walltype", "rooftype", "mgtype", "mgroup", "assembly")   # 정의를 IFC 에 싣는 종류(kinds.NON_IFC_KINDS 와 같은 집합)
 FAMILY_ID = {"view": "view.basic", "dim": "annot.dim", "tag": "annot.tag", "sheet": "sheet.basic", "grid": "grid.basic",
              "dlayer": "draft.layer", "draft": "draft.basic", "revision": "revision.basic", "keynote": "keynote.basic",
-             "vtemplate": "view.template", "pparam": "project.param", "larea": "area.legal", "opening": "opening.void", "matdef": "material.def", "walltype": "wall.type", "rooftype": "roof.type"}   # 커맨드가 만드는 행의 family_id
+             "vtemplate": "view.template", "pparam": "project.param", "larea": "area.legal", "opening": "opening.void", "matdef": "material.def", "walltype": "wall.type", "rooftype": "roof.type",
+             "mgtype": "group.type", "mgroup": "group.model", "assembly": "assembly.basic"}   # 커맨드가 만드는 행의 family_id
 DEFS_PSET = "DoBIM_Defs"                                                # IfcProject 의 예약 속성셋 이름
 MAX_DEF_CHARS = 16 * 1024                                               # 정의 하나의 텍스트 상한(정상 정의는 1KB 안팎)
 MAX_DEFS = 100_000                                                      # 한 파일에서 읽는 정의 수 상한(넘으면 나머지는 읽지 않고 경고)
@@ -173,7 +174,7 @@ def parse_def(eid: str, text) -> dict:
             raise ValueError("가시성·필터 글에 짝 없는 서로게이트가 있다")
         if kind == "vtemplate":   # 뷰 템플릿(W1 1-C): 값 범위는 kinds 의 파라미터 검사가 커맨드 범위로 본다
             pass
-        elif kind in ("revision", "keynote", "pparam", "larea", "opening", "matdef", "walltype", "rooftype"):   # 리비전·키노트(W1 1-B 3차)·프로젝트 매개변수(DATA-03)·법정 면적 객체(ARC-36): 값 범위는 kinds 의 파라미터 검사가 커맨드 범위로 본다
+        elif kind in ("revision", "keynote", "pparam", "larea", "opening", "matdef", "walltype", "rooftype", "mgtype", "mgroup", "assembly"):   # 리비전·키노트(W1 1-B 3차)·프로젝트 매개변수(DATA-03)·법정 면적 객체(ARC-36): 값 범위는 kinds 의 파라미터 검사가 커맨드 범위로 본다
             if not all(_name_ok(params[k]) for k in ("desc", "issued_to", "issued_by", "text", "note") if k in params):
                 raise ValueError("글에 짝 없는 서로게이트가 있다")
         elif kind in ("draft", "dlayer"):   # 2D 작도(27단계): 값 범위는 kinds 의 파라미터 검사(_draft_params·_dlayer_params)가 이미 커맨드 범위로 본다

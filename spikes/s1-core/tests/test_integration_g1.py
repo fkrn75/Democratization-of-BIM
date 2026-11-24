@@ -453,6 +453,8 @@ def test_9_종류_레지스트리가_모든_모듈과_맞는다(tmp_path):
         _ok(b.run("roof.eaves.set", {"id": F.RF1, "fascia": {"edges": "all"}}, project=p))   # 처마 부속(W2 여덟 번째 PR)
         _ok(b.run("stackwall.create", {"id": F.SW1, "level": F.LV1, "axis": [0, -6000, 6000, -6000], "height": 3000,
                                        "segments": [{"type": F.WT1, "height": 1000}, {"type": F.WT2}]}, project=p))   # 스택 벽(W2 일곱 번째 PR)
+        _ok(b.run("mgroup.create", {"ids": [F.W3], "name": "세대"}, project=p))   # 모델 그룹 정의·배치(W2 열한 번째 PR, ARC-46)
+        _ok(b.run("assembly.create", {"ids": [F.W2], "name": "벽체", "type": "벽체 유닛"}, project=p))   # 조립품(W2 열한 번째 PR, COL-11)
     finally:
         b.close()
     eng = Engine(tmp_path / p, "t", create=False)

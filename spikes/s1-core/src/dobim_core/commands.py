@@ -1258,6 +1258,9 @@ def _delete_one(ctx, eid):
         for src in ctx.rels_in(kind, eid):
             ctx.rel(kind, src, eid, False)
     ctx.put_el(eid, None)
+    if ctx.st.by_kind.get("mgroup") or ctx.st.by_kind.get("assembly"):   # 모델 그룹·조립품 부속에서 뺀다(W2 열한 번째 PR). 없으면 아무 효과도 없다
+        from dobim_core import commands_group as CG
+        CG.unlink(ctx, eid)
     return released
 
 
@@ -1311,6 +1314,8 @@ def element_delete(ctx, a: IdArg):
             gone.append(d)
     elif r["kind"] == "view":
         gone += _cascade_view_annots(ctx, a.id)
+    elif r["kind"] == "mgtype" and any(ctx.st.el[g]["params"]["type"] == a.id for g in ctx.st.by_kind.get("mgroup", ())):   # 모델 그룹 정의(W2 열한 번째 PR)
+        raise DobimError("CONSTRAINT", "배치가 있는 모델 그룹 정의는 지울 수 없다", path="/id", hint="mgroup.ungroup 으로 배치를 푸세요")
     released = _delete_one(ctx, a.id)
     return {"deleted": gone, **({"railings_released": released} if released else {})}
 
@@ -5777,3 +5782,4 @@ from dobim_core import commands_material  # noqa: E402,F401   재료 외관(W2 �
 from dobim_core import commands_solidops  # noqa: E402,F401   솔리드 불리언(W2 여섯 번째 PR, ARC-12·ARC-44)
 from dobim_core import commands_walltype  # noqa: E402,F401   벽 유형·위치선·스택 벽(W2 일곱 번째 PR, ARC-11·ARC-09)
 from dobim_core import commands_roof  # noqa: E402,F401   외곽선 지붕·지붕 유형·층 구성·처마 부속(W2 여덟 번째 PR, ARC-19·ARC-20)
+from dobim_core import commands_group  # noqa: E402,F401   모델 그룹·조립품(W2 열한 번째 PR, ARC-46·COL-11)

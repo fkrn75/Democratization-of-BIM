@@ -29,6 +29,11 @@ W2 열 번째 PR(ARC-22 잔여) 선택 params(없으면 키 자체가 없고 배
       평면 좌표 a = 기준선 방향 거리, b = 면 위에서 기준선과 수직으로 잰 거리(경사 실길이). u 격자는 a 방향, v 격자는 b 방향이고 위치는 외곽의 a·b 최소에서 잰다.
       height·arc·top_profile 은 없다. 내부 멀리언은 (외곽 멀리언 폭만큼 들인) 외곽 안으로 잘리고, 외곽 멀리언은 외곽 변마다 하나(키 "E<변 번호>:0"), 패널은 칸 ∩ 외곽
   materials = {"mullion"|"glass"|"opaque"|"door": 재료 이름} 커튼월별 부속 재료(없는 종류는 기본 재료: 알루미늄·유리·불투명 패널·문)
+W2 열한 번째 PR 선택 params:
+  merges = [[대표 키, 끝 키], ...] 칸 합치기(패널 merge): 대표 키 = 합친 영역의 시작 칸(u·v 가 가장 작은 칸) "P<u0>:<z0>", 끝 키 = 반대쪽 끝 칸.
+      영역 = 대표 칸의 시작 격자선 ~ 끝 칸의 다음 격자선. 안쪽 격자선 조각(멀리언)은 없어지고 패널 하나(키 = 대표 키, IFC IfcPlate 하나)가 영역을 채운다.
+      곡선 축은 패널이 영역 양 끝 격자선 점을 잇는 현 하나다(중심각 약 29도 이하). 영역 안에 격자선을 더해도 영역은 그대로이고(새 선 조각도 없다),
+      영역의 모서리 칸 키가 없어지면(그 격자선을 빼거나 옮기면) 합치기는 떨어진다(prune). 상단 윤곽·경사 외곽은 합친 패널을 다른 칸과 같이 자른다
 모양 부속: 배치의 "shapes" = {키: (다각형들, 원점, e1, e2, n, h0, h1, 덧)} — 틀 좌표(a, b) 다각형(반시계)을 원점 + a·e1 + b·e2 에 놓고 n 방향 h0 ~ h1 로 돌출한 각기둥.
   원점 z 는 커튼월 바닥 기준. 덧 = 패널이면 (변마다 멀리언이 덮는지, ...) 다각형마다, 멀리언이면 (길이,). 모양이 없는 부속은 이전과 같은 수직 각기둥이다.
 """
@@ -62,6 +67,51 @@ SLOPE_MAX = 80.0            # 경사 커튼 시스템의 물매 각 상한(도)
 BOUNDARY_MAX = 64           # 경사 커튼 시스템 외곽 점 수 상한
 MATERIAL_CATS = ("mullion", "glass", "opaque", "door")   # 커튼월별 재료를 줄 수 있는 부속 종류
 AREA_MIN = 1.0              # 잘린 모양 부속이 이보다 작은 넓이(mm²)면 없는 것으로 본다
+
+
+def cell_of(key) -> tuple | None:
+    """패널 키 "P<u>:<z>" -> (u 문자열, z 문자열). 형식이 아니면 None."""
+    if not isinstance(key, str) or not key.startswith("P") or key.count(":") != 1:
+        return None
+    u, z = key[1:].split(":")
+    return (u, z) if u and z else None
+
+
+def merge_rects(p, fu, fz) -> list:
+    """params 의 칸 합치기 -> [(j0, i0, j1, i1)] 칸 번호 영역(끝 포함). 모서리 칸 키가 지금 격자에 없으면 건너뛴다(prune 이 뗀다)."""
+    if not p.get("merges"):
+        return []
+    ju = {u: j for j, u in enumerate(fu[:-1])}
+    iz = {z: i for i, z in enumerate(fz[:-1])}
+    out = []
+    for a, b in p["merges"]:
+        ca, cb = cell_of(a), cell_of(b)
+        if ca is None or cb is None or ca[0] not in ju or cb[0] not in ju or ca[1] not in iz or cb[1] not in iz:
+            continue
+        j0, j1 = sorted((ju[ca[0]], ju[cb[0]]))
+        i0, i1 = sorted((iz[ca[1]], iz[cb[1]]))
+        if (j0, i0) != (j1, i1):
+            out.append((j0, i0, j1, i1))
+    return out
+
+
+def _merge_cells(rects, vt, ht) -> dict:
+    """칸 -> 그 칸을 덮는 합친 영역. 영역 안쪽 격자선 조각(세로 vt[(j, i)]·가로 ht[(i, j)])을 지운다. 영역이 겹치면 ValueError."""
+    cells = {}
+    for rc in rects:
+        j0, i0, j1, i1 = rc
+        for j in range(j0, j1 + 1):
+            for i in range(i0, i1 + 1):
+                if (j, i) in cells:
+                    raise ValueError("합친 칸 영역이 겹친다")
+                cells[(j, i)] = rc
+        for j in range(j0 + 1, j1 + 1):
+            for i in range(i0, i1 + 1):
+                vt.pop((j, i), None)
+        for i in range(i0 + 1, i1 + 1):
+            for j in range(j0, j1 + 1):
+                ht.pop((i, j), None)
+    return cells
 
 
 def fmt(x: float) -> str:
@@ -214,6 +264,11 @@ def layout(p) -> dict:
             t = mtype(f"H{fz[i]}:{fu[j]}", dflt)
             if t is not None:
                 ht[(i, j)] = t
+    merged = _merge_cells(merge_rects(p, fu, fz), vt, ht)   # 칸 합치기(W2 열한 번째 PR): 영역 안쪽 멀리언 조각을 지운다
+    if ai is not None:
+        for j0, _i0, j1, _i1 in set(merged.values()):
+            if (us[j1 + 1] - us[j0]) / ai[2] > ARC_STEP_MAX:
+                raise ValueError("곡선 축에서 합친 칸이 너무 넓다(양 끝 격자선의 중심각 약 29도 이하): 현 하나로 덮을 수 없다")
 
     def vext(j, i):
         """세로선 j 가 가로선 i 와 만나는 곳에서 차지하는 u 방향 폭(외곽은 안쪽으로 전부, 내부는 반)."""
@@ -317,19 +372,24 @@ def layout(p) -> dict:
     half = p["panel_thickness"] / 2.0
     panels = []
     for j in range(nu):
-        pa, pb = pts[j], pts[j + 1]
-        q = quad(pa, pb, half)
         for i in range(nz):
+            rc = merged.get((j, i))
+            if rc is not None and (j, i) != rc[:2]:
+                continue   # 합친 영역의 대표 칸이 아닌 칸: 대표 패널이 덮는다
+            jb, ib = (rc[2] + 1, rc[3] + 1) if rc is not None else (j + 1, i + 1)
+            pa, pb = pts[j], pts[jb]
+            q = quad(pa, pb, half)
             key = f"P{fu[j]}:{fz[i]}"
             kind = po.get(key, DEFAULT_PANEL)
             if kind == "empty":
                 continue
-            cover = ((j, i) in vt, (j + 1, i) in vt, (i, j) in ht, (i + 1, j) in ht)
-            trims = (vext(j, i) if (j, i) in vt else 0.0, vext(j + 1, i) if (j + 1, i) in vt else 0.0)
-            z1 = zs[i + 1]
+            cover = (all((j, k) in vt for k in range(i, ib)), all((jb, k) in vt for k in range(i, ib)),
+                     all((i, k) in ht for k in range(j, jb)), all((ib, k) in ht for k in range(j, jb)))
+            trims = (vext(j, i) if (j, i) in vt else 0.0, vext(jb, i) if (jb, i) in vt else 0.0)
+            z1 = zs[ib]
             if prof is not None:
-                ua, ub, za, zb = us[j], us[j + 1], zs[i], zs[i + 1]
-                top = (nz, j) in ht
+                ua, ub, za, zb = us[j], us[jb], zs[i], zs[ib]
+                top = all((nz, k) in ht for k in range(j, jb))
 
                 def ecov(pl, ua=ua, ub=ub, za=za, zb=zb, cover=cover, top=top):
                     return _edge_cover(pl, ((0, ua), (0, ub), (1, za), (1, zb)), cover, lambda _a, _b: top)
@@ -551,6 +611,7 @@ def _layout_sloped(p) -> dict:
     et = {k: t for k in range(nb) if (t := mtype(f"E{k}:0", border)) is not None}
     vt = {(j, i): t for j in range(1, nu) for i in range(nz) if (t := mtype(f"V{fu[j]}:{fz[i]}", inner)) is not None}
     ht = {(i, j): t for i in range(1, nz) for j in range(nu) if (t := mtype(f"H{fz[i]}:{fu[j]}", inner)) is not None}
+    merged = _merge_cells(merge_rects(p, fu, fz), vt, ht)   # 칸 합치기(W2 열한 번째 PR)
     bw = max((types[t]["width"] for t in et.values()), default=0.0)
     win = _inset(bnd, bw) if bw > 0 else bnd
     if win is None or _area2(win) / 2.0 < AREA_MIN:
@@ -635,15 +696,20 @@ def _layout_sloped(p) -> dict:
     panels = []
     for j in range(nu):
         for i in range(nz):
-            pl = _clip_convex(rect(A[j], A[j + 1], B[i], B[i + 1]), bnd)
+            rc = merged.get((j, i))
+            if rc is not None and (j, i) != rc[:2]:
+                continue
+            jb, ib = (rc[2] + 1, rc[3] + 1) if rc is not None else (j + 1, i + 1)
+            pl = _clip_convex(rect(A[j], A[jb], B[i], B[ib]), bnd)
             if len(pl) < 3 or _area2(pl) / 2.0 < AREA_MIN:
                 continue
             key = f"P{fu[j]}:{fz[i]}"
             kind = po.get(key, DEFAULT_PANEL)
             if kind == "empty":
                 continue
-            cover = ((j, i) in vt, (j + 1, i) in vt, (i, j) in ht, (i + 1, j) in ht)
-            ec = _edge_cover(pl, ((0, A[j]), (0, A[j + 1]), (1, B[i]), (1, B[i + 1])), cover, on_edge)
+            cover = (all((j, k) in vt for k in range(i, ib)), all((jb, k) in vt for k in range(i, ib)),
+                     all((i, k) in ht for k in range(j, jb)), all((ib, k) in ht for k in range(j, jb)))
+            ec = _edge_cover(pl, ((0, A[j]), (0, A[jb]), (1, B[i]), (1, B[ib])), cover, on_edge)
             q, z0, z1 = put(key, [pl], half, ((tuple(ec),),))
             panels.append((key, kind, q, z0, z1, cover, (0.0, 0.0)))
     zr = [z for m in mullions for z in m[4:6]] + [z for x in panels for z in x[3:5]]
@@ -743,6 +809,14 @@ def prune(p) -> dict:
     """격자가 바뀌어 더는 없는 칸을 가리키는 재정의를 뺀 params(바꿀 게 없으면 같은 객체). 빈 재정의 키는 지운다."""
     mk, pk = all_keys(p)
     out = p
+    if "merges" in p:   # 칸 합치기(W2 열한 번째 PR): 모서리 칸 키가 없어진 합치기는 뗀다
+        nv = [m for m in p["merges"] if m[0] in pk and m[1] in pk]
+        if nv != p["merges"]:
+            out = dict(out)
+            if nv:
+                out["merges"] = nv
+            else:
+                out.pop("merges")
     for name, keys in (("mullion_overrides", mk), ("panel_overrides", pk)):
         cur = p.get(name)
         if cur is None:
