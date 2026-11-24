@@ -414,16 +414,115 @@ def slab_voids(g, s):
     out = []
     for o, op in objs:
         if op["mode"] == "vertical" and op["host"] == s:
-            out.append((o, op["name"], tuple(tuple(q) for q in op["boundary"])))
+            out.append((o, op["name"], K.opening_loop(op)))   # 원호 경계(W2 열네 번째 PR)는 펼친 고리. 볼록도가 없으면 boundary 그대로다
         elif op["mode"] == "shaft":
             zr = g.q(shaft_zrange, o)
             if zr is None:
                 continue
             zb, zt = g.q(slab_zrange, s)
-            if zr[0] <= zt + 1e-6 and zb < zr[1] - 1e-6 and all(K.point_in_polygon(q, p["boundary"]) == 1 for q in op["boundary"]) and not any(
-                    K.point_in_polygon(q, h) >= 0 for h in p.get("openings", ()) for q in op["boundary"]):
-                out.append((o, op["name"], tuple(tuple(q) for q in op["boundary"])))
+            lp = K.opening_loop(op)
+            if zr[0] <= zt + 1e-6 and zb < zr[1] - 1e-6 and all(K.point_in_polygon(q, p["boundary"]) == 1 for q in lp) and not any(
+                    K.point_in_polygon(q, h) >= 0 for h in p.get("openings", ()) for q in lp):
+                out.append((o, op["name"], lp))
     return tuple(out)
+
+
+def roof_gm(g, r):
+    """저작 지붕의 형상(kinds.roof_geom, 레벨 기준 z). 지붕 개구(W2 열네 번째 PR)의 면 찾기·IFC·도면이 같이 쓴다."""
+    from dobim_core import kinds as K
+    return K.roof_geom(el(g, r)["params"])
+
+
+def roof_zrange(g, r):
+    """지붕 판이 차지하는 절대 z 범위 (가장 낮은 윗면 - 두께, 가장 높은 윗면)."""
+    gm = g.q(roof_gm, r)
+    lv = g.q(level_info, g.q(roof_level, r))[1]
+    return (lv + gm["zlow"] - el(g, r)["params"]["thickness"], lv + gm["ztop"])
+
+
+def roof_voids(g, r):
+    """경사 지붕을 뚫는 독립 개구 ((개구 id, 이름, 모드, 경계 고리), ...)(W2 열네 번째 PR): 이 지붕을 가리키는 수직·면 개구 + also 에 roof 가 있고
+    z 범위가 지붕 판과 겹치는 샤프트. 처마를 내민 외곽(outline) 안쪽이고 앞의 개구와 겹치지 않는 것만(면 개구는 넓이 중심이 든 면 안에 다 들어야 한다).
+    지붕을 고쳐 맞지 않게 된 개구는 빠진다(그리지도 IFC 로 내지도 않는다). 없으면 빈 값."""
+    objs = g.q(opening_objs)
+    if not objs:
+        return ()
+    from dobim_core import hostvoid as HV
+    from dobim_core import kinds as K
+    cand = []
+    for o, op in objs:
+        if op["mode"] in ("vertical", "face") and op["host"] == r:
+            cand.append((o, op["name"], op["mode"], K.opening_loop(op)))
+        elif op["mode"] == "shaft" and "roof" in op.get("also", ()):
+            zr = g.q(shaft_zrange, o)
+            if zr is None:
+                continue
+            zb, zt = g.q(roof_zrange, r)
+            if zr[0] <= zt + 1e-6 and zb < zr[1] - 1e-6:
+                cand.append((o, op["name"], "shaft", K.opening_loop(op)))
+    if not cand:
+        return ()
+    gm = g.q(roof_gm, r)
+    out, acc = [], []
+    for c in cand:
+        lp = c[3]
+        if c[2] == "face":
+            i = HV.face_of(gm, lp)
+            if i is None or not HV.inside(lp, HV.face_xy(gm["faces"][i])):
+                continue
+        if K.openings_problem(gm["outline"], acc + [lp]) is not None:
+            continue
+        acc.append(lp)
+        out.append(c)
+    return tuple(out)
+
+
+def solid_zrange(g, e):
+    """솔리드의 절대 z 범위(꼭짓점 경계 상자)."""
+    verts, _ = SO.solid_mesh(el(g, e)["params"])
+    lv = g.q(level_info, g.q(solid_level, e))[1]
+    return (lv + min(v[2] for v in verts), lv + max(v[2] for v in verts))
+
+
+def solid_voids(g, e):
+    """천장판(범주 ceiling 의 판)을 뚫는 독립 개구 ((개구 id, 이름, 경계 고리), ...)(W2 열네 번째 PR): 이 판을 가리키는 수직 개구 + also 에 ceiling 이 있고
+    z 범위가 판과 겹치는 샤프트. 판 윤곽 안쪽이고 판의 구멍(holes)·앞의 개구와 겹치지 않는 것만. 없으면 빈 값."""
+    objs = g.q(opening_objs)
+    if not objs:
+        return ()
+    p = el(g, e)["params"]
+    if p.get("category") != "ceiling" or p.get("form") != "plate":
+        return ()
+    from dobim_core import kinds as K
+    cand = []
+    for o, op in objs:
+        if op["mode"] == "vertical" and op["host"] == e:
+            cand.append((o, op["name"], K.opening_loop(op)))
+        elif op["mode"] == "shaft" and "ceiling" in op.get("also", ()):
+            zr = g.q(shaft_zrange, o)
+            if zr is None:
+                continue
+            zb, zt = g.q(solid_zrange, e)
+            if zr[0] <= zt + 1e-6 and zb < zr[1] - 1e-6:
+                cand.append((o, op["name"], K.opening_loop(op)))
+    out, acc = [], []
+    holes = [tuple(tuple(q) for q in h) for h in p.get("holes", ())]
+    for c in cand:
+        if K.openings_problem(p["polygon"], holes + acc + [c[2]]) is not None:
+            continue
+        acc.append(c[2])
+        out.append(c)
+    return tuple(out)
+
+
+def solid_params(g, e):
+    """도면이 그리는 솔리드 params: 천장판 개구(W2 열네 번째 PR)가 있으면 그 고리를 판의 구멍(holes)으로 더한다(IFC 는 몸체 그대로 + IfcOpeningElement).
+    개구가 없으면 행 params 그대로다."""
+    p = el(g, e)["params"]
+    vs = g.q(solid_voids, e) if g.q(opening_objs) else ()
+    if not vs:
+        return p
+    return dict(p, holes=[list(map(list, h)) for h in p.get("holes", ())] + [[list(q) for q in lp] for _o, _n, lp in vs])
 
 
 def wall_voids(g, w):
@@ -978,6 +1077,12 @@ def ifc_spec(g, e):
                 "verts": tuple(verts), "faces": tuple(tuple(tuple(lp) for lp in f) for f in faces), "intent": intent}
         if "ops" in p:   # 불리언(W2 여섯 번째 PR): IFC 는 피연산자 다면체의 IfcBooleanResult 사슬. 없으면 명세는 이전과 같다
             spec["csg"] = SO.csg_tree(p)
+        vs = g.q(solid_voids, e) if g.q(opening_objs) else ()
+        if vs:   # 천장판 개구(W2 열네 번째 PR): (개구 id, 이름, 경계). 몸체는 그대로, IfcOpeningElement 가 뺀다. 없으면 명세는 이전과 같다
+            spec["voids"] = vs
+            vp = _void_psets(g, [v[0] for v in vs])
+            if vp:
+                spec["void_psets"] = vp
         return spec
     if kind == "slab":
         # 배치는 레벨 좌표계(원점·무회전)이고 윗면은 레벨 + top_offset 이므로 레벨 높이는 읽지 않는다(레벨을 옮기면 배치가 따라간다)
@@ -1020,6 +1125,14 @@ def ifc_spec(g, e):
             em = tuple(sorted((k, d["material"]) for k, d in p["eaves"].items() if "material" in d))
             if em:   # 처마 부속 종류별 재료(W2 아홉 번째 PR): 없으면 명세는 이전과 같다(부속은 지붕 재료를 따른다)
                 spec["eave_materials"] = em
+        vs = g.q(roof_voids, e) if g.q(opening_objs) else ()
+        if vs:   # 지붕 개구(W2 열네 번째 PR): (개구 id, 이름, 수직/면, 경계 고리, 뚫는 면 번호들). 없으면 명세는 이전과 같다
+            from dobim_core import hostvoid as HV
+            gm = g.q(roof_gm, e)
+            spec["voids"] = tuple((o, n, "face" if m == "face" else "vertical", lp, HV.roof_void(gm, p["thickness"], m, lp)["faces"]) for o, n, m, lp in vs)
+            vp = _void_psets(g, [v[0] for v in vs])
+            if vp:
+                spec["void_psets"] = vp
         return spec
     if kind == "stackwall":   # 스택 벽(W2 일곱 번째 PR): 형상 없이 레벨 좌표계에 놓이고 부분 벽(구간 순서)을 집합한다
         return {"kind": kind, "name": p["name"], "level": g.q(stack_level, e), "parts": tuple(p["parts"]), "intent": intent}

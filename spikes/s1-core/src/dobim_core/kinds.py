@@ -1726,7 +1726,11 @@ def _larea_params(p):
 #   mode "vertical": 슬래브 하나(host)를 경계 다각형(boundary)으로 수직 관통. "shaft": 레벨(level) + base_offset 에서 height 까지의 z 범위에서
 #   경계 다각형이 경계 안에 드는 모든 저작 슬래브를 한 번에 관통. "wall": 벽 하나(host)에 사각(rect)·원(circle) 개구(문·창 없음, 호 위 거리 offset).
 #   비 IFC 의도 요소(뷰·법정 면적 객체와 같다): 정의는 DoBIM_Defs 로 왕복한다
-OPENING_MODES = ("vertical", "shaft", "wall")
+#   W2 열네 번째 PR(지붕·천장 개구): mode "vertical" 의 호스트가 경사 지붕(roof)·천장판(solid 범주 ceiling 의 판)도 된다. mode "face": 경사 지붕 면 하나에
+#   면에 수직인 개구(평면 경계 = 면 윗면 위 스케치의 평면 투영). 경계 변마다 선택 볼록도(bulges, 원호), 샤프트는 선택 also(["roof", "ceiling"]: 그 범위의
+#   지붕·천장도 관통). 선택 키는 쓸 때만 생긴다(쓰지 않은 프로젝트의 행·도면·IFC 는 그대로다)
+OPENING_MODES = ("vertical", "shaft", "wall", "face")
+OPENING_ALSO = ("roof", "ceiling")
 OPENING_WALL_SHAPES = ("rect", "circle")
 OPENINGS_OBJ_MAX = 500     # 독립 개구 객체 수 상한
 SHAFT_HEIGHT_MAX = 500000.0
@@ -1757,19 +1761,52 @@ def _opening_psets_ok(v) -> bool:
     return n <= OPENING_PSETS_MAX
 
 
+def opening_bulges_problem(boundary, bulges) -> str | None:
+    """경계 변마다 볼록도(W2 열네 번째 PR): 꼭짓점 수와 같은 길이, |값| <= 1(반원), 0 이 아닌 값이 하나 이상, 펼친 고리가 올바른 반시계 다각형."""
+    from dobim_core import solidops as SOP
+    if not isinstance(bulges, list) or len(bulges) != len(boundary) or not all(num_ok(b) and abs(b) <= SOP.BULGE_MAX for b in bulges):
+        return "opening.bulges 는 꼭짓점마다 하나(변 i -> i+1 의 볼록도 tan(중심각/4), -1~1)다"
+    if not any(bulges):
+        return "opening.bulges 가 모두 0 이다(직선 경계는 bulges 를 두지 않는다)"
+    lp = opening_loop({"boundary": boundary, "bulges": bulges})
+    why = polygon_problem(lp)
+    if why:
+        return f"opening.bulges 로 펼친 경계가 올바르지 않다: {why}"
+    if polygon_area2(lp) <= 0:
+        return "opening.bulges 로 펼친 경계가 시계 방향이다"
+    return None
+
+
+def opening_loop(p) -> tuple:
+    """수직·면·샤프트 개구의 실제 경계 고리((x, y), ...): 볼록도가 있으면 호를 현으로 펼친다(기존 원 32각형 규칙, 소수 6자리). 없으면 boundary 그대로."""
+    b = p["boundary"]
+    if "bulges" not in p:
+        return tuple((q[0], q[1]) for q in b)
+    from dobim_core import solidops as SOP
+    return tuple((round(x, 6) + 0.0, round(y, 6) + 0.0) for x, y in SOP.bulge_loop(b, p["bulges"], None))
+
+
 def _opening_params(p):
     if isinstance(p, dict) and "psets" in p:   # 속성(W2 아홉 번째 PR, 선택): 없으면 행은 이전과 같다
         if not _opening_psets_ok(p["psets"]):
             return "opening.psets 는 {속성셋: {속성: 값}} 이어야 한다(값은 bool·정수·유한 실수·255자 이하 문자열)"
         p = {k: v for k, v in p.items() if k != "psets"}
     if not isinstance(p, dict) or p.get("mode") not in OPENING_MODES:
-        return "opening.mode 는 vertical·shaft·wall 중 하나다"
+        return "opening.mode 는 vertical·shaft·wall·face 중 하나다"
     m = p["mode"]
-    if m == "vertical":
-        return _check_fields("opening", p, {"name": _name, "mode": lambda v: True, "host": id_ok, "boundary": _poly_pts_ok})
+    if m in ("vertical", "shaft", "face") and "bulges" in p:   # 원호 경계(W2 열네 번째 PR, 선택)
+        if not _poly_pts_ok(p.get("boundary")):
+            return "opening.boundary 값이 올바르지 않다"
+        if why := opening_bulges_problem(p["boundary"], p["bulges"]):
+            return why
+    bl = {"bulges": lambda v: True}
+    if m in ("vertical", "face"):
+        return _check_opt("opening", p, {"name": _name, "mode": lambda v: True, "host": id_ok, "boundary": _poly_pts_ok}, bl)
     if m == "shaft":
         err = _check_opt("opening", p, {"name": _name, "mode": lambda v: True, "level": id_ok, "boundary": _poly_pts_ok,
-                                        "height": lambda v: _pos(v) and v <= SHAFT_HEIGHT_MAX}, {"base_offset": lambda v: num_ok(v) and v != 0 and abs(v) <= WT.BASE_OFFSET_MAX})
+                                        "height": lambda v: _pos(v) and v <= SHAFT_HEIGHT_MAX},
+                         {"base_offset": lambda v: num_ok(v) and v != 0 and abs(v) <= WT.BASE_OFFSET_MAX, **bl,
+                          "also": lambda v: isinstance(v, list) and 1 <= len(v) and v == sorted(set(v)) and all(x in OPENING_ALSO for x in v)})
         return err
     err = _check_fields("opening", p, {"name": _name, "mode": lambda v: True, "host": id_ok, "shape": lambda v: v in OPENING_WALL_SHAPES,
                                        "offset": num_ok, "sill": num_ok, "width": _pos, "height": _pos})
@@ -1968,7 +2005,7 @@ ELEMENT_KINDS: dict[str, ElementKind] = {k.name: k for k in (
     ElementKind("larea", False, None, False, 6, _larea_params, refs=(("level", "id", None),), ref_kinds=(("level", ("level",)),)),
     # 독립 개구 객체(W2 세 번째 PR, ARC-34): 수직(슬래브)·샤프트(레벨 범위의 슬래브들)·벽 개구. 호스트를 지우면 고아로 남는다(그리지 않는다)
     ElementKind("opening", False, None, False, 6, _opening_params, refs=(("host", "id", None), ("level", "id", None)),
-                ref_kinds=(("host", ("slab", "wall")), ("level", ("level",)))),
+                ref_kinds=(("host", ("slab", "wall", "roof", "solid")), ("level", ("level",)))),   # 지붕·천장판 호스트(W2 열네 번째 PR)
     # 커튼월(W2 네 번째 PR, ARC-22): 멀리언·패널은 행이 아니라 커튼월의 IFC 부속(IfcRelAggregates)이다
     ElementKind("curtwall", True, "IfcCurtainWall", True, 1, _curtwall_params, geometric=True),
     # 재료 외관 정의(W2 다섯 번째 PR, DATA-05·VIS-07): 프로젝트 매개변수처럼 비 IFC 의도 요소다(재료 이름이 키)
