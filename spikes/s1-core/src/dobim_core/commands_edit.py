@@ -27,7 +27,7 @@ from dobim_core.commands import (RAIL_SRC, RESERVED_PSET, A, Id, Name, Num, Pos,
 from dobim_core.errors import DobimError
 
 # 편집할 수 있는 종류. 승강기(슬래브 구멍 소유)·대지·레벨·뷰·주석은 뺀다. 통심선은 기호가 유일해야 해서 복사는 안 된다
-EDIT_KINDS = ("wall", "slab", "space", "stair", "railing", "roof", "solid", "finst", "grid", "door")
+EDIT_KINDS = ("wall", "slab", "space", "stair", "railing", "roof", "solid", "finst", "grid", "door", "beam")   # 구조 보(W2 열다섯 번째 PR)
 COPY_MAX = 500          # 한 번에 만드는 요소 수 상한
 IDS_MAX = 200           # 고르는 요소 수 상한
 ANS_IDS = 100           # 응답에 싣는 새 id 수 상한(응답 크기 상한)
@@ -123,7 +123,7 @@ def _pick(ctx, ids: list, what: str, *, copy: bool = False) -> list:
             raise DobimError("NOT_FOUND", f"요소를 찾을 수 없다: {eid}", path=f"/ids/{i}")
         if r["kind"] not in EDIT_KINDS or (copy and r["kind"] == "grid"):
             raise DobimError("CONSTRAINT", f"{r['kind']} 는 {what} 대상이 아니다: {eid}", path=f"/ids/{i}",
-                             hint="벽·문·슬래브·공간·계단·난간·지붕·솔리드·패밀리 인스턴스" + ("" if copy else "·통심선"))
+                             hint="벽·문·슬래브·공간·계단·난간·지붕·솔리드·보·패밀리 인스턴스" + ("" if copy else "·통심선"))
         ctx.authored(eid, what=what)
         host = ctx.rels_in("hosts", eid)
         if host and host[0] not in ids:

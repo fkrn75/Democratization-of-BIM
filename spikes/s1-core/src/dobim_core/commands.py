@@ -1292,6 +1292,10 @@ def element_delete(ctx, a: IdArg):
         from dobim_core import commands_walltype as CWT
         if CWT._walls_of(ctx, a.id) or CWT._stacks_of(ctx, a.id):
             raise DobimError("CONSTRAINT", "벽·스택 벽이 쓰는 벽 유형은 지울 수 없다", path="/id", hint="walltype.delete 의 detach: true 로 벽에서 떼고 지우세요")
+    elif r["kind"] == "beamtype":   # 보 유형(W2 열다섯 번째 PR): 쓰는 보가 있으면 beamtype.delete detach 로
+        from dobim_core import commands_beam as CBM
+        if CBM.beams_of(ctx, a.id):
+            raise DobimError("CONSTRAINT", "보가 쓰는 보 유형은 지울 수 없다", path="/id", hint="beamtype.delete 의 detach: true 로 보에서 떼고 지우세요")
     elif r["kind"] == "railtype":   # 난간 유형(W2 열세 번째 PR): 쓰는 난간이 있으면 railtype.delete detach 로
         from dobim_core import commands_railtype as CRT
         if CRT.railings_of(ctx, a.id):
@@ -5824,5 +5828,6 @@ from dobim_core import commands_material  # noqa: E402,F401   재료 외관(W2 �
 from dobim_core import commands_solidops  # noqa: E402,F401   솔리드 불리언(W2 여섯 번째 PR, ARC-12·ARC-44)
 from dobim_core import commands_walltype  # noqa: E402,F401   벽 유형·위치선·스택 벽(W2 일곱 번째 PR, ARC-11·ARC-09)
 from dobim_core import commands_railtype  # noqa: E402,F401   난간 유형(W2 열세 번째 PR, ARC-31)
+from dobim_core import commands_beam  # noqa: E402,F401   구조 보·보 유형(W2 열다섯 번째 PR, STR-02·STR-03)
 from dobim_core import commands_roof  # noqa: E402,F401   외곽선 지붕·지붕 유형·층 구성·처마 부속(W2 여덟 번째 PR, ARC-19·ARC-20)
 from dobim_core import commands_group  # noqa: E402,F401   모델 그룹·조립품(W2 열한 번째 PR, ARC-46·COL-11)

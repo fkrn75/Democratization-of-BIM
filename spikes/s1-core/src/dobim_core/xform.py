@@ -247,7 +247,17 @@ def _revolve(p: dict, xf: Xf) -> dict:
     return {"origin": o, "axis": A2, "ref": R2}
 
 
-BY_KIND = {"wall": wall, "slab": slab, "space": space, "stair": stair, "railing": railing, "roof": roof, "grid": grid, "solid": solid}
+def beam(p: dict, xf: Xf) -> dict:
+    """구조 보(W2 열다섯 번째 PR): 두 점을 옮긴다(순서 그대로). 대칭이면 왼쪽이 오른쪽이 되므로 단면 회전(roll)의 부호를 바꾼다(180 은 그대로)."""
+    q = dict(p)
+    q["start"] = xf.pt(p["start"][0], p["start"][1])
+    q["end"] = xf.pt(p["end"][0], p["end"][1])
+    if xf.mirror and "roll" in p and p["roll"] != 180.0:
+        q["roll"] = -p["roll"]
+    return q
+
+
+BY_KIND = {"wall": wall, "slab": slab, "space": space, "stair": stair, "railing": railing, "roof": roof, "grid": grid, "solid": solid, "beam": beam}
 
 
 def params(kind: str, p: dict, xf: Xf) -> dict:

@@ -9,6 +9,7 @@ from __future__ import annotations
 from math import sqrt
 
 from dobim_core import arcgeom as AG
+from dobim_core import beams as BM
 from dobim_core import curtain as CW
 from dobim_core.family import spec as FS
 from dobim_core import solids as SO
@@ -611,6 +612,85 @@ def curtain_ids(g):
     return tuple(sorted(out))
 
 
+# ---------------------------------------------------------------- 구조 보(W2 열다섯 번째 PR, STR-02·STR-03)
+def beam_level(g, b):
+    return rel_out(g, "on_level", b)[0]
+
+
+def beam_ids(g):
+    out = []
+    for b in range(NB):
+        out.extend(bucket_ids(g, "beam", b))
+    return tuple(sorted(out))
+
+
+def column_feet(g, e):
+    """기둥(호스트 없이 레벨에 서는 IfcColumn 패밀리 인스턴스)의 각기둥 ((아래 z, 위 z, 경계 상자, 세계 다각형 반시계), ...) 절대 높이.
+    기둥이 아니거나 그릴 각기둥이 없으면 (). 단면은 body 의 xy 압출 프로필(사각·원(32각형)·다각형)이다(도면 free_fam 과 같은 원천)."""
+    row = el(g, e)
+    if row is None or row["kind"] != "finst" or g.q(finst_host, e) or g.q(finst_ifc_class, e) != "IfcColumn":
+        return ()
+    spec = g.q(ifc_spec, e)
+    if spec.get("error") or not spec.get("position"):
+        return ()
+    zb = g.q(level_info, g.q(finst_level, e))[1] + spec["elevation"]
+    sn, cs = SO.sincos_deg(float(spec.get("rotation", 0.0) or 0.0))
+    x0, y0 = spec["position"][0], spec["position"][1]
+    out = []
+    for b in spec["body"]:
+        if b.get("k") != "extrude" or b.get("plane") != "xy" or b.get("rotate"):
+            continue
+        pr = b["profile"]
+        sh = pr.get("shape")
+        if sh == "rect":
+            (u0, u1), (v0, v1) = pr["u"], pr["v"]
+            loc = [(u0, v0), (u1, v0), (u1, v1), (u0, v1)]
+        elif sh == "circle":
+            loc = SO._circle(pr["r"], pr["center"][0], pr["center"][1])
+        elif sh == "polygon":
+            loc = [tuple(q) for q in pr["points"]]
+        else:
+            continue
+        poly = SO.ccw([(x0 + u * cs - v * sn, y0 + u * sn + v * cs) for u, v in loc])
+        xs, ys = [q[0] for q in poly], [q[1] for q in poly]
+        out.append((zb + b["range"][0], zb + b["range"][1], (min(xs), min(ys), max(xs), max(ys)), tuple(poly)))
+    return tuple(out)
+
+
+def beam_columns(g):
+    """보 끝을 자를 수 있는 기둥 각기둥 전체 ((기둥 id, 아래 z, 위 z, 경계 상자, 다각형), ...) id 순. 보가 있을 때만 당긴다."""
+    out = []
+    for b in range(NB):
+        for e in bucket_ids(g, "finst", b):
+            out.extend((e,) + f for f in g.q(column_feet, e))
+    return tuple(sorted(out, key=lambda t: (t[0], t[1], t[2])))
+
+
+def beam_zref(g, b):
+    """보 기준선의 절대 높이(레벨 + offset)."""
+    return g.q(level_info, g.q(beam_level, b))[1] + el(g, b)["params"]["offset"]
+
+
+def beam_cut(g, b):
+    """기둥 면 자르기 (시작에서 줄인 길이, 끝에서 줄인 길이, 시작 기둥, 끝 기둥)(beams.trims). 기둥이 없으면 (0, 0, None, None)."""
+    p = el(g, b)["params"]
+    if p.get("cutback") is False or not g.q(count, "finst"):
+        return (0.0, 0.0, None, None)
+    zr = g.q(beam_zref, b)
+    b0, b1 = BM.b_range(p)
+    return BM.trims(p, (zr + b0, zr + b1), g.q(beam_columns))
+
+
+def beam_measure(g, b):
+    """(축 길이, 자른 길이, 단면적 mm2, 체적 mm3)."""
+    p = el(g, b)["params"]
+    ln = BM.axis(p)[4]
+    c = g.q(beam_cut, b)
+    cl = ln - c[0] - c[1]
+    a = BM.section_area(p["section"])
+    return (ln, cl, a, a * cl)
+
+
 # ---------------------------------------------------------------- 공간
 def space_level(g, s):
     return rel_out(g, "on_level", s)[0]
@@ -806,7 +886,7 @@ def model_stats(g):
         out["curtain_panel"] = sum(s[1] for s in st)
         # 커튼월 문 패널도 IFC 에서는 IfcDoor 다: counts.door = IFC 의 IfcDoor 수(W2 아홉 번째 PR, 실사용 결함 3). 문 패널이 없으면 그대로다
         out["door"] += sum(s[3].get("door", (0, 0.0))[0] for s in st)
-    for k in ("walltype", "stackwall", "rooftype", "railtype"):   # 난간 유형(W2 열세 번째 PR)·벽 유형·스택 벽(W2 일곱 번째 PR)·지붕 유형(W2 여덟 번째 PR): 없으면 응답은 그대로다
+    for k in ("walltype", "stackwall", "rooftype", "railtype", "beam", "beamtype"):   # 구조 보·보 유형(W2 열다섯 번째 PR)·난간 유형(W2 열세 번째 PR)·벽 유형·스택 벽(W2 일곱 번째 PR)·지붕 유형(W2 여덟 번째 PR): 없으면 응답은 그대로다
         n = g.q(count, k)
         if n:
             out[k] = n
@@ -865,9 +945,9 @@ def intent_of(g, e):
     elif row["kind"] == "wall":
         out["level"] = g.q(wall_level, e)
         out["joins"] = list(g.q(wall_joins, e))
-    elif row["kind"] in ("slab", "stair", "space", "railing", "elevator", "roof", "solid", "curtwall", "stackwall"):
+    elif row["kind"] in ("slab", "stair", "space", "railing", "elevator", "roof", "solid", "curtwall", "stackwall", "beam"):
         out["level"] = g.q({"slab": slab_level, "stair": stair_level, "space": space_level, "railing": railing_level, "elevator": elevator_level, "roof": roof_level, "solid": solid_level,
-                            "curtwall": curtain_level, "stackwall": stack_level}[row["kind"]], e)
+                            "curtwall": curtain_level, "stackwall": stack_level, "beam": beam_level}[row["kind"]], e)
     elif row["kind"] == "door":
         out["host"] = g.q(door_host, e)
     return out
@@ -979,6 +1059,18 @@ def ifc_spec(g, e):
         if "ops" in p:   # 불리언(W2 여섯 번째 PR): IFC 는 피연산자 다면체의 IfcBooleanResult 사슬. 없으면 명세는 이전과 같다
             spec["csg"] = SO.csg_tree(p)
         return spec
+    if kind == "beam":
+        # 구조 보(W2 열다섯 번째 PR): 배치 = 레벨 좌표계 안의 기준선 시작점(기둥 면 자르기 반영, z = offset)·x 축 = 보 방향. 몸체는 단면 프로필
+        # (IfcRectangleProfileDef·IfcIShapeProfileDef)을 보 방향으로 돌출한다. 프로필 가운데(center)는 기준선에서 본 (a, b), roll 은 프로필 회전(도)
+        ax, ay, ux, uy, ln = BM.axis(p)
+        c = g.q(beam_cut, e)
+        sc = p["section"]
+        cb = {"top": -sc["depth"] / 2.0, "center": 0.0, "bottom": sc["depth"] / 2.0}[p["anchor"]]
+        r = p.get("roll", 0.0)
+        sn, cs = SO.sincos_deg(float(r)) if r else (0.0, 1.0)
+        return {"kind": kind, "name": p["name"], "level": g.q(beam_level, e), "origin": (ax + ux * c[0], ay + uy * c[0], p["offset"]), "xdir": (ux, uy),
+                "length": ln - c[0] - c[1], "section": tuple(sorted(sc.items())), "profile_name": BM.section_label(sc), "center": (-cb * sn, cb * cs),
+                "roll": (cs, sn), "intent": intent}
     if kind == "slab":
         # 배치는 레벨 좌표계(원점·무회전)이고 윗면은 레벨 + top_offset 이므로 레벨 높이는 읽지 않는다(레벨을 옮기면 배치가 따라간다)
         spec = {"kind": kind, "name": p["name"], "level": g.q(slab_level, e), "boundary": tuple(tuple(q) for q in p["boundary"]),

@@ -17,6 +17,7 @@ from math import isfinite, sqrt
 from typing import Callable, NamedTuple
 
 from dobim_core import arcgeom as AG
+from dobim_core import beams as BM
 from dobim_core import curtain as CW
 from dobim_core import roofpoly as RP
 from dobim_core import roofeaves as RE
@@ -1861,6 +1862,28 @@ def _curtwall_params(p):
     return f"curtwall: {why}" if why else None
 
 
+# ---------------------------------------------------------------- 구조 보(W2 열다섯 번째 PR, STR-02·STR-03·STR-07)
+# beam = 평면 두 점 사이의 수평 보(IfcBeam). 단면(사각·H형)은 보 유형(beamtype)의 사본을 행이 갖고(params.btype + 관계 of_type), 유형을 고치면
+#   그 유형의 보 행만 다시 쓴다(벽·지붕·난간 유형과 같은 설계). 형상은 beams.py 가 정한다(도면·IFC·수량이 같은 값)
+def _beamtype_params(p):
+    return _check_opt("beamtype", p, {"name": _name, "section": lambda v: BM.section_problem(v) is None}, {})
+
+
+def _beam_coord(v) -> bool:
+    return _pt_ok(v) and all(abs(x) <= BM.COORD_MAX for x in v)
+
+
+def _beam_params(p):
+    err = _check_opt("beam", p, {"name": _name, "start": _beam_coord, "end": _beam_coord,
+                                 "offset": lambda v: num_ok(v) and abs(v) <= BM.OFFSET_MAX, "anchor": lambda v: v in BM.ANCHORS,
+                                 "section": lambda v: BM.section_problem(v) is None},
+                     {"btype": id_ok, "roll": lambda v: num_ok(v) and v != 0 and -180.0 < v <= 180.0, "cutback": lambda v: v is False})
+    if err is not None:
+        return err
+    why = BM.beam_problem(p)
+    return f"beam: {why}" if why else None
+
+
 # 태그 대상 종류(annot.TAG_FIELDS 와 같다: 가져오기가 복원한 태그 대상을 이 종류로 검사한다)
 TAG_TARGET_KINDS = ("wall", "door", "slab", "space", "stair", "finst", "roof", "railing")
 
@@ -1980,6 +2003,9 @@ ELEMENT_KINDS: dict[str, ElementKind] = {k.name: k for k in (
     # 지붕 유형(W2 여덟 번째 PR): 벽 유형과 같은 비 IFC 의도 요소(정의는 DoBIM_Defs). 지붕보다 먼저 만든다
     ElementKind("rooftype", False, None, False, 0, _rooftype_params),
     ElementKind("railtype", False, None, False, 0, _railtype_params),   # 난간 유형(W2 열세 번째 PR, ARC-31)
+    # 구조 보·보 유형(W2 열다섯 번째 PR, STR-02): 보는 IfcBeam, 유형은 비 IFC 의도(투영이 IfcBeamType + IfcRelDefinesByType 를 만든다)
+    ElementKind("beamtype", False, None, False, 0, _beamtype_params),
+    ElementKind("beam", True, "IfcBeam", True, 1, _beam_params, geometric=True, refs=(("btype", "id", "of_type"),), ref_kinds=(("btype", ("beamtype",)),)),
     # 모델 그룹 정의·배치·조립품(W2 열한 번째 PR, ARC-46·COL-11): 비 IFC 의도 요소(정의는 DoBIM_Defs). 부속을 가리키므로 모델 요소 뒤에 만든다
     ElementKind("mgtype", False, None, False, 6, _mgtype_params),
     ElementKind("mgroup", False, None, False, 7, _mgroup_params, refs=(("type", "id", None), ("members", "ids", None), ("level", "id", None)),
@@ -1993,9 +2019,9 @@ FIXED_IFC_CLASS = {k: v.ifc_class for k, v in ELEMENT_KINDS.items() if v.ifc_cla
 KIND_NAMES = tuple(ELEMENT_KINDS)
 # 의도 복원(S2 가져오기)이 IFC 클래스로 종류를 정하는 것: IFC 클래스 -> 종류. 패밀리 타입·인스턴스(ftype/finst)는 클래스가 레시피마다 달라 의도가 스스로 밝힌
 # 종류를 따른다(family.restore, ADR-0014). 뷰·주석은 IFC 신원이 없어 IFC 에서 복원할 수 없다(알려진 한계)
-IMPORTABLE_BY_CLASS = {"IfcBuildingStorey": "level", "IfcWall": "wall", "IfcDoor": "door", "IfcSlab": "slab", "IfcStair": "stair", "IfcSpace": "space", "IfcRailing": "railing", "IfcTransportElement": "elevator", "IfcRoof": "roof", "IfcSite": "site", "IfcCurtainWall": "curtwall"}
+IMPORTABLE_BY_CLASS = {"IfcBuildingStorey": "level", "IfcWall": "wall", "IfcDoor": "door", "IfcSlab": "slab", "IfcStair": "stair", "IfcSpace": "space", "IfcRailing": "railing", "IfcTransportElement": "elevator", "IfcRoof": "roof", "IfcSite": "site", "IfcCurtainWall": "curtwall", "IfcBeam": "beam"}
 FAMILY_OF_KIND = {"stackwall": "wall.stacked", "level": "level.basic", "wall": "wall.basic", "door": "door.single", "slab": "slab.basic", "stair": "stair.straight", "space": "space.basic", "railing": "railing.basic", "elevator": "elevator.basic", "roof": "roof.basic", "site": "site.basic", "solid": "solid.generic",
-                  "curtwall": "curtwall.basic"}
+                  "curtwall": "curtwall.basic", "beam": "beam.basic"}
 
 
 def _remap_ref(form: str, v, m: dict):
@@ -2088,14 +2114,14 @@ def _fs(*a):
 
 REL_KINDS: dict[str, RelKind] = {r.name: r for r in (
     # 레벨은 분리돼 있어도 그 위의 저작 벽이 레벨을 따른다(S2): 레벨 쪽은 막지 않고, 놓이는 요소만 저작이어야 한다
-    RelKind("on_level", _fs("wall", "slab", "stair", "space", "railing", "elevator", "roof", "solid", "finst", "foreign", "curtwall", "stackwall"), _fs("level"), guard=("src",), violation="LEVEL_DELETED", message="벽이 놓인 레벨이 지워졌다"),
+    RelKind("on_level", _fs("wall", "slab", "stair", "space", "railing", "elevator", "roof", "solid", "finst", "foreign", "curtwall", "stackwall", "beam"), _fs("level"), guard=("src",), violation="LEVEL_DELETED", message="벽이 놓인 레벨이 지워졌다"),
     RelKind("joins", _fs("wall"), _fs("wall"), guard=("src", "dst"), violation="JOIN_TARGET_DELETED", message="조인 대상 벽이 지워졌다"),
     RelKind("hosts", _fs("wall"), _fs("door", "finst"), guard=("src", "dst"), violation="HOST_DELETED",
             message="호스트 벽이 지워졌는데 문이 그 벽에 놓여 있다"),
     RelKind("succ", _fs("wall"), _fs("wall"), dangling_ok=True),
     RelKind("annot_of", _fs("dim", "tag", "draft"), _fs("view"), violation="VIEW_DELETED", message="주석이 속한 뷰가 지워졌다"),
     # 벽 -> 벽 유형(W2 일곱 번째 PR, ARC-11)도 같은 관계다(Revit 의 타입 지정)
-    RelKind("of_type", _fs("finst", "wall", "roof", "railing"), _fs("ftype", "walltype", "rooftype", "railtype"), violation="TYPE_DELETED", message="인스턴스의 패밀리 타입이 지워졌다"),
+    RelKind("of_type", _fs("finst", "wall", "roof", "railing", "beam"), _fs("ftype", "walltype", "rooftype", "railtype", "beamtype"), violation="TYPE_DELETED", message="인스턴스의 패밀리 타입이 지워졌다"),
 )}
 REL_NAMES = tuple(REL_KINDS)
 READ_REL_NAMES = ("on_level", "joins", "hosts", "of_type")   # element.get / relation.list 가 보이는 관계(주석·분할 이력은 따로 읽는다)
