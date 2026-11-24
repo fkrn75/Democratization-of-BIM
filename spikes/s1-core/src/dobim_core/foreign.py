@@ -836,10 +836,11 @@ def _restore_defs(f, rows: dict, rels: set, taken: set, plan: "ImportPlan") -> N
     for eid in sorted(e for e, d in parsed.items() if d["kind"] == "opening"):
         p = parsed[eid]["params"]
         why = None
-        for k, need in (("host", "wall" if p["mode"] == "wall" else "slab"), ("level", "level")):
+        hk = {"wall": ("wall",), "face": ("roof",), "vertical": ("slab", "roof", "solid")}.get(p["mode"], ())   # 지붕·천장판 호스트(W2 열네 번째 PR)
+        for k, need in (("host", hk), ("level", ("level",))):
             st = state(p[k]) if k in p else None
-            if st is not None and (st[0] != need or st[1] != "authored"):
-                why = f"독립 개구가 가리키는 {k} 가 저작 {need} 가 아니다"
+            if st is not None and (st[0] not in need or st[1] != "authored"):
+                why = f"독립 개구가 가리키는 {k} 가 저작 {'·'.join(need)} 가 아니다"
         if why:
             skip(eid, why)
         else:
@@ -1093,7 +1094,7 @@ def plan_import(data: bytes) -> ImportPlan:
             for rel in f.get_inverse(f.by_guid(g)):
                 if rel.is_a("IfcRelFillsElement") and rel.RelatedBuildingElement == f.by_guid(g):
                     owned.add(rel.RelatingOpeningElement.GlobalId)
-        elif r["origin"] == "authored" and r["kind"] in ("slab", "stair", "roof", "wall", "curtwall", "railing"):   # 난간 부재(W2 열세 번째 PR), 커튼월의 멀리언·패널(W2 ARC-22), 벽의 모양 개구부(18단계), 저작 슬래브의 구멍·파라펫·꺾인 계단의 단 묶음·층참·지붕의 경사면도 그 요소의 클로저에 속한다
+        elif r["origin"] == "authored" and r["kind"] in ("slab", "stair", "roof", "wall", "curtwall", "railing", "solid"):   # 천장판 개구(W2 열네 번째 PR), 난간 부재(W2 열세 번째 PR), 커튼월의 멀리언·패널(W2 ARC-22), 벽의 모양 개구부(18단계), 저작 슬래브의 구멍·파라펫·꺾인 계단의 단 묶음·층참·지붕의 경사면도 그 요소의 클로저에 속한다
             owned.update(p.GlobalId for p in scratch.parts.get(g, {}).values())
     owned |= {p.GlobalId for p in prods if p.is_a("IfcGrid") and isinstance(getattr(p, "Description", None), str)
               and p.Description.startswith("DoBIM grid") and sk is not None and p.GlobalId == _grid_gid(sk[1].GlobalId)}   # 통심선 IfcGrid 투영(W2 열 번째 PR)

@@ -2383,7 +2383,40 @@ def roof_info(g, r):
             "pieces": tuple((tuple(up(q) for q in fc), (a, b, c + lv)) for fc, (a, b, c) in gm["pieces"]),
             # 처마 부속 조각(W2 여덟 번째 PR): (이름표, 종류, 평면 사각형, 바닥 z, 윗면 z) 절대 높이. 없으면 빈 튜플이라 도면은 이전과 같다
             "eaves": tuple((lb, kd, quad, tuple(z + lv for z in zb), tuple(z + lv for z in zt)) for lb, kd, quad, zb, zt in K.roof_eave_pieces(p)),
-            "layers": tuple((x["material"], x["thickness"]) for x in p.get("layers", ()))}
+            "layers": tuple((x["material"], x["thickness"]) for x in p.get("layers", ())),
+            # 지붕 개구(W2 열네 번째 PR): (모드, 윗면 구멍 고리, 아랫면 구멍 고리, 면 개구의 면 평면(절대 z) 또는 None). 없으면 빈 튜플이라 도면은 이전과 같다
+            "voids": g.q(_roof_void_geom, r)}
+
+
+def _roof_void_geom(g, r):
+    """지붕 개구들의 도면용 형상(hostvoid.roof_void, 면 평면은 절대 z). 개구 객체가 없으면 빈 튜플."""
+    vs = g.q(Q.roof_voids, r) if g.q(Q.opening_objs) else ()
+    if not vs:
+        return ()
+    from dobim_core import hostvoid as HV
+    gm = g.q(Q.roof_gm, r)
+    lv = g.q(Q.level_info, g.q(Q.roof_level, r))[1]
+    t = Q.el(g, r)["params"]["thickness"]
+    out = []
+    for _o, _n, m, lp in vs:
+        d = HV.roof_void(gm, t, m, lp)
+        pl = d["plane"]
+        out.append((m, d["top"], d["bot"], None if pl is None else (pl[0], pl[1], pl[2] + lv)))
+    return tuple(out)
+
+
+def _void_clip(segs, loops):
+    """평면 선분들(등급, x0, y0, x1, y1)에서 구멍 고리 안쪽 부분을 뺀다(지붕 개구, W2 열네 번째 PR)."""
+    from dobim_core import hostvoid as HV
+    out = []
+    for ln in segs:
+        a, b = (ln[1], ln[2]), (ln[3], ln[4])
+        for t0, t1 in HV.seg_outside(a, b, loops):
+            if t0 == 0.0 and t1 == 1.0:
+                out.append(ln)
+            else:
+                out.append((ln[0], a[0] + t0 * (b[0] - a[0]), a[1] + t0 * (b[1] - a[1]), a[0] + t1 * (b[0] - a[0]), a[1] + t1 * (b[1] - a[1])) + tuple(ln[5:]))
+    return out
 
 
 def all_roofs(g):
@@ -2527,6 +2560,16 @@ def roof_edges3(g, r):
     for pc in info["eaves"]:   # 처마 부속(W2 여덟 번째 PR): 조각 육면체의 모서리
         for a, b in RE.piece_edges(pc):
             add(a, b)
+    if info["voids"]:   # 지붕 개구(W2 열네 번째 PR): 구멍 안쪽(평면에서 윗면 고리 안)에 드는 모서리를 빼고 구멍 둘레·구멍 벽 모서리를 더한다
+        from dobim_core import hostvoid as HV
+        loops = [v[1] for v in info["voids"]]
+        kept = []
+        for a, b in out:
+            for t0, t1 in HV.seg_outside((a[0], a[1]), (b[0], b[1]), loops):
+                kept.append(tuple(tuple(a[k] + tt * (b[k] - a[k]) for k in range(3)) for tt in (t0, t1)))
+        out = kept
+        for a, b in HV.void_edges3(info["voids"], info["pieces"], t):
+            add(a, b)
     return tuple(out)
 
 
@@ -2586,7 +2629,7 @@ def _roof_face_cuts(cfg, info):
     """단면: 절단면이 경사면 볼록 조각을 자른 띠(수직 두께) 사각형들."""
     near = cfg[7]
     out = []
-    for fc, _pl in info["pieces"]:   # 볼록 조각마다 띠 하나(직사각형 지붕은 면 그대로)
+    for fc, pl in info["pieces"]:   # 볼록 조각마다 띠 하나(직사각형 지붕은 면 그대로)
         pts = [(_sw(cfg, q), q[2]) for q in fc]
         xs = []
         n = len(pts)
@@ -2600,8 +2643,31 @@ def _roof_face_cuts(cfg, info):
         xs.sort()
         (sa, za), (sb, zb) = xs[0], xs[-1]
         if sb - sa > EPS:
-            out.append(((sa, za - info["t"]), (sb, zb - info["t"]), (sb, zb), (sa, za)))
+            if not info["voids"]:
+                out.append(((sa, za - info["t"]), (sb, zb - info["t"]), (sb, zb), (sa, za)))
+                continue
+            out.extend(_void_bands(cfg, info, pl, sa, za, sb, zb))
     return out
+
+
+def _void_bands(cfg, info, pl, sa, za, sb, zb):
+    """지붕 개구(W2 열네 번째 PR)가 있는 조각의 절단 띠: 윗면은 윗면 구멍 고리, 아랫면은 아랫면 고리(면 개구는 밀린 고리)가 절단선에서 차지하는 구간을 뺀다.
+    면 개구는 그 면 평면의 조각에만 건다. 윗면·아랫면 조각 수가 다르면(구멍 벽이 절단선에 걸린 자리) 윗면 구간으로 맞춘다."""
+    from dobim_core import hostvoid as HV
+    near, t = cfg[7], info["t"]
+    th, bh = [], []
+    for _m, top, bot, vpl in info["voids"]:
+        if vpl is not None and max(abs(vpl[k] - pl[k]) for k in range(3)) > 1e-6:
+            continue
+        th += HV.line_inside([_sw(cfg, q) for q in top], near)
+        bh += HV.line_inside([_sw(cfg, q) for q in bot], near)
+
+    def z(s):
+        return za + (s - sa) / (sb - sa) * (zb - za)
+    T, B = HV.minus((sa, sb), th), HV.minus((sa, sb), bh)
+    if len(T) != len(B):
+        B = T
+    return [((b0, z(b0) - t), (b1, z(b1) - t), (t1, z(t1)), (t0, z(t0))) for (t0, t1), (b0, b1) in zip(T, B) if t1 - t0 > EPS and b1 - b0 > EPS]
 
 
 def roof_detail_lines(g, v, r):
@@ -2638,6 +2704,12 @@ def roof_plan_parts(g, v, r):
             continue
         q = pc[2]
         segs += [("proj", q[i][0], q[i][1], q[(i + 1) % 4][0], q[(i + 1) % 4][1]) for i in range(4)]
+    if info["voids"]:   # 지붕 개구(W2 열네 번째 PR): 구멍 안쪽의 선(용마루·처마 선 등)을 빼고 윗면 구멍 둘레를 투영선으로 긋는다
+        loops = [v[1] for v in info["voids"]]
+        segs = _void_clip(segs, loops)
+        for lp in loops:
+            n = len(lp)
+            segs += [("proj", lp[i][0], lp[i][1], lp[(i + 1) % n][0], lp[(i + 1) % n][1]) for i in range(n)]
     if info["ridges"]:
         a, b = info["ridges"][0]
         labels.append((round((a[0] + b[0]) / 2.0, 3), round((a[1] + b[1]) / 2.0 + 0.6 * sc, 3), "용마루", LABEL_SUB_H, "middle"))
@@ -4979,7 +5051,7 @@ def solid_info(g, e):
     if row is None or row["kind"] != "solid" or row["origin"] != "authored":
         return None
     lv = g.q(Q.level_info, g.q(Q.solid_level, e))[1]
-    verts, faces = SO.solid_mesh(row["params"])
+    verts, faces = SO.solid_mesh(g.q(Q.solid_params, e))   # 천장판 개구(W2 열네 번째 PR)는 판의 구멍으로 그린다. 없으면 행 params 그대로
     verts = tuple((x, y, z + lv) for x, y, z in verts)
     edges, nrm = SO.feature_edges(verts, faces)
     return (verts, tuple(tuple(tuple(lp) for lp in f) for f in faces), edges, nrm, SO.mesh_bbox(verts))
@@ -5482,16 +5554,23 @@ def view_lines(g, v):
 
 def plan_opening_lines(g, v):
     """평면: 이 뷰 레벨의 슬래브를 뚫는 수직 개구는 경계선, 절단 높이가 z 범위 안인 샤프트 개구는 경계선과 대각선 둘(X, 상용 도구의 샤프트 기호).
-    호스트가 없거나(고아) 그 슬래브에 구멍이 나지 않은(경계 밖) 개구는 그리지 않는다."""
+    호스트가 없거나(고아) 그 슬래브에 구멍이 나지 않은(경계 밖) 개구는 그리지 않는다.
+    천장판 수직 개구(W2 열네 번째 PR)는 반사 천장 평면이 그 천장판(밑면이 절단면 위 보이는 깊이 안)을 볼 때 경계선. 지붕 개구는 지붕 평면(roof_plan_parts)이 긋는다."""
     cfg = g.q(view_cfg, v)
     if cfg is None or cfg[0] != "plan" or cfg[1] is None:
         return ()
     out = []
     for o, op in g.q(Q.opening_objs):
-        pts = [tuple(q) for q in op["boundary"]] if op["mode"] != "wall" else None
+        pts = list(K.opening_loop(op)) if op["mode"] != "wall" else None   # 원호 경계(W2 열네 번째 PR)는 펼친 고리
         if op["mode"] == "vertical":
             h = Q.el(g, op["host"])
-            if h is None or h["kind"] != "slab" or Q.rel_out(g, "on_level", op["host"]) != (cfg[1],):
+            if h is not None and h["kind"] == "solid":   # 천장판 개구(W2 열네 번째 PR): 반사 천장 평면이 그 천장판을 볼 때만 경계선
+                if not (is_rcp(cfg) and h["origin"] == "authored" and any(x[0] == o for x in g.q(Q.solid_voids, op["host"]))):
+                    continue
+                zb = g.q(Q.solid_zrange, op["host"])[0]
+                if not cfg[2] - EPS <= zb <= cfg[2] + cfg[3] + EPS:
+                    continue
+            elif h is None or h["kind"] != "slab" or Q.rel_out(g, "on_level", op["host"]) != (cfg[1],):
                 continue
         elif op["mode"] == "shaft":
             zr = g.q(Q.shaft_zrange, o)

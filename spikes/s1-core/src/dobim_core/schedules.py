@@ -220,8 +220,11 @@ def element_row(g, e) -> dict:
         out.update(host=Q.el(g, r[2])["params"]["name"], width=r[5], height=r[6], sill=r[7], offset=r[8], area=r[5] * r[6])
     elif kind == "slab":
         area = _poly_area(p["boundary"]) - sum(_poly_area(o) for o in p.get("openings", ()))
+        vs = g.q(Q.slab_voids, e) if g.q(Q.opening_objs) else ()
+        if vs:   # 독립 수직·샤프트 개구(W2 열네 번째 PR, ARC-34 잔여)도 면적·체적·구멍 수에 넣는다. 없으면 행은 이전과 같다
+            area -= sum(_poly_area(lp) for _o, _n, lp in vs)
         out.update(thickness=p["thickness"], top_offset=p["top_offset"], area=area, perimeter=_perimeter(p["boundary"]),
-                   volume=area * p["thickness"], openings=len(p.get("openings", ())), ifc_class="IfcSlab")
+                   volume=area * p["thickness"], openings=len(p.get("openings", ())) + len(vs), ifc_class="IfcSlab")
         if lelev is not None:
             out["elevation"] = lelev + p["top_offset"]
     elif kind == "roof":
@@ -229,6 +232,12 @@ def element_row(g, e) -> dict:
         area = 0.0
         for fc, (a, b, _c) in zip(gm["faces"], gm["planes"]):   # 경사면 넓이 = 평면 투영 넓이 x sqrt(1 + 기울기²)
             area += _poly_area(fc) * sqrt(1.0 + a * a + b * b)
+        vs = g.q(Q.roof_voids, e) if g.q(Q.opening_objs) else ()
+        if vs:   # 지붕 개구(W2 열네 번째 PR): 면마다 구멍(윗면 고리)이 차지하는 경사면 넓이를 뺀다. 면 개구는 그 면에서만. 없으면 행은 이전과 같다
+            from dobim_core import hostvoid as HV
+            for i in range(len(gm["faces"])):
+                area -= HV.face_area(gm, i, [lp for _o, _n, m, lp in vs if m != "face" or HV.face_of(gm, lp) == i])
+            out["openings"] = len(vs)
         out.update(form=p["form"], pitch=p["pitch"], thickness=p["thickness"], area=area, volume=area * p["thickness"])
     elif kind == "stair":
         lay = K.stair_layout(p)
@@ -248,6 +257,9 @@ def element_row(g, e) -> dict:
     elif kind == "solid":
         spec = g.q(Q.ifc_spec, e)
         m = mesh_measure(spec["verts"], spec["faces"])
+        if spec.get("voids"):   # 천장판 개구(W2 열네 번째 PR): IFC 몸체는 그대로지만 수량은 구멍을 뺀 판으로 잰다. 없으면 행은 이전과 같다
+            m = mesh_measure(*SO.solid_mesh(g.q(Q.solid_params, e)))
+            out["openings"] = len(spec["voids"])
         out.update(type=p["category"], ifc_class=spec["ifc_class"], volume=m["volume"], height=m["dz"])
         if p["form"] == "member":
             a0, a1 = p["start"], p["end"]

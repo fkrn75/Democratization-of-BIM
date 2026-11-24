@@ -155,7 +155,7 @@ def _grid_cuts(edges, k, c):
 
 def ceiling_grid_lines(g, e):
     """천장판 하나의 반사 천장 평면 선: 윤곽·구멍(proj)과 격자(hatch, 원점에서 간격의 정수배 선을 윤곽 안만)."""
-    p = Q.el(g, e)["params"]
+    p = g.q(Q.solid_params, e)   # 천장판 개구(W2 열네 번째 PR)는 구멍으로 더한다(격자도 그 밖만). 없으면 행 params 그대로
     rings = [[tuple(q) for q in p["polygon"]]] + [[tuple(q) for q in h] for h in p.get("holes", ())]
     edges = [ed for r in rings for ed in _ring_edges(r)]
     out = [("proj", a[0], a[1], b[0], b[1]) for a, b in edges]
