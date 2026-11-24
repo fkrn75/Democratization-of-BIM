@@ -1705,6 +1705,12 @@ def _cw_materials_ok(v) -> bool:
     return isinstance(v, dict) and 1 <= len(v) <= len(CW.MATERIAL_CATS) and all(k in CW.MATERIAL_CATS and text_ok(x, 1, NAME_MAX) for k, x in v.items())
 
 
+def _cw_merges_ok(v) -> bool:
+    """칸 합치기(W2 열한 번째 PR): [[대표 키, 끝 키], ...] 1개 이상, 키는 패널 키 "P<u>:<z>", 대표 키와 끝 키는 다르다."""
+    return (isinstance(v, list) and 1 <= len(v) <= CW.ADDS_MAX
+            and all(isinstance(m, list) and len(m) == 2 and m[0] != m[1] and all(text_ok(k, 3, 64) and CW.cell_of(k) is not None for k in m) for m in v))
+
+
 def _curtwall_params(p):
     common = {"name": _name, "axis": lambda v: isinstance(v, list) and len(v) == 4 and all(num_ok(x) and abs(x) <= 1e7 for x in v),
               "u_grid": _cw_rule_ok, "v_grid": _cw_rule_ok, "types": _cw_types_ok,
@@ -1712,7 +1718,8 @@ def _curtwall_params(p):
               "join": lambda v: v in CW.JOINS, "panel_thickness": lambda v: _pos(v) and v <= CW.PANEL_T_MAX}
     opt = {"base_offset": lambda v: num_ok(v) and v != 0 and abs(v) <= WT.BASE_OFFSET_MAX,
            "u_add": _cw_list_ok, "u_remove": _cw_list_ok, "v_add": _cw_list_ok, "v_remove": _cw_list_ok,
-           "mullion_overrides": lambda v: True, "panel_overrides": lambda v: True, "materials": _cw_materials_ok}
+           "mullion_overrides": lambda v: True, "panel_overrides": lambda v: True, "materials": _cw_materials_ok,
+           "merges": _cw_merges_ok}   # 칸 합치기(W2 열한 번째 PR)
     if isinstance(p, dict) and p.get("form") == "sloped":   # 경사 커튼 시스템(W2 열 번째 PR): 높이·곡선·상단 윤곽 대신 물매·외곽
         err = _check_opt("curtwall", p, {**common, "form": lambda v: v in CW.FORMS, "slope": num_ok,
                                          "boundary": lambda v: isinstance(v, list) and 3 <= len(v) <= CW.BOUNDARY_MAX and all(_pt_ok(q) and all(abs(x) <= 1e7 for x in q) for q in v)}, opt)
@@ -1733,6 +1740,49 @@ def _curtwall_params(p):
 
 # 태그 대상 종류(annot.TAG_FIELDS 와 같다: 가져오기가 복원한 태그 대상을 이 종류로 검사한다)
 TAG_TARGET_KINDS = ("wall", "door", "slab", "space", "stair", "finst", "roof", "railing")
+
+
+# ---------------------------------------------------------------- 모델 그룹·조립품(W2 열한 번째 PR, ARC-46·COL-11)
+# mgtype   = 모델 그룹 정의(Revit 의 모델 그룹 유형): 이름만. 배치(mgroup)가 정의를 가리킨다
+# mgroup   = 모델 그룹 배치: 부속 요소 id(members)와 정의 안의 부속 번호(keys: 같은 정의의 다른 배치에서 같은 번호가 같은 부속), 배치 틀(at·angle·mirror),
+#            레벨(level: 부속이 레벨에 놓일 때), 이 배치에서 뺀 부속 번호(excluded). 정의 동기화(mgroup.sync)가 번호로 부속을 맞춘다
+# assembly = 조립품(Revit 의 Assembly): 이름·유형 이름 + 부속 요소 id. IFC 는 IfcElementAssembly + IfcRelAggregates
+# 셋 다 비 IFC 의도 요소라 DoBIM_Defs 로 왕복한다(정의 = 정본). IFC 투영(IfcGroup·IfcElementAssembly)은 엔진 flush 가 맞춘다.
+# 2D 상세 그룹(draft.group, 뷰 안 2D 요소 묶음)과는 다른 것이다: 이름(mgroup·assembly)·커맨드 접두가 겹치지 않는다
+GROUP_MEMBERS_MAX = 500     # 그룹·조립품 하나의 부속 수 상한
+GROUP_KEY_MAX = 100000      # 그룹 부속 번호 상한
+GROUP_KINDS = ("wall", "door", "slab", "space", "stair", "railing", "roof", "solid", "finst")   # 모델 그룹 부속(element.copy 가 다루는 모델 요소, 통심선 제외)
+ASSEMBLY_KINDS = ("wall", "door", "slab", "stair", "railing", "roof", "solid", "finst", "curtwall", "elevator")   # 조립품 부속(IFC 제품인 저작 모델 요소)
+
+
+def _grp_ids_ok(v, lo=1, hi=GROUP_MEMBERS_MAX) -> bool:
+    return isinstance(v, list) and lo <= len(v) <= hi and all(id_ok(x) for x in v) and len(set(v)) == len(v)
+
+
+def _grp_keys_ok(v, lo=1) -> bool:
+    return (isinstance(v, list) and lo <= len(v) <= GROUP_MEMBERS_MAX and all(type(x) is int and 0 <= x < GROUP_KEY_MAX for x in v)
+            and len(set(v)) == len(v))
+
+
+def _mgtype_params(p):
+    return _check_fields("mgtype", p, {"name": _name})
+
+
+def _mgroup_params(p):
+    err = _check_opt("mgroup", p, {"name": _name, "type": id_ok, "members": lambda v: _grp_ids_ok(v, 0), "keys": lambda v: _grp_keys_ok(v, 0),
+                                   "at": lambda v: _pt_ok(v) and all(abs(x) <= 1e7 for x in v), "angle": lambda v: num_ok(v) and 0 <= v < 360},
+                     {"mirror": _TRUE, "level": id_ok, "excluded": _grp_keys_ok})
+    if err is not None:
+        return err
+    if len(p["members"]) != len(p["keys"]):
+        return "mgroup.keys 수가 members 수와 다르다"
+    if set(p.get("excluded", ())) & set(p["keys"]):
+        return "mgroup.excluded 가 지금 부속 번호와 겹친다"
+    return None
+
+
+def _assembly_params(p):
+    return _check_fields("assembly", p, {"name": _name, "type": _name, "members": _grp_ids_ok})
 
 
 # ---------------------------------------------------------------- 요소 종류
@@ -1805,6 +1855,11 @@ ELEMENT_KINDS: dict[str, ElementKind] = {k.name: k for k in (
     ElementKind("stackwall", True, "IfcWall", True, 2, _stackwall_params, refs=(("parts", "ids", None),)),
     # 지붕 유형(W2 여덟 번째 PR): 벽 유형과 같은 비 IFC 의도 요소(정의는 DoBIM_Defs). 지붕보다 먼저 만든다
     ElementKind("rooftype", False, None, False, 0, _rooftype_params),
+    # 모델 그룹 정의·배치·조립품(W2 열한 번째 PR, ARC-46·COL-11): 비 IFC 의도 요소(정의는 DoBIM_Defs). 부속을 가리키므로 모델 요소 뒤에 만든다
+    ElementKind("mgtype", False, None, False, 6, _mgtype_params),
+    ElementKind("mgroup", False, None, False, 7, _mgroup_params, refs=(("type", "id", None), ("members", "ids", None), ("level", "id", None)),
+                ref_kinds=(("type", ("mgtype",)), ("level", ("level",)))),
+    ElementKind("assembly", False, None, False, 7, _assembly_params, refs=(("members", "ids", None),)),
 )}
 
 NON_IFC_KINDS = frozenset(k for k, v in ELEMENT_KINDS.items() if not v.ifc)      # 신원·속성셋·재료가 없는 의도 요소(뷰 정의, 치수·태그)

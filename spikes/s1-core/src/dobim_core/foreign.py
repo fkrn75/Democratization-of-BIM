@@ -119,6 +119,12 @@ def _grid_gid(building_gid: str) -> str:
     return part_guid(building_gid, "grid")
 
 
+def asm_owned(e) -> bool:
+    """투영이 만든 조립품 IfcElementAssembly 인가(W2 열한 번째 PR): Description = "DoBIM assembly <조립품 id>" 이고 GlobalId 가 그 id 의 결정적 값이다."""
+    from dobim_core.ifc_model import _asm_owned
+    return _asm_owned(e)
+
+
 def _curtwall_intent(p) -> dict:
     """커튼월 의도 params(W2 ARC-22)를 저작 행 모양으로(숫자는 모두 float). 값 검사는 코어 행 검사가 한다."""
     if not isinstance(p, dict):
@@ -819,6 +825,40 @@ def _restore_defs(f, rows: dict, rels: set, taken: set, plan: "ImportPlan") -> N
             skip(eid, why)
         else:
             ok[eid] = parsed[eid]
+    # 모델 그룹 정의·배치·조립품(W2 열한 번째 PR, ARC-46·COL-11): 정의 이름은 유일하다. 배치·조립품의 부속은 모두 그 종류의 저작 요소여야 한다
+    # (하나라도 아니면 되살리지 않는다: 일부만 남기면 다른 묶음이 된다). 배치는 되살린 정의를, 레벨은 저작 레벨을 가리켜야 한다. 한 요소는 조립품 하나에만
+    gkeys: dict = {}
+    for eid in sorted(e for e, d in parsed.items() if d["kind"] == "mgtype"):
+        gkeys.setdefault(parsed[eid]["params"]["name"], []).append(eid)
+    for ids in gkeys.values():
+        for eid in ids:
+            if len(ids) > 1:
+                skip(eid, "같은 이름의 모델 그룹 정의가 더 있다")
+            else:
+                ok[eid] = parsed[eid]
+    in_asm: set = set()
+    for eid in sorted(e for e, d in parsed.items() if d["kind"] in ("mgroup", "assembly")):
+        d = parsed[eid]
+        p = d["params"]
+        allowed = K.GROUP_KINDS if d["kind"] == "mgroup" else K.ASSEMBLY_KINDS
+        why = None
+        for m in p["members"]:
+            st = state(m)
+            if st is None or st[0] not in allowed or st[1] != "authored" or "stack" in rows[m]["params"]:
+                why = "부속이 없거나 묶을 수 있는 저작 요소가 아니다"
+        if d["kind"] == "mgroup":
+            if ok.get(p["type"], {}).get("kind") != "mgtype":
+                why = "모델 그룹 배치의 정의를 되살리지 못했다"
+            elif "level" in p and state(p["level"]) != ("level", "authored"):
+                why = "모델 그룹 배치의 레벨이 저작 레벨이 아니다"
+        elif in_asm & set(p["members"]):
+            why = "다른 조립품의 부속이 들어 있다"
+        if why:
+            skip(eid, why)
+        else:
+            ok[eid] = d
+            if d["kind"] == "assembly":
+                in_asm |= set(p["members"])
     for eid, d in ok.items():
         rows[eid] = {"kind": d["kind"], "ifc_class": "", "origin": "authored", "family_id": d["family_id"], "params": d["params"],
                      "projection_hash": None}
@@ -1038,6 +1078,7 @@ def plan_import(data: bytes) -> ImportPlan:
             owned.update(p.GlobalId for p in scratch.parts.get(g, {}).values())
     owned |= {p.GlobalId for p in prods if p.is_a("IfcGrid") and isinstance(getattr(p, "Description", None), str)
               and p.Description.startswith("DoBIM grid") and sk is not None and p.GlobalId == _grid_gid(sk[1].GlobalId)}   # 통심선 IfcGrid 투영(W2 열 번째 PR)
+    owned |= {p.GlobalId for p in prods if p.is_a("IfcElementAssembly") and asm_owned(p)}   # 조립품 IfcElementAssembly 투영(W2 열한 번째 PR): 정의 동기화가 맞춘다
     for p in prods:
         g = p.GlobalId
         if g in rows:

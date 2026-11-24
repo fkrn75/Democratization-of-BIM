@@ -1071,6 +1071,23 @@ class Engine:
             out[gid] = (p["name"], tuple(p["line"]), AG.info(p["line"], p["arc"]) if "arc" in p else None)
         return out
 
+    def group_maps(self) -> tuple:
+        """(모델 그룹 배치 {id: (이름, 정의 이름, 부속 id 들)}, 조립품 {id: (이름, 유형, 층 id 또는 None, 부속 id 들)}) (W2 열한 번째 PR). 없으면 빈 표.
+        저작·투영된 부속만 싣는다(외래·분리 요소는 의도의 묶음을 IFC 에 걸지 않는다). 그룹 부속은 부속 번호 순서다."""
+        st = self.st
+        groups, asms = {}, {}
+        for gid in sorted(st.by_kind.get("mgroup", ())):
+            p = st.el[gid]["params"]
+            t = st.el.get(p["type"])
+            ms = tuple(m for _k, m in sorted(zip(p["keys"], p["members"])) if m in st.el and st.el[m]["origin"] == "authored")
+            groups[gid] = (p["name"], t["params"]["name"] if t is not None and t["kind"] == "mgtype" else p["name"], ms)
+        for aid in sorted(st.by_kind.get("assembly", ())):
+            p = st.el[aid]["params"]
+            ms = tuple(m for m in p["members"] if m in st.el and st.el[m]["origin"] == "authored")
+            lv = next((st.out.get(("on_level", m), [None])[0] for m in ms if st.out.get(("on_level", m))), None)
+            asms[aid] = (p["name"], p["type"], lv, ms)
+        return groups, asms
+
     def _flush_defs(self) -> None:
         """뷰·치수·태그의 정의를 IFC 프로젝트 속성셋에 맞춘다(ADR-0015). 정의가 없으면 아무것도 하지 않는다(IFC 가 그대로다).
         행은 불변이라 같은 객체면 텍스트를 다시 만들지 않는다. 바뀐 정의의 속성만 쓴다."""
@@ -1087,6 +1104,7 @@ class Engine:
             self.ifc.sync_wall_types(self.walltype_map())   # 벽 유형(W2 일곱 번째 PR): IfcWallType·층 집합·타입 지정 관계. 유형이 없으면 아무것도 하지 않는다
             self.ifc.sync_roof_types(self.rooftype_map())   # 지붕 유형(W2 여덟 번째 PR): IfcRoofType. 유형이 없으면 아무것도 하지 않는다
             self.ifc.sync_grids(self.grid_map())   # 통심선 IfcGrid(W2 열 번째 PR, ARC-38). 통심선이 없으면 아무것도 하지 않는다
+            self.ifc.sync_groups(*self.group_maps())   # 모델 그룹 IfcGroup·조립품 IfcElementAssembly(W2 열한 번째 PR). 없으면 아무것도 하지 않는다
         except BaseException as ex:
             self._taint("정의 속성", ex)
             try:

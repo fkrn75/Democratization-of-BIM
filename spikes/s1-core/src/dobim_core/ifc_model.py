@@ -147,6 +147,8 @@ def pairs_label(layers) -> str:
 
 LAYER_MARK = "DoBIM"   # 코어가 투영한 층 구성(IfcMaterialLayerSet)의 Description. 외래 파일의 층 구성과 구분한다
 GRID_MARK = "DoBIM grid"   # 통심선 IfcGrid 투영(W2 열 번째 PR)의 Description 머리: 투영이 소유한다는 표식(뒤에 명세 서명)
+GROUP_MARK = "DoBIM model group"   # 모델 그룹 IfcGroup 투영(W2 열한 번째 PR)의 Description 머리(뒤에 배치 id)
+ASM_MARK = "DoBIM assembly"        # 조립품 IfcElementAssembly 투영(W2 열한 번째 PR)의 Description 머리(뒤에 조립품 id)
 WALLTYPE_MARK = "DoBIM wall type"   # 벽 유형 투영(W2 일곱 번째 PR)의 IfcRelDefinesByType·유형 층 집합 Description: 투영이 소유한다는 표식
 ROOFTYPE_MARK = "DoBIM roof type"   # 지붕 유형 투영(W2 여덟 번째 PR)의 표식(벽 유형과 같은 쓰임)
 # 처마 부속(W2 여덟 번째 PR, ARC-20)의 IFC 클래스·PredefinedType·ObjectType. IFC4 IfcCoveringTypeEnum 에 FASCIA·SOFFIT 가 없어 USERDEFINED + ObjectType 로 적는다
@@ -333,7 +335,8 @@ class Closure:
             out["typed_by"] = sorted(r.RelatingType.GlobalId for r in _rels_of(e, inv, "IsTypedBy", "IfcRelDefinesByType", "RelatedObjects"))
         out["contained"] = sorted(self.ref(r.RelatingStructure)
                                   for r in _rels_of(e, inv, "ContainedInStructure", "IfcRelContainedInSpatialStructure", "RelatedElements"))
-        out["aggregated"] = sorted(self.ref(r.RelatingObject) for r in _rels_of(e, inv, "Decomposes", "IfcRelAggregates", "RelatedObjects"))
+        out["aggregated"] = sorted(self.ref(r.RelatingObject) for r in _rels_of(e, inv, "Decomposes", "IfcRelAggregates", "RelatedObjects")
+                                   if not (r.RelatingObject.is_a("IfcElementAssembly") and _asm_owned(r.RelatingObject)))   # 조립품 소속(W2 열한 번째 PR)은 정의가 정본이라 형상 클로저가 아니다
         # 이 요소를 뚫는 개구부들. 개구부의 형상은 채우는 문의 클로저가 소유하므로 여기서는 "누가 채우는가"만 본다(GlobalId 는 신원이라
         # 외부 도구가 바꿔도 형상이 아니다). 채우는 요소가 없는 개구부나 외래 요소가 채우는 개구부가 더해지면 벽이 달라진 것이다
         voids = []
@@ -410,6 +413,12 @@ def _guid5(name: str) -> str:
 def part_guid(eid: str, label: str) -> str:
     """투영이 소유하는 부속(꺾인 계단의 단 묶음·층참, 슬래브 구멍)의 GlobalId: 요소 id 와 이름표만의 결정적 함수다(opening_guid 와 같은 이유)."""
     return _guid5(f"part:{eid}:{label}")
+
+
+def _asm_owned(e) -> bool:
+    """투영이 만든 조립품 IfcElementAssembly 인가(W2 열한 번째 PR, foreign.asm_owned 와 같은 판정)."""
+    d = getattr(e, "Description", None)
+    return isinstance(d, str) and d.startswith(ASM_MARK + " ") and len(d) == len(ASM_MARK) + 23 and e.GlobalId == part_guid(d[-22:], "assembly")
 
 
 def opening_guid(door_id: str) -> str:
@@ -559,6 +568,9 @@ class IfcModel:
         self._grid_ent = None                 # 투영한 IfcGrid(W2 열 번째 PR, ARC-38) 또는 None
         self._grid_sig: str | None = None     # 그 IfcGrid 의 명세 서명(Description 끝에 적는다: 같으면 다시 쓰지 않는다)
         self._grid_scanned = False            # 가져온 파일의 투영 IfcGrid 를 한 번 훑었는가
+        self._grp_sig: dict[str, tuple] = {}  # 모델 그룹 배치 id -> 마지막으로 맞춘 명세(W2 열한 번째 PR, IfcGroup)
+        self._asm_sig: dict[str, tuple] = {}  # 조립품 id -> 마지막으로 맞춘 명세(W2 열한 번째 PR, IfcElementAssembly)
+        self._grp_scanned = False             # 가져온 파일의 투영 IfcGroup·IfcElementAssembly 를 한 번 훑었는가
         self._eave_mats: dict[str, dict] = {}   # 지붕 id -> {처마 부속 종류: 재료 이름} (W2 아홉 번째 PR, 마지막 투영의 값)
         self.container_of: dict[str, str] = {}  # 요소 id -> 현재 담긴 층 id (투영 상태)
         self._mats: dict[str, Any] = {}         # 재료 이름 -> 엔티티
@@ -1573,8 +1585,139 @@ class IfcModel:
         self._grid_ent, self._grid_sig = e, sig
 
     def grid_owned_gids(self) -> set:
-        """투영이 만든 IfcGrid 의 GlobalId(가져오기·가지치기가 요소로 세지 않는다)."""
-        return {e.GlobalId for e in self.f.by_type("IfcGrid") if self._grid_owned(e)}
+        """투영이 만든 IfcGrid·조립품 IfcElementAssembly(W2 열한 번째 PR)의 GlobalId(가져오기·가지치기가 요소로 세지 않는다)."""
+        return {e.GlobalId for e in self.f.by_type("IfcGrid") if self._grid_owned(e)} | self._asm_owned_gids()
+
+    # ------------------------------------------------------------ 모델 그룹·조립품(W2 열한 번째 PR, ARC-46·COL-11)
+    # 모델 그룹 배치 = IfcGroup(GlobalId = part_guid(배치 id, "mgroup"), Name = 배치 이름, ObjectType = 정의 이름, Description = "DoBIM model group <배치 id>")
+    #   + IfcRelAssignsToGroup(part_guid(배치, "mgroup:rel"), 부속 = 부속 번호 순서). 그룹은 제품이 아니라 배치·형상이 없다(부속이 형상의 정본).
+    # 조립품 = IfcElementAssembly(part_guid(조립품 id, "assembly"), Name, ObjectType = 유형 이름, PredefinedType USERDEFINED, AssemblyPlace NOTDEFINED,
+    #   Description = "DoBIM assembly <조립품 id>", 배치 = 첫 부속의 층 좌표계 원점, 형상 없음) + 그 층(없으면 건물)에 담는 IfcRelContainedInSpatialStructure
+    #   (part_guid(조립품, "assembly:contain")) + 부속을 모으는 IfcRelAggregates(part_guid(조립품, "assembly:agg"), 부속 순서). 부속의 층 담기는 그대로 둔다.
+    # 정의(DoBIM_Defs)가 정본이고 이것은 투영이다. 그룹·조립품이 없으면 아무것도 만들지 않는다(기존 프로젝트의 IFC 그대로)
+    def _asm_owned_gids(self) -> set:
+        return {e.GlobalId for e in self.f.by_type("IfcElementAssembly") if _asm_owned(e)}
+
+    @staticmethod
+    def _grp_owned(e) -> bool:
+        d = getattr(e, "Description", None)
+        return isinstance(d, str) and d.startswith(GROUP_MARK + " ") and len(d) == len(GROUP_MARK) + 23 and e.GlobalId == part_guid(d[-22:], "mgroup")
+
+    def _grp_drop(self, e) -> None:
+        f = self.f
+        for r in list(f.get_inverse(e)):
+            if r.is_a("IfcRelAssignsToGroup") and r.RelatingGroup == e:
+                f.remove(r)
+        if f.get_inverse(e):   # 다른 도구가 붙인 관계(속성셋 등)
+            api_root.remove_product(f, product=e)
+        else:
+            f.remove(e)
+
+    def _asm_drop(self, e) -> None:
+        f = self.f
+        for r in list(f.get_inverse(e)):
+            if r.is_a("IfcRelAggregates") and r.RelatingObject == e:
+                f.remove(r)
+            elif r.is_a("IfcRelContainedInSpatialStructure"):
+                if len(r.RelatedElements) <= 1:
+                    f.remove(r)
+                else:
+                    r.RelatedElements = [x for x in r.RelatedElements if x != e]
+        pl = e.ObjectPlacement
+        if f.get_inverse(e):
+            api_root.remove_product(f, product=e)
+        else:
+            f.remove(e)
+            if pl is not None and not f.get_inverse(pl):
+                ue.remove_deep2(f, pl)
+
+    def _grp_scan(self, keep: set) -> None:
+        """가져온 파일(작업 사본)에 남은, 투영이 만든 그룹·조립품 중 지금 것이 아닌 것을 지운다(가져온 뒤 지운 것: 다시 열어도 같은 IFC)."""
+        for e in list(self.f.by_type("IfcGroup")):
+            if e.is_a() == "IfcGroup" and self._grp_owned(e) and e.GlobalId not in keep:
+                self._grp_drop(e)
+        for e in list(self.f.by_type("IfcElementAssembly")):
+            if _asm_owned(e) and e.GlobalId not in keep:
+                self._asm_drop(e)
+
+    def _members_rel(self, gid: str, cls: str, src_attr: str, dst_attr: str, owner, want: list) -> None:
+        """owner 의 묶음 관계(GlobalId gid)를 부속 want 에 맞춘다. 부속이 없으면 관계를 지운다."""
+        f = self.f
+        rel = self._by_guid(gid)
+        if not want:
+            if rel is not None:
+                f.remove(rel)
+        elif rel is None:
+            f.create_entity(cls, GlobalId=gid, **{src_attr: owner, dst_attr: want})
+        elif [x.id() for x in getattr(rel, dst_attr)] != [x.id() for x in want] or getattr(rel, src_attr) != owner:
+            setattr(rel, dst_attr, want)
+            setattr(rel, src_attr, owner)
+
+    def sync_groups(self, groups: dict, asms: dict) -> None:
+        """groups = {배치 id: (이름, 정의 이름, 부속 id 들)}, asms = {조립품 id: (이름, 유형, 층 id 또는 None, 부속 id 들)} 에 IFC 를 맞춘다(엔진 flush 가 투영 뒤에 부른다)."""
+        if self.base_mode and not self._grp_scanned:
+            self._grp_scanned = True
+            self._grp_scan({part_guid(g, "mgroup") for g in groups} | {part_guid(a, "assembly") for a in asms})
+        if not groups and not asms and not self._grp_sig and not self._asm_sig:
+            return
+        f = self.f
+        for gid in sorted(set(self._grp_sig) - set(groups)):
+            e = self._by_guid(part_guid(gid, "mgroup"))
+            if e is not None:
+                self._grp_drop(e)
+            self._grp_sig.pop(gid)
+        for aid in sorted(set(self._asm_sig) - set(asms)):
+            e = self._by_guid(part_guid(aid, "assembly"))
+            if e is not None:
+                self._asm_drop(e)
+            self._asm_sig.pop(aid)
+        for gid in sorted(groups):
+            name, tname, members = groups[gid]
+            want = [self.ents[m] for m in members if m in self.ents]
+            sig = (name, tname, tuple(x.id() for x in want))
+            e = self._by_guid(part_guid(gid, "mgroup"))
+            if e is not None and self._grp_sig.get(gid) == sig:
+                continue
+            if e is None:
+                e = f.create_entity("IfcGroup", GlobalId=part_guid(gid, "mgroup"), Name=name, Description=f"{GROUP_MARK} {gid}", ObjectType=tname)
+            else:
+                for k, v in (("Name", name), ("ObjectType", tname), ("Description", f"{GROUP_MARK} {gid}")):
+                    if getattr(e, k) != v:
+                        setattr(e, k, v)
+            self._members_rel(part_guid(gid, "mgroup:rel"), "IfcRelAssignsToGroup", "RelatingGroup", "RelatedObjects", e, want)
+            self._grp_sig[gid] = sig
+        for aid in sorted(asms):
+            name, tname, level, members = asms[aid]
+            want = [self.ents[m] for m in members if m in self.ents]
+            host = self.ents[level] if level in self.ents else self.building
+            sig = (name, tname, level, tuple(x.id() for x in want))
+            e = self._by_guid(part_guid(aid, "assembly"))
+            if e is not None and self._asm_sig.get(aid) == sig:
+                continue
+            rel_to = host.ObjectPlacement if host is not None else None
+            if e is None:
+                e = f.create_entity("IfcElementAssembly", GlobalId=part_guid(aid, "assembly"), Name=name, Description=f"{ASM_MARK} {aid}", ObjectType=tname,
+                                    ObjectPlacement=self._placement(rel_to), AssemblyPlace="NOTDEFINED", PredefinedType="USERDEFINED")
+            else:
+                for k, v in (("Name", name), ("ObjectType", tname), ("Description", f"{ASM_MARK} {aid}"), ("AssemblyPlace", "NOTDEFINED"), ("PredefinedType", "USERDEFINED")):
+                    if getattr(e, k) != v:
+                        setattr(e, k, v)
+                if e.ObjectPlacement is None:
+                    e.ObjectPlacement = self._placement(rel_to)
+                elif e.ObjectPlacement.PlacementRelTo != rel_to:
+                    e.ObjectPlacement.PlacementRelTo = rel_to
+            if host is not None:
+                cg = part_guid(aid, "assembly:contain")
+                cur = [r for r in f.get_inverse(e) if r.is_a("IfcRelContainedInSpatialStructure")]
+                if not (len(cur) == 1 and cur[0].GlobalId == cg and cur[0].RelatingStructure == host and list(cur[0].RelatedElements) == [e]):
+                    for r in cur:
+                        if len(r.RelatedElements) <= 1:
+                            f.remove(r)
+                        else:
+                            r.RelatedElements = [x for x in r.RelatedElements if x != e]
+                    f.create_entity("IfcRelContainedInSpatialStructure", GlobalId=cg, RelatedElements=[e], RelatingStructure=host)
+            self._members_rel(part_guid(aid, "assembly:agg"), "IfcRelAggregates", "RelatingObject", "RelatedObjects", e, want)
+            self._asm_sig[aid] = sig
 
     def flush_rels(self) -> None:
         """일괄 모드에서 모아 둔 층 담기·타입 관계 추가를 반영한다(모은 것이 없으면 아무것도 하지 않는다)."""

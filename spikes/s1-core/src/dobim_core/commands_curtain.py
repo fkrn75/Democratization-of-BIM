@@ -90,6 +90,8 @@ def _summary(ctx, cid: str) -> dict:
         if lay.get("form") == "sloped":
             out["form"] = "sloped"
             out["slope_length"] = round(lay["height"], 3)
+    if ctx.st.el[cid]["params"].get("merges"):   # 칸 합치기(W2 열한 번째 PR): 합친 영역 수. 없으면 응답은 이전과 같다
+        out["merged"] = len(ctx.st.el[cid]["params"]["merges"])
     return out
 
 
@@ -567,6 +569,70 @@ def curtain_material_set(ctx, a: CurtainMaterialSet):
 
 
 CW_DEFAULT_MATERIALS = {"mullion": "알루미늄", "glass": "유리", "opaque": "불투명 패널", "door": "문"}   # ifc_model.IfcModel.CW_MATERIALS 와 같다(이 모듈은 ifcopenshell 을 import 하지 않는다)
+
+
+# ---------------------------------------------------------------- W2 열한 번째 PR: 칸 합치기(패널 merge)
+class CurtainMerge(A):
+    id: Id
+    keys: Annotated[list[Key], Field(min_length=2, max_length=2)] = Field(description="합칠 영역의 두 모서리 칸 패널 키(예: P0:0, P1500:1500). 그 사이 칸을 모두 합친다")
+
+
+@command("curtain.merge", kind="mutation", risk="write", group="model.curtain",
+         summary="커튼월 칸 합치기: 두 모서리 칸 사이의 칸을 패널 하나로(안쪽 멀리언 조각은 없어진다). 대표 키 = 시작 칸, IFC 는 IfcPlate 하나. 곡선 축은 현 하나(중심각 약 29도 이하)",
+         args=CurtainMerge, since="0.22", examples=[{"id": F.CW1, "keys": ["P0:0", "P1500:1500"]}])
+def curtain_merge(ctx, a: CurtainMerge):
+    r = ctx.authored(a.id, "curtwall")
+    p = dict(r["params"])
+    _mk, pk = CW.all_keys(p)
+    for i, k in enumerate(a.keys):
+        if k not in pk:
+            raise DobimError("CONSTRAINT", f"없는 패널 키다: {k}", path=f"/keys/{i}", hint="curtain.parts what=panels 로 키를 보세요")
+    if a.keys[0] == a.keys[1]:
+        raise DobimError("CONSTRAINT", "두 칸이 같다(합칠 칸이 둘 이상이어야 한다)", path="/keys")
+    lay = CW.layout(p)
+    fu, fz = [CW.fmt(u) for u in lay["us"]], [CW.fmt(z) for z in lay["zs"]]
+    (ua, za), (ub, zb) = CW.cell_of(a.keys[0]), CW.cell_of(a.keys[1])
+    j0, j1 = sorted((fu.index(ua), fu.index(ub)))
+    i0, i1 = sorted((fz.index(za), fz.index(zb)))
+    rep, end = f"P{fu[j0]}:{fz[i0]}", f"P{fu[j1]}:{fz[i1]}"
+    for m in p.get("merges", ()):
+        rc = CW.merge_rects({"merges": [m]}, fu, fz)
+        if rc and not (rc[0][2] < j0 or j1 < rc[0][0] or rc[0][3] < i0 or i1 < rc[0][1]):
+            raise DobimError("CONSTRAINT", f"이미 합친 칸 영역({m[0]} ~ {m[1]})과 겹친다", path="/keys", hint="curtain.unmerge 로 먼저 푸세요")
+    p["merges"] = list(p.get("merges", ())) + [[rep, end]]
+    ctx.put_el(a.id, dict(r, params=_checked(p)))
+    return {**_summary(ctx, a.id), "key": rep, "cells": (j1 - j0 + 1) * (i1 - i0 + 1)}
+
+
+class CurtainUnmerge(A):
+    id: Id
+    key: Key = Field(description="합친 영역 안의 아무 칸 키(대표 키 포함)")
+
+
+@command("curtain.unmerge", kind="mutation", risk="write", group="model.curtain", summary="합친 칸을 다시 나눈다(안쪽 멀리언·패널이 되살아난다)",
+         args=CurtainUnmerge, since="0.22", examples=[{"id": F.CW1, "key": "P0:0"}])
+def curtain_unmerge(ctx, a: CurtainUnmerge):
+    r = ctx.authored(a.id, "curtwall")
+    p = dict(r["params"])
+    lay = CW.layout(p)
+    fu, fz = [CW.fmt(u) for u in lay["us"]], [CW.fmt(z) for z in lay["zs"]]
+    c = CW.cell_of(a.key)
+    hit = None
+    if c is not None and c[0] in fu and c[1] in fz:
+        j, i = fu.index(c[0]), fz.index(c[1])
+        for m in p.get("merges", ()):
+            rc = CW.merge_rects({"merges": [m]}, fu, fz)
+            if rc and rc[0][0] <= j <= rc[0][2] and rc[0][1] <= i <= rc[0][3]:
+                hit = m
+    if hit is None:
+        raise DobimError("CONSTRAINT", f"합친 칸 영역에 든 키가 아니다: {a.key}", path="/key", hint="curtain.parts what=panels 의 merged 로 보세요")
+    left = [m for m in p["merges"] if m != hit]
+    if left:
+        p["merges"] = left
+    else:
+        p.pop("merges")
+    ctx.put_el(a.id, dict(r, params=_checked(p)))
+    return {**_summary(ctx, a.id), "key": hit[0]}
 
 
 class CurtainParts(A):
