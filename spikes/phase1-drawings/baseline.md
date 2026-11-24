@@ -2595,3 +2595,43 @@ W1 이 끝나고 W2 의 첫 과업으로 직선 축뿐이던 벽에 원호 축�
 - 조립품: 부속의 층 담기를 그대로 둔다(69.2), 조립품 유형 객체(IfcElementAssemblyType)·조립품 뷰(시트)는 없다.
 - 칸 합치기: 사각 영역만(L 자 등 비사각 합치기 없음), 곡선 축은 중심각 약 29도 이하의 현 하나.
 - PR #85 에서 미룬 하단 붙이기, 원호 통심선의 입면·단면 표시는 다음 PR.
+
+## 71. W2 열세 번째 PR: 문 호스팅 제약 완화 ARC-23·난간 유형 ARC-31 (2026-11-25, 브랜치 phase2/w2-door-railing)
+
+성능 재확인 v2 에서 건물 하나는 얇은 벽·짧은 토막 벽에 문을 직접 놓지 못해 채움벽 약 65개를 손으로 만들었고, 난간은 난간선 + 높이만 있어 난간대·발루스터 구성을 나타내지 못했다. 둘 다 선택 규칙·선택 params 라 쓰지 않은 프로젝트의 저장 형식·도면·IFC 는 그대로다. 시험은 `tests/test_w2_door_railing.py`(합성 좌표).
+
+### 71.1 문 호스팅 제약 완화(ARC-23)
+- 재현: (1) 패밀리 문(door.single 등 기본 문 레시피 6종)은 레시피 제약 `host_thickness >= leaf_t + 20`(방화문 +40) 때문에 두께 50~60 mm 벽에 family.place 가 CONSTRAINT 로 거절됐고, 벽을 그보다 얇게 고치는 wall.set 도 거절됐다. (2) 저작 문(door.place·door.set)은 문 구간 [offset - 폭/2, offset + 폭/2] 이 벽 축 [0, 길이] 안이어야 해서, 문 폭보다 조금 짧은 토막 벽(예: 벽 850 mm·문 900 mm)에 놓을 수 없었다. 두께 조건은 저작 문에는 없었다.
+- 설계 (1) 얇은 벽: 호스트 문맥(host_thickness·host_height)을 읽는 레시피 제약은 배치·투영 평가에서 경고로 낮춘다(family.place·set·set_type·wall.set 응답 warnings, 깨진 제약 메시지). 근거: 상용 도구는 문짝 두께와 벽 두께를 견주지 않고 문을 놓는다(문틀·문짝이 벽면 밖으로 나올 뿐 개구·채움 관계는 같다). 형상이 퇴화하는 경우(E_DEGENERATE 등)는 이전처럼 거절한다. 레시피 검증(family.validate·register 의 표본 평가)은 이전처럼 엄격하다. 평가 결과에는 깨진 호스트 제약이 있을 때만 `host_warnings` 키가 생기고 캐시 키에 soft 여부가 들어간다.
+- 설계 (2) 짧은 벽: 문 구간이 벽 범위를 넘는 길이를 양 끝 각각 `kinds.DOOR_END_ALLOW = 100 mm` 까지 받는다(경고). 근거: 문 폭은 문틀 바깥 치수이고 기본 문 레시피의 문틀 단면 폭(frame_w) 상한이 100 mm 다. 토막 벽이 문보다 짧은 실제 경우는 문틀이 이웃 벽이나 벽 끝 마감에 묻히는 경우라 그 한도를 문틀 폭 상한으로 둔다. 넘으면 이전처럼 거절한다. 도면은 이미 개구를 벽 범위로 잘라 그리므로(drawing._openings) 벽 몸체는 벽 끝까지 뚫린다. 같은 규칙을 door.place·door.set·wall.set(축)·곡선 벽 호 편집·스택 벽 부분 벽 재생성·병합 검사(DOOR_OUT_OF_HOST·DOOR_OUTSIDE_TRIMMED)가 함께 쓴다(kinds.door_span_ok 하나). door_status(일람표 열·element.get)는 사실 표시라 그대로 둔다: 벽 범위를 조금이라도 넘으면 outside_trimmed_host(경계 골든 회귀 tools/golden.py 가 지키는 값).
+- 패밀리 문의 가로 맞춤은 바꾸지 않았다: 이미 조인 형상 범위(host_range)·모서리 끝 허용·also_cuts(이웃 벽 함께 자르기)가 있다(25·26단계).
+- IFC: 바뀌지 않는다. 얇은 벽의 패밀리 문은 이전과 같은 IfcDoor + IfcOpeningElement(IfcRelVoidsElement)·IfcRelFillsElement, 짧은 벽의 저작 문은 개구 상자가 문 폭 그대로(벽 끝을 넘는 만큼 벽 밖 허공을 뺀다)라 IfcOpeningElement 가 벽보다 조금 길다. IFC4·IFC2X3 검증 오류 0, 가져오기 왕복 해시·바이트 같음(시험).
+
+### 71.2 난간 유형(ARC-31)
+- 요구: 난간 구성 부품(상부 난간대·중간 난간대·발루스터·동자)을 유형으로 정의하고 난간에 지정, 유형을 고치면 인스턴스가 따라간다.
+- 설계: 새 비 IFC 의도 종류 `railtype`(벽 유형 65절·지붕 유형 66절과 같은 설계, 정의는 DoBIM_Defs 로 왕복). params = 이름 + 높이(바닥 마감 ~ 상부 난간대 윗면) + parts:
+  - top {w, d}: 상부 난간대 단면(폭·춤). 윗면 = 높이.
+  - rails [{z, w, d}] 0~8개: 중간 난간대 중심 높이와 단면. 위 끝은 상부 난간대 아랫면 아래.
+  - baluster {spacing, w, bottom} (선택): 간격 상한(50 mm 이상)·단면 한 변·아래 끝 높이. 동자 사이 칸을 같은 간격(상한 이하)으로 나누고 양 끝(동자 자리)은 비운다(시작·끝 처리 = 동자에 맞춘 가운데 정렬). 위 끝 = 상부 난간대 아랫면.
+  - post {spacing, w}: 동자 간격 상한(200 mm 이상)·단면 한 변. 꼭짓점마다 + 그 사이를 간격 상한 이하로 등분(기존 난간 기둥 규칙과 같다), 위 끝 = 상부 난간대 아랫면.
+  난간 행은 유형 id(params.rltype + 관계 of_type)와 구성 사본(params.parts)·유형 높이를 갖는다. 형상은 행만 읽는 순수 함수(kinds.railing_geom → members)라 증분 갱신이 유지되고, railtype.set 은 그 유형의 난간 행만 다시 쓴다. 난간 하나의 동자 + 발루스터는 2만 개까지(행 검사).
+- 명령 6개(since 0.22): railtype.create·set(clear baluster)·duplicate·delete(detach)·list, railing.type.set(null 이면 유형과 구성을 떼고 높이만 남긴다). railing.create·from_stair·from_slab 에 type(높이는 유형이 정해 height 를 함께 주면 거절), 유형 난간의 railing.set height 는 거절. 계단·슬래브 연동(15단계)과 복사·대칭·그룹은 구성을 그대로 옮긴다. element.delete 는 쓰는 난간이 있는 유형을 거절한다.
+- 도면: 평면은 이전처럼 난간선에 더해 바닥이 절단 높이 이하인 동자 단면 사각형(유형 난간만). 단면·입면·3D 장면은 상부 난간대 윗선과 동자·발루스터(수직선)·중간 난간대(선)를 투영선으로, 앞의 벽·슬래브·계단·패밀리·지붕이 가린다(12절 규칙). 유형 없는 난간은 이전과 같은 선이다.
+- IFC 매핑: IfcRailing 몸체 = 상부 난간대(IfcSweptDiskSolid, 지름 = 단면 폭). 부재는 종류마다 IfcMember 하나를 IfcRelAggregates 로 단다(GlobalId = part_guid(난간, rails·posts·balusters)): 동자 IfcMember POST, 중간 난간대 USERDEFINED/ObjectType RAIL, 발루스터 USERDEFINED/ObjectType BALUSTER(IFC4 IfcMemberTypeEnum 에 해당 값이 없다). 몸체는 IfcSweptDiskSolid 들(AdvancedSweptSolid). 유형은 IfcRailingType(GlobalId = part_guid(유형, "railtype"), Tag = 유형 id, PredefinedType = 발루스터가 있으면 BALUSTRADE 아니면 GUARDRAIL) + IfcRelDefinesByType(part_guid(유형, "railtype:rel")). IFC2X3 에도 같은 엔터티가 있어 그대로 나간다. 근거: IFC4 IfcRailing 은 난간 전체(손잡이 포함)를 나타내고 구성 부재는 IfcMember 로 분해하며, 유형은 IfcRailingType 이다. 단면은 원 근사(사각 단면 스윕은 다음 몫). 가져오기는 부재를 투영 소유로 보고 외래 요소로 세지 않는다.
+
+### 71.3 하위 호환·기준 변화
+- 저장 형식: railing 의 rltype·parts, 새 종류 railtype 은 쓸 때만 생긴다. 기존 난간·문·패밀리 인스턴스의 행·도면·IFC 는 그대로다.
+- 동작 변화(의도): 예전에 거절되던 입력 두 가지(호스트 제약을 깨는 얇은 벽의 패밀리 문, 벽 끝을 100 mm 안으로 넘는 저작 문)를 경고와 함께 받는다. 예전에 받던 입력의 결과는 같다. 병합 검사도 같은 한도를 쓴다. door_status 는 그대로다.
+- 의도한 IFC 출력 변화: 난간 유형을 쓴 모델의 IfcRailingType·IfcRelDefinesByType·IfcMember 부재. 그 밖의 IFC 는 그대로다.
+- C-4 회귀 코퍼스 기준값(results/c4_baseline.json) 갱신(별도 커밋 934f22b, 이유를 history 에 남김): 퍼즈 생성기의 door.set 이 벽 끝을 조금 넘는 폭·위치를 주는 경우가 있어, 거절되던 몇 건이 성공으로 바뀌었다(시드 20261107 성공 8,544 -> 8,548·로그 9,277 -> 9,281, 시드 424242 성공 8,606 -> 8,607·로그 9,269 -> 9,270, 실행 취소 거래 3,164 -> 3,166·해시 확인 단계 7,934 -> 7,936, 최종 상태·IFC 해시). 상태 일치 검사(diffs)·S10·S11·T0 는 그대로다. 문 상태(door_status)와 경계 골든(tools/golden.py)은 바꾸지 않았다.
+
+### 71.4 검증
+- 새 시험 `tests/test_w2_door_railing.py`(함수 8개): 얇은 벽의 패밀리 문(경고·개구·평가 오류 아님·벽을 더 얇게 고치기·증분 = 전체 재계산), 레시피 검증은 엄격, 짧은 벽의 저작 문(벽 끝 25 mm 경고·같은 길이는 경고 없음·한도 초과 거절·개구가 벽 범위로 잘림·병합 검사 위반 없음·벽을 줄여 한도를 넘으면 거절), 문 IFC4·IFC2X3 검증 오류 0·IfcRelVoidsElement·IfcRelFillsElement·왕복 해시·바이트, 난간 유형 형상(동자·발루스터 수와 간격·높이·거절), 명령(유형 지정·편집 반영·높이 잠금·떼기·복제·지우기·되돌리기·평면 동자), 계단 난간에 유형(연동 후에도 유지·단면), 난간 IFC(IfcMember 3종·IfcRailingType·IFC2X3·왕복 해시·바이트·되돌리기). 통합 시험 두 곳(모든 종류를 한 프로젝트에서 만들기, 매개변수 참조 표)에 난간 유형을 더했다.
+- run-all 은 마지막 코드 커밋 934f22b 에서 한 번(2026-11-25 01:05 시작): s1-core 전체(test_slow 제외) 통과, test_slow 통과(C-4 회귀 코퍼스, 갱신한 기준값), parity 불일치 0·통과(새 명령 6개 예시 포함), parity_g 통과, 로컬 Revit 표본(test_foreign_drawings·test_foreign_occlusion) 저장소 밖 기준선과 같음, s10-headless 통과, 기준 도면 `run_baseline.py --sheets` 183 파일이 main ec9d42b 와 바이트 같음.
+
+### 71.5 bench
+- 도면 경로 파일(drawing·queries·kinds)을 바꿨지만 이번 PR 에서는 bench 를 재지 않았다(미실시). 다른 작업의 run-all 이 끝나기를 기다린 뒤 회귀 코퍼스 기준값 갱신으로 run-all 을 다시 돌려 시간 안에 측정하지 못했다. 바뀐 도면 경로는 유형 난간이 있을 때만 타는 분기(난간 부재 선분·평면 동자)와 난간 정보 튜플 조립이고, 유형 난간이 없는 모델의 선분·SVG 는 기준 도면 183 파일 바이트 같음으로 확인했다. 병합 전 bench 는 지휘자 판단.
+
+### 71.6 한계(다음 몫)
+- 문: 패밀리 문의 벽 끝 허용(DOOR_END_ALLOW)은 아직 없다(조인 범위·also_cuts 로 푼다). 얇은 벽에서 문틀이 벽면 밖으로 나오는 만큼의 평면 표시는 레시피 그대로다.
+- 난간 유형: 난간대·발루스터 단면은 원 근사(IFC), 사각·원형 단면 선택과 단면 프로파일 패밀리, 발루스터 패턴(반복 무늬·시작/끝 개별 부재), 상부 난간대 끝 처리(연장·꺾음), 손스침(벽 부착 핸드레일), 유리 패널 난간, 난간 유형별 재료는 다음 PR.
