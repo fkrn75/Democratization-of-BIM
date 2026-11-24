@@ -2081,7 +2081,20 @@ def railing_info(g, r):
 
     def up(q):
         return (q[0], q[1], q[2] + lv)
-    return (tuple(up(q) for q in gm["surface"]), tuple(up(q) for q in gm["top"]), tuple((up(a), up(b)) for a, b in gm["posts"]))
+    segs = list(gm["posts"])
+    for pl in gm.get("rails", ()):   # 난간 유형(W2 열세 번째 PR): 중간 난간대는 선분으로(기둥과 같은 투영선). 발루스터는 posts 에 이미 들어 있다
+        segs.extend(zip(pl, pl[1:]))
+    return (tuple(up(q) for q in gm["surface"]), tuple(up(q) for q in gm["top"]), tuple((up(a), up(b)) for a, b in segs))
+
+
+def railing_plan_posts(g, r):
+    """유형 난간(W2 열세 번째 PR)의 평면 동자: ((x, y, 바닥 z 절대, 단면 한 변), ...). 유형이 없으면 ()."""
+    row = Q.el(g, r)
+    if row is None or row["kind"] != "railing" or "parts" not in row["params"]:
+        return ()
+    lv = g.q(Q.level_info, g.q(Q.railing_level, r))[1]
+    gm = K.railing_geom(row["params"])
+    return tuple((a[0], a[1], a[2] + lv, w) for k, (a, _b), w in ((m[0], m[1], m[2]) for m in gm["members"]) if k == "post")
 
 
 def all_railings(g):
@@ -2131,6 +2144,10 @@ def railing_lines(g, v, r):
                     out.append(("proj", ax, ay, bx, by))
                 else:   # 외래 요소가 위에서 가린다(IO-04 5차): 끝점마다의 높이로
                     out.extend(_fplan_seg(fo, ("proj", ax, ay, bx, by), c - (z0 + (z1 - z0) * lo), c - (z0 + (z1 - z0) * hi)))
+        for x, y, z, w in g.q(railing_plan_posts, r):   # 유형 난간의 동자(W2 열세 번째 PR): 바닥이 절단 높이 이하인 것만 단면 사각형
+            if z <= c + EPS:
+                h = w / 2.0
+                out.extend((("proj", x - h, y - h, x + h, y - h), ("proj", x + h, y - h, x + h, y + h), ("proj", x + h, y + h, x - h, y + h), ("proj", x - h, y + h, x - h, y - h)))
         return tuple(out)
     raw = []
     for i in range(len(top) - 1):

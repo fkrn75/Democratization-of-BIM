@@ -628,6 +628,8 @@ def _inst_geometry(ctx, tp: dict, values: dict, host_id: str | None, offset, ele
     except FamilyError as ex:
         raise _fam_error(ex, "인스턴스") from None
     _check_layout(tp, ev)
+    for msg in ev.get("host_warnings", ()):   # 얇은 벽(W2 열세 번째 PR, ARC-23): 호스트 제약은 거절하지 않고 경고(문틀·문짝이 벽면 밖으로 나온다)
+        ctx.warn(f"호스트 벽 {host_id}({host_ctx['host_thickness']:g}mm)이 레시피 권장을 벗어나지만 놓는다: {msg}")
     if host_id is not None and ev["cut"]:
         check_fit(ctx, host_id, ctx.st.el[host_id]["params"], offset, elevation, ev["cut"], values, rotation, also)
     return ev, host_ctx
@@ -838,6 +840,8 @@ def check_hosted_fit(ctx, wall_id: str, old_wp: dict, new_wp: dict) -> None:
             raise DobimError("CONSTRAINT", f"호스팅된 패밀리 인스턴스 {d}({row['family_id']})가 새 벽 치수를 받아들이지 못한다: {first.message}",
                              path=path, hint="벽 값을 레시피 제약 안으로 두거나, 호스팅된 인스턴스를 먼저 옮기거나 지우세요",
                              details={"instance": d, "issue": first.to_dict()}) from None
+        for msg in ev.get("host_warnings", ()):   # 얇아진 벽(W2 열세 번째 PR): 거절하지 않고 경고
+            ctx.warn(f"호스팅된 패밀리 인스턴스 {d} 가 새 벽 치수에서 레시피 권장을 벗어난다: {msg}")
         cut = ev["cut"]
         if not cut:
             continue

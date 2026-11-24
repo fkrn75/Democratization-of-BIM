@@ -459,12 +459,27 @@ def build_env(r: Recipe, plan: Plan, tv: dict, iv: dict, host: dict | None) -> d
     return env
 
 
-def check_constraints(r: Recipe, env: dict) -> None:
+_HOST_RE = re.compile(r"\b(?:" + "|".join(HOST_NAMES) + r")\b")
+
+
+def host_constraint(expr: str) -> bool:
+    """제약식이 호스트 문맥(host_thickness·host_height)을 읽는가(W2 열세 번째 PR, ARC-23)."""
+    return bool(_HOST_RE.search(expr))
+
+
+def check_constraints(r: Recipe, env: dict, soft_host: bool = False) -> list:
+    """제약을 검사한다. soft_host 면 호스트 문맥을 읽는 제약(예: host_thickness >= leaf_t + 20)이 깨져도 거절하지 않고 그 메시지 목록을 돌려준다
+    (상용 도구처럼 얇은 벽에도 문을 놓고 경고한다: 배치·투영 경로만 쓴다. 레시피 검증(family.validate)은 이전처럼 엄격하다)."""
+    soft = []
     for i, c in enumerate(r.constraints):
         ok = _ev(c.expr, env, ptr("constraints", i, "expr"), "bool")
+        if not ok and soft_host and host_constraint(c.expr):
+            soft.append(c.message)
+            continue
         if not ok:
             raise _bad("E_CONSTRAINT", ptr("constraints", i), f"제약 위반: {c.message}",
                        "이 값 조합이 허용 범위 안에서 가능하면 매개변수 min/max 를 좁히거나 제약을 고치세요")
+    return soft
 
 
 # ---------------------------------------------------------------- 형상 해석
@@ -673,19 +688,19 @@ def _value(raw: Any, env: dict, path: str) -> Any:
 
 
 # ---------------------------------------------------------------- 전체 평가
-def evaluate(r: Recipe, plan: Plan, type_values: dict | None, inst_values: dict | None, host: dict | None = None) -> dict:
+def evaluate(r: Recipe, plan: Plan, type_values: dict | None, inst_values: dict | None, host: dict | None = None, soft_host: bool = False) -> dict:
     """레시피를 평가한다. 반환은 JSON 직렬화 가능한 순수 값이다."""
     tv, iv = resolve_values(r, type_values, inst_values)
     token = _BUDGET.set([EVAL_BUDGET])
     try:
-        return _evaluate(r, plan, tv, iv, host)
+        return _evaluate(r, plan, tv, iv, host, soft_host)
     finally:
         _BUDGET.reset(token)
 
 
-def _evaluate(r: Recipe, plan: Plan, tv: dict, iv: dict, host: dict | None) -> dict:
+def _evaluate(r: Recipe, plan: Plan, tv: dict, iv: dict, host: dict | None, soft_host: bool = False) -> dict:
     env = build_env(r, plan, tv, iv, host)
-    check_constraints(r, env)
+    soft = check_constraints(r, env, soft_host)
     body, void_ids = resolve_solids(r, env)
     cut = None
     if r.host and r.host.cut:
@@ -701,6 +716,8 @@ def _evaluate(r: Recipe, plan: Plan, tv: dict, iv: dict, host: dict | None) -> d
            "body_hash": digest(body), "plan_hash": digest(plan_sym.get("default", []))}
     if r.ifc.panels:   # 창 패널(24단계): 없으면 결과는 이전과 같다
         out["panels"] = resolve_panels(r, env)
+    if soft:   # 깨진 호스트 제약(W2 열세 번째 PR): 있을 때만 키가 생긴다(결과는 이전과 같다)
+        out["host_warnings"] = soft
     return out
 
 

@@ -29,6 +29,12 @@
       "mode": "full",
       "commit": "phase2/w2-material-appearance",
       "reason": "S10 통과 수만 갱신 35 -> 36: 재료 외관(W2 다섯 번째 PR, VIS-07)의 3D 렌더 투명도 시험 tests/test_render_appearance.py 1건을 더했다. 다른 항목(퍼즈·실행 취소·T0·S10 건너뜀·S11)은 그대로(test_slow 전체판에서 s10 통과 수 외 불일치 없음, baseline 63절)"
+    },
+    {
+      "date": "2026-11-25",
+      "mode": "full",
+      "commit": "8816d43",
+      "reason": "W2 열세 번째 PR(ARC-23): 저작 문이 벽 끝을 문틀 폭 한도(100mm) 안으로 넘으면 받는다. 퍼즈의 door.set 몇 건이 거절에서 성공으로 바뀌어 성공 수·로그 수·해시가 바뀌었다(시드 1: +4, 시드 2: +1, 실행 취소 거래 +2). 상태 일치(diffs)는 그대로. bench_t0·s10·s11 은 그대로"
     }
   ],
   "quick": {
@@ -74,19 +80,19 @@
         "ok": true,
         "diffs": [],
         "hashes": {
-          "state": "c09c2e0e5c3db5c59a67f6f2414482a48d80b0c1cc340a1777fd52f0e1474e59",
-          "derived": "3b87337673c5e6526eed528bd38eae7c40143685061a30fcd28e32795b398e26",
-          "ifc": "281793eefb3fa580a6b489623c3697bfb2671e47a7264e8d8c12dd9ce8c2b6e2"
+          "state": "8cebec5333e25ff532cef18e3b05336070003e30b0300783a616cca1062d8fb1",
+          "derived": "d0dacd6f6d33d5cb49c3e8a62bd010b2d7d2517faa5e16f424ed4d78f101d620",
+          "ifc": "5900c72a4987723d159c8f74d331e77528d82f5e40a096cec5b3c4594d7e22d9"
         },
-        "log_entries": 9277,
-        "items_succeeded": 8544,
-        "items_failed": 1456,
+        "log_entries": 9281,
+        "items_succeeded": 8548,
+        "items_failed": 1452,
         "final_counts": {
           "level": 129,
           "wall": 1631,
           "door": 445
         },
-        "_elapsed_sec": 93.2
+        "_elapsed_sec": 194.2
       },
       {
         "seed": 424242,
@@ -94,19 +100,19 @@
         "ok": true,
         "diffs": [],
         "hashes": {
-          "state": "49130c2849e7d8d3eecfd5d2489f2d2b17731d1a8dc79ddf4055268254e18be1",
-          "derived": "95fd6659f17573274647783ce0cdf0e36c3f7d701864647bdee6160e4147b4d9",
-          "ifc": "d6896613fbef5cd3d46e566d90f6affd70d431321614914c20f38e088e733cd2"
+          "state": "5702a8d8dc6d1355854c024daa5a35a1002ab4ee7dde8d84ce18af32c753080e",
+          "derived": "0cdfe0f15e37635277a5eddf911fbdc9ee23d537a969098d34b96d6411c47924",
+          "ifc": "bebaa64af6deecfe35ad460779c377eb1045e94daf6ee733710250663d643f12"
         },
-        "log_entries": 9269,
-        "items_succeeded": 8606,
-        "items_failed": 1394,
+        "log_entries": 9270,
+        "items_succeeded": 8607,
+        "items_failed": 1393,
         "final_counts": {
           "level": 126,
           "wall": 1637,
           "door": 474
         },
-        "_elapsed_sec": 96.5
+        "_elapsed_sec": 205.7
       }
     ],
     "undo": {
@@ -134,9 +140,9 @@
       ],
       "items_per_seed": 200,
       "violations": [],
-      "total_hash_verified_steps": 7934,
+      "total_hash_verified_steps": 7936,
       "total_branch_checks": 1600,
-      "total_txns": 3164
+      "total_txns": 3166
     },
     "bench_t0": {
       "exit": 0,

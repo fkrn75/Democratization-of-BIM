@@ -210,7 +210,7 @@ def test_r2e_파라미터_참조_표가_커맨드가_만든_모든_요소에서_
     finally:
         b.close()
     from dobim_core.kinds import ELEMENT_KINDS, param_ref_targets
-    assert {k for k, v in ELEMENT_KINDS.items() if any(r[2] for r in v.refs)} == {"dim", "tag", "finst", "draft", "wall", "roof"}   # 벽 wtype·지붕 rtype <-> of_type(W2 일곱·여덟 번째 PR)
+    assert {k for k, v in ELEMENT_KINDS.items() if any(r[2] for r in v.refs)} == {"dim", "tag", "finst", "draft", "wall", "roof", "railing"}   # 벽 wtype·지붕 rtype·난간 rltype <-> of_type(W2 일곱·여덟·열세 번째 PR)
     e = Engine(tmp_path / info["name"], "x", create=False)
     try:
         seen = set()

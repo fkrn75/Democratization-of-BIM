@@ -150,6 +150,8 @@ GRID_MARK = "DoBIM grid"   # 통심선 IfcGrid 투영(W2 열 번째 PR)의 Descr
 GROUP_MARK = "DoBIM model group"   # 모델 그룹 IfcGroup 투영(W2 열한 번째 PR)의 Description 머리(뒤에 배치 id)
 ASM_MARK = "DoBIM assembly"        # 조립품 IfcElementAssembly 투영(W2 열한 번째 PR)의 Description 머리(뒤에 조립품 id)
 WALLTYPE_MARK = "DoBIM wall type"   # 벽 유형 투영(W2 일곱 번째 PR)의 IfcRelDefinesByType·유형 층 집합 Description: 투영이 소유한다는 표식
+RAIL_PART_LABELS = ("balusters", "posts", "rails")   # 유형 난간의 부재 이름표(W2 열세 번째 PR, 이름표 순서 = 만드는 순서)
+RAILTYPE_MARK = "DoBIM railing type"   # 난간 유형 투영(W2 열세 번째 PR)의 표식(벽·지붕 유형과 같은 쓰임)
 ROOFTYPE_MARK = "DoBIM roof type"   # 지붕 유형 투영(W2 여덟 번째 PR)의 표식(벽 유형과 같은 쓰임)
 # 처마 부속(W2 여덟 번째 PR, ARC-20)의 IFC 클래스·PredefinedType·ObjectType. IFC4 IfcCoveringTypeEnum 에 FASCIA·SOFFIT 가 없어 USERDEFINED + ObjectType 로 적는다
 EAVE_IFC = {"fascia": ("IfcCovering", {"PredefinedType": "USERDEFINED", "ObjectType": "FASCIA"}),
@@ -565,6 +567,8 @@ class IfcModel:
         self._wt_scanned = False              # 가져온 파일의 낡은 벽 유형을 한 번 훑었는가
         self._rt_sig: dict[str, tuple] = {}   # 지붕 유형 id -> 마지막으로 맞춘 (이름, 기능, 두께, 층 구성) (W2 여덟 번째 PR)
         self._rt_scanned = False
+        self._lt_sig: dict[str, tuple] = {}   # 난간 유형 id -> 마지막으로 맞춘 (이름, 구성) (W2 열세 번째 PR)
+        self._lt_scanned = False
         self._grid_ent = None                 # 투영한 IfcGrid(W2 열 번째 PR, ARC-38) 또는 None
         self._grid_sig: str | None = None     # 그 IfcGrid 의 명세 서명(Description 끝에 적는다: 같으면 다시 쓰지 않는다)
         self._grid_scanned = False            # 가져온 파일의 투영 IfcGrid 를 한 번 훑었는가
@@ -842,7 +846,7 @@ class IfcModel:
                         if r.is_a("IfcRelFillsElement") and r.RelatedBuildingElement == e:
                             self.openings[eid] = r.RelatingOpeningElement
                             self._opening_gid[eid] = r.RelatingOpeningElement.GlobalId
-                if kind in ("slab", "stair", "roof", "wall"):
+                if kind in ("slab", "stair", "roof", "wall", "railing"):   # 난간 부재(W2 열세 번째 PR)
                     self._adopt_parts(eid, kind, e)
                 elif kind == "curtwall":   # 커튼월 부속(W2 ARC-22)
                     self._cw_adopt(eid, e)
@@ -1453,6 +1457,38 @@ class IfcModel:
             if t.GlobalId not in keep and self._wt_owned(self.f, t, sfx, mark):
                 self._wt_drop_ent(t, mark)
 
+    # ------------------------------------------------------------ 난간 유형(W2 열세 번째 PR, ARC-31): 벽·지붕 유형과 같은 투영
+    # IfcRailingType(GlobalId = part_guid(유형 id, "railtype"), PredefinedType = 발루스터가 있으면 BALUSTRADE 아니면 GUARDRAIL, Tag = 유형 id) + 그 유형의
+    # 난간(IfcRailing)들을 묶는 IfcRelDefinesByType(part_guid(유형, "railtype:rel")). IFC2X3 에도 IfcRailingType 이 있어 그대로 나간다. 유형 재료 집합은 두지 않는다
+    def sync_rail_types(self, m: dict) -> None:
+        """m = {유형 id: (이름, 발루스터 있음, 난간 id 들)} 에 IFC 를 맞춘다. 유형이 없으면 아무것도 하지 않는다."""
+        if self.base_mode and not self._lt_scanned:
+            self._lt_scanned = True
+            self._wt_scan_base({part_guid(t, "railtype") for t in m}, "IfcRailingType", "railtype", RAILTYPE_MARK)
+        if not m and not self._lt_sig:
+            return
+        for tid in sorted(set(self._lt_sig) - set(m)):
+            t = self._by_guid(part_guid(tid, "railtype"))
+            if t is not None:
+                self._wt_drop_ent(t, RAILTYPE_MARK)
+            self._lt_sig.pop(tid, None)
+        for tid in sorted(m):
+            name, bal, rails = m[tid]
+            pre = "BALUSTRADE" if bal else "GUARDRAIL"
+            t = self._by_guid(part_guid(tid, "railtype"))
+            if t is None:
+                t = self.f.create_entity("IfcRailingType", GlobalId=part_guid(tid, "railtype"), Name=name, Tag=tid, PredefinedType=pre)
+                self._lt_sig.pop(tid, None)
+            if self._lt_sig.get(tid) != (name, bal):
+                if t.Tag != tid:
+                    t.Tag = tid
+                if t.Name != name:
+                    t.Name = name
+                if t.PredefinedType != pre:
+                    t.PredefinedType = pre
+                self._lt_sig[tid] = (name, bal)
+            self._wt_rel(tid, t, rails, "railtype", RAILTYPE_MARK)
+
     # ------------------------------------------------------------ 지붕 유형(W2 여덟 번째 PR): 벽 유형과 같은 투영
     # IfcRoofType(GlobalId = part_guid(유형 id, "rooftype"), PredefinedType NOTDEFINED, ElementType = 기능, Tag = 유형 id) + 유형 IfcMaterialLayerSet
     # (part_guid(유형, "rooftype:mat")) + 그 유형의 지붕(IfcRoof)들을 묶는 IfcRelDefinesByType(part_guid(유형, "rooftype:rel")). IFC2x3 은 IfcSlabType(ROOF)로 내린다
@@ -2000,6 +2036,8 @@ class IfcModel:
             return [f"opening:{i}" for i in range(SLAB_OPENINGS_MAX)] + ["parapet"]
         if kind == "wall":   # 모양 개구부(18단계)
             return [f"opening:{i}" for i in range(OPENINGS_MAX)]
+        if kind == "railing":   # 유형 난간의 부재(W2 열세 번째 PR)
+            return list(RAIL_PART_LABELS)
         return [f"face:{i}" for i in range(ROOF_FACES_MAX)] if kind == "roof" else ["flight:0", "flight:1", "landing", "winder"]
 
     def _adopt_parts(self, eid: str, kind: str, e) -> None:
@@ -2262,16 +2300,42 @@ class IfcModel:
         e.PredefinedType = "GUARDRAIL"
         self._contain(eid, spec["level"])
         self._place(e, self.ents[spec["level"]].ObjectPlacement, (0.0, 0.0, 0.0), (1.0, 0.0, 0.0))
-        g = railing_geom({"path": spec["path"], "height": spec["height"], "base_offset": spec["base_offset"], "rise": spec["rise"]})
+        gp = {"path": spec["path"], "height": spec["height"], "base_offset": spec["base_offset"], "rise": spec["rise"]}
+        if "parts" in spec:   # 난간 유형(W2 열세 번째 PR)
+            gp["parts"] = spec["parts"]
+        g = railing_geom(gp)
 
         def disk(pts, r):
             pl = f.createIfcPolyline([f.createIfcCartesianPoint([float(a), float(b), float(c)]) for a, b, c in pts])
             return f.createIfcSweptDiskSolid(pl, float(r), None, None, None)
-        items = [disk(g["top"], RAILING_HANDRAIL_R)] + [disk([a, b], RAILING_POST_R) for a, b in g["posts"]]
+        if "parts" in spec:
+            items, wanted = self._railing_members(eid, spec, g, disk)
+        else:
+            items, wanted = [disk(g["top"], RAILING_HANDRAIL_R)] + [disk([a, b], RAILING_POST_R) for a, b in g["posts"]], None
         self._set_body(e, items)
+        if wanted is not None or eid in self.parts:   # 유형을 뗐으면 부재를 지운다. 유형 없는 난간은 이전과 같다(부속 동기화를 부르지 않는다)
+            self._sync_parts(eid, wanted or {})
         # IFC4 IfcShapeRepresentationTypes: 'SweptSolid' 는 IfcExtrudedAreaSolid·IfcRevolvedAreaSolid 만 담는다. IfcSweptDiskSolid 는
         # 'AdvancedSweptSolid' 여야 검증 오류가 없다(W2 실사용 결함 1)
         e.Representation.Representations[0].RepresentationType = "AdvancedSweptSolid"
+
+    def _railing_members(self, eid, spec, g, disk):
+        """유형 난간(W2 열세 번째 PR, ARC-31): 몸체 = 상부 난간대, 부재는 종류마다 IfcMember 하나로 IfcRelAggregates(부속 GlobalId = part_guid(난간, 이름표)).
+        매핑 근거: IFC4 IfcRailing 은 난간 전체(손잡이 포함)이고 그 구성 부재는 IfcMember 로 분해한다. 동자 = IfcMember POST, 중간 난간대·발루스터는
+        IfcMemberTypeEnum 에 해당 값이 없어 USERDEFINED + ObjectType(RAIL·BALUSTER). 단면은 단면 폭을 지름으로 하는 원(IfcSweptDiskSolid) 근사다."""
+        mem = g["members"]
+        top = next(m for m in mem if m[0] == "top")
+        wanted = {}
+        groups = (("rails", "rail", {"PredefinedType": "USERDEFINED", "ObjectType": "RAIL"}),
+                  ("posts", "post", {"PredefinedType": "POST", "ObjectType": None}),
+                  ("balusters", "baluster", {"PredefinedType": "USERDEFINED", "ObjectType": "BALUSTER"}))
+        for label, kind, attrs in groups:
+            ms = [m for m in mem if m[0] == kind]
+            if not ms:
+                continue
+            wanted[label] = {"cls": "IfcMember", "name": f"{spec['name']}-{label}", "rel": "aggregate", "attrs": attrs, "reptype": "AdvancedSweptSolid",
+                             "solid": (lambda ms=ms: [disk(list(m[1]), m[2] / 2.0) for m in ms])}
+        return [disk(top[1], top[2] / 2.0)], wanted
 
     def _ring_solid(self, outer, inner, depth, z0):
         """바깥 둘레와 안쪽 고리 사이(구멍 있는 프로필)를 +Z 로 depth 만큼 압출한 솔리드(파라펫)."""

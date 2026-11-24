@@ -509,7 +509,7 @@ def _hosted_fit_stack(ctx, w: str, q: dict, path: str) -> None:
         dp = ctx.st.el[d]["params"]
         if ctx.st.el[d]["kind"] != "door":
             continue
-        if dp["offset"] - dp["width"] / 2 < -1e-6 or dp["offset"] + dp["width"] / 2 > n + 1e-6 or dp["sill"] < b0 - 1e-9 or dp["sill"] + dp["height"] > b1 + 1e-9:
+        if not K.door_span_ok(dp["offset"] - dp["width"] / 2, dp["offset"] + dp["width"] / 2, 0.0, n, 1e-6) or dp["sill"] < b0 - 1e-9 or dp["sill"] + dp["height"] > b1 + 1e-9:
             raise DobimError("CONSTRAINT", f"부분 벽 {w} 에 놓인 문 {d} 가 새 구간 밖으로 나간다", path=path)
 
 

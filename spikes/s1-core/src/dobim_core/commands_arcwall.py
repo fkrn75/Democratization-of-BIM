@@ -138,7 +138,7 @@ def wall_arc_set(ctx, a: WallArcSet):
         if dr["kind"] != "door":
             continue
         dp = dr["params"]
-        if dp["offset"] - dp["width"] / 2 < 0 or dp["offset"] + dp["width"] / 2 > length:
+        if not K.door_span_ok(dp["offset"] - dp["width"] / 2, dp["offset"] + dp["width"] / 2, 0.0, length):   # 벽 끝 허용(W2 열세 번째 PR)
             raise DobimError("CONSTRAINT", f"호스팅된 문이 새 호 길이({length:.1f}mm) 밖으로 나간다: {d}", path="/id")
     from dobim_core.commands_family import check_hosted_fit
     check_hosted_fit(ctx, a.id, r["params"], p)

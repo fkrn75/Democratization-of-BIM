@@ -201,6 +201,22 @@ def _wall_params(p):
     return err
 
 
+# 문이 호스트 벽 끝을 넘어도 되는 길이(W2 열세 번째 PR, ARC-23). 문 폭은 문틀 바깥 치수이고, 짧은 토막 벽이나 문 폭과 거의 같은 벽에서는
+# 문틀이 이웃 벽(또는 벽 끝 마감)에 묻힌다. 그 한도를 문틀 단면 폭의 상한(기본 문 레시피 frame_w 최대 100mm)으로 둔다. 넘는 만큼은 벽 범위로 잘라
+# 뚫고(도면은 이미 벽 범위로 자른다), 배치하는 커맨드는 경고한다. 0 이면 이전 규칙(축 안)과 같다.
+DOOR_END_ALLOW = 100.0
+
+
+def door_overhang(lo: float, hi: float, start: float, end: float) -> float:
+    """문 구간 [lo, hi] 가 벽 범위 [start, end] 를 넘는 길이(양 끝 중 큰 쪽, 안이면 0)."""
+    return max(0.0, start - lo, hi - end)
+
+
+def door_span_ok(lo: float, hi: float, start: float, end: float, eps: float = 0.0) -> bool:
+    """문 구간이 벽 범위를 DOOR_END_ALLOW 안으로만 넘는가."""
+    return door_overhang(lo, hi, start, end) <= DOOR_END_ALLOW + eps
+
+
 def _door_params(p):
     return _check_opt("door", p, {"name": _name, "width": _pos, "height": _pos, "sill": lambda v: num_ok(v) and v >= 0, "offset": num_ok}, {"leaf": _pos})
 
@@ -752,11 +768,75 @@ def _railing_params(p):
         return (isinstance(v, list) and 2 <= len(v) <= RAILING_PTS_MAX and all(_pt_ok(x) for x in v)
                 and all((v[i + 1][0] - v[i][0]) ** 2 + (v[i + 1][1] - v[i][1]) ** 2 >= 1.0 for i in range(len(v) - 1)))
     err = _check_opt("railing", p, {"name": _name, "path": path, "height": _pos, "base_offset": num_ok, "rise": num_ok},
-                     {"src": id_ok, "src_tag": lambda v: text_ok(v, 1, RAILING_TAG_MAX), "src_inset": lambda v: num_ok(v) and v >= 0})
+                     {"src": id_ok, "src_tag": lambda v: text_ok(v, 1, RAILING_TAG_MAX), "src_inset": lambda v: num_ok(v) and v >= 0,
+                      "rltype": id_ok, "parts": lambda v: rail_parts_ok(v, p.get("height"))})
+    if err is None and ("rltype" in p) and ("parts" not in p):
+        return "railing.rltype 이 있으면 railing.parts(유형 구성 사본)도 있어야 한다"
+    if err is None and "parts" in p and rail_member_count(p["path"], p["parts"]) > RAILING_MEMBERS_MAX:
+        return f"railing.parts: 난간 부재(동자·발루스터)가 {RAILING_MEMBERS_MAX}개를 넘는다(간격을 키우세요)"
     if err is None and ("src" in p) != ("src_tag" in p):
         return "railing.src 와 railing.src_tag 는 함께 있어야 한다"
     if err is None and "src_inset" in p and "src" not in p:
         return "railing.src_inset 은 railing.src 가 있을 때만 둘 수 있다"
+    return err
+
+
+# ---- 난간 유형(W2 열세 번째 PR, ARC-31): 상부 난간대·중간 난간대·발루스터·동자(난간 기둥). 벽·지붕 유형과 같은 설계로 난간 행이 유형의
+# 구성 사본(params.parts)과 높이를 갖고(params.rltype + 관계 of_type), 유형을 고치면 그 유형의 난간 행을 다시 쓴다. parts 가 없는 난간은 이전과 같다.
+#   parts = {"top": {"w", "d"}             상부 난간대 단면(폭 w = 수평, 춤 d = 수직) mm. 윗면 = 난간 높이
+#            "rails": [{"z", "w", "d"}, ...] 중간 난간대: 바닥 마감에서 난간대 중심까지 z(0 < z < 높이 - 상부 춤), 0~RAIL_MIDS_MAX 개
+#            "baluster": {"spacing", "w", "bottom"} | 없음   발루스터 간격 상한·단면 한 변·바닥 마감에서 아래 끝까지. 동자 사이를 같은 간격(상한 이하)으로 나눠
+#                                                         양 끝(동자 자리)은 비운다(시작·끝 처리 = 동자에 맞춘 가운데 정렬). 위 끝 = 상부 난간대 아랫면
+#            "post": {"spacing", "w"}}      동자: 꼭짓점마다 + 그 사이를 간격 상한 이하로 등분(기존 난간 기둥 규칙과 같다), 단면 한 변
+RAIL_MIDS_MAX = 8
+RAILTYPES_MAX = 1000
+BALUSTER_SPACING_MIN = 50.0    # 발루스터 간격 하한 mm(난간 하나에 수천 개가 생기지 않게)
+POST_SPACING_MIN = 200.0       # 동자 간격 하한 mm
+RAILING_MEMBERS_MAX = 20000    # 난간 하나의 부재(동자 + 발루스터) 상한
+
+
+def _sec_ok(v, keys=("w", "d")) -> bool:
+    return isinstance(v, dict) and set(v) == set(keys) and all(_pos(v[k]) and v[k] <= 1000.0 for k in keys if k in ("w", "d"))
+
+
+def rail_parts_ok(v, height=None) -> bool:
+    if not isinstance(v, dict) or not {"top", "rails", "post"} <= set(v) <= {"top", "rails", "post", "baluster"}:
+        return False
+    if not _sec_ok(v["top"]) or not isinstance(v["rails"], list) or len(v["rails"]) > RAIL_MIDS_MAX:
+        return False
+    for x in v["rails"]:
+        if not (isinstance(x, dict) and set(x) == {"z", "w", "d"} and _pos(x["z"]) and _pos(x["w"]) and _pos(x["d"]) and x["w"] <= 1000.0 and x["d"] <= 1000.0):
+            return False
+        if height is not None and _pos(height) and not x["z"] + x["d"] / 2.0 <= height - v["top"]["d"] + 1e-9:
+            return False
+    po = v["post"]
+    if not (isinstance(po, dict) and set(po) == {"spacing", "w"} and num_ok(po["spacing"]) and po["spacing"] >= POST_SPACING_MIN and _pos(po["w"]) and po["w"] <= 1000.0):
+        return False
+    if "baluster" in v:
+        b = v["baluster"]
+        if not (isinstance(b, dict) and set(b) == {"spacing", "w", "bottom"} and num_ok(b["spacing"]) and b["spacing"] >= BALUSTER_SPACING_MIN
+                and _pos(b["w"]) and b["w"] <= 1000.0 and num_ok(b["bottom"]) and b["bottom"] >= 0):
+            return False
+        if height is not None and _pos(height) and not b["bottom"] < height - v["top"]["d"]:
+            return False
+    return height is None or (_pos(height) and v["top"]["d"] < height)
+
+
+def rail_member_count(path, parts) -> int:
+    """유형 난간의 동자 + 발루스터 수(형상을 만들지 않고 센다). 행 검사가 RAILING_MEMBERS_MAX 와 견준다."""
+    n = 0
+    ps, bal = parts["post"]["spacing"], parts.get("baluster")
+    for i in range(len(path) - 1):
+        ln = sqrt((path[i + 1][0] - path[i][0]) ** 2 + (path[i + 1][1] - path[i][1]) ** 2)
+        k = int(max(1, -(-ln // ps)))
+        n += k
+        if bal is not None:
+            n += k * max(0, int(-(-(ln / k) // bal["spacing"])) - 1)
+    return n + 1
+
+
+def _railtype_params(p):
+    err = _check_opt("railtype", p, {"name": _name, "height": _pos, "parts": lambda v: rail_parts_ok(v, p.get("height"))}, {})
     return err
 
 
@@ -784,7 +864,50 @@ def railing_geom(p) -> dict:
                 f = k / n
                 px, py, pz = x + (nx - x) * f, y + (ny - y) * f, z + (nz - z) * f
                 posts.append(((px, py, pz), (px, py, pz + h)))
-    return {"surface": surface, "top": top, "posts": posts}
+    out = {"surface": surface, "top": top, "posts": posts}
+    if "parts" in p:   # 난간 유형(W2 열세 번째 PR): 부재별 형상. 없으면 결과는 이전과 같다
+        out["members"] = rail_members(p, surface, seg)
+        out["posts"] = [m[1] for m in out["members"] if m[0] in ("post", "baluster")]
+        out["rails"] = [m[1] for m in out["members"] if m[0] == "rail"]
+    return out
+
+
+def rail_members(p, surface, seg) -> list:
+    """유형 난간의 부재 목록 [(종류, 점들, 단면 폭), ...]. 종류: "top"(상부 난간대 중심선), "rail"(중간 난간대 중심선), "post"(동자), "baluster".
+    좌표는 레벨 기준. 상부 난간대 중심선 높이 = 높이 - 춤/2, 동자는 바닥 마감 ~ 상부 난간대 아랫면, 발루스터는 bottom ~ 상부 난간대 아랫면."""
+    parts, h = p["parts"], p["height"]
+    td = parts["top"]["d"]
+    under = h - td
+
+    def lift(dz):
+        return [(x, y, z + dz) for x, y, z in surface]
+    out = [("top", lift(h - td / 2.0), parts["top"]["w"])]
+    for r in parts["rails"]:
+        out.append(("rail", lift(r["z"]), r["w"]))
+    ps, pw = parts["post"]["spacing"], parts["post"]["w"]
+    bal = parts.get("baluster")
+    n_all = 0
+    for i, (x, y, z) in enumerate(surface):
+        out.append(("post", ((x, y, z), (x, y, z + under)), pw))
+        if i >= len(seg):
+            break
+        nx, ny, nz = surface[i + 1]
+        n = int(max(1, -(-seg[i] // ps)))
+        n_all += n
+        for k in range(n):   # 구간을 n 칸으로: 칸 사이 동자, 칸 안 발루스터
+            f0, f1 = k / n, (k + 1) / n
+            if k:
+                px, py, pz = x + (nx - x) * f0, y + (ny - y) * f0, z + (nz - z) * f0
+                out.append(("post", ((px, py, pz), (px, py, pz + under)), pw))
+            if bal is None:
+                continue
+            bay = seg[i] / n
+            m = int(-(-bay // bal["spacing"]))   # 칸을 m 등분(간격 상한 이하), 양 끝(동자)은 비우고 m-1 개
+            for j in range(1, m):
+                f = f0 + (f1 - f0) * j / m
+                bx, by, bz = x + (nx - x) * f, y + (ny - y) * f, z + (nz - z) * f
+                out.append(("baluster", ((bx, by, bz + bal["bottom"]), (bx, by, bz + under)), bal["w"]))
+    return out
 
 
 ELEVATOR_SHAFT_MIN = 800.0          # 샤프트 안쪽 변의 최소 길이 mm
@@ -1812,7 +1935,8 @@ ELEMENT_KINDS: dict[str, ElementKind] = {k.name: k for k in (
     ElementKind("elevator", True, "IfcTransportElement", True, 1, _elevator_params, geometric=True, refs=(("stops", "ids", None), ("hole_slabs", "ids", None))),
     ElementKind("roof", True, "IfcRoof", True, 1, _roof_params, geometric=True,
                 refs=(("rtype", "id", "of_type"),), ref_kinds=(("rtype", ("rooftype",)),)),   # 지붕 유형(W2 여덟 번째 PR)
-    ElementKind("railing", True, "IfcRailing", True, 1, _railing_params, geometric=True, refs=(("src", "id", None),), ref_kinds=(("src", ("stair", "slab")),)),
+    ElementKind("railing", True, "IfcRailing", True, 1, _railing_params, geometric=True, refs=(("src", "id", None), ("rltype", "id", "of_type")),
+                ref_kinds=(("src", ("stair", "slab")), ("rltype", ("railtype",)))),   # 난간 유형(W2 열세 번째 PR)
     ElementKind("site", True, "IfcSite", True, 0, _site_params),
     # 일반 솔리드(18단계): 돌출·로프트·판·스윕·메시. IFC 클래스는 범주(category)가 정한다(행마다 다르다)
     ElementKind("solid", True, None, True, 1, _solid_params, geometric=True),
@@ -1855,6 +1979,7 @@ ELEMENT_KINDS: dict[str, ElementKind] = {k.name: k for k in (
     ElementKind("stackwall", True, "IfcWall", True, 2, _stackwall_params, refs=(("parts", "ids", None),)),
     # 지붕 유형(W2 여덟 번째 PR): 벽 유형과 같은 비 IFC 의도 요소(정의는 DoBIM_Defs). 지붕보다 먼저 만든다
     ElementKind("rooftype", False, None, False, 0, _rooftype_params),
+    ElementKind("railtype", False, None, False, 0, _railtype_params),   # 난간 유형(W2 열세 번째 PR, ARC-31)
     # 모델 그룹 정의·배치·조립품(W2 열한 번째 PR, ARC-46·COL-11): 비 IFC 의도 요소(정의는 DoBIM_Defs). 부속을 가리키므로 모델 요소 뒤에 만든다
     ElementKind("mgtype", False, None, False, 6, _mgtype_params),
     ElementKind("mgroup", False, None, False, 7, _mgroup_params, refs=(("type", "id", None), ("members", "ids", None), ("level", "id", None)),
@@ -1970,7 +2095,7 @@ REL_KINDS: dict[str, RelKind] = {r.name: r for r in (
     RelKind("succ", _fs("wall"), _fs("wall"), dangling_ok=True),
     RelKind("annot_of", _fs("dim", "tag", "draft"), _fs("view"), violation="VIEW_DELETED", message="주석이 속한 뷰가 지워졌다"),
     # 벽 -> 벽 유형(W2 일곱 번째 PR, ARC-11)도 같은 관계다(Revit 의 타입 지정)
-    RelKind("of_type", _fs("finst", "wall", "roof"), _fs("ftype", "walltype", "rooftype"), violation="TYPE_DELETED", message="인스턴스의 패밀리 타입이 지워졌다"),
+    RelKind("of_type", _fs("finst", "wall", "roof", "railing"), _fs("ftype", "walltype", "rooftype", "railtype"), violation="TYPE_DELETED", message="인스턴스의 패밀리 타입이 지워졌다"),
 )}
 REL_NAMES = tuple(REL_KINDS)
 READ_REL_NAMES = ("on_level", "joins", "hosts", "of_type")   # element.get / relation.list 가 보이는 관계(주석·분할 이력은 따로 읽는다)

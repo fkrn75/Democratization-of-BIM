@@ -455,6 +455,8 @@ def test_9_종류_레지스트리가_모든_모듈과_맞는다(tmp_path):
                                        "segments": [{"type": F.WT1, "height": 1000}, {"type": F.WT2}]}, project=p))   # 스택 벽(W2 일곱 번째 PR)
         _ok(b.run("mgroup.create", {"ids": [F.W3], "name": "세대"}, project=p))   # 모델 그룹 정의·배치(W2 열한 번째 PR, ARC-46)
         _ok(b.run("assembly.create", {"ids": [F.W2], "name": "벽체", "type": "벽체 유닛"}, project=p))   # 조립품(W2 열한 번째 PR, COL-11)
+        _ok(b.run("railtype.create", {"id": F.RLT1, "name": "발루스터", "rails": [{"z": 300}], "baluster": {"spacing": 120, "w": 20, "bottom": 100}}, project=p))   # 난간 유형(W2 열세 번째 PR, ARC-31)
+        _ok(b.run("railing.type.set", {"ids": [F.RL1], "type": F.RLT1}, project=p))
     finally:
         b.close()
     eng = Engine(tmp_path / p, "t", create=False)
