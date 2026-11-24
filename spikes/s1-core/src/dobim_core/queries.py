@@ -647,7 +647,7 @@ def door_status(g, d):
     start, end, _ = g.q(wall_trim, w)
     p = el(g, d)["params"]
     half = p["width"] / 2.0
-    return "ok" if start <= p["offset"] - half and p["offset"] + half <= end else "outside_trimmed_host"
+    return "ok" if start <= p["offset"] - half and p["offset"] + half <= end else "outside_trimmed_host"   # 사실 표시(벽 끝 허용 DOOR_END_ALLOW 안이어도 넘으면 표시한다)
 
 
 # ---------------------------------------------------------------- 패밀리 인스턴스 (S4)
@@ -806,7 +806,7 @@ def model_stats(g):
         out["curtain_panel"] = sum(s[1] for s in st)
         # 커튼월 문 패널도 IFC 에서는 IfcDoor 다: counts.door = IFC 의 IfcDoor 수(W2 아홉 번째 PR, 실사용 결함 3). 문 패널이 없으면 그대로다
         out["door"] += sum(s[3].get("door", (0, 0.0))[0] for s in st)
-    for k in ("walltype", "stackwall", "rooftype"):   # 벽 유형·스택 벽(W2 일곱 번째 PR)·지붕 유형(W2 여덟 번째 PR): 없으면 응답은 그대로다
+    for k in ("walltype", "stackwall", "rooftype", "railtype"):   # 난간 유형(W2 열세 번째 PR)·벽 유형·스택 벽(W2 일곱 번째 PR)·지붕 유형(W2 여덟 번째 PR): 없으면 응답은 그대로다
         n = g.q(count, k)
         if n:
             out[k] = n
@@ -1050,8 +1050,11 @@ def ifc_spec(g, e):
         return spec
     if kind == "railing":
         # 배치는 레벨 좌표계(원점·무회전)이고 높이는 레벨 + base_offset 이므로 레벨 높이는 읽지 않는다
-        return {"kind": kind, "name": p["name"], "level": g.q(railing_level, e), "path": tuple(tuple(q) for q in p["path"]), "height": p["height"],
+        spec = {"kind": kind, "name": p["name"], "level": g.q(railing_level, e), "path": tuple(tuple(q) for q in p["path"]), "height": p["height"],
                 "base_offset": p["base_offset"], "rise": p["rise"], "intent": intent}
+        if "parts" in p:   # 난간 유형(W2 열세 번째 PR): 부재 구성. 없으면 명세는 이전과 같다
+            spec["parts"] = p["parts"]
+        return spec
     if kind == "elevator":
         # 배치는 레벨 좌표계(원점·무회전)이고 카 바닥은 레벨 + base_offset 이므로 레벨 높이는 읽지 않는다
         return {"kind": kind, "name": p["name"], "level": g.q(elevator_level, e), "shaft": tuple(p["shaft"]), "cab": tuple(p["cab"]),

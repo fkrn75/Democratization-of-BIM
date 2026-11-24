@@ -23,8 +23,8 @@ _EVAL: OrderedDict[tuple, dict] = OrderedDict()
 _LOCK = threading.Lock()
 
 
-def _eval(recipe: dict, recipe_hash: str, tv_key: str, iv_key: str, host_key: str) -> dict:
-    key = (recipe_hash, tv_key, iv_key, host_key)
+def _eval(recipe: dict, recipe_hash: str, tv_key: str, iv_key: str, host_key: str, soft_host: bool = False) -> dict:
+    key = (recipe_hash, tv_key, iv_key, host_key, soft_host)
     with _LOCK:
         hit = _EVAL.get(key)
         if hit is not None:
@@ -32,7 +32,7 @@ def _eval(recipe: dict, recipe_hash: str, tv_key: str, iv_key: str, host_key: st
             return hit
     r, plan = ev.load_recipe(recipe)
     host = json.loads(host_key)
-    out = ev.evaluate(r, plan, json.loads(tv_key), json.loads(iv_key), host or None)
+    out = ev.evaluate(r, plan, json.loads(tv_key), json.loads(iv_key), host or None, soft_host)
     with _LOCK:
         _EVAL[key] = out
         _EVAL.move_to_end(key)
@@ -41,8 +41,8 @@ def _eval(recipe: dict, recipe_hash: str, tv_key: str, iv_key: str, host_key: st
     return out
 
 
-def evaluate_cached(recipe: dict, recipe_hash: str, type_values: dict, inst_values: dict | None, host: dict | None) -> dict:
-    return _eval(recipe, recipe_hash, ev.canon(type_values), ev.canon(inst_values or {}), ev.canon(host or {}))
+def evaluate_cached(recipe: dict, recipe_hash: str, type_values: dict, inst_values: dict | None, host: dict | None, soft_host: bool = False) -> dict:
+    return _eval(recipe, recipe_hash, ev.canon(type_values), ev.canon(inst_values or {}), ev.canon(host or {}), soft_host)
 
 
 def recipe_hash_of(recipe: dict) -> str:
@@ -65,7 +65,9 @@ def ftype_spec(tp: dict) -> dict:
 
 
 def finst_eval(tp: dict, ip: dict, host: dict | None) -> dict:
-    return evaluate_cached(tp["recipe"], tp["recipe_hash"], tp["type_values"], ip["values"], host)
+    """인스턴스 평가. 호스트에 놓인 인스턴스는 호스트 문맥 제약(벽 두께 등)을 경고로 낮춘다(W2 열세 번째 PR, ARC-23: 얇은 벽의 문).
+    깨진 제약 메시지는 결과의 host_warnings(있을 때만)에 담긴다."""
+    return evaluate_cached(tp["recipe"], tp["recipe_hash"], tp["type_values"], ip["values"], host, host is not None)
 
 
 def finst_spec(tp: dict, ip: dict, type_id: str, host_id: str | None, level_id: str, host: dict | None,

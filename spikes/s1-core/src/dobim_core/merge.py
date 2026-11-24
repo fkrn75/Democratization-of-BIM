@@ -33,7 +33,7 @@ from dobim_core import queries as Q
 from dobim_core import walltop as WT
 from dobim_core.errors import DobimError
 from dobim_core.graph import RefGraph
-from dobim_core.kinds import (ELEMENT_KINDS, FIXED_IFC_CLASS, NAME_MAX, NON_IFC_KINDS, REL_KINDS, class_error, id_ok as _id_ok, invert,
+from dobim_core.kinds import (ELEMENT_KINDS, door_span_ok, FIXED_IFC_CLASS, NAME_MAX, NON_IFC_KINDS, REL_KINDS, class_error, id_ok as _id_ok, invert,
                               num_ok as _num, remap_params, row_params_error, text_ok as _text_ok)
 
 DUP_PAIRS_MAX_GROUP = 40  # 같은 자리 벽 중복: 이 수까지는 쌍(n^2/2)으로 보고하고, 더 큰 묶음은 벽마다 하나씩(n)으로 보고한다(겹친 벽 1200개가 쌍 72만 개가 되는 것을 막는다)
@@ -508,7 +508,7 @@ def violations(view: View) -> list[dict]:
                 continue
             lo, hi = p["offset"] - p["width"] / 2, p["offset"] + p["width"] / 2
             spans.append((lo, hi, d))
-            if lo < 0 or hi > length:
+            if not door_span_ok(lo, hi, 0.0, length):   # 벽 끝 허용(W2 열세 번째 PR, kinds.DOOR_END_ALLOW)
                 out.append(_v("DOOR_OUT_OF_HOST", (w, d), f"문이 호스트 벽({length:.1f}mm) 밖으로 나간다",
                               {"wall_length": length, "door_span": [lo, hi]},
                               focus=(_pu(w, "axis"), _pu(d, "offset"), _pu(d, "width"))))
@@ -576,6 +576,11 @@ def violations(view: View) -> list[dict]:
         w = hs[0]
         try:
             status = g.q(Q.door_status, d)
+            if status != "ok":   # 벽 끝 허용(W2 열세 번째 PR, kinds.DOOR_END_ALLOW) 안이면 위반이 아니다(door.place 가 받는 규칙과 같다)
+                start, end, _ = g.q(Q.wall_trim, w)
+                dp = view.p(d)
+                if door_span_ok(dp["offset"] - dp["width"] / 2, dp["offset"] + dp["width"] / 2, start, end):
+                    status = "ok"
         except (KeyError, IndexError, ZeroDivisionError, TypeError):
             continue
         if status != "ok":

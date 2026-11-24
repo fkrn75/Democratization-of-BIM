@@ -362,7 +362,7 @@ def _parse_intent(kind: str, text: str) -> dict:
         if why:
             raise ValueError(f"대지가 올바르지 않다({why})")
     elif kind == "railing":
-        if (set(p) - {"src", "src_tag", "src_inset"} != {"name", "path", "height", "base_offset", "rise"} or not isinstance(p["path"], list) or not 2 <= len(p["path"]) <= K.RAILING_PTS_MAX
+        if (set(p) - {"src", "src_tag", "src_inset", "rltype", "parts"} != {"name", "path", "height", "base_offset", "rise"} or not isinstance(p["path"], list) or not 2 <= len(p["path"]) <= K.RAILING_PTS_MAX
                 or any(not isinstance(q, list) or len(q) != 2 for q in p["path"])):
             raise ValueError("난간 params 가 다르다")
         out = {"name": _name(p["name"]), "path": [[_num(q[0]), _num(q[1])] for q in p["path"]], "height": _num(p["height"], pos=True),
@@ -375,6 +375,9 @@ def _parse_intent(kind: str, text: str) -> dict:
                 out["src_inset"] = _num(p["src_inset"], nonneg=True)
         elif "src_tag" in p or "src_inset" in p:
             raise ValueError("난간 출처가 올바르지 않다")
+        for k in ("rltype", "parts"):   # 난간 유형(W2 열세 번째 PR): 값 검사는 코어 행 검사가 한다(정의가 없으면 _restore_rail_types 가 뗀다)
+            if k in p:
+                out[k] = p[k]
         why = K.row_params_error("railing", out)
         if why:
             raise ValueError(f"난간이 올바르지 않다({why})")
@@ -516,6 +519,22 @@ def _restore_roof_types(rows: dict, rels: set, plan: "ImportPlan") -> None:
             r["params"] = {k: v for k, v in r["params"].items() if k != "rtype"}
             r.pop("spec_hash", None)
             plan.warnings.append(f"{g}: 지붕 유형 {str(tid)[:22]} 정의를 되살리지 못해 지붕에서 유형을 뗐다(층 구성은 남는다)")
+
+
+def _restore_rail_types(rows: dict, rels: set, plan: "ImportPlan") -> None:
+    """난간 유형(W2 열세 번째 PR): 저작 난간의 params.rltype 이 되살린 난간 유형 정의를 가리키면 타입 관계(of_type)를 잇고, 아니면 유형과 구성을 뗀다
+    (높이는 남는다: railing.type.set null 과 같다)."""
+    for g in sorted(rows):
+        r = rows[g]
+        tid = r["params"].get("rltype") if r["kind"] == "railing" and isinstance(r.get("params"), dict) else None
+        if tid is None:
+            continue
+        if rows.get(tid, {}).get("kind") == "railtype":
+            rels.add(("of_type", g, tid))
+        else:
+            r["params"] = {k: v for k, v in r["params"].items() if k not in ("rltype", "parts")}
+            r.pop("spec_hash", None)
+            plan.warnings.append(f"{g}: 난간 유형 {str(tid)[:22]} 정의를 되살리지 못해 난간에서 유형을 뗐다(높이는 남는다)")
 
 
 def _finst_dependency_error(g: str, it: dict, cand: dict, cls_of: dict) -> str | None:
@@ -795,7 +814,7 @@ def _restore_defs(f, rows: dict, rels: set, taken: set, plan: "ImportPlan") -> N
             else:
                 ok[eid] = parsed[eid]
     # 벽 유형(W2 일곱 번째 PR, ARC-11)·지붕 유형(W2 여덟 번째 PR): 유형 이름은 유일하다(walltype·rooftype.create 의 규칙). 겹치면 어느 쪽이 원본인지 알 수 없다
-    for tk, what in (("walltype", "벽 유형"), ("rooftype", "지붕 유형")):
+    for tk, what in (("walltype", "벽 유형"), ("rooftype", "지붕 유형"), ("railtype", "난간 유형")):
         tkeys: dict = {}
         for eid in sorted(e for e, d in parsed.items() if d["kind"] == tk):
             tkeys.setdefault(parsed[eid]["params"]["name"], []).append(eid)
@@ -1074,7 +1093,7 @@ def plan_import(data: bytes) -> ImportPlan:
             for rel in f.get_inverse(f.by_guid(g)):
                 if rel.is_a("IfcRelFillsElement") and rel.RelatedBuildingElement == f.by_guid(g):
                     owned.add(rel.RelatingOpeningElement.GlobalId)
-        elif r["origin"] == "authored" and r["kind"] in ("slab", "stair", "roof", "wall", "curtwall"):   # 커튼월의 멀리언·패널(W2 ARC-22), 벽의 모양 개구부(18단계), 저작 슬래브의 구멍·파라펫·꺾인 계단의 단 묶음·층참·지붕의 경사면도 그 요소의 클로저에 속한다
+        elif r["origin"] == "authored" and r["kind"] in ("slab", "stair", "roof", "wall", "curtwall", "railing"):   # 난간 부재(W2 열세 번째 PR), 커튼월의 멀리언·패널(W2 ARC-22), 벽의 모양 개구부(18단계), 저작 슬래브의 구멍·파라펫·꺾인 계단의 단 묶음·층참·지붕의 경사면도 그 요소의 클로저에 속한다
             owned.update(p.GlobalId for p in scratch.parts.get(g, {}).values())
     owned |= {p.GlobalId for p in prods if p.is_a("IfcGrid") and isinstance(getattr(p, "Description", None), str)
               and p.Description.startswith("DoBIM grid") and sk is not None and p.GlobalId == _grid_gid(sk[1].GlobalId)}   # 통심선 IfcGrid 투영(W2 열 번째 PR)
@@ -1099,6 +1118,7 @@ def plan_import(data: bytes) -> ImportPlan:
         plan.warnings.append("길이 단위가 밀리미터가 아니라 뷰·주석 정의를 되살리지 않는다")
     _restore_wall_types(rows, rels, plan)   # 벽 유형(W2 일곱 번째 PR): 정의를 되살린 뒤에 벽의 타입 관계를 잇는다
     _restore_roof_types(rows, rels, plan)   # 지붕 유형(W2 여덟 번째 PR)
+    _restore_rail_types(rows, rels, plan)   # 난간 유형(W2 열세 번째 PR)
     # 5) 공간 소속(on_level): 외래·분리 요소도 층에 담긴 관계를 남긴다(레벨 삭제 검사와 element.query level 필터가 쓴다)
     for p in prods:
         g = p.GlobalId

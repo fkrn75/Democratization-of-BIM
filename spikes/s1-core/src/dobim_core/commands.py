@@ -586,7 +586,7 @@ def wall_set(ctx, a: WallSet):
             if ctx.st.el[d]["kind"] != "door":
                 continue   # 패밀리 인스턴스는 아래 check_hosted_fit 이 개구부 범위(cut)로 정확히 본다
             dp = ctx.st.el[d]["params"]
-            if dp["offset"] - dp["width"] / 2 < 0 or dp["offset"] + dp["width"] / 2 > length:
+            if not K.door_span_ok(dp["offset"] - dp["width"] / 2, dp["offset"] + dp["width"] / 2, 0.0, length):   # 벽 끝 허용(W2 열세 번째 PR)
                 raise DobimError("CONSTRAINT", f"호스팅된 문이 벽 밖으로 나간다: {d}", path="/axis")
     # 호스팅된 패밀리 인스턴스(finst)는 호스트 두께·높이·길이에 제약을 가진다: 새 벽 치수로 미리 재평가해 깨지면 거절한다
     if a.openings is not None:
@@ -1173,8 +1173,13 @@ class DoorPlace(A):
 
 def _fits(ctx, host, offset, width):
     length = wall_len(ctx.st.el[host]["params"])   # 곡선 벽은 호 길이
-    if offset - width / 2 < 0 or offset + width / 2 > length:
-        raise DobimError("CONSTRAINT", f"문이 호스트 벽({length:.1f}mm) 밖으로 나간다", path="/offset")
+    lo, hi = offset - width / 2, offset + width / 2
+    if not K.door_span_ok(lo, hi, 0.0, length):   # W2 열세 번째 PR(ARC-23): 문틀 폭 한도(DOOR_END_ALLOW)까지는 벽 끝을 넘어도 놓는다
+        raise DobimError("CONSTRAINT", f"문이 호스트 벽({length:.1f}mm) 밖으로 나간다(벽 끝을 넘는 허용 {K.DOOR_END_ALLOW:g}mm 초과)", path="/offset",
+                         hint="문을 벽 가운데로 옮기거나 벽을 늘리세요")
+    over = K.door_overhang(lo, hi, 0.0, length)
+    if over > 1e-6:
+        ctx.warn(f"문이 호스트 벽({length:.1f}mm) 끝을 {over:.1f}mm 넘는다: 벽 범위만 뚫고 문틀은 이웃에 묻힌다(허용 {K.DOOR_END_ALLOW:g}mm)")
 
 
 @command("door.place", kind="mutation", risk="write", group="model.door", summary="문 배치",
@@ -1287,6 +1292,10 @@ def element_delete(ctx, a: IdArg):
         from dobim_core import commands_walltype as CWT
         if CWT._walls_of(ctx, a.id) or CWT._stacks_of(ctx, a.id):
             raise DobimError("CONSTRAINT", "벽·스택 벽이 쓰는 벽 유형은 지울 수 없다", path="/id", hint="walltype.delete 의 detach: true 로 벽에서 떼고 지우세요")
+    elif r["kind"] == "railtype":   # 난간 유형(W2 열세 번째 PR): 쓰는 난간이 있으면 railtype.delete detach 로
+        from dobim_core import commands_railtype as CRT
+        if CRT.railings_of(ctx, a.id):
+            raise DobimError("CONSTRAINT", "난간이 쓰는 난간 유형은 지울 수 없다", path="/id", hint="railtype.delete 의 detach: true 로 난간에서 떼고 지우세요")
     elif r["kind"] == "rooftype":   # 지붕 유형(W2 여덟 번째 PR): 쓰는 지붕이 있으면 rooftype.delete detach 로
         from dobim_core import commands_roof as CR
         if CR.roofs_of(ctx, a.id):
@@ -1803,10 +1812,15 @@ RailingPath = Annotated[list[SlabPt], Field(min_length=2, max_length=256, descri
 RAIL_SRC = ("src", "src_tag", "src_inset")   # 난간의 출처 표식(원본 계단·슬래브 id, 난간 자리 표식, 계단 옆 들임). 없으면 키 자체가 없다
 
 
-def _railing_row(name, path, height, base_offset, rise, src=None) -> dict:
+RAIL_TYPE_KEYS = ("rltype", "parts")   # 난간 유형(W2 열세 번째 PR): 유형 id 와 구성 사본. 없으면 키 자체가 없다(행은 이전과 같다)
+
+
+def _railing_row(name, path, height, base_offset, rise, src=None, typ=None) -> dict:
     p = {"name": name, "path": [[float(x), float(y)] for x, y in path], "height": float(height), "base_offset": float(base_offset), "rise": float(rise)}
     if src:
         p.update(src)
+    if typ:
+        p.update(typ)
     why = K.row_params_error("railing", p)
     if why:
         raise DobimError("CONSTRAINT", f"난간이 올바르지 않다: {why}", path="/path")
@@ -1821,6 +1835,23 @@ class RailingCreate(A):
     base_offset: Num = Field(0.0, description="레벨 높이에서 난간선 시작점의 바닥 마감까지 mm")
     rise: Num = Field(0.0, description="난간선 끝에서 바닥 마감이 시작점보다 더 높은 만큼 mm(계단 옆 경사 난간이면 오름, 평평하면 0). 선 길이에 비례해 오른다")
     name: Name | None = None
+    type: Id | None = Field(None, description="난간 유형(railtype.create, W2 열세 번째 PR): 높이·상부/중간 난간대·발루스터·동자를 유형에서 받는다(height 를 함께 주지 않는다)")
+
+
+def _rail_type(ctx, tid, a, path="/type"):
+    """난간 유형 tid 의 (높이, 행에 넣을 키). tid 가 없으면 (a.height, None). 유형과 다른 height 를 함께 주면 거절."""
+    if tid is None:
+        return a.height, None
+    from dobim_core import commands_railtype as CRT
+    tp = CRT.type_row(ctx, tid, path)["params"]
+    if "height" in a.model_fields_set and abs(a.height - tp["height"]) > 1e-9:
+        raise DobimError("CONSTRAINT", "난간 유형을 주면 높이는 유형이 정한다(height 를 함께 주지 않는다)", path="/height")
+    return tp["height"], CRT.type_fields(tid, tp)
+
+
+def _rail_typed(ctx, rid, typ) -> None:
+    if typ:
+        ctx.rel("of_type", rid, typ["rltype"], True)
 
 
 @command("railing.create", kind="mutation", risk="write", group="model.railing", summary="난간 생성(레벨 + 난간선 + 높이, 선택: 경사 rise). IFC 는 IfcRailing 으로 나간다",
@@ -1829,8 +1860,10 @@ def railing_create(ctx, a: RailingCreate):
     _fresh_id(ctx, a, "railing")
     ctx.authored(a.level, "level", what="레벨에 난간을 추가하는 것")
     a.name = a.name or f"RL-{a.id[-6:]}"
-    ctx.put_el(a.id, row("railing", "IfcRailing", "railing.basic", _railing_row(a.name, a.path, a.height, a.base_offset, a.rise)))
+    h, typ = _rail_type(ctx, a.type, a)
+    ctx.put_el(a.id, row("railing", "IfcRailing", "railing.basic", _railing_row(a.name, a.path, h, a.base_offset, a.rise, typ=typ)))
     ctx.rel("on_level", a.id, a.level, True)
+    _rail_typed(ctx, a.id, typ)
     return {"id": a.id}
 
 
@@ -1861,8 +1894,12 @@ def railing_set(ctx, a: RailingSet):
             p[k] = getattr(a, k)
     if a.path is not None:
         p["path"] = a.path
+    if a.height is not None and "rltype" in r["params"] and abs(a.height - r["params"]["height"]) > 1e-9:   # 난간 유형(W2 열세 번째 PR)이 높이를 정한다
+        raise DobimError("CONSTRAINT", "유형이 있는 난간의 높이는 유형이 정한다", path="/height",
+                         hint="railtype.set 으로 유형을 고치거나 railing.type.set 으로 유형을 떼세요(type null)")
     src = None if a.clear_source else {k: p[k] for k in RAIL_SRC if k in p}   # 출처 표식은 사용자가 끊기 전까지 그대로 둔다
-    ctx.put_el(a.id, dict(r, params=_railing_row(p["name"], p["path"], p["height"], p["base_offset"], p["rise"], src)))
+    typ = {k: p[k] for k in RAIL_TYPE_KEYS if k in p}
+    ctx.put_el(a.id, dict(r, params=_railing_row(p["name"], p["path"], p["height"], p["base_offset"], p["rise"], src, typ)))
     return {"id": a.id}
 
 
@@ -1883,10 +1920,11 @@ def railing_delete(ctx, a: IdArg):
     return {"deleted": [a.id]}
 
 
-def _new_railing(ctx, level, name_stem, path, height, base_offset, rise, src=None, rid: str | None = None) -> str:
+def _new_railing(ctx, level, name_stem, path, height, base_offset, rise, src=None, rid: str | None = None, typ=None) -> str:
     rid = rid or ctx.new_id("railing")
-    ctx.put_el(rid, row("railing", "IfcRailing", "railing.basic", _railing_row(f"{name_stem}-{rid[-6:]}", path, height, base_offset, rise, src)))
+    ctx.put_el(rid, row("railing", "IfcRailing", "railing.basic", _railing_row(f"{name_stem}-{rid[-6:]}", path, height, base_offset, rise, src, typ)))
     ctx.rel("on_level", rid, level, True)
+    _rail_typed(ctx, rid, typ)
     return rid
 
 
@@ -2106,6 +2144,7 @@ class RailingFromStair(A):
     inset: Num = Field(50.0, ge=0, description="계단 옆면에서 안쪽으로 들이는 거리 mm")
     height: Pos = K.RAILING_HEIGHT_DEFAULT
     landing: bool = Field(True, description="꺾인 계단이면 층참의 트인 가장자리에도 난간을 둔다")
+    type: Id | None = Field(None, description="난간 유형(railtype.create, W2 열세 번째 PR): 높이·부재 구성을 유형에서 받는다(height 를 함께 주지 않는다)")
 
 
 @command("railing.from_stair", kind="mutation", risk="write", group="model.railing",
@@ -2117,8 +2156,9 @@ def railing_from_stair(ctx, a: RailingFromStair):
     level = ctx.rels_out("on_level", a.stair)[0]
     out = []
     specs = _stair_rail_specs(r["params"], a.side, a.inset, a.landing)
+    h, typ = _rail_type(ctx, a.type, a)
     for s, rid in zip(specs, _rail_ids(ctx, a.ids, len(specs))):
-        out.append(_new_railing(ctx, level, "RL", s["path"], a.height, s["base_offset"], s["rise"], {"src": a.stair, "src_tag": s["tag"], "src_inset": float(a.inset)}, rid))
+        out.append(_new_railing(ctx, level, "RL", s["path"], h, s["base_offset"], s["rise"], {"src": a.stair, "src_tag": s["tag"], "src_inset": float(a.inset)}, rid, typ))
     return _rail_done(ctx, out, a.material)
 
 
@@ -2138,6 +2178,7 @@ class RailingFromSlab(A):
     opening: int | None = Field(None, ge=0, le=31, description="구멍 번호(0부터). 비우면 슬래브 바깥 경계")
     edges: list[Annotated[int, Field(ge=0, le=255)]] | None = Field(None, max_length=256, description="난간을 둘 변 번호(꼭짓점 i 와 i+1 사이가 변 i). 비우면 모든 변(닫힌 한 줄)")
     height: Pos = K.RAILING_HEIGHT_DEFAULT
+    type: Id | None = Field(None, description="난간 유형(railtype.create, W2 열세 번째 PR): 높이·부재 구성을 유형에서 받는다(height 를 함께 주지 않는다)")
 
 
 @command("railing.from_slab", kind="mutation", risk="write", group="model.railing",
@@ -2161,7 +2202,8 @@ def railing_from_slab(ctx, a: RailingFromSlab):
         raise DobimError("CONSTRAINT", "변이 하나도 없다", path="/edges")
     top = p["top_offset"]
     runs = _slab_rail_runs(ring, chosen if len(chosen) < n else None)
-    out = [_new_railing(ctx, level, "RL", pts, a.height, top, 0.0, {"src": a.slab, "src_tag": _slab_tag(a.opening, tag)}, rid)
+    h, typ = _rail_type(ctx, a.type, a)
+    out = [_new_railing(ctx, level, "RL", pts, h, top, 0.0, {"src": a.slab, "src_tag": _slab_tag(a.opening, tag)}, rid, typ)
            for (tag, pts), rid in zip(runs, _rail_ids(ctx, a.ids, len(runs)))]
     return _rail_done(ctx, out, a.material)
 
@@ -5781,5 +5823,6 @@ from dobim_core import commands_curtain  # noqa: E402,F401   커튼월(W2 네 �
 from dobim_core import commands_material  # noqa: E402,F401   재료 외관(W2 다섯 번째 PR, DATA-05·VIS-07)
 from dobim_core import commands_solidops  # noqa: E402,F401   솔리드 불리언(W2 여섯 번째 PR, ARC-12·ARC-44)
 from dobim_core import commands_walltype  # noqa: E402,F401   벽 유형·위치선·스택 벽(W2 일곱 번째 PR, ARC-11·ARC-09)
+from dobim_core import commands_railtype  # noqa: E402,F401   난간 유형(W2 열세 번째 PR, ARC-31)
 from dobim_core import commands_roof  # noqa: E402,F401   외곽선 지붕·지붕 유형·층 구성·처마 부속(W2 여덟 번째 PR, ARC-19·ARC-20)
 from dobim_core import commands_group  # noqa: E402,F401   모델 그룹·조립품(W2 열한 번째 PR, ARC-46·COL-11)

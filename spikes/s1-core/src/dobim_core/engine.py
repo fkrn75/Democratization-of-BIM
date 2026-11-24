@@ -1062,6 +1062,18 @@ class Engine:
             out[t] = (p["name"], p.get("function"), float(p["thickness"]), layers, roofs)
         return out
 
+    def railtype_map(self) -> dict:
+        """난간 유형 행(railtype, W2 열세 번째 PR) -> {유형 id: (이름, 발루스터 있음, 그 유형을 쓰는 IFC 난간 id 들)}. 유형이 없으면 빈 표."""
+        tids = self.st.by_kind.get("railtype")
+        if not tids:
+            return {}
+        out = {}
+        for t in sorted(tids):
+            p = self.st.el[t]["params"]
+            rails = tuple(sorted(r for r in self.st.inn.get(("of_type", t), ()) if r in self.ifc.ents and self.st.el[r]["origin"] == "authored"))
+            out[t] = (p["name"], "baluster" in p["parts"], rails)
+        return out
+
     def grid_map(self) -> dict:
         """통심선 행 -> {id: (기호, 선분, 원호 정보 또는 None)}(W2 열 번째 PR, IfcGrid 투영). 없으면 빈 표."""
         from dobim_core import arcgeom as AG
@@ -1103,6 +1115,7 @@ class Engine:
             self.ifc.set_appearance(self.appearance_map())   # 재료 외관 정의(W2 다섯 번째 PR): 값이 바뀐 재료의 IFC 표면 스타일만 다시 붙인다
             self.ifc.sync_wall_types(self.walltype_map())   # 벽 유형(W2 일곱 번째 PR): IfcWallType·층 집합·타입 지정 관계. 유형이 없으면 아무것도 하지 않는다
             self.ifc.sync_roof_types(self.rooftype_map())   # 지붕 유형(W2 여덟 번째 PR): IfcRoofType. 유형이 없으면 아무것도 하지 않는다
+            self.ifc.sync_rail_types(self.railtype_map())   # 난간 유형(W2 열세 번째 PR): IfcRailingType. 유형이 없으면 아무것도 하지 않는다
             self.ifc.sync_grids(self.grid_map())   # 통심선 IfcGrid(W2 열 번째 PR, ARC-38). 통심선이 없으면 아무것도 하지 않는다
             self.ifc.sync_groups(*self.group_maps())   # 모델 그룹 IfcGroup·조립품 IfcElementAssembly(W2 열한 번째 PR). 없으면 아무것도 하지 않는다
         except BaseException as ex:
