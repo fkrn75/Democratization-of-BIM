@@ -54,6 +54,8 @@ class _Sweep:
         self.lines = lines
         self.eps = eps
         self.h = 0.0
+        self.pend = None
+        self.stall = False   # 사건 높이가 float 로 더 오르지 않는다(W2 열두 번째 PR, _settle 참고)
         self.ptol = 100.0 * eps   # 거의 한 점에서 만나는 선들의 어긋남 허용(반올림된 좌표가 만드는 크기, 40m 지붕이면 0.4mm)
         self.snap = RP._Snap(tol=max(RP.SNAP, eps * 4.0))
         self.arcs = []      # (in 선, out 선, 시작 점 key, 끝 점 key, in 선이 움직였나, out 선이 움직였나)
@@ -180,10 +182,72 @@ class _Sweep:
         else:   # 움직이는 선이 없다(정리 단계에서는 생기지 않지만 지켜 둔다)
             return None
         p = (sol[0], sol[1])
+        st = [rw for rw in rows if rw[2] == 0.0]
+        if len(st) == 1:
+            # 움직이지 않는 선이 하나면 그 선 위로 내린다(W2 열두 번째 PR): 거의 평행한 움직이는 선들과 풀면 무게를 크게 줘도 크라메르 풀이가
+            # 점 맞춤 거리보다 크게(D 꼴 현 박공에서 수 um) 비켜나 윗변이 외곽(박공 변) 위로 보이지 않았다. 점 맞춤 거리 안이면 그대로 둔다
+            a0, a1, _, bb, _ = st[0]
+            f = a0 * p[0] + a1 * p[1] - bb
+            if abs(f) > self.snap.tol:
+                p = (p[0] - a0 * f, p[1] - a1 * f)
         for a0, a1, a2, bb, wt in rows:
             if abs(a0 * p[0] + a1 * p[1] + a2 * sol[2] - bb) > self.ptol:
                 return None
         return p
+
+    def _onto_fixed(self, loop, ps, h):
+        """사라지는 고리에서 움직이는 선이 움직이지 않는 선(박공·연결 변·아직 출발하지 않은 경사 변)에 포개진 꼭짓점을 그 움직이지 않는 선들의
+        교점으로 옮긴다(W2 열두 번째 PR). 고리 부채꼴의 안쪽 호만 물매일 때 안쪽 호의 파면 변은 바깥 호의 박공 변과 (반올림이 없으면 정확히)
+        평행하게 다가가 한꺼번에 포개지고, 두 파면 변 사이 꼭짓점은 바깥 호 꼭짓점에 닿는다. 반올림된 좌표에서는 두 변의 방향이 조금 달라
+        그 꼭짓점이 바깥 호 꼭짓점에서 (방향 차이 x 지나온 거리만큼, 수십 점 호면 ptol 을 넘게) 비켜 서서, 바깥 호 꼭짓점이 어떤 면에도
+        들지 않았다(처마 둘레 높이를 정할 수 없다) 또는 그 둘레에 틈이 남았다. 포개진 선의 짝은 고리 변의 두 끝이 모두 ptol 안에 있는
+        반대 방향 움직이지 않는 선이다. 옮긴 점이 고리의 움직이지 않는 꼭짓점과 같으면 늘 받고, 아니면 4 ptol 안일 때만 받는다.
+        이미 ptol 안인 꼭짓점은 그대로 둔다(정확한 입력의 결과는 바뀌지 않는다)."""
+        n = len(loop)
+        if n < 3:
+            return ps
+        stay = [self.speed(j, h) <= 0.0 for j in range(len(self.lines))]
+        co = {}   # 고리 변 e(꼭짓점 e -> e+1)의 선 -> 포개진 움직이지 않는 선
+        for e in range(n):
+            j = loop[e]["b"]
+            if stay[j]:
+                continue
+            p, q = ps[e], ps[(e + 1) % n]
+            nj = self.lines[j]
+            best = None
+            for f in range(n):
+                g = loop[f]["b"]
+                if not stay[g] or g == j:
+                    continue
+                lg = self.lines[g]
+                if nj[0] * lg[0] + nj[1] * lg[1] >= 0.0:
+                    continue
+                cg = self.C(g, h)
+                dm = max(abs(lg[0] * p[0] + lg[1] * p[1] - cg), abs(lg[0] * q[0] + lg[1] * q[1] - cg))
+                if dm <= self.ptol and (best is None or dm < best[0]):
+                    best = (dm, g)
+            if best is not None:
+                co[j] = best[1]
+        if not co:
+            return ps
+        corners = [ps[i] for i in range(n) if stay[loop[i]["a"]] and stay[loop[i]["b"]]]
+        out = list(ps)
+        for i in range(n):
+            vt = loop[i]
+            if stay[vt["a"]] and stay[vt["b"]]:
+                continue
+            fa = vt["a"] if stay[vt["a"]] else co.get(vt["a"])
+            fb = vt["b"] if stay[vt["b"]] else co.get(vt["b"])
+            if fa is not None and fb is not None and fa != fb:
+                la, lb = self.lines[fa], self.lines[fb]
+                q = None if abs(la[0] * lb[1] - la[1] * lb[0]) < PAR_SIN else _isect(la, self.C(fa, h), lb, self.C(fb, h))
+                if q is not None:
+                    dq = _d(q, ps[i])
+                    if dq <= self.ptol:
+                        continue
+                    if any(_d(q, c) <= self.snap.tol for c in corners) or dq <= 4.0 * self.ptol:
+                        out[i] = q
+        return out
 
     def _collapse(self, loop, h):
         """고리가 사라진다: 남은 변마다 윗변(끝 꼭짓점 -> 시작 꼭짓점)을 그 면에 남기고 꼭짓점의 호를 닫는다.
@@ -195,6 +259,7 @@ class _Sweep:
         ps = [vt["p"] for vt in loop]
         fixed = [self.lines[vt["a"]][3] <= 0.0 and self.lines[vt["b"]][3] <= 0.0 for vt in loop]
         tol = self.ptol
+        ps = self._onto_fixed(loop, ps, h)
         par = list(range(n))
 
         def find(x):
@@ -202,9 +267,15 @@ class _Sweep:
                 par[x] = par[par[x]]
                 x = par[x]
             return x
+        ws = [{self.lines[vt["a"]][3], self.lines[vt["b"]][3]} for vt in loop]
         for i in range(n):
             for j in range(i + 1, n):
-                if _d(ps[i], ps[j]) <= tol:
+                # 이웃하지 않은 두 꼭짓점(납작한 고리의 마주 보는 두 쪽)은 네 선의 물매가 모두 같으면 4 ptol 안이어도 한 점: 거의 평행한 마주 보는
+                # 변들이 용마루로 포개질 때 양쪽 꼭짓점이 (방향 차이 x 지나온 거리만큼) 용마루를 따라 엇갈려 ptol 을 넘으면 윗변 끝이 맞지 않아
+                # 얇은 틈이 남았다(W2 열두 번째 PR). 물매가 섞이면 용마루가 가운데가 아니라 엇갈림이 진짜 형상일 수 있어 ptol 그대로다
+                same = len(ws[i] | ws[j]) == 1 and next(iter(ws[i])) > 0.0
+                lim = tol if (j == i + 1 or (i == 0 and j == n - 1) or not same) else 4.0 * tol
+                if _d(ps[i], ps[j]) <= lim:
                     ri, rj = find(i), find(j)
                     if ri != rj:
                         par[max(ri, rj)] = min(ri, rj)
@@ -264,6 +335,7 @@ class _Sweep:
                 for vt in lp:
                     vt["p"] = self._pos(vt, hn, h)
             moving = {j for j in range(len(self.lines)) if self.speed(j, h) > 0.0}
+            self.stall = hn <= h
             h = hn
             self._settle(h)
             self._update(h, moving)
@@ -292,21 +364,22 @@ class _Sweep:
 
     def _next(self, h):
         best = _INF
+        self.pend = None   # 가장 이른 사건이 분할 사건이면 (오목 꼭짓점, 닿는 변의 선): _settle 의 마지막 확인(_settle 참고)
         for lp in self.loops:
             if not any(self.lines[vt["a"]][3] > 0.0 for vt in lp):
                 continue
             for ln in {vt["a"] for vt in lp}:
                 w, hs = self.lines[ln][3], self.lines[ln][4]
-                if w > 0.0 and hs > h + self.eps * 1e-3:
-                    best = min(best, hs)
+                if w > 0.0 and hs > h + self.eps * 1e-3 and hs < best:
+                    best, self.pend = hs, None
             n = len(lp)
             for i in range(n):   # 변 사건: 변 (i -> i+1) 의 길이
                 v1, v2 = lp[i], lp[(i + 1) % n]
                 u = self._dir(v1["b"])
                 ln_ = (v2["p"][0] - v1["p"][0]) * u[0] + (v2["p"][1] - v1["p"][1]) * u[1]
                 dl = (v2["v"][0] - v1["v"][0]) * u[0] + (v2["v"][1] - v1["v"][1]) * u[1]
-                if dl < -1e-12:
-                    best = min(best, h + max(0.0, -ln_ / dl))
+                if dl < -1e-12 and h + max(0.0, -ln_ / dl) < best:
+                    best, self.pend = h + max(0.0, -ln_ / dl), None
             for r in lp:   # 분할 사건: 오목 꼭짓점이 다른 변의 선에 닿는다
                 if not self._reflex(r):
                     continue
@@ -330,7 +403,7 @@ class _Sweep:
                     s = (q[0] - q1[0]) * u[0] + (q[1] - q1[1]) * u[1]
                     L = (q2[0] - q1[0]) * u[0] + (q2[1] - q1[1]) * u[1]
                     if -self.eps <= s <= L + self.eps:
-                        best = h + t
+                        best, self.pend = h + t, (r, e)
         return best
 
     def _settle(self, h):
@@ -345,7 +418,10 @@ class _Sweep:
             changed = False
             for li, lp in enumerate(self.loops):
                 n = len(lp)
-                if n < 3 or abs(RP._area2([vt["p"] for vt in lp])) <= eps * _perim(lp):
+                # 사건 높이가 더 오르지 않으면(물매가 아주 낮아 거의 평행한 선의 꼭짓점 속도가 매우 크다: 다음 사건까지 높이 차가 h 의 float
+                # 해상도보다 작다) 두께(넓이 / 둘레)가 ptol 안인 고리도 사라진 것으로 본다(W2 열두 번째 PR. 전에는 같은 높이에서 끝없이 돌았다)
+                a2 = abs(RP._area2([vt["p"] for vt in lp]))
+                if n < 3 or a2 <= eps * _perim(lp) or (self.stall and a2 <= self.ptol * _perim(lp)):
                     self._collapse(lp, h)
                     self.loops.pop(li)
                     changed = True
@@ -407,21 +483,34 @@ class _Sweep:
                     self.loops[li:li + 1] = sp
                     changed = True
                     break
+            if not changed and self.pend is not None:
+                # 이 높이를 부른 분할 사건이 eps 판정으로 일어나지 않았다: 물매가 섞인 거의 동시 사건(오목 꼭짓점이 다른 꼭짓점에 닿는다)에서
+                # 위치 어긋남이 eps 를 넘으면 그 꼭짓점이 변을 그대로 지나쳐 고리가 뒤집히고 계산이 닫히지 않았다(W2 열두 번째 PR).
+                # 그 오목 꼭짓점·변만 ptol 로 한 번 더 본다(다른 사건 판정은 그대로)
+                r, e = self.pend
+                self.pend = None
+                for li, lp in enumerate(self.loops):
+                    if any(vt is r for vt in lp):
+                        sp = self._split_one(lp, h, self.ptol, (r, e))
+                        if sp is not None:
+                            self.loops[li:li + 1] = sp
+                            changed = True
+                        break
             if not changed:
                 return
 
-    def _split_one(self, lp, h):
-        """오목 꼭짓점 하나가 다른 변 위에 있으면 고리를 둘로 나눈다(없으면 None)."""
-        eps = self.eps
+    def _split_one(self, lp, h, tol=None, only=None):
+        """오목 꼭짓점 하나가 다른 변 위에 있으면 고리를 둘로 나눈다(없으면 None). tol = 판정 거리(기본 eps), only = (그 꼭짓점, 그 변의 선)만 본다."""
+        eps = self.eps if tol is None else tol
         n = len(lp)
         for ri in range(n):
             r = lp[ri]
-            if not self._reflex(r):
+            if not self._reflex(r) or (only is not None and r is not only[0]):
                 continue
             for i in range(n):
                 v1, v2 = lp[i], lp[(i + 1) % n]
                 e = v1["b"]
-                if ri in (i, (i + 1) % n) or e in (r["a"], r["b"]):
+                if ri in (i, (i + 1) % n) or e in (r["a"], r["b"]) or (only is not None and e != only[1]):
                     continue
                 nx, ny = self.lines[e][0], self.lines[e][1]
                 if abs(nx * r["p"][0] + ny * r["p"][1] - self.C(e, h)) > eps:
