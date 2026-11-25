@@ -627,7 +627,140 @@ def stair_turn_problem(p) -> str | None:
     return None
 
 
+# ---- 방사(원형·나선) 계단(W2 열일곱 번째 PR, ARC-29): 중심 둘레로 같은 각의 디딤판이 돈다. 걸음선(run)·꺾임(turn) 대신 params.spiral 하나를 둔다.
+#   spiral = {"center": [x, y] 중심, "r_in": 안쪽 반지름 mm(0 이면 중심 기둥 없이 한 점), "start": 첫 챌판 각(도, +x 가 0·반시계, [0, 360)),
+#             "sweep": 총 회전각(도, + 반시계·- 시계, 0 이 아니고 절댓값 STAIR_SPIRAL_SWEEP_MAX 이하)}
+#   바깥 반지름 = r_in + width. 디딤판 = 챌판 수 - 1 개(마지막 챌판 위는 위층 바닥, 직선 계단과 같은 규약), 디딤판 하나의 각 = sweep / (챌판 수 - 1).
+STAIR_SPIRAL_KEYS = frozenset(("center", "r_in", "start", "sweep"))
+STAIR_SPIRAL_SWEEP_MAX = 720.0   # 총 회전각 상한(두 바퀴)
+STAIR_SPIRAL_STEP_MAX = 90.0     # 디딤판 하나의 각 상한(볼록 조각·실무 범위)
+STAIR_SPIRAL_R_MAX = 100000.0    # 안쪽 반지름 상한 mm
+STAIR_SPIRAL_T = 150.0           # 디딤판 밑으로 더 채우는 두께 mm(아래 챌판 위치에서 이만큼 아래가 밑면. 바로 아래 디딤판과 이어진 톱니 띠가 된다)
+STAIR_SPIRAL_ARC = 11.25         # 바깥 원호를 나누는 현 하나의 각 상한(도, 원 한 바퀴 32 현 = 평지붕 원호와 같은 분할)
+STAIR_WALK_OFFSET = 300.0        # 보행선: 안쪽 끝에서 이만큼(폭의 절반 이하) 떨어진 원(피난·방화규칙 15조 3항 '돌음계단 단너비는 좁은 너비 끝부분에서 30cm 위치에서 측정')
+STAIR_RISE_MAX = 180.0           # 계단 검사: 챌판 높이 상한 mm(주택건설기준 16조·피난·방화규칙 15조 2항 중·고등학교 기준과 같은 18cm)
+STAIR_TREAD_MIN = 260.0          # 계단 검사: 디딤판 깊이(단너비) 하한 mm(같은 근거 26cm)
+
+
+def _spiral_ok(v) -> bool:
+    return (isinstance(v, dict) and set(v) == STAIR_SPIRAL_KEYS and _pt_ok(v["center"]) and num_ok(v["r_in"]) and 0 <= v["r_in"] <= STAIR_SPIRAL_R_MAX
+            and num_ok(v["start"]) and 0 <= v["start"] < 360.0 and num_ok(v["sweep"]) and v["sweep"] != 0 and abs(v["sweep"]) <= STAIR_SPIRAL_SWEEP_MAX)
+
+
+def stair_spiral_problem(p) -> str | None:
+    """방사 계단의 교차 검사(디딤판 하나의 각). 안 되면 이유 문장."""
+    step = abs(p["spiral"]["sweep"]) / (p["risers"] - 1)
+    if step > STAIR_SPIRAL_STEP_MAX + 1e-9:
+        return f"디딤판 하나의 각({step:g}도)이 {STAIR_SPIRAL_STEP_MAX:g}도를 넘는다(챌판 수를 늘리거나 총 회전각을 줄이세요)"
+    return None
+
+
+def _spiral_pt(c, r, a):
+    sn, cs = sincos_deg(a)
+    return (c[0] + r * cs, c[1] + r * sn)
+
+
+def stair_spiral_layout(p) -> dict:
+    """방사 계단의 형상 배치(순수 함수: 그리기·IFC·수량·난간이 같은 값을 쓴다). z 는 계단 아래 끝 기준 상대 높이.
+      {"treads": [{"poly": ((x,y),...) 반시계 볼록 다각형, "zb": 밑면, "z": 윗면, "a0": 시작 각, "a1": 끝 각}, ...],
+       "center", "r_in", "r_out", "r_mid": 폭 가운데 반지름(진행 화살표), "r_walk": 보행선 반지름, "start", "sweep", "step": 디딤판 하나의 각(부호 있음),
+       "rise": 챌판 높이, "tread": 보행선 위 디딤판 깊이, "walk_len": 보행선 길이(첫 챌판 ~ 위 끝)}
+    디딤판 j(0..n-2): 각 start + step x j ~ start + step x (j+1), 윗면 = (j+1) x 챌판 높이, 밑면 = max(0, j x 챌판 높이 - STAIR_SPIRAL_T).
+    다각형 = 안쪽 시작점, 바깥 원호(STAIR_SPIRAL_ARC 이하 현으로 나눈 점들), 안쪽 끝점(안쪽 반지름 0 이면 중심 한 점). 안쪽은 현 하나라 다각형이 볼록하다.
+    각은 sincos_deg(사칙연산 급수)로 구해 플랫폼 libm 에 기대지 않는다."""
+    sp = p["spiral"]
+    c = (float(sp["center"][0]), float(sp["center"][1]))
+    n, w = p["risers"], p["width"]
+    ri = float(sp["r_in"])
+    ro = ri + w
+    rise = p["height"] / n
+    m = n - 1
+    step = sp["sweep"] / m
+    k = max(1, int(-(-abs(step) // STAIR_SPIRAL_ARC)))
+    treads = []
+    for j in range(m):
+        a0, a1 = sp["start"] + step * j, sp["start"] + step * (j + 1)
+        outer = [_spiral_pt(c, ro, a0 + (a1 - a0) * i / k) for i in range(k + 1)]
+        poly = ([_spiral_pt(c, ri, a0)] + outer + [_spiral_pt(c, ri, a1)]) if ri > 0 else ([c] + outer)
+        a2 = sum(poly[i][0] * poly[(i + 1) % len(poly)][1] - poly[(i + 1) % len(poly)][0] * poly[i][1] for i in range(len(poly)))
+        if a2 < 0:   # 반시계로 맞춘다(시계 방향 계단)
+            poly.reverse()
+        corners = (outer[0], outer[-1]) + ((poly[0], poly[-1]) if ri > 0 else (c,))   # 각기둥의 실제 모서리(바깥 원호 중간 현 꼭짓점은 매끈한 면이라 뺀다)
+        treads.append({"poly": tuple(poly), "zb": max(0.0, j * rise - STAIR_SPIRAL_T), "z": (j + 1) * rise, "a0": a0, "a1": a1, "corners": corners})
+    rw = ri + min(STAIR_WALK_OFFSET, w / 2.0)
+    rad = 3.141592653589793 / 180.0
+    return {"treads": treads, "center": c, "r_in": ri, "r_out": ro, "r_mid": ri + w / 2.0, "r_walk": rw, "start": float(sp["start"]), "sweep": float(sp["sweep"]),
+            "step": step, "rise": rise, "tread": rw * abs(step) * rad, "walk_len": rw * abs(sp["sweep"]) * rad}
+
+
+def stair_spiral_frame(p) -> tuple:
+    """방사 계단의 '시작 틀': (시작점 x, y = 폭 가운데 원 위 첫 챌판 점, 진행 방향 ux, uy = 그 점의 접선(오르는 쪽), 폭 가운데 원호 길이).
+    걸음선 왼쪽(+) 이 반시계 계단은 안쪽, 시계 계단은 바깥쪽이다. 직선 계단의 걸음선 틀을 쓰는 곳(폭 치수·태그 위치)이 같은 규약으로 쓴다."""
+    sp = p["spiral"]
+    rm = sp["r_in"] + p["width"] / 2.0
+    sn, cs = sincos_deg(sp["start"])
+    g = 1.0 if sp["sweep"] > 0 else -1.0
+    return (sp["center"][0] + rm * cs, sp["center"][1] + rm * sn, -sn * g, cs * g, rm * abs(sp["sweep"]) * 3.141592653589793 / 180.0)
+
+
+def stair_pieces(p) -> list:
+    """계단의 속이 찬 볼록 조각 [(다각형, 밑면 z, 윗면 z), ...] (계단 아래 끝 기준 상대 높이): 직선·꺾인 단 묶음은 디딤판마다, 층참·돌음 쐐기·방사 디딤판. 체적 수량이 쓴다."""
+    if "spiral" in p:
+        return [(t["poly"], t["zb"], t["z"]) for t in stair_spiral_layout(p)["treads"]]
+    lay = stair_layout(p)
+    out = []
+    w = p["width"]
+    for fl in lay["flights"]:
+        x1, y1, x2, y2 = fl["run"]
+        ln = fl["length"]
+        ux, uy = (x2 - x1) / ln, (y2 - y1) / ln
+        h = w / 2.0
+
+        def q(t, mm):
+            return (x1 + ux * t - uy * mm, y1 + uy * t + ux * mm)
+        for k in range(fl["n"] - 1):
+            out.append(((q(k * fl["td"], -h), q((k + 1) * fl["td"], -h), q((k + 1) * fl["td"], h), q(k * fl["td"], h)),
+                        fl["z0"] - fl["skirt"], fl["z0"] + (k + 1) * lay["rise"]))
+    if lay["landing"] is not None:
+        ld = lay["landing"]
+        out.append((ld["poly"], ld["z"] - ld["t"], ld["z"]))
+    for wd in (lay["winders"]["wedges"] if "winders" in lay else ()):
+        out.append((wd["poly"], wd["zb"], wd["z"]))
+    return out
+
+
+def stair_volume(p) -> float:
+    """계단 체적 mm³ = 볼록 조각마다 평면 넓이 x 높이의 합."""
+    tot = 0.0
+    for poly, zb, zt in stair_pieces(p):
+        a2 = sum(poly[i][0] * poly[(i + 1) % len(poly)][1] - poly[(i + 1) % len(poly)][0] * poly[i][1] for i in range(len(poly)))
+        tot += abs(a2) / 2.0 * (zt - zb)
+    return tot
+
+
+def stair_rule_warnings(p) -> list:
+    """계단 검사(경고, 거절하지 않는다): 챌판 높이 > STAIR_RISE_MAX, 디딤판 깊이 < STAIR_TREAD_MIN. 방사 계단은 보행선(안쪽 끝에서 300mm) 위 디딤 길이로 잰다.
+    반환 [{"code", "message", "value", "limit"}]. 용도별 기준(초등학교 16cm·관람석 등)은 사용자가 확인한다."""
+    rise = p["height"] / p["risers"]
+    tread = stair_spiral_layout(p)["tread"] if "spiral" in p else stair_layout(p)["flights"][0]["td"]
+    out = []
+    if rise > STAIR_RISE_MAX + 1e-9:
+        out.append({"code": "STAIR_RISE", "message": f"챌판 높이 {rise:.1f}mm 가 {STAIR_RISE_MAX:g}mm 를 넘는다", "value": round(rise, 3), "limit": STAIR_RISE_MAX})
+    if tread < STAIR_TREAD_MIN - 1e-9:
+        where = "보행선(안쪽 끝에서 300mm) 위 " if "spiral" in p else ""
+        out.append({"code": "STAIR_TREAD", "message": f"{where}디딤판 깊이 {tread:.1f}mm 가 {STAIR_TREAD_MIN:g}mm 보다 작다", "value": round(tread, 3), "limit": STAIR_TREAD_MIN})
+    return out
+
+
 def _stair_params(p):
+    if isinstance(p, dict) and "spiral" in p:   # 방사 계단(W2 열일곱 번째 PR): 걸음선·꺾임 없이 spiral 하나
+        if "run" in p or "turn" in p:
+            return "stair.spiral 이 있으면 stair.run·stair.turn 을 둘 수 없다"
+        err = _check_opt("stair", p, {"name": _name, "width": _pos, "height": _pos,
+                                      "risers": lambda v: type(v) is int and STAIR_RISERS_MIN <= v <= STAIR_RISERS_MAX, "base_offset": num_ok},
+                         {"spiral": _spiral_ok})
+        return err or stair_spiral_problem(p)
+
     def run(v):   # 걸음선 길이 1mm 이상
         return (isinstance(v, list) and len(v) == 4 and all(num_ok(x) for x in v) and (v[2] - v[0]) ** 2 + (v[3] - v[1]) ** 2 >= 1.0)
     err = _check_opt("stair", p, {"name": _name, "run": run, "width": _pos, "height": _pos,
@@ -642,7 +775,10 @@ def stair_layout(p) -> dict:
        "landing": None | {"poly": ((x,y),...), "z": 윗면 상대 높이, "t": 두께}, "rise": 챌판 높이}
     직선 계단은 단 묶음 하나, 층참 없음. 꺾인 계단(turn)은 걸음선(run)이 층참 아래 단 묶음의 걸음선이고 층참은 그 끝에서 이어진다.
     걸음선 왼쪽이 + 이다. L 은 층참에서 90도, U 는 180도 꺾어 올라간다(side 가 꺾는 쪽).
-    turn.winders 가 있으면 "landing" 은 None 이고 "winders" 키에 돌음 회전부가 온다(_winder_layout)."""
+    turn.winders 가 있으면 "landing" 은 None 이고 "winders" 키에 돌음 회전부가 온다(_winder_layout).
+    방사 계단(spiral)은 단 묶음·층참이 없고 "spiral" 키에 stair_spiral_layout 이 온다."""
+    if "spiral" in p:
+        return {"flights": [], "landing": None, "rise": p["height"] / p["risers"], "spiral": stair_spiral_layout(p)}
     x1, y1, x2, y2 = p["run"]
     n, w = p["risers"], p["width"]
     rise = p["height"] / n
@@ -958,7 +1094,8 @@ def _elevator_params(p):
                       "machine": lambda v: isinstance(v, dict) and set(v) == {"height"} and _pos(v["height"]) and v["height"] <= ELEVATOR_MACHINE_MAX,
                       "doors": elevator_door_ok, "stops": lambda v: _ids_ok(v, ELEVATOR_STOPS_MAX),
                       "hole_slabs": lambda v: _ids_ok(v, 128),
-                      "hole_clearance": lambda v: num_ok(v) and 0 <= v <= ELEVATOR_HOLE_CLEAR_MAX})
+                      "hole_clearance": lambda v: num_ok(v) and 0 <= v <= ELEVATOR_HOLE_CLEAR_MAX,
+                      "rotation": lambda v: num_ok(v) and 0 < v < 360.0})
     if err is None and (why := elevator_problem(p)):
         return f"elevator: {why}"
     if err is None and ("doors" in p) != ("stops" in p):
@@ -1004,6 +1141,42 @@ def elevator_door_edge(p):
     if d["face"] == "E":
         return ((x2, cy - hw), (x2, cy + hw)), (1.0, 0.0)
     return ((x1, cy - hw), (x1, cy + hw)), (-1.0, 0.0)
+
+
+# ---- 승강기 회전(W2 열일곱 번째 PR, ARC-33): 선택 키 rotation(도, 0 < 값 < 360, 반시계). 샤프트 [x1,y1,x2,y2] 는 회전 전(로컬) 사각형이고
+# 승강기 전체(샤프트·카·피트·기계실·승강장 문)가 샤프트 가운데를 중심으로 이 각만큼 돈다. 문 면(N·E·S·W)은 로컬 방위다. 키가 없으면 이전과 같다(회전 0).
+def elevator_rot(p):
+    """승강기 회전 (중심 x, 중심 y, sin, cos) 또는 None(회전 없음)."""
+    a = p.get("rotation")
+    if not a:
+        return None
+    x1, y1, x2, y2 = p["shaft"]
+    sn, cs = sincos_deg(a)
+    return ((x1 + x2) / 2.0, (y1 + y2) / 2.0, sn, cs)
+
+
+def rot_pt(rot, x, y):
+    """로컬 점 (x, y) 를 승강기 회전(elevator_rot)으로 돌린 세계 점. rot 이 None 이면 그대로."""
+    if rot is None:
+        return (x, y)
+    cx, cy, sn, cs = rot
+    dx, dy = x - cx, y - cy
+    return (cx + cs * dx - sn * dy, cy + sn * dx + cs * dy)
+
+
+def rot_vec(rot, x, y):
+    """방향 벡터 (x, y) 를 승강기 회전으로 돌린다."""
+    if rot is None:
+        return (x, y)
+    _cx, _cy, sn, cs = rot
+    return (cs * x - sn * y, sn * x + cs * y)
+
+
+def elevator_ring(p, rect):
+    """승강기 로컬 사각형 rect (x1,y1,x2,y2) 의 세계 꼭짓점 4개(반시계, 회전 반영)."""
+    rot = elevator_rot(p)
+    x1, y1, x2, y2 = rect
+    return [rot_pt(rot, x, y) for x, y in ((x1, y1), (x2, y1), (x2, y2), (x1, y2))]
 
 
 # ---------------------------------------------------------------- 경사 지붕 (kinds "roof", 설계: elements-design.md 16절)

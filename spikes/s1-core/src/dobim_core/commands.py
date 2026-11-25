@@ -1625,29 +1625,102 @@ def stair_create(ctx, a: StairCreate):
     return {"id": a.id}
 
 
+class StairSpiralSpec(A):
+    """방사(원형·나선) 계단의 평면 정의(W2 열일곱 번째 PR, ARC-29). 디딤판은 중심에서 같은 각으로 나뉜 부채꼴(바깥 원호는 현으로 나눈다)이다."""
+    center: SlabPt = Field(description="중심 [x,y] mm")
+    radius_in: Annotated[float, Field(ge=0, le=K.STAIR_SPIRAL_R_MAX, allow_inf_nan=False)] = Field(0.0, description="안쪽 반지름 mm(0 이면 중심 기둥 없이 디딤판이 중심 한 점에서 퍼진다)")
+    radius_out: Pos = Field(description="바깥 반지름 mm(안쪽 반지름보다 커야 한다. 계단 폭 = 바깥 - 안쪽)")
+    start: Num = Field(0.0, description="첫 챌판의 각(도, +x 가 0·반시계). 0~360 으로 맞춰 저장한다")
+    direction: Literal["ccw", "cw"] = Field("ccw", description="오르는 회전 방향(ccw = 반시계, cw = 시계)")
+    sweep: Annotated[float, Field(gt=0, le=K.STAIR_SPIRAL_SWEEP_MAX, allow_inf_nan=False)] | None = Field(None, description="총 회전각(도, 첫 챌판 ~ 위 끝). step_angle 과 둘 중 하나")
+    step_angle: Annotated[float, Field(gt=0, le=K.STAIR_SPIRAL_STEP_MAX, allow_inf_nan=False)] | None = Field(
+        None, description="디딤판 하나의 각(도). 주면 총 회전각 = step_angle x (챌판 수 - 1). sweep 과 둘 중 하나")
+
+    @model_validator(mode="after")
+    def _one(self):
+        if (self.sweep is None) == (self.step_angle is None):
+            raise ValueError("sweep 과 step_angle 중 정확히 하나를 줘야 한다")
+        if self.radius_out <= self.radius_in:
+            raise ValueError("radius_out 은 radius_in 보다 커야 한다")
+        return self
+
+
+def _stair_spiral(s: StairSpiralSpec, risers: int) -> tuple:
+    """(spiral params, 폭). 시작 각은 [0, 360) 으로 맞추고 총 회전각은 방향 부호를 붙여 저장한다."""
+    sweep = float(s.sweep) if s.sweep is not None else float(s.step_angle) * (risers - 1)
+    if sweep > K.STAIR_SPIRAL_SWEEP_MAX + 1e-9:
+        raise DobimError("CONSTRAINT", f"총 회전각 {sweep:g}도가 {K.STAIR_SPIRAL_SWEEP_MAX:g}도를 넘는다", path="/step_angle")
+    start = float(s.start) % 360.0
+    start = 0.0 if start >= 360.0 else start + 0.0
+    return ({"center": [float(s.center[0]), float(s.center[1])], "r_in": float(s.radius_in), "start": start,
+             "sweep": sweep if s.direction == "ccw" else -sweep}, float(s.radius_out) - float(s.radius_in))
+
+
+def _spiral_checked(p: dict) -> dict:
+    why = K.row_params_error("stair", p)
+    if why:
+        raise DobimError("CONSTRAINT", f"방사 계단이 올바르지 않다: {why}", path="/spiral")
+    return p
+
+
+def _stair_warn(p: dict) -> dict:
+    """방사 계단 응답의 계단 검사 경고(있을 때만 키가 생긴다)."""
+    w = K.stair_rule_warnings(p)
+    return {"warnings": w} if w else {}
+
+
+class StairSpiralCreate(StairSpiralSpec):
+    id: Id | None = None
+    level: Id
+    height: Pos = Field(3000.0, gt=0, allow_inf_nan=False, description="전체 오름 mm(아래 끝에서 위층 바닥까지)")
+    risers: StairRisers = 18
+    base_offset: Num = Field(0.0, description="레벨 높이에서 아래 끝까지 mm")
+    name: Name | None = None
+
+
+@command("stair.spiral", kind="mutation", risk="write", group="model.stair",
+         summary="방사(원형·나선) 계단 생성(중심 + 안쪽·바깥 반지름 + 시작 각 + 회전 방향 + 총 회전각 또는 디딤판 각 + 오름 + 챌판 수). "
+                 "디딤판은 중심에서 같은 각으로 나뉜다. 챌판 높이·보행선(안쪽 끝에서 300mm) 디딤 깊이 검사는 경고(warnings)로 알린다. IFC 는 IfcStair(SPIRAL_STAIR·CURVED_RUN_STAIR) + IfcStairFlight(SPIRAL)",
+         args=StairSpiralCreate, since="0.23",
+         examples=[{"level": F.LV1, "center": [8000, 6000], "radius_in": 300, "radius_out": 1500, "start": 0, "direction": "ccw", "sweep": 360, "height": 3000, "risers": 18}])
+def stair_spiral(ctx, a: StairSpiralCreate):
+    _fresh_id(ctx, a, "stair")
+    ctx.authored(a.level, "level", what="레벨에 계단을 추가하는 것")
+    sp, width = _stair_spiral(a, a.risers)
+    a.name = a.name or f"ST-{a.id[-6:]}"
+    p = _spiral_checked({"name": a.name, "width": width, "height": a.height, "risers": a.risers, "base_offset": a.base_offset, "spiral": sp})
+    ctx.put_el(a.id, row("stair", "IfcStair", "stair.straight", p))
+    ctx.rel("on_level", a.id, a.level, True)
+    return {"id": a.id, "sweep": sp["sweep"], **_stair_warn(p)}
+
+
 class StairSet(A):
     forbid_null = True
     id: Id
     name: Name | None = None
-    run: StairRun | None = None
-    width: Pos | None = None
+    run: StairRun | None = Field(None, description="걸음선. 방사 계단에 주면 직선 계단으로 바꾼다")
+    width: Pos | None = Field(None, description="계단 폭 mm. 방사 계단은 안쪽 반지름을 두고 바깥 반지름이 바뀐다")
     height: Pos | None = None
     risers: StairRisers | None = None
     base_offset: Num | None = None
     turn: StairTurn | None = Field(None, description="꺾임(층참)을 주거나 바꾼다")
     clear_turn: bool = Field(False, description="참이면 꺾임을 지워 직선 계단으로 되돌린다")
+    spiral: StairSpiralSpec | None = Field(None, description="방사 계단 평면 정의(W2 열일곱 번째 PR). 직선·꺾인 계단에 주면 방사 계단으로 바꾼다(걸음선·꺾임은 지워진다)")
 
     @model_validator(mode="after")
     def _any(self):
-        if all(v is None for v in (self.name, self.run, self.width, self.height, self.risers, self.base_offset, self.turn)) and not self.clear_turn:
+        if all(v is None for v in (self.name, self.run, self.width, self.height, self.risers, self.base_offset, self.turn, self.spiral)) and not self.clear_turn:
             raise ValueError("바꿀 필드가 하나도 없다")
         if self.turn is not None and self.clear_turn:
             raise ValueError("turn 과 clear_turn 을 함께 줄 수 없다")
+        if self.spiral is not None and (self.run is not None or self.turn is not None or self.width is not None):
+            raise ValueError("spiral 은 run·turn·width 와 함께 줄 수 없다(폭은 spiral 의 반지름으로 정한다)")
         return self
 
 
-@command("stair.set", kind="mutation", risk="write", group="model.stair", summary="계단 속성 변경(걸음선·폭·오름·챌판 수·오프셋·이름·꺾임)",
-         args=StairSet, since="0.2", examples=[{"id": F.ST1, "risers": 17}])
+@command("stair.set", kind="mutation", risk="write", group="model.stair", summary="계단 속성 변경(걸음선·폭·오름·챌판 수·오프셋·이름·꺾임·방사 계단 정의)",
+         args=StairSet, since="0.2", examples=[{"id": F.ST1, "risers": 17},
+                                               {"id": F.ST1, "spiral": {"center": [3000, 1600], "radius_in": 200, "radius_out": 1300, "start": 90, "direction": "cw", "step_angle": 20}}])
 def stair_set(ctx, a: StairSet):
     r = ctx.authored(a.id, "stair")
     p = dict(r["params"])
@@ -1656,21 +1729,36 @@ def stair_set(ctx, a: StairSet):
             p[k] = getattr(a, k)
     if a.run is not None:
         p["run"] = _stair_run(a.run)
+        p.pop("spiral", None)   # 방사 계단에 걸음선을 주면 직선 계단이 된다
     if a.turn is not None:
+        if "spiral" in p:
+            raise DobimError("CONSTRAINT", "방사 계단에는 꺾임(turn)을 줄 수 없다", path="/turn", hint="run 을 함께 주어 직선 계단으로 바꾸세요")
         p["turn"] = _stair_turn(a.turn)
     if a.clear_turn:
         p.pop("turn", None)
-    if "turn" in p:
+    if a.spiral is not None:
+        p.pop("run", None)
+        p.pop("turn", None)
+        p["spiral"], p["width"] = _stair_spiral(a.spiral, p["risers"])
+    if "spiral" in p:
+        _spiral_checked(p)
+    elif "turn" in p:
         _stair_checked(p)
     rail = _follow_railings(ctx, a.id, r["params"], p)   # 이 계단이 낸 난간이 따라간다
     ctx.put_el(a.id, dict(r, params=p))
-    return {"id": a.id, **({"railings": rail} if rail else {})}
+    return {"id": a.id, **({"railings": rail} if rail else {}), **(_stair_warn(p) if "spiral" in p else {})}
 
 
 @command("stair.move", kind="mutation", risk="write", group="model.stair", summary="계단을 평행 이동한다",
          args=SlabMove, since="0.2", examples=[{"id": F.ST1, "dx": 600, "dy": 0}])
 def stair_move(ctx, a: SlabMove):
     r = ctx.authored(a.id, "stair")
+    if "spiral" in r["params"]:   # 방사 계단: 중심을 옮긴다
+        sp = r["params"]["spiral"]
+        new = dict(r["params"], spiral=dict(sp, center=[sp["center"][0] + a.dx, sp["center"][1] + a.dy]))
+        rail = _follow_railings(ctx, a.id, r["params"], new)
+        ctx.put_el(a.id, dict(r, params=new))
+        return {"id": a.id, "center": new["spiral"]["center"], **({"railings": rail} if rail else {})}
     x1, y1, x2, y2 = r["params"]["run"]
     run = [x1 + a.dx, y1 + a.dy, x2 + a.dx, y2 + a.dy]
     new = dict(r["params"], run=run)
@@ -1939,7 +2027,10 @@ RAIL_TOL = 1e-3   # 난간선 비교 허용 mm
 
 
 def _stair_rail_specs(p: dict, side: str, inset: float, landing: bool) -> list:
-    """계단 파라미터에서 난간 자리들: [{"tag", "path", "base_offset", "rise"}]. 단 묶음마다 왼쪽(`f{i}L`)·오른쪽(`f{i}R`), 층참은 `landing`, 돌음 회전부 바깥 둘레는 `winder`. 순서는 생성 순서다."""
+    """계단 파라미터에서 난간 자리들: [{"tag", "path", "base_offset", "rise"}]. 단 묶음마다 왼쪽(`f{i}L`)·오른쪽(`f{i}R`), 층참은 `landing`, 돌음 회전부 바깥 둘레는 `winder`,
+    방사 계단은 오르는 방향 왼쪽 `sL`·오른쪽 `sR` 원호(현 분할). 순서는 생성 순서다."""
+    if "spiral" in p:
+        return _spiral_rail_specs(p, side, inset)
     lay = K.stair_layout(p)
     w, base = p["width"], p["base_offset"]
     rise = lay["rise"]
@@ -1995,6 +2086,27 @@ def _stair_rail_specs(p: dict, side: str, inset: float, landing: bool) -> list:
             loc = [(ln, -sg * (h - inset)), (far_t - inset, -sg * (h - inset)), (far_t - inset, far), (ln, far)]
         k = t["risers_a"]
         out.append({"tag": "winder", "path": [lp(*q) for q in loc], "base_offset": base + k * rise, "rise": len(wd["wedges"]) * rise})
+    return out
+
+
+def _spiral_rail_specs(p: dict, side: str, inset: float) -> list:
+    """방사 계단(W2 열일곱 번째 PR)의 난간 자리: 안쪽·바깥 옆에서 inset 만큼 들인 원호를 현으로 나눈 꺾은선(현 수 = 디딤판 수와 총 회전각 / 11.25도 올림 중 큰 것, 255 이하).
+    직선 단 묶음과 같이 첫 챌판 위(챌판 높이 하나)에서 시작해 위 끝까지 (챌판 수 - 1) x 챌판 높이 오른다. 안쪽 반지름이 0 이면 안쪽 난간은 없다."""
+    lay = K.stair_spiral_layout(p)
+    w = p["width"]
+    inset = min(inset, w / 2.0 - 1.0)
+    k = min(K.RAILING_PTS_MAX - 1, max(p["risers"] - 1, int(-(-abs(lay["sweep"]) // K.STAIR_SPIRAL_ARC))))
+    ccw = lay["sweep"] > 0
+    out = []
+    for name, tag in (("left", "sL"), ("right", "sR")):
+        if side not in ("both", name):
+            continue
+        inner = (name == "left") == ccw   # 반시계로 오르면 왼쪽이 안쪽
+        if inner and lay["r_in"] <= 0:
+            continue
+        r = lay["r_in"] + inset if inner else lay["r_out"] - inset
+        path = [list(K._spiral_pt(lay["center"], r, lay["start"] + lay["sweep"] * i / k)) for i in range(k + 1)]
+        out.append({"tag": tag, "path": path, "base_offset": p["base_offset"] + lay["rise"], "rise": (p["risers"] - 1) * lay["rise"]})
     return out
 
 
@@ -2351,7 +2463,7 @@ ElevatorShaft = Annotated[list[SlabCoord], Field(min_length=4, max_length=4, des
 ElevatorCab = Annotated[list[Pos], Field(min_length=3, max_length=3, description="카 크기 [폭(x), 깊이(y), 높이] mm. 폭·깊이는 샤프트 안쪽 이하, 높이는 샤프트 높이 이하")]
 
 
-ELEV_OPT = ("pit", "machine", "doors", "stops", "hole_slabs", "hole_clearance")   # 승강기의 선택 파라미터(없으면 키 자체가 없다)
+ELEV_OPT = ("pit", "machine", "doors", "stops", "hole_slabs", "hole_clearance", "rotation")   # 승강기의 선택 파라미터(없으면 키 자체가 없다). rotation: W2 열일곱 번째 PR
 
 
 def _elevator_row(name, shaft, cab, base_offset, rise, extra=None) -> dict:
@@ -2363,6 +2475,12 @@ def _elevator_row(name, shaft, cab, base_offset, rise, extra=None) -> dict:
     if why:
         raise DobimError("CONSTRAINT", f"승강기가 올바르지 않다: {why}", path="/shaft")
     return p
+
+
+def _elev_rotation(v) -> float | None:
+    """회전각 입력을 [0, 360) 으로 맞춘다. 0(또는 360 의 배수)이면 None(키를 두지 않는다)."""
+    a = round(float(v) % 360.0, 9) % 360.0
+    return None if a == 0 else a + 0.0
 
 
 def _elev_extra(p: dict) -> dict:
@@ -2409,6 +2527,7 @@ class ElevatorCreate(A):
     pit: Annotated[float, Field(gt=0, le=K.ELEVATOR_PIT_MAX, allow_inf_nan=False)] | None = Field(None, description="피트 깊이 mm(카 바닥 아래로 더 내려간 샤프트 바닥). 단면·상세에 표기")
     machine_height: Annotated[float, Field(gt=0, le=K.ELEVATOR_MACHINE_MAX, allow_inf_nan=False)] | None = Field(None, description="기계실 높이 mm(샤프트 위에 같은 평면 크기로 얹는다)")
     doors: ElevatorDoors | None = Field(None, description="층별 승강장 문 개구부(면·폭·높이·층 목록)")
+    rotation: Num = Field(0.0, description="회전각(도, 반시계). 샤프트(회전 전 사각형)·카·문이 샤프트 가운데를 중심으로 돈다. 0~360 으로 맞춰 저장한다(W2 열일곱 번째 PR)")
 
     @model_validator(mode="after")
     def _one(self):
@@ -2439,6 +2558,8 @@ def elevator_create(ctx, a: ElevatorCreate):
         extra["machine"] = {"height": float(a.machine_height)}
     if a.doors is not None:
         extra.update(_doors_params(a.doors))
+    if (rt := _elev_rotation(a.rotation)) is not None:
+        extra["rotation"] = rt
     p = _elevator_row(a.name, a.shaft, a.cab or K.ELEVATOR_CAB_DEFAULT, a.base_offset, rise, extra)
     _check_doors(ctx, p, lv["params"]["elevation"])
     ctx.put_el(a.id, row("elevator", "IfcTransportElement", "elevator.basic", p))
@@ -2460,10 +2581,11 @@ class ElevatorSet(A):
     clear_machine: bool = Field(False, description="참이면 기계실을 지운다")
     doors: ElevatorDoors | None = Field(None, description="승강장 문 개구부를 이 값으로 바꾼다(전체 교체)")
     clear_doors: bool = Field(False, description="참이면 승강장 문을 지운다")
+    rotation: Num | None = Field(None, description="회전각(도, 반시계, 샤프트 가운데 중심). 0 이면 회전을 지운다(W2 열일곱 번째 PR)")
 
     @model_validator(mode="after")
     def _any(self):
-        if (all(v is None for v in (self.name, self.shaft, self.cab, self.base_offset, self.rise, self.pit, self.machine_height, self.doors))
+        if (all(v is None for v in (self.name, self.shaft, self.cab, self.base_offset, self.rise, self.pit, self.machine_height, self.doors, self.rotation))
                 and not (self.clear_pit or self.clear_machine or self.clear_doors)):
             raise ValueError("바꿀 필드가 하나도 없다")
         for v, c in ((self.pit, self.clear_pit), (self.machine_height, self.clear_machine), (self.doors, self.clear_doors)):
@@ -2472,10 +2594,15 @@ class ElevatorSet(A):
         return self
 
 
-def _hole_rect(shaft, c) -> list:
-    """승강기 샤프트의 슬래브 구멍(사방 c 만큼 넓힌 반시계 사각형). elevator.cut_slabs 가 내는 구멍과 같은 값이다."""
-    x1, y1, x2, y2 = shaft
-    return [[x1 - c, y1 - c], [x2 + c, y1 - c], [x2 + c, y2 + c], [x1 - c, y2 + c]]
+def _hole_rect(p: dict, c) -> list:
+    """승강기 샤프트의 슬래브 구멍(사방 c 만큼 넓힌 반시계 사각형). elevator.cut_slabs 가 내는 구멍과 같은 값이다.
+    회전한 승강기(rotation, W2 열일곱 번째 PR)는 그 사각형을 샤프트 가운데로 돌린 꼭짓점(소수 6자리)이다. 회전이 없으면 값은 이전과 같다."""
+    x1, y1, x2, y2 = p["shaft"]
+    ring = [[x1 - c, y1 - c], [x2 + c, y1 - c], [x2 + c, y2 + c], [x1 - c, y2 + c]]
+    rot = K.elevator_rot(p)
+    if rot is None:
+        return ring
+    return [[round(v, 6) + 0.0 for v in K.rot_pt(rot, x, y)] for x, y in ring]
 
 
 def _same_ring(a, b) -> bool:
@@ -2489,8 +2616,8 @@ def _follow_holes(ctx, eid, old_p: dict, new_p: dict) -> dict:
     slabs = old_p.get("hole_slabs")
     if not slabs:
         return {}
-    old_hole = _hole_rect(old_p["shaft"], old_p["hole_clearance"])
-    new_hole = _hole_rect(new_p["shaft"], new_p["hole_clearance"])
+    old_hole = _hole_rect(old_p, old_p["hole_clearance"])
+    new_hole = _hole_rect(new_p, new_p["hole_clearance"])
     if _same_ring(old_hole, new_hole):
         return {}
     moved, lost, rails = [], [], []
@@ -2520,7 +2647,7 @@ def _follow_holes(ctx, eid, old_p: dict, new_p: dict) -> dict:
 
 @command("elevator.set", kind="mutation", risk="write", group="model.elevator",
          summary="승강기 속성 변경(샤프트·카 크기·카 바닥 높이·샤프트 높이·이름·피트·기계실·승강장 문). 샤프트가 바뀌면 승강기가 낸 슬래브 구멍이 따라간다",
-         args=ElevatorSet, since="0.3", examples=[{"id": F.EL1, "cab": [1400, 1600, 2300]}])
+         args=ElevatorSet, since="0.3", examples=[{"id": F.EL1, "cab": [1400, 1600, 2300]}, {"id": F.EL1, "rotation": 30}])
 def elevator_set(ctx, a: ElevatorSet):
     r = ctx.authored(a.id, "elevator")
     old = r["params"]
@@ -2542,6 +2669,10 @@ def elevator_set(ctx, a: ElevatorSet):
     if a.clear_doors:
         extra.pop("doors", None)
         extra.pop("stops", None)
+    if a.rotation is not None:
+        extra.pop("rotation", None)
+        if (rt := _elev_rotation(a.rotation)) is not None:
+            extra["rotation"] = rt
     new = _elevator_row(p["name"], p["shaft"], p["cab"], p["base_offset"], p["rise"], extra)
     _check_doors(ctx, new, ctx.st.el[ctx.rels_out("on_level", a.id)[0]]["params"]["elevation"])
     out = {"id": a.id}
@@ -2599,7 +2730,7 @@ def elevator_cut_slabs(ctx, a: ElevatorCutSlabs):
     lv = g.q(Q.level_info, ctx.rels_out("on_level", a.id)[0])[1]
     z0, z1 = lv + gm["z0"], lv + gm["z1"]
     c = a.clearance
-    hole = _hole_rect(gm["shaft"], c)
+    hole = _hole_rect(ev, c)
     cut, already, skipped = [], [], []
     for sid in sorted(ctx.st.by_kind.get("slab", ())):
         sr = ctx.st.el[sid]
@@ -3849,8 +3980,16 @@ def element_get(ctx, a: ElementGet):
     elif r["kind"] == "stair":
         zb, zt = ctx.g.q(Q.stair_zrange, a.id)
         p = r["params"]
-        out["derived"] = {"bottom": zb, "top": zt, "riser_height": p["height"] / p["risers"],
-                          "tread_depth": sqrt(_axis_len2(p["run"])) / (p["risers"] - 1)}
+        if "spiral" in p:   # 방사 계단(W2 열일곱 번째 PR): 보행선 디딤 깊이·디딤판 각·총 회전각·체적
+            sl = K.stair_spiral_layout(p)
+            out["derived"] = {"bottom": zb, "top": zt, "riser_height": sl["rise"], "tread_depth": sl["tread"], "treads": p["risers"] - 1,
+                              "step_angle": abs(sl["step"]), "sweep": sl["sweep"], "radius_out": sl["r_out"], "walkline_radius": sl["r_walk"],
+                              "walkline_length": sl["walk_len"], "volume_m3": K.stair_volume(p) / 1e9}
+            if (w := K.stair_rule_warnings(p)):
+                out["derived"]["warnings"] = w
+        else:
+            out["derived"] = {"bottom": zb, "top": zt, "riser_height": p["height"] / p["risers"],
+                              "tread_depth": sqrt(_axis_len2(p["run"])) / (p["risers"] - 1)}
         if "turn" in p and "winders" in p["turn"]:   # 돌음 계단 수량(23.3): 직선 디딤판·쐐기 디딤판 수, 단 묶음별 챌판, 보행선 위 쐐기 디딤 길이
             lay = K.stair_layout(p)
             fa, fb = lay["flights"]

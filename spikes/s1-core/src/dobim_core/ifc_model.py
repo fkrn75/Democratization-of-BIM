@@ -2108,7 +2108,7 @@ class IfcModel:
             return []
         if kind == "railing":   # 유형 난간의 부재(W2 열세 번째 PR)
             return list(RAIL_PART_LABELS)
-        return [f"face:{i}" for i in range(ROOF_FACES_MAX)] if kind == "roof" else ["flight:0", "flight:1", "landing", "winder"]
+        return [f"face:{i}" for i in range(ROOF_FACES_MAX)] if kind == "roof" else ["flight:0", "flight:1", "landing", "winder", "spiral"]   # spiral: 방사 계단(W2 열일곱 번째 PR)
 
     def _adopt_parts(self, eid: str, kind: str, e) -> None:
         """가져온 파일에서 요소에 이미 달린 부속(GlobalId 가 part_guid 와 같고 요소와 관계가 이어진 것)을 이어받는다."""
@@ -2338,6 +2338,9 @@ class IfcModel:
         f = self.f
         e = self.ents[eid]
         e.Name = spec["name"]
+        if "spiral" in spec:   # 방사 계단(W2 열일곱 번째 PR)
+            self._project_spiral_stair(eid, spec)
+            return
         turn = dict(spec["turn"]) if "turn" in spec else None
         if turn is not None and turn.get("winders") is not None:   # 돌음 계단(23.3): 층참 대신 쐐기 디딤판
             e.PredefinedType = "QUARTER_WINDING_STAIR" if turn["type"] == "L" else "HALF_WINDING_STAIR"
@@ -2375,6 +2378,31 @@ class IfcModel:
                 "cls": "IfcStairFlight", "name": f"{spec['name']}-winder", "rel": "aggregate",
                 "attrs": {"NumberOfRisers": m - 1, "NumberOfTreads": m, "RiserHeight": float(rise), "TreadLength": float(wd["tread"]), "PredefinedType": "WINDER"},
                 "solid": (lambda: [self._solid(w["poly"], w["z"] - w["zb"], z0=z0 + w["zb"]) for w in wd["wedges"]])}
+        self._sync_parts(eid, wanted)
+
+    def _project_spiral_stair(self, eid, spec):
+        """방사 계단(W2 열일곱 번째 PR, ARC-29): IfcStair 자신에는 형상이 없고 IfcStairFlight 하나(부속 이름표 spiral, PredefinedType SPIRAL = 보행선이 원호인 단 묶음)가
+        디딤판마다 수직 압출 솔리드(볼록 다각형)를 담는다. 계단 형식은 안쪽 반지름이 폭 이하면 SPIRAL_STAIR(중심 기둥 둘레로 도는 계단), 그보다 크면 CURVED_RUN_STAIR
+        (굽은 단 묶음 하나). 근거: IFC4 IfcStairTypeEnum·IfcStairFlightTypeEnum 정의. IFC2X3 은 ShapeType 에 남고 단 묶음 PredefinedType 은 없다(기존 변환 규칙)."""
+        from dobim_core.kinds import stair_spiral_layout
+        f = self.f
+        e = self.ents[eid]
+        e.Name = spec["name"]
+        sp = dict(spec["spiral"])
+        e.PredefinedType = "SPIRAL_STAIR" if sp["r_in"] <= spec["width"] else "CURVED_RUN_STAIR"
+        self._contain(eid, spec["level"])
+        self._place(e, self.ents[spec["level"]].ObjectPlacement, (0.0, 0.0, 0.0), (1.0, 0.0, 0.0))
+        if e.Representation is not None:   # 직선이던 계단이 방사 계단이 되었다: 계단 자신의 몸체를 없앤다
+            shape = e.Representation
+            e.Representation = None
+            ue.remove_deep2(f, shape)
+        lay = stair_spiral_layout({"width": spec["width"], "height": spec["height"], "risers": spec["risers"],
+                                   "spiral": {"center": list(sp["center"]), "r_in": sp["r_in"], "start": sp["start"], "sweep": sp["sweep"]}})
+        z0 = spec["base_offset"]
+        n = spec["risers"]
+        wanted = {"spiral": {"cls": "IfcStairFlight", "name": f"{spec['name']}-flight1", "rel": "aggregate",
+                             "attrs": {"NumberOfRisers": n, "NumberOfTreads": n - 1, "RiserHeight": float(lay["rise"]), "TreadLength": float(lay["tread"]), "PredefinedType": "SPIRAL"},
+                             "solid": (lambda: [self._solid(t["poly"], t["z"] - t["zb"], z0=z0 + t["zb"]) for t in lay["treads"]])}}
         self._sync_parts(eid, wanted)
 
     def _project_railing(self, eid, spec):
@@ -2714,15 +2742,17 @@ class IfcModel:
 
     def _project_elevator(self, eid, spec):
         """승강기: 카(IfcTransportElement ELEVATOR)의 상자 몸체 하나. 카 바닥은 레벨 + base_offset, 배치는 레벨 좌표계 원점이다. 샤프트는 슬래브 구멍·벽이 표현한다."""
-        from dobim_core.kinds import elevator_geom
+        from dobim_core.kinds import elevator_geom, elevator_ring
         e = self.ents[eid]
         e.Name = spec["name"]
         e.PredefinedType = "ELEVATOR"
         self._contain(eid, spec["level"])
         self._place(e, self.ents[spec["level"]].ObjectPlacement, (0.0, 0.0, 0.0), (1.0, 0.0, 0.0))
-        g = elevator_geom({"shaft": spec["shaft"], "cab": spec["cab"], "base_offset": spec["base_offset"], "rise": spec["rise"]})
-        x1, y1, x2, y2 = g["cab"]
-        self._set_body(e, self._solid([(x1, y1), (x2, y1), (x2, y2), (x1, y2)], spec["cab"][2], z0=g["z0"]))
+        gp = {"shaft": spec["shaft"], "cab": spec["cab"], "base_offset": spec["base_offset"], "rise": spec["rise"]}
+        if "rotation" in spec:   # 승강기 회전(W2 열일곱 번째 PR): 카 바닥 사각형을 샤프트 가운데로 돌린 다각형을 압출한다
+            gp["rotation"] = spec["rotation"]
+        g = elevator_geom(gp)
+        self._set_body(e, self._solid(elevator_ring(gp, g["cab"]), spec["cab"][2], z0=g["z0"]))
 
     def _project_space(self, eid, spec):
         """공간: 경계 프로필을 레벨 좌표계 원점에서 높이만큼 압출한다. 층 소속은 포함(IfcRelContainedInSpatialStructure)이 아니라 집합(IfcRelAggregates)이다.
