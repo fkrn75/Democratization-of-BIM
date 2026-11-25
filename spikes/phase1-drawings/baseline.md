@@ -2728,53 +2728,111 @@ W1 이 끝나고 W2 의 첫 과업으로 직선 축뿐이던 벽에 원호 축�
 - 샤프트는 z 범위가 겹치면 지붕·천장판을 통째로 관통한다(높이 범위의 일부만 자르지 않는다). 지붕의 평지붕(물매 0)은 사용자 결정 대기라 하지 않았다.
 - 원호는 한 바퀴 32 현으로 펼친 다각형으로 IFC 에 나간다(정확한 원 프로필 IfcCircleProfileDef 는 다음 몫).
 
-## 73. W2 열다섯 번째 PR: 구조 보 1부 STR-02·STR-03·STR-07 (2026-11-25, 브랜치 phase2/w2-struct-beam)
+## 74. W2 열여섯 번째 PR: 평지붕(물매 0) ARC-19·ARC-21 잔여와 처마 부속 변 번호 기본값 (2026-11-25, 브랜치 phase2/w2-flat-roof)
+
+성능 재확인 v2 에서 두 건물이 물매 0 지붕을 만들 수 없어 캐노피를 물매 0.1° 외곽선 지붕 여러 조각으로, 평지붕을 물매 1/100 추정 지붕이나 슬래브로 대신했다(정점이 파라펫보다 높아지는 등). 사용자 결정 "평지붕은 물매 0으로"에 따라 평지붕 = 물매 0 지붕이고 배수 물매는 만들지 않는다. 지붕 형식에 flat 을 더하는 설계라 기존 지붕의 행·도면·IFC 는 그대로다. 함께 roof.eaves.set 의 변 번호 기본값을 입력 순서로 바꿨다(사용자 결정, 74.6). 시험은 `tests/test_w2_flat_roof.py`(합성 좌표).
+
+### 74.1 평지붕(roof.create form=flat)
+- 요구: 외곽선(다각형, 원호 경계) + 두께 + 레벨·오프셋 + 처마 돌출(선택)로 물매 0 지붕. 편집·삭제·되돌리기·저장 왕복, 지붕 유형(층 구성).
+- 이전 동작(재현 시험 test_1): `pitch` 는 0 초과만 받아 물매 0 은 스키마 거절, footprint·poly 는 변 물매가 모두 0 이면 "경사 변이 하나 이상" 거절. 실사용은 물매 0.1° 외곽선 지붕(원호 띠는 조각으로 나눔)이나 슬래브(use=roof)로 대신했다.
+- 설계 근거: 상용 도구의 평지붕은 외곽선 지붕에서 어느 변도 물매를 정하지 않은 지붕이다. 이 저장소의 외곽선 지붕(roofskel)은 경사 변이 있어야 골격을 만들 수 있고, 물매 0 변(박공)은 오목 꼭짓점에 붙일 수 없어 평지붕을 그 특수 경우로 넣으면 퇴화 규칙이 섞인다. 그래서 형식 하나(flat)를 따로 두고 같은 roof 행·도면·IFC 경로를 탄다(roof_geom 이 같은 꼴의 dict 를 돌려준다). 슬래브(use=roof)는 지붕 유형·처마 부속·IfcRoof 가 없어 대신하지 않는다.
+- 입력: `form: "flat"`, `pitch` 생략 또는 0(물매 0 으로 저장한다), `boundary` 다각형 3~128 꼭짓점(변 1 mm 이상, 오목 가능, 시계 방향이면 뒤집어 저장), 선택 `bulges`(변마다 tan(중심각/4), 72절 지붕 개구와 같은 규약, 원호는 한 바퀴 32 현으로 펼쳐 256 점 이하), `overhang` 또는 변마다 `overhangs`(외곽선 지붕과 같은 키), `thickness`·`type`(지붕 유형)·`base_offset`. slopes·ridge·dir 는 받지 않는다.
+- 형상(roofflat): 윗면 = 수평 평면 z = 레벨 + base_offset, 두께는 다른 지붕처럼 윗면에서 수직 아래로. 처마는 펼친 외곽의 현마다 그 변의 내밀기만큼 바깥으로 평행 이동한 선의 교점(호 변은 그 호의 모든 현). 면은 하나(처마를 내민 윤곽, 오목 가능)이고 볼록 조각(가림·절단 띠)은 삼각 분할 뒤 합치기(roofpoly 와 같은 결정적 방법). 용마루·추녀마루·골·물매 화살표는 없다. 거절: 자기 교차·면적 0·같은 점 반복(슬래브 경계 규칙), 이웃 두 현이 한 직선인데 내밀기가 다름, 큰 내밀기로 짧은 변의 처마가 뒤집힘, 펼친 점 256 초과.
+- 응답·오류: 경사 형식에 pitch 0 이면 CONSTRAINT("물매 0 지붕은 평지붕이다", 안내 form=flat), 경사 형식에 pitch 생략도 CONSTRAINT, flat 에 pitch > 0 은 CONSTRAINT.
+- roof.set: form 을 flat 으로 바꾸면 물매 0(slopes·ridge·dir 를 뗀다), flat 에서 다른 형식으로는 pitch 를 함께 준다. `bulges` 를 바꾸고(빈 목록이면 뗀다) 외곽을 바꾸면 bulges 를 함께 주지 않는 한 직선 변이 된다. 시계 방향으로 받은 지붕(cw_input)은 외곽 없이 준 bulges 도 입력 순서로 읽는다. roof.move·element.rotate·mirror·copy 는 외곽과 볼록도를 함께 옮긴다(대칭은 같은 변을 따라 옮기고 부호는 그대로: 대칭이 호를 뒤집고 외곽 순서를 뒤집어 다시 뒤집는다).
+- 지붕 유형·층 구성(rooftype·roof.layers)·처마 부속(roof.eaves.set)은 다른 지붕과 같다. 처마 부속은 모든 처마가 수평이라 홈통·처마 반자를 모든 변에 달 수 있고, 원호 변에 단 부속은 그 호의 현마다 조각(이웃 현끼리 연귀)이다.
+
+### 74.2 기존 기능과의 상호작용
+- 지붕 개구(72절): opening.vertical·face·shaft also 가 평지붕 면 하나(face 0)를 뚫는다. 수평 면이라 면 개구의 아랫면은 밀리지 않는다(t·(a, b)/(1 + a² + b²) = 0).
+- 벽 상단 붙이기(wall.attach_top)·커튼월 상단 붙이기(curtain.attach): 평지붕 아랫면(윗면 - 두께)·윗면에 붙는다(target_faces 에 bulges 를 넘긴다).
+- 평면 표고점(plan_spot_z)·GUI 장면은 같은 roof_geom·질의를 써 따라간다.
+
+### 74.3 도면
+- 평면(절단 높이가 윗면 위): 처마를 내민 윤곽과 외곽(처마 선, 원호는 펼친 현)을 투영선으로, 물매 화살표·문자는 없다. 개구는 72절과 같다.
+- 반사 천장 평면(새): 밑면(윗면 - 두께)이 절단면 위 보이는 깊이 안에 있는 평지붕(모든 레벨, 위층 바닥 슬래브와 같은 규칙)의 처마 윤곽·처마 부속 윤곽·구멍(밑면 고리 + X)을 투영선으로. 경사 지붕은 이전처럼 반사 천장 평면에 그리지 않는다.
+- 단면: 절단 띠 = 볼록 조각마다 윗면 ~ 윗면 - 두께, 층 구성은 큰 축척 단면의 층 경계선(수평).
+- 입면·단면 투영선: 윗면 둘레·아랫선과 꼭짓점 수직 모서리. 같은 호의 두 현이 만나는 꼭짓점에는 수직 모서리를 긋지 않는다(원호는 매끈하게). 평지붕의 가림 조각은 쐐기 높이가 0 이라 판(윗면 - 두께 ~ 윗면) 볼록 기둥을 조각마다 하나 쓰고(16 높이 조각 대신, 이음매 없음), 판 가림 조각(roof_solid_slices)도 수평 면은 높이 조각 하나로 줄였다(0.5 mm 조각 수백 개와 같은 값).
+- 3D 는 IFC 형상(아래)을 쓴다.
+
+### 74.4 IFC 매핑
+- IfcRoof(PredefinedType FLAT_ROOF, IFC2X3 은 ShapeType FLAT_ROOF) 아래 IfcRelAggregates 로 면 하나 IfcSlab(PredefinedType ROOF, 이름표 face:0, GlobalId = part_guid(지붕, "face:0")). 기존 지붕 매핑(66절: IfcRoof 는 형상 없이 면마다 IfcSlab(ROOF))과 같은 규칙이고, 몸체는 처마 윤곽 프로필의 수직 아래 압출(IfcExtrudedAreaSolid). 층 구성은 IfcRoof 의 IfcMaterialLayerSetUsage(AXIS3, 윗면에서 아래로)와 부속 거울(67절), 처마 부속은 IfcCovering·IfcPipeSegment(GUTTER), 개구는 IfcOpeningElement + IfcRelVoidsElement(72절) 그대로.
+- 근거: IFC4 IfcRoofTypeEnum 의 FLAT_ROOF 는 물매가 없거나 빗물을 흘릴 만큼만 약간 기운 지붕이고(IFC2X3 IfcRoofTypeEnum 도 같다), 분해된 IfcRoof 는 형상을 하위 요소가 갖는다.
+- 의도(DoBIM_Intent)로 bulges·물매 0 이 왕복한다(가져오기 지붕 params 에 bulges, flat 은 pitch 0 을 받는다). IFC4·IFC2X3 검증 오류 0, 가져오기 왕복 해시·IFC 바이트 같음(시험). 확인(ifcopenshell.geom, 로컬): L 평지붕(내민 윤곽 8.6 x 3.6 + 3.6 x 3.0 m, 두께 250)에 1 m² 수직 개구 -> 면 IfcSlab 10.19 m³ = (41.76 - 1) x 0.25, 사분 고리 평지붕(R 20 / 10 m, 두께 150) 35.116 m³ = 현으로 펼친 넓이 x 0.15.
+
+### 74.5 수량
+- 지붕 일람표: form flat, pitch 0, 면적 = 처마를 내민 윤곽 넓이(경사 보정 sqrt(1 + 0) = 1)에서 개구를 뺀 값, 체적 = 면적 x 두께. 물량 산출(takeoff)의 층 구성은 다른 지붕과 같다.
+
+### 74.6 처마 부속 변 번호 기본값 변경(사용자 결정)
+- 변경: roof.eaves.set 의 `numbering` 기본값 stored -> input. 변 번호는 기본으로 roof.create·roof.set 에 준 외곽 순서다. 이전 동작(저장 순서 번호 + 경고)은 `numbering: "stored"` 를 명시하면 그대로다(시험 test_w2_fixes2 test_5 를 stored 명시로 고침, test_w2_flat_roof test_7 이 새 기본·stored 명시·반시계 지붕을 본다).
+- 근거: 실사용 결함 5(67절)에서 시계 방향 외곽 지붕의 처마 부속이 엉뚱한 변에 붙었다. 경고와 numbering=input 으로 고쳤지만 기본이 저장 순서라 사용자가 그린 순서와 다른 번호를 계속 알아야 했다. 사용자가 다루는 번호는 자기가 준 외곽 순서이므로 그것을 기본으로 한다.
+- 하위 호환: 반시계 외곽 지붕(cw_input 없음)은 두 번호가 같아 결과가 그대로다. 저장 파일의 params.eaves.edges 는 언제나 해석을 마친 저장 순서 번호라(roof.eaves.set 이 입력 번호를 저장 번호로 옮겨 저장한다) 이미 저장된 .dobim 을 열어도 처마 설정의 의미가 바뀌지 않는다(형식 버전·마이그레이션 불필요). 바뀌는 것은 시계 방향 외곽 지붕에 numbering 없이 주는 새 명령의 해석뿐이다. 명령 버전(since)은 명령이 처음 나온 버전이라 그대로 0.20 이다. roof.create 의 시계 방향 경고, roof.eaves.set 설명·경고 문장, GUI 동작 이름표(actions.json), parity 예시(numbering stored 명시 예시 추가)를 새 기본에 맞췄다.
+
+### 74.7 하위 호환·기준 변화
+- 저장 형식: roof 행의 form flat 과 선택 bulges 는 평지붕에만 생긴다. 다른 지붕의 행·도면·IFC·응답 키는 그대로다.
+- 스키마: roof.create 의 pitch 가 선택(0 이상)이 됐다. 경사 형식의 pitch 0 은 이전 SCHEMA_INVALID 에서 CONSTRAINT(평지붕 안내)로, pitch 생략은 SCHEMA_INVALID 에서 CONSTRAINT 로 바뀐다(거절은 그대로). form·RoofSet.form 에 flat, bulges 키 추가.
+- 의도한 IFC 출력 변화: 평지붕을 쓴 모델의 IfcRoof(FLAT_ROOF)와 그 부속뿐.
+- 기준 도면 183 파일 바이트 같음. 회귀 기준값(C-4 코퍼스·골든)은 바꾸지 않았다.
+- GUI 동작 1개(roof.create_flat), parity 예시(roof.create flat 원호·roof.set flat 바꾸기·roof.eaves.set numbering stored).
+
+### 74.8 검증
+- 새 시험 `tests/test_w2_flat_roof.py`(함수 9개): 재현(경사 형식 pitch 0·생략 거절과 평지붕 안내, footprint·poly 물매 모두 0 은 이전처럼 거절, flat 에 pitch·slopes·경사 형식에 bulges 거절, 기존 지붕 행 키 그대로), 오목 L 평지붕(면 하나·수평 평면·내민 윤곽·볼록 조각 넓이 = 윤곽 넓이·일람표 면적·체적·평면 12 투영선과 문자 없음·단면 띠 윗면 3300 아랫면 3050·입면 수평선과 뒤쪽 수직 모서리 가림·반사 천장 평면 윤곽), 원호 띠 평지붕(사분원 8 현·현으로 펼친 넓이·입면 수직 모서리 넷·호 변 fascia 8 조각·처마 길이·bulges 떼기와 되돌리기·반사 천장 평면 윤곽 + 처마 부속), 변마다 내밀기와 거절(처마 뒤집힘·자기 교차·볼록도 수), 편집(두께·내밀기·높이·물매 거절·형식 바꾸기 거절·이동·대칭·회전·되돌리기 해시·다시 열기 해시·footprint <-> flat·지우기 되돌리기), 지붕 유형(층 합 두께·큰 축척 층 경계선·유형 고치기 반영), 개구·붙이기(수직·원 면 개구 밀림 없음·면적 감소·샤프트 also·반사 천장 평면 X·벽 상단 3100·커튼월 상단), IFC(FLAT_ROOF·면 IfcSlab 하나·현마다 IfcCovering·개구 호스트·IFC4·IFC2X3 검증 오류 0·IFC2X3 ShapeType·가져오기 왕복 해시·바이트·bulges 복원·고친 뒤 검증·되돌리기 해시), 처마 변 번호(시계 방향 L 의 기본 입력 번호·경고 없음·저장 값은 저장 번호·stored 명시는 이전 동작 + 경고·반시계는 같음). 증분 = 전체 재계산(RefGraph)을 뷰마다 본다.
+- run-all 은 마지막 코드 커밋 2a36677 에서 한 번(2026-11-25 09:47 시작): s1-core 전체(test_slow 제외) 통과, test_slow 통과(C-4 회귀 코퍼스, 기준값 그대로), parity 불일치 0·통과(roof.create flat 원호·roof.set flat·roof.eaves.set numbering stored 예시 포함), parity_g 통과, 로컬 Revit 표본(test_foreign_drawings·test_foreign_occlusion) 저장소 밖 기준선과 같음, s10-headless 통과, 기준 도면 `run_baseline.py --sheets` 183 파일이 main c0e854b 와 바이트 같음.
+### 74.9 bench(main c0e854b 와 번갈아 각 3회 중앙값, 같은 노트북, 측정 전 남은 python 기록)
+도면 경로 파일(drawing·queries·kinds)을 바꿔 잰다. 기존 모델에는 평지붕이 없어 새 경로를 타지 않는다(반사 천장 평면은 지붕마다 형식 검사만 더한다).
+- 외래 없는 5만 요소: 평면 9.06 -> 8.80초(-2.9%), 단면 18.19 -> 17.86(-1.8%), 입면 25.86 -> 25.67(-0.7%), 반사 천장 8.52 -> 8.30(-2.6%), 면적 gross 9.65 -> 9.51(-1.5%), legal 10.99 -> 10.54(-4.0%). 선분 수·SVG 바이트 같음. 모든 뷰가 30초 안.
+- 외래 혼합 모델 첫 뷰: 평면 13.84 -> 13.59초(-1.8%), 단면 19.84 -> 19.67(-0.9%), 입면 23.15 -> 22.75(-1.7%), SVG 바이트 같음. 프로젝트 열기 -0.9%·-0.1%·+0.0%.
+### 74.10 한계(다음 몫)
+- 배수 물매(평지붕 위 물매·배수구·구배 단열)는 하지 않았다(사용자 결정). 지붕 슬래브(slab use=roof)의 fall·drains 는 그대로 있다.
+- 원호 외곽은 32 현 다각형으로 IFC 에 나간다(IfcCompositeCurve 의 원호 프로필은 다음 몫). 평지붕 평면 절단(절단 높이가 판 두께 안)은 경사 지붕처럼 그리지 않는다.
+- 경사 지붕은 여전히 반사 천장 평면에 그리지 않는다. 지붕끼리 결합·파라펫은 없다(파라펫은 슬래브 use=roof 에만).
+
+## 75. W2 열다섯 번째 PR: 구조 보 1부 STR-02·STR-03·STR-07 (2026-11-25, 브랜치 phase2/w2-struct-beam)
 
 성능 재확인 v2 에서 두 건물 모두 기둥은 패밀리(column.section)로 놓았지만 보는 전용 객체가 없어 일반 솔리드(solid.create category beam, form member)로 형상만 만들었다(보·트러스 1,653개, 보 34개). 그래서 보 유형으로 단면을 한꺼번에 바꾸지 못했고, 기둥에 닿는 보 끝을 손으로 맞췄으며, IFC 는 IfcFacetedBrep 몸체의 IfcBeam 에 유형(IfcBeamType)·프로필이 없었다. 이 PR 은 큰 주제(구조 요소)의 1부로 보 객체의 핵심만 넣는다. 보를 쓰지 않은 프로젝트의 저장 형식·도면·IFC 는 그대로다. 시험은 `tests/test_w2_struct_beam.py`(합성 좌표).
 
-### 73.1 기존 구조 요소 조사
+### 75.1 기존 구조 요소 조사
 - 있는 것: 기둥 = 패밀리 column.section(IfcColumn, 단면 사각·원·모따기, 인스턴스 높이) 과 solid category column. 보·가새 = solid form member(3D 축선 + 단면 rect·circle·h·box·pipe, anchor top·center·bottom, IfcFacetedBrep 몸체의 IfcBeam·IfcMember). 통심선(grid, 직선·원호, IfcGrid). 일람표 범주 beams·columns(솔리드·패밀리에서 온 행).
 - 없는 것: 보 전용 객체와 보 유형, 보-기둥 접합(끝 자르기), 통심선 따라 일괄 배치, 보 단면 프로필의 IFC(IfcRectangleProfileDef·IfcIShapeProfileDef)와 IfcBeamType, 평면의 보 숨은선, 보의 절단 채움.
 
-### 73.2 보 유형(STR-07)
+### 75.2 보 유형(STR-07)
 - 새 비 IFC 의도 종류 `beamtype`(벽 65절·지붕 66절·난간 71절 유형과 같은 설계, 정의는 DoBIM_Defs 로 왕복): 이름 + 단면. 단면은 사각 `{"shape":"rect","width","depth"}`(철근콘크리트 보) 또는 H형강 `{"shape":"h","width","depth","web","flange"}`(폭 B·춤 H·웨브 t1·플랜지 t2, web < width·2 flange < depth). 치수 상한 3,000 mm.
 - 표준 단면: `preset` 으로 KS D 3502 H형강 치수 표의 15개(H-200x100x5.5x8 ~ H-700x300x13x24, 넓은 플랜지 H-200x200 ~ H-400x400)를 고른다. 필릿 반지름은 형상에 넣지 않는다. 표기 = 'H-춤x폭x웨브x플랜지'(KS 표기 순서), 사각은 'R-폭x춤'.
 - 명령(since 0.22): beamtype.create·set·duplicate·delete(detach)·list(표준 단면 이름 포함), beam.type.set(null 이면 유형만 떼고 단면은 남는다). 보 행이 유형 id(params.btype + 관계 of_type)와 단면 사본(params.section)을 갖고, beamtype.set 은 단면이 바뀐 때만 그 유형의 보 행을 다시 쓴다. element.delete 는 쓰는 보가 있는 유형을 거절한다.
 
-### 73.3 보(STR-02)
+### 75.3 보(STR-02)
 - 새 IFC 종류 `beam`(IfcBeam, 생성 순서 1). params = 이름 + start·end(평면 두 점, 레벨 좌표) + offset(기준선 높이, 레벨 기준) + anchor(top·center·bottom: 기준선이 지나는 단면 자리, 상용 도구의 z 맞춤과 같고 기본은 윗면) + section, 선택 btype·roll(단면 회전, 도, 기준선 둘레)·cutback(false 만 적는다). 축은 수평이고 길이는 10 mm ~ 200 m.
 - 명령: beam.create(type 필수)·set(두 점·레벨·높이·맞춤·회전·자르기·이름, 단면은 유형이 정한다)·move(dx·dy·dz)·list(축 길이·자른 길이·접합 기둥·체적). 지우기는 element.delete, 복사·배열·회전·대칭·다른 층으로 복사는 element.copy·rotate·mirror(대칭이면 roll 부호가 바뀐다). 실행 취소·다시 실행·저장·다시 열기는 다른 요소와 같다.
 - 형상(beams.py, 순수 함수): 단면 바깥 윤곽(사각 4점·H 12점)을 축 방향으로 돌출한 다면체. 도면·IFC·수량이 같은 값을 쓴다.
 
-### 73.4 기둥 접합(STR-03, 단순화)과 통심선 일괄 배치
+### 75.4 기둥 접합(STR-03, 단순화)과 통심선 일괄 배치
 - 보 끝점이 평면에서 기둥(호스트 없는 IfcColumn 패밀리 인스턴스)의 xy 압출 단면 안(경계 포함)에 있고 높이가 1 mm 넘게 겹치면, 그 끝에서 축이 기둥 경계를 지나는 가장 가까운 점(기둥 면)까지 축을 줄인다. 여러 기둥이면 가장 많이 줄이는 것, 남는 길이가 10 mm 보다 짧아지면 줄이지 않는다. 끝면은 축에 수직이다. 근거: 상용 도구는 기둥 중심에 그린 보를 기둥 면까지 자동으로 자른다(조인 컷백). 접합은 파생값이라(params 에 결과를 적지 않는다) 기둥을 옮기거나 지우면 보가 따라가고, cutback false 로 끈다. 단면 경사 자르기·보끼리 접합(작은 보가 큰 보 웨브에서 끝나는 것)·간격(cutback 거리)은 다음 PR.
 - beam.grid: 고른 직선 통심선(없으면 전부)마다 다른 통심선과의 교점을 축 위 순서로 모아 이웃 교점 사이 칸마다 보 하나를 놓는다. between = columns(기본: 두 교점 모두에 기둥이 있는 칸만, 상용 도구의 '그리드에' 보 배치) 또는 intersections(모든 칸). 같은 레벨에 같은 두 끝의 보가 이미 있으면 건너뛰어 다시 실행해도 겹치지 않는다. 원호 통심선은 건너뛴다(경고). 한 번에 2,000개까지.
 
-### 73.5 도면
+### 75.5 도면
 - 평면: 절단 높이에 걸치거나 아래(보이는 깊이 안)인 보는 솔리드와 같은 규칙(절단선, 위를 향한 면 모서리), 절단 높이에 걸치면 볼록 조각(사각형 단면 각기둥, H 는 3개)의 수평 절단 다각형을 채운다. 절단 높이 위에서 다음 레벨 높이 아래에 걸친 보는 평면 외곽 사각형을 숨은선(파선, 용지 2 mm·간격 1 mm)으로 그린다. 근거: 구조 평면과 건축 평면은 천장 밑 보를 숨은선으로 나타내는 관행(KS 제도 통칙의 숨은선 = 파선). 윗면이 보이는 깊이 아래 끝과 같은 보(바닥 슬래브 밑의 그 층 보)는 바닥에 가려 그리지 않는다. 반사 천장 평면은 솔리드처럼 아직 그리지 않는다.
 - 단면: 절단선 + 절단 채움(볼록 조각마다 절단면 다각형: H 형강은 플랜지·웨브 3 조각). 입면·단면 투영선은 보는 쪽 면의 모서리이고 다른 요소와 보 자신이 가린다. 단면 회전이 없는 보는 볼록 조각이 수직 각기둥이라 다른 요소(벽·솔리드·커튼월 등)의 선을 가린다(회전한 보는 가리지 않는다: 한계).
 - GUI 장면(scene.py)은 보를 요소별 선·채움으로 담는다. 솔리드 선분 함수는 공용 다면체 선분 함수로 나눴다(솔리드 값은 같다: 기준 도면 바이트 같음).
 
-### 73.6 IFC 매핑
+### 75.6 IFC 매핑
 - IfcBeam(PredefinedType BEAM). 배치 = 레벨 배치 안의 기준선 시작점(기둥 면 자르기 반영)·x 축 = 보 방향. 몸체 = IfcExtrudedAreaSolid(SweptSolid): 돌출 틀의 축(Z)이 배치 x(보 방향), 참조(X)가 배치 y(보 왼쪽)라 프로필 (x, y) = (왼쪽, 위). 프로필 = IfcRectangleProfileDef(XDim 폭·YDim 춤) 또는 IfcIShapeProfileDef(OverallWidth·OverallDepth·WebThickness·FlangeThickness), ProfileName = 단면 표기, Position = 기준선에서 본 단면 가운데 + 회전(roll). 근거: IFC4 의 보는 단면 프로필을 축 방향으로 돌출한 SweptSolid 가 표준 표현이고 매개변수 프로필이 단면 치수를 그대로 담는다.
 - 유형: IfcBeamType(GlobalId = part_guid(유형 id, "beamtype"), Tag = 유형 id, PredefinedType BEAM) + IfcRelDefinesByType(part_guid(유형, "beamtype:rel")). 유형이 없으면 아무것도 쓰지 않는다. IFC2X3 에도 IfcBeamType·두 프로필이 있어 그대로 나간다(IfcBeam 의 PredefinedType 은 IFC2X3 에 없어 손실 목록에 든다, 기둥과 같다).
 - 재료: material.set 이 보에 단일 재료를 붙인다(다른 요소와 같다). 유형 재료·IfcMaterialProfileSet 은 다음 PR.
 - 가져오기: DoBIM_Intent 의 beam 의도를 IfcBeam 에서 되살리고(IMPORTABLE_BY_CLASS), btype 은 보 유형 정의를 되살린 뒤 관계를 잇는다(없으면 유형만 뗀다). 일반 솔리드 범주 beam 의 IfcBeam 은 의도가 solid 라 이전처럼 솔리드로 되살린다. IFC4·IFC2X3 검증 오류 0, 가져오기 왕복 해시·IFC 바이트 같음(시험).
 
-### 73.7 일람표·수량
+### 75.7 일람표·수량
 - 일람표 범주 beams 에 보 행: 유형(유형 이름, 유형이 없으면 단면 표기)·폭·춤·길이(기둥 면 자르기 뒤)·체적(단면적 x 그 길이)·재료·높이(레벨 + offset). 재료 물량(schedule.takeoff)은 categories 에 beams 를 주면 보 체적을 재료별로 낸다(기본 범주는 그대로). model.stats 에 beam·beamtype 수(있을 때만).
 
-### 73.8 하위 호환·기준 변화
+### 75.8 하위 호환·기준 변화
 - 새 종류 beam·beamtype 과 새 명령 11개(beamtype.create·set·duplicate·delete·list, beam.create·set·move·type.set·grid·list)는 쓸 때만 행이 생긴다. 보가 없는 프로젝트의 저장 형식·도면·IFC·일람표·model.stats 는 그대로다(기준 도면 183 파일 바이트 같음).
 - schedule.takeoff 의 categories 에 beams 를 받는다(기본 범주 목록은 그대로).
 - 의도한 IFC 출력 변화: 보를 쓴 모델의 IfcBeam(SweptSolid 프로필 몸체)·IfcBeamType·IfcRelDefinesByType. 그 밖은 그대로다.
 - 회귀 기준값은 바꾸지 않았다.
 
-### 73.9 검증
+### 75.9 검증
 - 새 시험 `tests/test_w2_struct_beam.py`(함수 10개): 단면·형상·기둥 면 자르기(순수), 보 유형·보 명령(유형 편집 반영·높이·맞춤·회전·옮기기·되돌리기·다시 하기·목록·유형 떼기·복제·지우기·복사·대칭·model.validate), 기둥 면 자르기(기둥 옮기기 추종·cutback·높이 안 겹침·일람표·재료 물량), 통심선 일괄 배치(기둥 칸·모든 칸·다시 실행 건너뛰기·되돌리기), 도면(평면 숨은선 파선·평면 절단 채움·단면 H 3 조각 채움 넓이 = 단면적·입면·가림 조각·GUI 장면·증분 = 전체 재계산), 입면에서 보가 벽 윗선을 가림(회전한 보는 가리지 않음), 평면 범위(바닥 밑 그 층 보 제외)·레벨 바꾸기·재료, 저장하고 다시 열기, 보가 없으면 도면 그대로, IFC4·IFC2X3 검증 오류 0·프로필·IfcBeamType·왕복 해시·바이트·되돌리기. 통합 시험 두 곳(모든 종류를 한 프로젝트에서 만들기, 매개변수 참조 표)과 PROJECTED_KINDS 순서에 보를 더했다.
 - run-all 은 마지막 코드 커밋 d1dc860 에서 한 번(2026-11-25 07:02 시작): s1-core 전체(test_slow 제외) 통과, test_slow 통과(C-4 회귀 코퍼스 기준값 그대로), parity 불일치 0·통과(새 명령 11개 예시 포함), parity_g 통과, 로컬 Revit 표본(test_foreign_drawings·test_foreign_occlusion) 저장소 밖 기준선과 같음, s10-headless 통과, 기준 도면 `run_baseline.py --sheets` 183 파일이 main a8bc8e4 와 바이트 같음.
 
-### 73.10 bench
+### 75.10 bench
 - 도면 경로 파일(drawing·queries·kinds·scene)을 바꿔 잼: 브랜치 d1dc860 과 main a8bc8e4 를 번갈아 3회, 중앙값(같은 노트북, 다른 무거운 계산 없음).
 
 | 모델 | 뷰 | main 중앙값 | 브랜치 중앙값 | 변화 | 선분·SVG |
@@ -2791,7 +2849,7 @@ W1 이 끝나고 W2 의 첫 과업으로 직선 축뿐이던 벽에 원호 축�
 
 - 모든 뷰가 +10% 안이고 30초 안(가장 느린 회차 26.84초, main 입면), 선분 수·SVG 바이트 같음. 외래 혼합 열기 -0.5~+0.6%. 보가 없는 모델에서 새로 타는 경로는 뷰마다 보 버킷 목록 조회뿐이다(평면은 보가 없으면 다른 레벨을 읽지 않는다).
 
-### 73.11 한계(다음 PR)
+### 75.11 한계(다음 PR)
 - 경사 보(시작·끝 높이가 다른 보)·곡선 보(원호 통심선 포함)·보 시스템(영역 안 등간격 작은 보)·가새(브레이스)·트러스.
 - 보끼리 접합(작은 보가 큰 보 웨브·면에서 끝나기), 비스듬한 기둥 면의 경사 자르기, 자르기 간격(cutback 거리), 철골 접합부 상세(STR-13 범위 밖).
 - 단면: 각형·원형 강관, ㄷ형강·ㄱ형강, 덧판·헌치, 필릿 반지름, 단면 라이브러리 확장(KS 표 전체)·사용자 단면.

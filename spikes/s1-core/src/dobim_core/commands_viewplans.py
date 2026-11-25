@@ -47,7 +47,7 @@ class ViewRcp(A):
 @command("view.rcp", kind="mutation", risk="write", group="view", summary="반사 천장 평면(위를 보는 평면)을 만든다",
          args=ViewRcp, since="0.10", examples=[{"id": F.VR1, "name": "1F 반사 천장 평면", "level": F.LV1}])
 def view_rcp(ctx, a: ViewRcp):
-    """절단선은 평면과 같고, 투영은 절단면 위(위층 슬래브 밑면·매단 패밀리·공간 천장선). 계단·난간·승강기·경사 지붕·솔리드·외래 요소는 아직 그리지 않는다."""
+    """절단선은 평면과 같고, 투영은 절단면 위(위층 슬래브 밑면·평지붕 밑면(W2 열여섯 번째 PR)·매단 패밀리·공간 천장선). 계단·난간·승강기·경사 지붕·솔리드·외래 요소는 아직 그리지 않는다."""
     return _plan(ctx, a, {"rcp": True})
 
 

@@ -22,6 +22,7 @@ from dobim_core import curtain as CW
 from dobim_core import roofpoly as RP
 from dobim_core import roofeaves as RE
 from dobim_core import roofext as RX
+from dobim_core import roofflat as RFL
 from dobim_core import roofskel as RS
 from dobim_core import solids as SO
 from dobim_core import wallcut as WC
@@ -1006,8 +1007,11 @@ def elevator_door_edge(p):
 
 
 # ---------------------------------------------------------------- 경사 지붕 (kinds "roof", 설계: elements-design.md 16절)
-ROOF_FORMS = ("gable", "hip", "shed", "poly", "footprint", "extrusion")   # 박공(맞배)·모임(우진각)·외쪽·다각형 외곽(변마다 물매 또는 박공, W1 1-F 4차)·외곽선 지붕·압출 지붕(W2 여덟 번째 PR)
+ROOF_FORMS = ("gable", "hip", "shed", "poly", "footprint", "extrusion", "flat")   # 박공(맞배)·모임(우진각)·외쪽·다각형 외곽(변마다 물매 또는 박공, W1 1-F 4차)·외곽선 지붕·압출 지붕(W2 여덟 번째 PR)·평지붕(W2 열여섯 번째 PR)
 ROOF_POLY_FORMS = ("poly", "footprint")   # 변마다 물매(slopes)를 갖는 형식
+ROOF_OUTLINE_FORMS = ("footprint", "flat")   # 임의 다각형 외곽(변 1mm 이상, 128 꼭짓점)과 변마다 처마 내밀기(overhangs)를 받는 형식
+# 평지붕(form "flat", W2 열여섯 번째 PR, 사용자 결정 "평지붕은 물매 0으로"): 물매 0(pitch 0 으로 저장) 수평 윗면 z = base_offset, 두께는 아래로.
+#   외곽 다각형(오목 가능) + 변마다 선택 볼록도(bulges, 원호) + 처마 내밀기(overhang 또는 overhangs). 배수 물매는 만들지 않는다. 형상은 roofflat
 ROOF_PITCH_MAX = 75.0       # 물매 각도 상한(도)
 ROOF_OVERHANG_MAX = 3000.0  # 처마 내밀기 상한 mm
 ROOF_SIDE_MIN = 500.0       # 외곽 직사각형의 최소 변 길이 mm
@@ -1078,10 +1082,11 @@ def roof_overhangs(p) -> list:
 
 
 def _roof_params(p):
-    pts_max = RS.PTS_MAX if isinstance(p, dict) and p.get("form") == "footprint" else RP.POLY_PTS_MAX
+    flat = isinstance(p, dict) and p.get("form") == "flat"   # 평지붕(W2 열여섯 번째 PR): 물매 0 으로 저장한다
+    pts_max = RS.PTS_MAX if isinstance(p, dict) and p.get("form") in ROOF_OUTLINE_FORMS else RP.POLY_PTS_MAX
     err = _check_opt("roof", p, {"name": _name, "boundary": lambda v: isinstance(v, list) and 3 <= len(v) <= pts_max and all(_pt_ok(q) for q in v),
                                  "form": lambda v: v in ROOF_FORMS,
-                                 "pitch": lambda v: _pos(v) and v <= ROOF_PITCH_MAX, "overhang": lambda v: num_ok(v) and 0 <= v <= ROOF_OVERHANG_MAX,
+                                 "pitch": lambda v: (num_ok(v) and v == 0) if flat else (_pos(v) and v <= ROOF_PITCH_MAX), "overhang": lambda v: num_ok(v) and 0 <= v <= ROOF_OVERHANG_MAX,
                                  "base_offset": num_ok, "thickness": _pos},
                      {"ridge": lambda v: v == "short", "dir": num_ok,
                       "slopes": lambda v: isinstance(v, list) and len(v) == len(p.get("boundary", ())) and all(_slope_ok(x) for x in v),
@@ -1090,9 +1095,13 @@ def _roof_params(p):
                       "rtype": id_ok, "layers": layers_ok, "eaves": lambda v: eaves_ok(v, len(p.get("boundary", ()))),
                       "cw_input": lambda v: v is True,   # 시계 방향으로 받은 외곽(W2 아홉 번째 PR): 형상·IFC 형상과 무관, 처마 부속 변 번호 대응에만
                       "axis": lambda v: isinstance(v, list) and len(v) == 4 and all(num_ok(x) for x in v),
-                      "profile": lambda v: isinstance(v, list) and all(_pt_ok(q) for q in v)})
+                      "profile": lambda v: isinstance(v, list) and all(_pt_ok(q) for q in v),
+                      # 평지붕의 변마다 볼록도(W2 열여섯 번째 PR, 원호 외곽): 없으면 행은 이전과 같다
+                      "bulges": lambda v: isinstance(v, list) and len(v) == len(p.get("boundary", ())) and all(num_ok(x) and abs(x) <= 1.0 for x in v) and any(v)})
     if err is not None:
         return err
+    if "bulges" in p and p["form"] != "flat":
+        return "roof.bulges(변마다 볼록도)는 평지붕(flat)에만 둘 수 있다"
     if p["form"] == "extrusion" or "axis" in p or "profile" in p:   # 압출 지붕(W2 여덟 번째 PR): 입면 프로파일을 axis 방향으로 돌출, 외곽은 그 직사각형
         if p["form"] != "extrusion":
             return "roof.axis·roof.profile 은 압출 지붕(extrusion)에만 둘 수 있다"
@@ -1108,8 +1117,14 @@ def _roof_params(p):
         return None
     if "layers" in p and abs(layers_total(p["layers"]) - p["thickness"]) > LAYER_SUM_TOL:
         return "roof.layers 두께의 합이 지붕 두께와 다르다"
-    if "overhangs" in p and p["form"] != "footprint":
-        return "roof.overhangs(변마다 처마 내밀기)는 외곽선 지붕(footprint)에만 둘 수 있다"
+    if "overhangs" in p and p["form"] not in ROOF_OUTLINE_FORMS:
+        return "roof.overhangs(변마다 처마 내밀기)는 외곽선 지붕(footprint)·평지붕(flat)에만 둘 수 있다"
+    if p["form"] == "flat":   # 평지붕(W2 열여섯 번째 PR): 물매 0, 외곽 다각형(+ 볼록도) + 처마 내밀기
+        if any(k in p for k in ("slopes", "ridge", "dir")):
+            return "roof: 평지붕(flat)은 slopes·ridge·dir 를 쓰지 않는다(물매 0)"
+        if why := RFL.problem(p["boundary"], p.get("bulges"), roof_overhangs(p)):
+            return f"roof.boundary: {why}"
+        return None
     if p["form"] == "footprint":
         if "slopes" not in p:
             return "roof: 외곽선 지붕(footprint)은 변마다 물매 slopes 가 필요하다"
@@ -1195,6 +1210,8 @@ def roof_geom(p) -> dict:
         return RP.geom(p["boundary"], p["slopes"], roof_tans(p["slopes"]), p["overhang"], p["base_offset"])
     if p["form"] == "extrusion":   # 압출 지붕(W2 여덟 번째 PR): 프로파일 선분마다 평면 사각형
         return RX.geom(p["axis"], p["profile"], p["base_offset"], sincos_deg)
+    if p["form"] == "flat":   # 평지붕(W2 열여섯 번째 PR): 수평 면 하나(처마를 내민 윤곽), 볼록 조각 pieces, eave_loop·eave_src·smooth
+        return RFL.geom(p["boundary"], p.get("bulges"), roof_overhangs(p), p["base_offset"])
     if p["form"] == "footprint":   # 외곽선 지붕(W2 여덟 번째 PR): 가중 직선 골격(roofskel). eave_src = 처마 윤곽 변마다 원래 외곽 변 번호
         return RS.geom(p["boundary"], p["slopes"], roof_tans(p["slopes"]), roof_overhangs(p), p["base_offset"])
     b = p["boundary"]
@@ -1263,8 +1280,19 @@ def roof_eave_pieces(p) -> list:
     """지붕 params 의 처마 부속 조각들(roofeaves.pieces, 레벨 기준 z). 처마 부속이 없으면 빈 목록."""
     if "eaves" not in p:
         return []
-    oh = roof_overhangs(p) if p["form"] == "footprint" else [float(p["overhang"])] * len(p["boundary"])
-    return RE.pieces(p, roof_geom(p), oh)
+    oh = roof_overhangs(p) if p["form"] in ROOF_OUTLINE_FORMS else [float(p["overhang"])] * len(p["boundary"])
+    gm = roof_geom(p)
+    if p["form"] == "flat" and "bulges" in p:   # 원호 외곽 평지붕(W2 열여섯 번째 PR): 펼친 외곽의 현을 변으로 본다(호 변 i 에 단 부속 = 그 호의 모든 현)
+        q, oh = flat_eave_params(p, gm, oh)
+        return RE.pieces(q, gm, oh)
+    return RE.pieces(p, gm, oh)
+
+
+def flat_eave_params(p, gm, oh):
+    """원호 외곽 평지붕의 처마 부속 계산용 (params, 현마다 내밀기): 외곽 = 펼친 고리, 처마 부속 edges = 단 변의 모든 현 번호."""
+    src = gm["eave_src"]
+    ev = {k: dict(d, edges=[j for j, s in enumerate(src) if s in set(d["edges"])]) for k, d in p["eaves"].items()}
+    return dict(p, boundary=[list(q) for q in gm["eave_loop"]], eaves=ev), [oh[s] for s in src]
 
 
 CORRIDOR_WORDS = ("복도", "corridor", "hallway")

@@ -2490,7 +2490,8 @@ class IfcModel:
             npf = len(spec["profile"]) - 1
             e.PredefinedType = "SHED_ROOF" if npf == 1 else ("GABLE_ROOF" if npf == 2 else "BARREL_ROOF")
         else:
-            e.PredefinedType = {"gable": "GABLE_ROOF", "hip": "HIP_ROOF", "shed": "SHED_ROOF"}.get(spec["form"]) or _poly_roof_type(spec.get("slopes", ()))   # poly·footprint
+            e.PredefinedType = ({"gable": "GABLE_ROOF", "hip": "HIP_ROOF", "shed": "SHED_ROOF", "flat": "FLAT_ROOF"}.get(spec["form"])   # 평지붕(W2 열여섯 번째 PR): FLAT_ROOF
+                                or _poly_roof_type(spec.get("slopes", ())))   # poly·footprint
         self._contain(eid, spec["level"])
         self._place(e, self.ents[spec["level"]].ObjectPlacement, (0.0, 0.0, 0.0), (1.0, 0.0, 0.0))
         if e.Representation is not None:
@@ -2503,8 +2504,10 @@ class IfcModel:
                 p[k] = spec[k]
         if "slopes" in spec:
             p["slopes"] = list(spec["slopes"])
-        if "overhangs" in spec:   # 외곽선 지붕(W2 여덟 번째 PR)
+        if "overhangs" in spec:   # 외곽선 지붕(W2 여덟 번째 PR)·평지붕(W2 열여섯 번째 PR)
             p["overhangs"] = list(spec["overhangs"])
+        if "bulges" in spec:   # 평지붕 원호 변(W2 열여섯 번째 PR)
+            p["bulges"] = list(spec["bulges"])
         if "axis" in spec:   # 압출 지붕(W2 여덟 번째 PR)
             p["axis"] = list(spec["axis"])
             p["profile"] = [list(q) for q in spec["profile"]]

@@ -2629,11 +2629,14 @@ def elevator_cut_slabs(ctx, a: ElevatorCutSlabs):
 
 # ---------------------------------------------------------------- 경사 지붕 (설계: elements-design.md 16절)
 RoofRect = Annotated[list[SlabPt], Field(min_length=3, max_length=128, description="외곽 꼭짓점 mm. gable·hip·shed 는 직사각형 4개(변 500mm 이상), poly 는 다각형 3~32개(변 500mm 이상), "
-                                                                              "footprint 는 다각형 3~128개(변 1mm 이상). 시계 방향이면 뒤집어 저장")]
+                                                                              "footprint·flat 은 다각형 3~128개(변 1mm 이상). 시계 방향이면 뒤집어 저장")]
 RoofSlopes = Annotated[list[Annotated[float, Field(ge=0, le=K.ROOF_PITCH_MAX, allow_inf_nan=False)]], Field(min_length=3, max_length=128)]
 RoofOverhangs = Annotated[list[Annotated[float, Field(ge=0, le=K.ROOF_OVERHANG_MAX, allow_inf_nan=False)]], Field(min_length=3, max_length=128,
-                          description="외곽선 지붕(footprint)의 변마다 처마 내밀기 mm(변 i = 꼭짓점 i→i+1). 생략하면 모두 overhang")]
+                          description="외곽선 지붕(footprint)·평지붕(flat)의 변마다 처마 내밀기 mm(변 i = 꼭짓점 i→i+1). 생략하면 모두 overhang")]
 SLOPES_DESC = "poly·footprint 의 변마다 물매 도(변 i = 꼭짓점 i→i+1). 0 = 물매 없는 변(박공). 생략하면 모두 pitch"
+RoofBulges = Annotated[list[Annotated[float, Field(ge=-1.0, le=1.0, allow_inf_nan=False)]], Field(max_length=128, description=(
+    "평지붕(flat)의 외곽 변마다 볼록도 tan(중심각/4)(변 i = 꼭짓점 i→i+1, 0 = 직선, 양수 = 반시계 호, 1 = 반원: 지붕 개구 bulges 와 같은 규약). "
+    "원호는 한 바퀴 32 현으로 펼친다. roof.set 에서 빈 목록이면 뗀다"))]
 Axis = Annotated[list[Annotated[float, Field(allow_inf_nan=False, ge=-1e7, le=1e7)]], Field(min_length=4, max_length=4, description="돌출 방향 선 [x1, y1, x2, y2] mm(시작 -> 끝, 길이 = 돌출 길이)")]
 ExtProfile = Annotated[list[SlabPt], Field(min_length=2, max_length=65, description="단면 프로파일 [[s, z], ...]: s = axis 진행 방향 왼쪽으로의 수평 거리 mm(엄격히 늘어난다), "
                                                                                "z = 레벨 + base_offset 기준 높이 mm. 선분마다 경사 평면(평평한 선분·75도 초과 거절). 곡면은 촘촘한 꺾은선")]
@@ -2641,9 +2644,10 @@ ExtProfile = Annotated[list[SlabPt], Field(min_length=2, max_length=65, descript
 
 
 
-def _roof_boundary(pts, form: str = "gable", slopes=None, overhangs=None):
+def _roof_boundary(pts, form: str = "gable", slopes=None, overhangs=None, bulges=None):
     """외곽을 반시계로 맞춘다(뒤집으면 변마다 물매·내밀기도 같은 변을 따라 옮긴다). (외곽, 물매 목록 또는 None)
-    overhangs 를 주면 (외곽, 물매, 내밀기) 셋을 돌려준다(외곽선 지붕, W2 여덟 번째 PR)."""
+    overhangs 를 주면 (외곽, 물매, 내밀기) 셋을 돌려준다(외곽선 지붕, W2 여덟 번째 PR).
+    bulges(평지붕의 변마다 볼록도, W2 열여섯 번째 PR)는 _flat_bulges 가 따로 맞춘다(방향은 꼭짓점 다각형으로 정한다)."""
     b = [[float(x), float(y)] for x, y in pts]
     sl = None if slopes is None else [float(v) for v in slopes]
     oh = None if overhangs is None else [float(v) for v in overhangs]
@@ -2658,25 +2662,41 @@ def _roof_boundary(pts, form: str = "gable", slopes=None, overhangs=None):
             sl = [sl[(n - 2 - j) % n] for j in range(n)]
         if oh is not None:
             oh = [oh[(n - 2 - j) % n] for j in range(n)]
-    if form not in K.ROOF_POLY_FORMS:
+    if form not in K.ROOF_POLY_FORMS and form != "flat":
         why = K.roof_rect_problem(b)
         if why:
-            raise DobimError("CONSTRAINT", f"지붕 외곽이 올바르지 않다: {why}", path="/boundary", hint="직사각형이 아니면 form=poly 또는 footprint")
+            raise DobimError("CONSTRAINT", f"지붕 외곽이 올바르지 않다: {why}", path="/boundary", hint="직사각형이 아니면 form=poly 또는 footprint(물매 0 이면 flat)")
     if overhangs is not None:
         return b, sl, oh
     return b, sl
 
 
+def _flat_bulges(given, bulges):
+    """평지붕 외곽 변마다 볼록도(W2 열여섯 번째 PR)를 저장 순서로: 입력 외곽이 시계 방향이면(꼭짓점 다각형 기준, _roof_boundary 와 같다)
+    저장 변 j = 입력 변 n-2-j 이고 호의 부푼 쪽이 같도록 부호를 바꾼다. 모두 0 이면 None(키를 두지 않는다)."""
+    if bulges is None or not any(bulges):
+        return None
+    b = [[float(x), float(y)] for x, y in given]
+    bl = [float(v) for v in bulges]
+    n = len(b)
+    if len(bl) != n:
+        raise DobimError("CONSTRAINT", f"bulges 는 외곽의 변 수({n})만큼 있어야 한다", path="/bulges")
+    if polygon_area2(b) < 0:
+        bl = [-bl[(n - 2 - j) % n] + 0.0 for j in range(n)]
+    return bl
+
+
 def _mark_cw(ctx, p: dict, given) -> None:
     """시계 방향으로 받은 외곽(반시계로 뒤집어 저장한다)을 표시한다(W2 아홉 번째 PR, 실사용 결함 5): roof.eaves.set 의 edges 는 저장 순서 번호라
-    뒤집힌 지붕에서는 입력 번호와 다르다. 표시(cw_input)가 있으면 roof.eaves.set 이 numbering=input 을 받고, 저장 번호로 주면 경고한다.
+    뒤집힌 지붕에서는 입력 번호와 다르다. 표시(cw_input)가 있으면 roof.eaves.set 이 입력 번호(numbering=input, W2 열여섯 번째 PR 부터 기본)를
+    저장 번호로 옮기고, 저장 번호(numbering=stored)로 주면 경고한다.
     반시계 입력이면 키를 두지 않는다(지금까지 만든 지붕·반시계 지붕의 행은 그대로다)."""
     b = [[float(x), float(y)] for x, y in given]
     if polygon_area2(b) < 0:
         p["cw_input"] = True
         n = len(b)
-        ctx.warn(f"외곽이 시계 방향이라 반시계로 뒤집어 저장했다: 저장 변 j = 입력 변 {n - 2}-j (mod {n}). slopes·overhangs 는 입력 순서로 받아 옮겼고, "
-                 "roof.eaves.set 의 edges 는 저장 순서 번호다(numbering=input 이면 입력 번호, roof.eaves 의 input_edge 로 대응을 본다)")
+        ctx.warn(f"외곽이 시계 방향이라 반시계로 뒤집어 저장했다: 저장 변 j = 입력 변 {n - 2}-j (mod {n}). slopes·overhangs·bulges 는 입력 순서로 받아 옮겼고, "
+                 "roof.eaves.set 의 edges 는 기본으로 입력 순서 번호다(numbering=stored 면 저장 순서 번호, roof.eaves 의 input_edge 로 대응을 본다)")
     else:
         p.pop("cw_input", None)
 
@@ -2695,11 +2715,14 @@ class RoofCreate(A):
     id: Id | None = None
     level: Id = Field(description="지붕이 놓인 레벨(처마 높이 = 레벨 + base_offset)")
     boundary: RoofRect
-    form: Literal["gable", "hip", "shed", "poly", "footprint"] = Field(description="gable 박공, hip 모임, shed 외쪽, poly 다각형 외곽(변마다 물매·박공), "
-                                                                                    "footprint 외곽선 지붕(가중 직선 골격: 임의 다각형·오목·짧은 변, 변마다 물매·처마 내밀기)")
-    pitch: Annotated[float, Field(gt=0, le=K.ROOF_PITCH_MAX, allow_inf_nan=False)] = Field(description="물매 각도 도(0 초과 75 이하)")
+    form: Literal["gable", "hip", "shed", "poly", "footprint", "flat"] = Field(description="gable 박공, hip 모임, shed 외쪽, poly 다각형 외곽(변마다 물매·박공), "
+                                                                                            "footprint 외곽선 지붕(가중 직선 골격: 임의 다각형·오목·짧은 변, 변마다 물매·처마 내밀기), "
+                                                                                            "flat 평지붕(물매 0: 수평 윗면 = 레벨 + base_offset, 임의 다각형·오목·원호 변 bulges, 처마 내밀기)")
+    pitch: Annotated[float, Field(ge=0, le=K.ROOF_PITCH_MAX, allow_inf_nan=False)] | None = Field(
+        None, description="물매 각도 도(0 초과 75 이하). flat 이 아니면 필수. flat 은 생략하거나 0(물매 0 으로 저장)")
     slopes: RoofSlopes | None = Field(None, description=SLOPES_DESC)
     overhangs: RoofOverhangs | None = None
+    bulges: RoofBulges | None = None
     type: Id | None = Field(None, description="지붕 유형(rooftype.create, W2 여덟 번째 PR): 두께·층 구성을 유형에서 받는다(thickness 를 함께 주지 않는다)")
     overhang: Annotated[float, Field(ge=0, le=K.ROOF_OVERHANG_MAX, allow_inf_nan=False)] = Field(0.0, description="처마 내밀기 mm(외곽에서 물매대로 더 내민다)")
     base_offset: Num = Field(0.0, description="레벨 높이에서 처마 선(외곽의 변)까지 mm")
@@ -2709,7 +2732,22 @@ class RoofCreate(A):
     name: Name | None = None
 
 
-def _roof_row(a_form, boundary, pitch, overhang, base_offset, thickness, ridge, dir_, name, slopes=None, overhangs=None) -> dict:
+def _pitch_of(form: str, pitch, path: str = "/pitch") -> float:
+    """형식에 맞는 물매(W2 열여섯 번째 PR): 평지붕은 0(생략 가능, 0 이 아니면 거절), 그 밖은 0 초과 필수."""
+    if form == "flat":
+        if pitch not in (None, 0):
+            raise DobimError("CONSTRAINT", "평지붕(flat)은 물매 0 이다: pitch 를 주지 않거나 0 으로 준다", path=path,
+                             hint="물매가 있는 지붕은 form=footprint·poly 등으로 만드세요")
+        return 0.0
+    if pitch is None:
+        raise DobimError("CONSTRAINT", f"form={form} 지붕은 물매 pitch(0 초과 75 이하)가 필요하다", path=path)
+    if pitch <= 0:
+        raise DobimError("CONSTRAINT", "물매 0 지붕은 평지붕이다: pitch 를 0 보다 크게 주거나 form=flat 으로 만든다", path=path,
+                         hint="평지붕은 form=flat(pitch 생략)")
+    return float(pitch)
+
+
+def _roof_row(a_form, boundary, pitch, overhang, base_offset, thickness, ridge, dir_, name, slopes=None, overhangs=None, bulges=None) -> dict:
     p = {"name": name, "boundary": boundary, "form": a_form, "pitch": float(pitch), "overhang": float(overhang), "base_offset": float(base_offset), "thickness": float(thickness)}
     if ridge == "short":
         p["ridge"] = "short"
@@ -2720,27 +2758,36 @@ def _roof_row(a_form, boundary, pitch, overhang, base_offset, thickness, ridge, 
     elif slopes is not None:
         raise DobimError("CONSTRAINT", "slopes 는 form=poly·footprint 에만 줄 수 있다", path="/slopes")
     if overhangs is not None:
-        if a_form != "footprint":
-            raise DobimError("CONSTRAINT", "overhangs(변마다 처마 내밀기)는 form=footprint 에만 줄 수 있다", path="/overhangs")
+        if a_form not in K.ROOF_OUTLINE_FORMS:
+            raise DobimError("CONSTRAINT", "overhangs(변마다 처마 내밀기)는 form=footprint·flat 에만 줄 수 있다", path="/overhangs")
         p["overhangs"] = overhangs
+    if bulges is not None:   # 평지붕의 원호 변(W2 열여섯 번째 PR)
+        if a_form != "flat":
+            raise DobimError("CONSTRAINT", "bulges(변마다 볼록도)는 form=flat 에만 줄 수 있다", path="/bulges")
+        p["bulges"] = bulges
     return _roof_checked(p)
 
 
 @command("roof.create", kind="mutation", risk="write", group="model.roof",
-         summary="경사 지붕 생성(외곽 + 형식 + 물매 + 처마 내밀기·높이). poly 는 다각형 외곽에 변마다 물매·박공(L·T 모임 지붕, 골 포함). IFC 는 IfcRoof 아래 경사면마다 IfcSlab(ROOF)",
+         summary="지붕 생성(외곽 + 형식 + 물매 + 처마 내밀기·높이). poly 는 다각형 외곽에 변마다 물매·박공(L·T 모임 지붕, 골 포함), flat 은 물매 0 평지붕"
+                 "(임의 다각형·원호 변). IFC 는 IfcRoof 아래 경사면마다 IfcSlab(ROOF)(평지붕은 FLAT_ROOF 에 면 하나)",
          args=RoofCreate, since="0.4",
          examples=[{"level": F.LV2, "boundary": [[0, 0], [6000, 0], [6000, 4000], [0, 4000]], "form": "gable", "pitch": 30, "overhang": 600},
                    {"level": F.LV2, "boundary": [[0, 0], [9000, 0], [9000, 4000], [4000, 4000], [4000, 8000], [0, 8000]], "form": "poly", "pitch": 30,
-                    "slopes": [30, 0, 30, 30, 0, 30]}])
+                    "slopes": [30, 0, 30, 30, 0, 30]},
+                   {"level": F.LV2, "boundary": [[0, 0], [8000, 0], [8000, 3000], [3000, 3000], [3000, 6000], [0, 6000]], "form": "flat", "thickness": 250,
+                    "overhang": 300, "bulges": [0, 0, 0, 0.2, 0, 0]}])
 def roof_create(ctx, a: RoofCreate):
     _fresh_id(ctx, a, "roof")
     ctx.authored(a.level, "level", what="레벨에 지붕을 추가하는 것")
     a.name = a.name or f"RF-{a.id[-6:]}"
+    pitch = _pitch_of(a.form, a.pitch)
     oh = None
     if a.overhangs is not None:
         b, sl, oh = _roof_boundary(a.boundary, a.form, a.slopes, a.overhangs)
     else:
         b, sl = _roof_boundary(a.boundary, a.form, a.slopes)
+    bl = _flat_bulges(a.boundary, a.bulges)
     tp = None
     if a.type is not None:   # 지붕 유형(W2 여덟 번째 PR): 두께·층 구성을 유형에서
         from dobim_core import commands_roof as CR
@@ -2748,7 +2795,7 @@ def roof_create(ctx, a: RoofCreate):
         if a.thickness is not None and abs(a.thickness - tp["thickness"]) > 1e-9:
             raise DobimError("CONSTRAINT", f"thickness 는 유형 두께({tp['thickness']:g})를 따른다: 함께 주지 않는다", path="/thickness")
     thick = tp["thickness"] if tp is not None else (a.thickness if a.thickness is not None else 200.0)
-    p = _roof_row(a.form, b, a.pitch, a.overhang, a.base_offset, thick, a.ridge, a.dir, a.name, sl, oh)
+    p = _roof_row(a.form, b, pitch, a.overhang, a.base_offset, thick, a.ridge, a.dir, a.name, sl, oh, bl)
     _mark_cw(ctx, p, a.boundary)
     if tp is not None:
         from dobim_core import commands_roof as CR
@@ -2765,7 +2812,8 @@ class RoofSet(A):
     id: Id
     name: Name | None = None
     boundary: RoofRect | None = None
-    form: Literal["gable", "hip", "shed", "poly", "footprint"] | None = Field(None, description="형식을 바꾼다. shed 는 dir 도 필요(압출 지붕과는 서로 바꾸지 않는다)")
+    form: Literal["gable", "hip", "shed", "poly", "footprint", "flat"] | None = Field(None, description="형식을 바꾼다. shed 는 dir 도 필요(압출 지붕과는 서로 바꾸지 않는다). "
+                                                                                                  "flat(평지붕)으로 바꾸면 물매 0, flat 에서 다른 형식으로 바꾸면 pitch 도 준다")
     pitch: Annotated[float, Field(gt=0, le=K.ROOF_PITCH_MAX, allow_inf_nan=False)] | None = None
     overhang: Annotated[float, Field(ge=0, le=K.ROOF_OVERHANG_MAX, allow_inf_nan=False)] | None = None
     base_offset: Num | None = None
@@ -2776,23 +2824,29 @@ class RoofSet(A):
     overhangs: RoofOverhangs | None = None
     axis: Axis | None = Field(None, description="압출 지붕(roof.extrude)의 돌출 방향 선. 압출 지붕에만")
     profile: ExtProfile | None = Field(None, description="압출 지붕의 단면 프로파일. 압출 지붕에만")
+    bulges: RoofBulges | None = None
 
     @model_validator(mode="after")
     def _any(self):
         if all(v is None for v in (self.name, self.boundary, self.form, self.pitch, self.overhang, self.base_offset, self.thickness, self.ridge, self.dir, self.slopes,
-                                   self.overhangs, self.axis, self.profile)):
+                                   self.overhangs, self.axis, self.profile, self.bulges)):
             raise ValueError("바꿀 필드가 하나도 없다")
         return self
 
 
-@command("roof.set", kind="mutation", risk="write", group="model.roof", summary="경사 지붕 속성 변경(외곽·형식·물매·변마다 물매·처마·두께·용마루·물 흐름 방향·이름). poly 에서 pitch 만 주면 경사 변 물매가 모두 바뀐다",
-         args=RoofSet, since="0.4", examples=[{"id": F.RF1, "pitch": 25}])
+@command("roof.set", kind="mutation", risk="write", group="model.roof", summary="지붕 속성 변경(외곽·형식·물매·변마다 물매·처마·두께·용마루·물 흐름 방향·이름·평지붕 원호 변). poly 에서 pitch 만 주면 경사 변 물매가 모두 바뀐다",
+         args=RoofSet, since="0.4", examples=[{"id": F.RF1, "pitch": 25}, {"id": F.RF1, "form": "flat", "thickness": 300}])
 def roof_set(ctx, a: RoofSet):
     r = ctx.authored(a.id, "roof")
     p = dict(r["params"])
     old_form = p["form"]
     if old_form == "extrusion" or a.axis is not None or a.profile is not None:   # 압출 지붕(W2 여덟 번째 PR): 이름·높이·두께·축·프로파일만
         return _extrusion_set(ctx, a, r)
+    new_form = a.form if a.form is not None else old_form
+    if new_form == "flat" and a.pitch is not None:   # 평지붕(W2 열여섯 번째 PR)은 물매 0
+        _pitch_of("flat", a.pitch)
+    if a.bulges is not None and new_form != "flat":
+        raise DobimError("CONSTRAINT", "bulges(변마다 볼록도)는 평지붕(flat)에만 줄 수 있다", path="/bulges")
     old_n = len(p["boundary"])
     if a.thickness is not None and abs(a.thickness - p["thickness"]) > 1e-9 and ("rtype" in p or "layers" in p):   # 지붕 유형·층 구성(W2 여덟 번째 PR)이 두께를 정한다
         raise DobimError("CONSTRAINT", "유형이나 층 구성이 있는 지붕의 두께는 thickness 로 바꾸지 않는다", path="/thickness",
@@ -2800,6 +2854,10 @@ def roof_set(ctx, a: RoofSet):
     for k in ("name", "form", "pitch", "overhang", "base_offset", "thickness"):
         if getattr(a, k) is not None:
             p[k] = float(getattr(a, k)) if k in ("pitch", "overhang", "base_offset", "thickness") else getattr(a, k)
+    if p["form"] == "flat":   # 평지붕(W2 열여섯 번째 PR): 물매 0 으로 저장
+        p["pitch"] = 0.0
+    elif old_form == "flat":   # 평지붕에서 다른 형식으로: 물매를 함께 준다
+        p["pitch"] = _pitch_of(p["form"], a.pitch)
     sl = oh = None
     if a.boundary is not None:
         if a.overhangs is not None:
@@ -2817,9 +2875,20 @@ def roof_set(ctx, a: RoofSet):
                 raise DobimError("CONSTRAINT", f"overhangs 는 외곽의 변 수({len(p['boundary'])})만큼 있어야 한다", path="/overhangs")
     if a.boundary is not None:
         _mark_cw(ctx, p, a.boundary)
+    if p["form"] != "flat":
+        p.pop("bulges", None)
+    elif a.bulges is not None or a.boundary is not None:   # 평지붕 원호 변(W2 열여섯 번째 PR): 외곽을 바꾸면 bulges 를 함께 주지 않는 한 직선 변
+        given = a.boundary if a.boundary is not None else (p["boundary"][::-1] if p.get("cw_input") else p["boundary"])   # 시계 방향으로 받은 지붕은 입력 순서로 읽는다
+        bl = _flat_bulges(given, a.bulges)
+        if a.bulges is not None and a.boundary is None and bl is not None and len(bl) != len(p["boundary"]):
+            raise DobimError("CONSTRAINT", f"bulges 는 외곽의 변 수({len(p['boundary'])})만큼 있어야 한다", path="/bulges")
+        if bl is None:
+            p.pop("bulges", None)
+        else:
+            p["bulges"] = bl
     if len(p["boundary"]) != old_n and "eaves" in p:   # 처마 부속(W2 여덟 번째 PR)은 변 번호로 붙는다
         raise DobimError("CONSTRAINT", "외곽 꼭짓점 수가 바뀌면 처마 부속의 변 번호가 어긋난다", path="/boundary", hint="roof.eaves.set 으로 처마 부속을 먼저 떼세요")
-    if p["form"] == "footprint":   # 외곽선 지붕(W2 여덟 번째 PR): 변마다 내밀기
+    if p["form"] in K.ROOF_OUTLINE_FORMS:   # 외곽선 지붕(W2 여덟 번째 PR)·평지붕(W2 열여섯 번째 PR): 변마다 내밀기
         if oh is not None:
             p["overhangs"] = oh
         elif "overhangs" in p and len(p["overhangs"]) != len(p["boundary"]):
@@ -2830,7 +2899,7 @@ def roof_set(ctx, a: RoofSet):
             p.pop("overhangs", None)
     else:
         if oh is not None:
-            raise DobimError("CONSTRAINT", "overhangs(변마다 처마 내밀기)는 form=footprint 에만 줄 수 있다", path="/overhangs")
+            raise DobimError("CONSTRAINT", "overhangs(변마다 처마 내밀기)는 form=footprint·flat 에만 줄 수 있다", path="/overhangs")
         p.pop("overhangs", None)
     if p["form"] in K.ROOF_POLY_FORMS:
         if sl is not None:
@@ -2845,7 +2914,7 @@ def roof_set(ctx, a: RoofSet):
         if sl is not None:
             raise DobimError("CONSTRAINT", "slopes 는 form=poly·footprint 에만 줄 수 있다", path="/slopes")
         p.pop("slopes", None)
-        if a.boundary is None and old_form in K.ROOF_POLY_FORMS:
+        if a.boundary is None and (old_form in K.ROOF_POLY_FORMS or old_form == "flat") and p["form"] != "flat":
             why = K.roof_rect_problem(p["boundary"])
             if why:
                 raise DobimError("CONSTRAINT", f"지붕 외곽이 올바르지 않다: {why}", path="/boundary", hint="직사각형 외곽을 함께 준다")
@@ -2868,7 +2937,7 @@ def _extrusion_set(ctx, a, r):
     p = dict(r["params"])
     if p["form"] != "extrusion":
         raise DobimError("CONSTRAINT", "axis·profile 은 압출 지붕(roof.extrude)에만 줄 수 있다", path="/axis" if a.axis is not None else "/profile")
-    bad = [k for k in ("boundary", "form", "pitch", "overhang", "ridge", "dir", "slopes", "overhangs") if getattr(a, k) is not None]
+    bad = [k for k in ("boundary", "form", "pitch", "overhang", "ridge", "dir", "slopes", "overhangs", "bulges") if getattr(a, k) is not None]
     if bad:
         raise DobimError("CONSTRAINT", f"압출 지붕에는 {', '.join(bad)} 를 줄 수 없다(프로파일이 형상을 정한다)", path=f"/{bad[0]}",
                          hint="axis·profile 로 형상을 바꾸고, 다른 형식이 필요하면 지붕을 새로 만드세요")

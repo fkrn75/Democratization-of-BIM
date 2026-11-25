@@ -157,6 +157,9 @@ def roof(p: dict, xf: Xf) -> dict:
         q["axis"] = [a0[0], a0[1], a1[0], a1[1]]
         if xf.mirror:
             q["profile"] = [[-s, z] for s, z in reversed(p["profile"])]
+    if xf.mirror and "bulges" in p:   # 평지붕 원호 변(W2 열여섯 번째 PR): 같은 변을 따라 옮긴다(대칭이 호를 뒤집고 외곽 순서를 뒤집어 다시 뒤집으므로 부호는 그대로)
+        n = len(p["boundary"])
+        q["bulges"] = [p["bulges"][(n - 2 - j) % n] for j in range(n)]
     if xf.mirror and ("overhangs" in p or "eaves" in p):   # 외곽선 지붕의 변마다 내밀기·처마 부속의 변 번호(W2 여덟 번째 PR)도 같은 변을 따라 옮긴다
         n = len(p["boundary"])
         if "overhangs" in p:
