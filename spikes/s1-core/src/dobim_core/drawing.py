@@ -2376,7 +2376,8 @@ def roof_info(g, r):
         return (q[0], q[1], q[2] + lv)
     return {"faces": tuple(tuple(up(q) for q in fc) for fc in gm["faces"]), "ridges": tuple((up(a), up(b)) for a, b in gm["ridges"]),
             "hips": tuple((up(a), up(b)) for a, b in gm["hips"]), "perimeter": tuple(up(q) for q in gm["perimeter"]), "arrows": tuple(gm["arrows"]),
-            "outline": tuple(gm["outline"]), "boundary": tuple(tuple(q) for q in p["boundary"]), "planes": tuple((a, b, c + lv) for a, b, c in gm["planes"]),
+            "outline": tuple(gm["outline"]), "boundary": tuple(tuple(q) for q in gm.get("eave_loop", p["boundary"])),   # 평지붕 원호 변은 펼친 처마 선(W2 열여섯 번째 PR)
+            "planes": tuple((a, b, c + lv) for a, b, c in gm["planes"]),
             "zlow": gm["zlow"] + lv, "ztop": gm["ztop"] + lv, "t": p["thickness"], "pitch": p["pitch"], "form": p["form"],
             # 다각형 외곽(W1 1-F 4차): 골, 면의 볼록 조각(가림·절단 띠는 볼록 조각으로 계산한다), 면마다 물매. 직사각형은 조각 = 면이라 값이 같다
             "valleys": tuple((up(a), up(b)) for a, b in gm["valleys"]), "fpitch": tuple(gm["fpitch"]),
@@ -2385,7 +2386,9 @@ def roof_info(g, r):
             "eaves": tuple((lb, kd, quad, tuple(z + lv for z in zb), tuple(z + lv for z in zt)) for lb, kd, quad, zb, zt in K.roof_eave_pieces(p)),
             "layers": tuple((x["material"], x["thickness"]) for x in p.get("layers", ())),
             # 지붕 개구(W2 열네 번째 PR): (모드, 윗면 구멍 고리, 아랫면 구멍 고리, 면 개구의 면 평면(절대 z) 또는 None). 없으면 빈 튜플이라 도면은 이전과 같다
-            "voids": g.q(_roof_void_geom, r)}
+            "voids": g.q(_roof_void_geom, r),
+            # 평지붕(W2 열여섯 번째 PR): 같은 호의 두 현이 만나는 둘레 꼭짓점(수직 모서리를 긋지 않는다). 다른 지붕은 빈 튜플
+            "smooth": frozenset(gm.get("smooth", ()))}
 
 
 def _roof_void_geom(g, r):
@@ -2432,10 +2435,22 @@ def scope_roofs(g, v):
     if cfg is None or cfg[0] == "site":
         return ()
     if cfg[0] == "plan":
-        if cfg[1] is None or is_rcp(cfg):   # 반사 천장 평면(W1 1-C 3차)은 아직 그리지 않는다
+        if cfg[1] is None:
             return ()
+        if is_rcp(cfg):   # 반사 천장 평면: 평지붕(W2 열여섯 번째 PR)만, 밑면이 절단면 위 보이는 깊이 안에 있는 것(경사 지붕은 아직 그리지 않는다)
+            return g.q(rcp_flat_roofs, cfg[2], cfg[3])
         return tuple(e for e in sorted(Q.rel_in(g, "on_level", cfg[1])) if g.q(roof_info, e) is not None)
     return g.q(all_roofs)
+
+
+def rcp_flat_roofs(g, cut, depth):
+    """밑면(윗면 - 두께)이 (절단 높이, 절단 높이 + 보이는 깊이] 안에 있는 평지붕들(반사 천장 평면, W2 열여섯 번째 PR). 모든 레벨에서 찾는다(위층 바닥 슬래브와 같다)."""
+    out = []
+    for e in g.q(all_roofs):
+        info = g.q(roof_info, e)
+        if info["form"] == "flat" and cut + EPS < info["ztop"] - info["t"] <= cut + depth:
+            out.append(e)
+    return tuple(out)
 
 
 def _clip_half(poly, a, b, k):
@@ -2459,6 +2474,9 @@ def roof_slices(g, r):
     if info is None:
         return ()
     zl, zt = info["zlow"], info["ztop"]
+    if info["form"] == "flat":   # 평지붕(W2 열여섯 번째 PR): 쐐기 높이가 0 이다. 판(윗면 - 두께 ~ 윗면)이 가리는 볼록 기둥을 조각마다 하나씩(높이 이음매가 없게 위아래로 조금 겹친다)
+        zb = zt - info["t"]
+        return tuple((zb - 2 * EPS, zt + 2 * EPS, tuple((q[0], q[1]) for q in fc)) for fc, _pl in info["pieces"] if abs(_area2([(q[0], q[1]) for q in fc])) > 2 * EPS)
     out = []
     for i in range(ROOF_SLICES):
         z0, z1 = zl + (zt - zl) * i / ROOF_SLICES, zl + (zt - zl) * (i + 1) / ROOF_SLICES
@@ -2507,6 +2525,11 @@ def roof_solid_slices(g, r):
     for fc, (a, b, c) in info["pieces"]:   # 면의 볼록 조각(직사각형 지붕은 면 그대로)
         tops = [q[2] for q in fc]
         zb, zt = min(tops) - t, max(tops)                 # 이 면의 판이 차지하는 높이 범위
+        if a == 0.0 and b == 0.0:   # 수평 면(평지붕, W2 열여섯 번째 PR): 모든 높이 조각이 같은 다각형이라 판 두께 전체를 조각 하나로
+            poly = [(q[0], q[1]) for q in fc]
+            if len(poly) >= 3 and abs(_area2(poly)) > 2 * EPS:
+                out.append((zb - 2 * EPS, zt + 2 * EPS, tuple(poly)))
+            continue
         n = max(1, int((zt - zb) / ROOF_SOLID_PIECE_MM + 1.0 - 1e-9))   # 올림(math.ceil 대신: 이 모듈은 sqrt 만 쓴다)
         h = (zt - zb) / n
         xy = [(q[0], q[1]) for q in fc]
@@ -2553,10 +2576,12 @@ def roof_edges3(g, r):
         for i in range(len(fc)):
             add(fc[i], fc[(i + 1) % len(fc)])
     pm, t = info["perimeter"], info["t"]
+    sm = info["smooth"]
     for i in range(len(pm)):
         a, b = pm[i], pm[(i + 1) % len(pm)]
         add((a[0], a[1], a[2] - t), (b[0], b[1], b[2] - t))
-        add((a[0], a[1], a[2] - t), a)
+        if i not in sm:   # 평지붕 원호 변의 현 사이 꼭짓점은 수직 모서리를 긋지 않는다(W2 열여섯 번째 PR, 원호는 매끈하게)
+            add((a[0], a[1], a[2] - t), a)
     for pc in info["eaves"]:   # 처마 부속(W2 여덟 번째 PR): 조각 육면체의 모서리
         for a, b in RE.piece_edges(pc):
             add(a, b)
@@ -2690,6 +2715,21 @@ def roof_plan_parts(g, v, r):
     """평면의 지붕 하나: (선분들, 문자들). 절단 높이가 지붕 꼭대기보다 높은 평면(지붕 평면)에서만 만든다(지붕을 자르는 높이의 평면에는 그리지 않는다)."""
     cfg = g.q(view_cfg, v)
     info = g.q(roof_info, r)
+    if cfg is not None and is_rcp(cfg):   # 반사 천장 평면(W2 열여섯 번째 PR): 평지붕 밑면 윤곽(처마를 내민 윤곽)·처마 부속·구멍(X)
+        if info is None or info["form"] != "flat" or not cfg[2] + EPS < info["ztop"] - info["t"] <= cfg[2] + cfg[3]:
+            return ((), ())
+        ol = info["outline"]
+        n = len(ol)
+        segs = [("proj", ol[i][0], ol[i][1], ol[(i + 1) % n][0], ol[(i + 1) % n][1]) for i in range(n)]
+        for pc in info["eaves"]:
+            q = pc[2]
+            segs += [("proj", q[i][0], q[i][1], q[(i + 1) % 4][0], q[(i + 1) % 4][1]) for i in range(4)]
+        for v_ in info["voids"]:
+            lp = v_[2]   # 밑면 구멍 고리
+            m = len(lp)
+            segs += [("proj", lp[i][0], lp[i][1], lp[(i + 1) % m][0], lp[(i + 1) % m][1]) for i in range(m)]
+            segs += [("symbol", a[0], a[1], b[0], b[1]) for a, b in _hole_x(lp)]
+        return (tuple(segs), ())
     if cfg is None or cfg[0] != "plan" or info is None or cfg[2] <= info["ztop"] + EPS:
         return ((), ())
     sc = cfg[4]
@@ -2740,7 +2780,7 @@ def roof_lines(g, v, r):
         return ()
     if cfg[0] == "plan":
         segs = g.q(roof_plan_parts, v, r)[0]
-        fo = g.q(_fview, v) if segs else None
+        fo = g.q(_fview, v) if segs and not is_rcp(cfg) else None   # 반사 천장 평면의 평지붕 밑면(W2 열여섯 번째 PR)은 외래 가림을 따지지 않는다
         if fo is None:
             return segs
         # 외래 요소가 위에서 가린다(IO-04 5차): 용마루·추녀·골은 끝점 높이로, 처마 윤곽·물매 화살표는 지붕 꼭대기 높이(덜 가리는 쪽)로 본다

@@ -365,8 +365,9 @@ class RoofEavesSet(A):
     gutter: _Gutter | None = Field(None, description="홈통")
     soffit: _Soffit | None = Field(None, description="처마 반자")
     clear: Annotated[list[Literal["fascia", "gutter", "soffit"]], Field(max_length=3)] | None = Field(None, description="뗄 처마 부속 종류")
-    numbering: Literal["stored", "input"] = Field("stored", description="edges 번호의 기준. stored(기본) = 저장된 외곽(반시계) 순서, input = roof.create·roof.set 에 준 외곽 순서. "
-                                                  "둘은 외곽을 시계 방향으로 준 지붕에서만 다르다(반시계로 뒤집어 저장: 저장 변 j = 입력 변 n-2-j). roof.eaves 의 input_edge 로 대응을 본다")
+    numbering: Literal["stored", "input"] = Field("input", description="edges 번호의 기준. input(기본, W2 열여섯 번째 PR 부터) = roof.create·roof.set 에 준 외곽 순서, "
+                                                  "stored = 저장된 외곽(반시계) 순서. 둘은 외곽을 시계 방향으로 준 지붕에서만 다르다(반시계로 뒤집어 저장: 저장 변 j = 입력 변 n-2-j). "
+                                                  "저장하는 edges 는 언제나 저장 순서 번호다. roof.eaves 의 input_edge 로 대응을 본다")
 
     @model_validator(mode="after")
     def _any(self):
@@ -379,10 +380,11 @@ class RoofEavesSet(A):
 
 
 @command("roof.eaves.set", kind="mutation", risk="write", group="model.roof",
-         summary="처마 부속(fascia 처마 널·gutter 홈통·soffit 처마 반자)을 지붕 변에 단다·바꾼다·뗀다(clear). 지붕 형상을 따라가며(모서리 연귀), IFC 는 IfcRoof 에 집합한 IfcCovering·IfcPipeSegment(GUTTER)",
+         summary="처마 부속(fascia 처마 널·gutter 홈통·soffit 처마 반자)을 지붕 변에 단다·바꾼다·뗀다(clear). 변 번호는 기본으로 roof.create 에 준 외곽 순서(numbering=input). "
+                 "지붕 형상을 따라가며(모서리 연귀, 평지붕 원호 변은 그 호의 모든 현), IFC 는 IfcRoof 에 집합한 IfcCovering·IfcPipeSegment(GUTTER)",
          args=RoofEavesSet, since="0.20",
          examples=[{"id": F.RF1, "fascia": {"edges": "all", "width": 30, "depth": 250}, "gutter": {"edges": [0, 2]}, "soffit": {"edges": [0, 2], "thickness": 15}},
-                   {"id": F.RF1, "clear": ["gutter"]}])
+                   {"id": F.RF1, "clear": ["gutter"]}, {"id": F.RF1, "fascia": {"edges": [1]}, "numbering": "stored"}])
 def roof_eaves_set(ctx, a: RoofEavesSet):
     r = ctx.authored(a.id, "roof", what="처마 부속 지정")
     p = dict(r["params"])
@@ -404,12 +406,12 @@ def roof_eaves_set(ctx, a: RoofEavesSet):
         if any(x >= n for x in es):
             raise DobimError("CONSTRAINT", f"{kind}.edges 의 변 번호는 0~{n - 1} 이어야 한다(외곽 꼭짓점 {n}개)", path=f"/{kind}/edges")
         if flip and d["edges"] != "all":
-            if a.numbering == "input":   # 입력 외곽 번호 -> 저장 번호(W2 아홉 번째 PR, 실사용 결함 5)
+            if a.numbering == "input":   # 입력 외곽 번호 -> 저장 번호(W2 아홉 번째 PR, 실사용 결함 5. W2 열여섯 번째 PR 부터 기본)
                 es = [stored_edge(x, n) for x in es]
             elif not warned:
                 warned = True
                 ctx.warn(f"이 지붕은 외곽을 시계 방향으로 받아 뒤집어 저장했다: edges 는 저장 순서 번호로 읽었다(입력 변 i = 저장 변 {n - 2}-i mod {n}). "
-                         "입력 외곽 번호로 주려면 numbering=input")
+                         "입력 외곽 번호로 주려면 numbering=input(기본)")
         if len(set(es)) != len(es):
             raise DobimError("CONSTRAINT", f"{kind}.edges 에 같은 변이 두 번 있다", path=f"/{kind}/edges")
         d["edges"] = sorted(es)
@@ -449,8 +451,15 @@ def roof_eaves(ctx, a: RoofEaves):
     p = r["params"]
     gm = K.roof_geom(p)
     n = len(p["boundary"])
-    oh = K.roof_overhangs(p) if p["form"] == "footprint" else [float(p["overhang"])] * n
-    runs = RE.eave_runs([tuple(q) for q in p["boundary"]], oh, [tuple(q) for q in gm["outline"]])
+    oh = K.roof_overhangs(p) if p["form"] in K.ROOF_OUTLINE_FORMS else [float(p["overhang"])] * n
+    if p["form"] == "flat" and "bulges" in p:   # 원호 외곽 평지붕(W2 열여섯 번째 PR): 현마다 처마 선을 찾아 원래 변으로 모은다
+        src = gm["eave_src"]
+        cr = RE.eave_runs([tuple(q) for q in gm["eave_loop"]], [oh[j] for j in src], [tuple(q) for q in gm["outline"]])
+        runs = {}
+        for j, ks in sorted(cr.items()):
+            runs.setdefault(src[j], []).extend(ks)
+    else:
+        runs = RE.eave_runs([tuple(q) for q in p["boundary"]], oh, [tuple(q) for q in gm["outline"]])
     m = len(gm["outline"])
     ev = p.get("eaves", {})
     edges = []

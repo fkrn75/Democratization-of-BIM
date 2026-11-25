@@ -382,13 +382,16 @@ def _parse_intent(kind: str, text: str) -> dict:
         if why:
             raise ValueError(f"난간이 올바르지 않다({why})")
     elif kind == "roof":
-        if (set(p) - {"ridge", "dir", "slopes", "overhangs", "rtype", "layers", "eaves", "axis", "profile", "cw_input"} != {"name", "boundary", "form", "pitch", "overhang", "base_offset", "thickness"}
+        if (set(p) - {"ridge", "dir", "slopes", "overhangs", "rtype", "layers", "eaves", "axis", "profile", "cw_input", "bulges"} != {"name", "boundary", "form", "pitch", "overhang", "base_offset", "thickness"}
                 or not isinstance(p["boundary"], list)
                 or not 3 <= len(p["boundary"]) <= K.RS.PTS_MAX or any(not isinstance(q, list) or len(q) != 2 for q in p["boundary"])
                 or ("slopes" in p and (not isinstance(p["slopes"], list) or len(p["slopes"]) != len(p["boundary"])))
-                or ("overhangs" in p and (not isinstance(p["overhangs"], list) or len(p["overhangs"]) != len(p["boundary"])))):
+                or ("overhangs" in p and (not isinstance(p["overhangs"], list) or len(p["overhangs"]) != len(p["boundary"])))
+                or ("bulges" in p and (not isinstance(p["bulges"], list) or len(p["bulges"]) != len(p["boundary"])))):
             raise ValueError("지붕 params 가 다르다")
-        out = {"name": _name(p["name"]), "boundary": [[_num(q[0]), _num(q[1])] for q in p["boundary"]], "form": p["form"], "pitch": _num(p["pitch"], pos=True),
+        flat = p["form"] == "flat"   # 평지붕(W2 열여섯 번째 PR)은 물매 0 으로 저장한다
+        out = {"name": _name(p["name"]), "boundary": [[_num(q[0]), _num(q[1])] for q in p["boundary"]], "form": p["form"],
+               "pitch": _num(p["pitch"], nonneg=True) if flat else _num(p["pitch"], pos=True),
                "overhang": _num(p["overhang"], nonneg=True), "base_offset": _num(p["base_offset"]), "thickness": _num(p["thickness"], pos=True)}
         if "ridge" in p:
             out["ridge"] = p["ridge"]
@@ -398,6 +401,8 @@ def _parse_intent(kind: str, text: str) -> dict:
             out["slopes"] = [_num(v, nonneg=True) for v in p["slopes"]]
         if "overhangs" in p:   # 외곽선 지붕(W2 여덟 번째 PR)의 변마다 내밀기
             out["overhangs"] = [_num(v, nonneg=True) for v in p["overhangs"]]
+        if "bulges" in p:   # 평지붕 원호 변(W2 열여섯 번째 PR)
+            out["bulges"] = [_num(v) for v in p["bulges"]]
         if "axis" in p or "profile" in p:   # 압출 지붕(W2 여덟 번째 PR)
             if not isinstance(p.get("axis"), list) or not isinstance(p.get("profile"), list) or any(not isinstance(q, list) or len(q) != 2 for q in p["profile"]):
                 raise ValueError("압출 지붕 축·프로파일이 올바르지 않다")
