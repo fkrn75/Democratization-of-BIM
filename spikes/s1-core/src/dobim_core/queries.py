@@ -86,6 +86,8 @@ def material(g, eid):
     row = g.input(("el", eid))
     if row is not None and row["kind"] in ("wall", "slab", "roof") and "layers" in row["params"]:   # 지붕 층 구성: W2 여덟 번째 PR
         return layers_label(row["params"]["layers"])
+    if row is not None and row["kind"] == "beam" and "material" in row["params"]:   # 보 유형의 구조 재료(W2 열여덟 번째 PR)가 재료를 정한다
+        return row["params"]["material"]
     return g.input(("mat", eid))
 
 
@@ -770,20 +772,97 @@ def beam_zref(g, b):
     return g.q(level_info, g.q(beam_level, b))[1] + el(g, b)["params"]["offset"]
 
 
-def beam_cut(g, b):
-    """기둥 면 자르기 (시작에서 줄인 길이, 끝에서 줄인 길이, 시작 기둥, 끝 기둥)(beams.trims). 기둥이 없으면 (0, 0, None, None)."""
+def _to_axis(p, c):
+    """평면 길이로 잰 자르기(beams.trims)를 축 방향(실길이) 길이로. 수평 보는 그대로."""
+    if not BM.sloped(p):
+        return c
+    cs = BM.slope(p)[0]
+    return (c[0] / cs, c[1] / cs, c[2], c[3])
+
+
+def beam_col_cut(g, b):
+    """기둥 면 자르기만 (시작에서 줄인 길이, 끝에서 줄인 길이, 시작 기둥, 끝 기둥)(축 방향 길이). 기둥이 없으면 (0, 0, None, None).
+    보끼리 접합의 주 보 형상은 이것으로 정한다(보끼리 자르기는 서로를 읽지 않아 순환이 없다)."""
     p = el(g, b)["params"]
     if p.get("cutback") is False or not g.q(count, "finst"):
         return (0.0, 0.0, None, None)
-    zr = g.q(beam_zref, b)
-    b0, b1 = BM.b_range(p)
-    return BM.trims(p, (zr + b0, zr + b1), g.q(beam_columns))
+    return _to_axis(p, BM.trims(p, BM.end_zranges(p, g.q(beam_zref, b)), g.q(beam_columns)))
+
+
+def beam_post(g, b):
+    """보 b 를 다른 보 끝이 닿는 '주 보'로 볼 때의 (id, 아래 z, 위 z, 평면 경계 상자, 평면 외곽 사각형, 순위) 또는 None(저작 보가 아니다).
+    형상은 기둥 면 자르기만 반영한다. 순위가 작을수록 주 보다: 춤이 큰 것, 같으면 폭이 큰 것, 같으면 id 가 작은 것."""
+    row = el(g, b)
+    if row is None or row["kind"] != "beam" or row["origin"] != "authored":
+        return None
+    p = row["params"]
+    c = g.q(beam_col_cut, b)
+    rect = tuple(BM.plan_rect(p, c[:2]))
+    lo, hi = BM.z_range(p, g.q(beam_zref, b), c[:2])
+    xs, ys = [q[0] for q in rect], [q[1] for q in rect]
+    return (b, lo, hi, (min(xs), min(ys), max(xs), max(ys)), rect, (-float(p["section"]["depth"]), -float(p["section"]["width"]), b))
+
+
+BEAM_CELL = 5000.0   # 보끼리 접합 후보를 찾는 평면 격자 칸 mm
+
+
+def beam_post_index(g):
+    """{(칸 x, 칸 y): (주 보 후보 id, ...)}: 평면 경계 상자가 걸친 칸마다. 보가 둘 이상일 때만 당긴다."""
+    out: dict = {}
+    for b in g.q(beam_ids):
+        pt = g.q(beam_post, b)
+        if pt is None:
+            continue
+        bb = pt[3]
+        for i in range(int((bb[0] - 0.01) // BEAM_CELL), int((bb[2] + 0.01) // BEAM_CELL) + 1):
+            for j in range(int((bb[1] - 0.01) // BEAM_CELL), int((bb[3] + 0.01) // BEAM_CELL) + 1):
+                out.setdefault((i, j), []).append(b)
+    return {k: tuple(v) for k, v in out.items()}
+
+
+def beam_mains(g, b):
+    """보 b 의 끝을 자르는 주 보 후보 ((id, 아래 z, 위 z, 경계 상자, 사각형), ...) id 순(W2 열여덟 번째 PR, 보끼리 접합).
+    b 의 한 끝이 다른 보 m 의 평면 외곽 안에 있으면 m 이 후보다. 단 m 의 끝도 b 의 외곽 안이고(L 결합처럼 서로 끝이 닿는다) b 의 순위가 앞서면
+    b 가 주 보라 m 에게 잘리지 않는다(주 보가 이긴다). 높이 겹침은 trims 가 본다."""
+    p = el(g, b)["params"]
+    idx = g.q(beam_post_index)
+    me = g.q(beam_post, b)
+    cand = set()
+    for k in (0, 1):
+        x, y = (p["start"] if k == 0 else p["end"])
+        for dx in (-0.01, 0.01):   # 칸 경계 위의 끝점은 이웃 칸도 본다
+            for dy in (-0.01, 0.01):
+                cand.update(idx.get((int((x + dx) // BEAM_CELL), int((y + dy) // BEAM_CELL)), ()))
+    cand.discard(b)
+    out = []
+    for m in sorted(cand):
+        pm = g.q(beam_post, m)
+        if not (BM.end_inside(p, 0, pm) or BM.end_inside(p, 1, pm)):
+            continue
+        q = el(g, m)["params"]
+        if me is not None and (BM.end_inside(q, 0, me) or BM.end_inside(q, 1, me)) and me[5] < pm[5]:
+            continue   # 서로 끝이 닿고 b 가 주 보다
+        out.append(pm[:5])
+    return tuple(out)
+
+
+def beam_cut(g, b):
+    """기둥·보 면 자르기 (시작에서 줄인 길이, 끝에서 줄인 길이, 시작 쪽 기둥·주 보 id, 끝 쪽 id)(축 방향 길이, beams.trims). 자를 것이 없으면 (0, 0, None, None).
+    보끼리 접합(W2 열여덟 번째 PR): 주 보(beam_mains)를 기둥과 같은 규칙으로 넘긴다. 기둥과 주 보가 함께 닿으면 더 많이 줄이는 쪽."""
+    p = el(g, b)["params"]
+    if p.get("cutback") is False:
+        return (0.0, 0.0, None, None)
+    mains = g.q(beam_mains, b) if g.q(count, "beam") > 1 else ()
+    if not mains:
+        return g.q(beam_col_cut, b)
+    cols = g.q(beam_columns) if g.q(count, "finst") else ()
+    return _to_axis(p, BM.trims(p, BM.end_zranges(p, g.q(beam_zref, b)), tuple(cols) + mains))
 
 
 def beam_measure(g, b):
-    """(축 길이, 자른 길이, 단면적 mm2, 체적 mm3)."""
+    """(축 실길이, 자른 실길이, 단면적 mm2, 체적 mm3). 경사 보는 3D 길이다."""
     p = el(g, b)["params"]
-    ln = BM.axis(p)[4]
+    ln = BM.length3(p)
     c = g.q(beam_cut, b)
     cl = ln - c[0] - c[1]
     a = BM.section_area(p["section"])
@@ -1173,9 +1252,20 @@ def ifc_spec(g, e):
         cb = {"top": -sc["depth"] / 2.0, "center": 0.0, "bottom": sc["depth"] / 2.0}[p["anchor"]]
         r = p.get("roll", 0.0)
         sn, cs = SO.sincos_deg(float(r)) if r else (0.0, 1.0)
-        return {"kind": kind, "name": p["name"], "level": g.q(beam_level, e), "origin": (ax + ux * c[0], ay + uy * c[0], p["offset"]), "xdir": (ux, uy),
-                "length": ln - c[0] - c[1], "section": tuple(sorted(sc.items())), "profile_name": BM.section_label(sc), "center": (-cb * sn, cb * cs),
-                "roll": (cs, sn), "intent": intent}
+        if BM.sloped(p):   # 경사 보(W2 열여덟 번째 PR): 돌출 방향이 배치 xz 면 안에서 기운다(slope = (cos, sin)). 원점·길이는 축(실길이)을 따라 잰다
+            kc, ks, l3 = BM.slope(p)
+            spec = {"kind": kind, "name": p["name"], "level": g.q(beam_level, e),
+                    "origin": (ax + ux * kc * c[0], ay + uy * kc * c[0], p["offset"] + ks * c[0]), "xdir": (ux, uy), "slope": (kc, ks),
+                    "length": l3 - c[0] - c[1], "section": tuple(sorted(sc.items())), "profile_name": BM.section_label(sc), "center": (-cb * sn, cb * cs),
+                    "roll": (cs, sn), "intent": intent}
+        else:
+            spec = {"kind": kind, "name": p["name"], "level": g.q(beam_level, e), "origin": (ax + ux * c[0], ay + uy * c[0], p["offset"]), "xdir": (ux, uy),
+                    "length": ln - c[0] - c[1], "section": tuple(sorted(sc.items())), "profile_name": BM.section_label(sc), "center": (-cb * sn, cb * cs),
+                    "roll": (cs, sn), "intent": intent}
+        if "material" in p:   # 구조 재료(W2 열여덟 번째 PR): IFC4 IfcMaterialProfileSetUsage(맞춤 = 기준선 자리의 CardinalPoint). 없으면 명세는 이전과 같다
+            spec["material"] = p["material"]
+            spec["cardinal"] = {"top": 8, "center": 5, "bottom": 2}[p["anchor"]]
+        return spec
     if kind == "slab":
         # 배치는 레벨 좌표계(원점·무회전)이고 윗면은 레벨 + top_offset 이므로 레벨 높이는 읽지 않는다(레벨을 옮기면 배치가 따라간다)
         spec = {"kind": kind, "name": p["name"], "level": g.q(slab_level, e), "boundary": tuple(tuple(q) for q in p["boundary"]),

@@ -163,8 +163,17 @@ EAVE_IFC = {"fascia": ("IfcCovering", {"PredefinedType": "USERDEFINED", "ObjectT
 
 def our_usage(m) -> bool:
     """코어가 투영한 층 구성 지정(IfcMaterialLayerSetUsage)인가. 이 지정은 투영이 소유한다(재료 이름 하나로 읽거나 부속 스냅숏으로 다루지 않는다)."""
-    return (m is not None and m.is_a("IfcMaterialLayerSetUsage") and m.ForLayerSet is not None
+    if m is None:
+        return False
+    if m.is_a("IfcMaterialProfileSetUsage"):   # 보의 구조 재료(W2 열여덟 번째 PR): 코어가 투영한 단면 재료 집합 지정도 같은 규칙이다
+        return m.ForProfileSet is not None and getattr(m.ForProfileSet, "Description", None) == LAYER_MARK
+    return (m.is_a("IfcMaterialLayerSetUsage") and m.ForLayerSet is not None
             and getattr(m.ForLayerSet, "Description", None) == LAYER_MARK)
+
+
+def usage_set(m):
+    """코어 지정(our_usage)이 가리키는 재료 집합(층 집합 또는 단면 집합)."""
+    return m.ForProfileSet if m.is_a("IfcMaterialProfileSetUsage") else m.ForLayerSet
 
 
 def is_site_element(e) -> bool:
@@ -704,7 +713,7 @@ class IfcModel:
             else:
                 m = ue.get_material(e, should_inherit=False)
                 if our_usage(m):
-                    lsets.append(m.ForLayerSet)
+                    lsets.append(usage_set(m))
                 elif m is not None:
                     mats.append(m)
                 self._remove_product(e)
@@ -896,7 +905,7 @@ class IfcModel:
         elif kind == "ftype":
             fp.unproject_type(self, eid)
         cur_mat = ue.get_material(e, should_inherit=False)
-        lset = cur_mat.ForLayerSet if our_usage(cur_mat) else None
+        lset = usage_set(cur_mat) if our_usage(cur_mat) else None
         self._remove_product(e)   # 실패하면 ents 가 그대로라 상태가 설명 가능하다(순서: 지운 뒤에 목록에서 뺀다)
         if lset is not None:   # 요소와 함께 사라진 코어 층 구성(고아)을 치운다: 재료 목록이 상태의 함수여야 한다
             self._drop_layer_set(lset)
@@ -1063,7 +1072,7 @@ class IfcModel:
                     self._mirror_material(eid)
             return
         mat = self._named_material(name)
-        ls = cur.ForLayerSet if our_usage(cur) else None
+        ls = usage_set(cur) if our_usage(cur) else None
         api_material.assign_material(f, products=[e], material=mat)
         if ls is not None:
             self._drop_layer_set(ls)
@@ -1213,12 +1222,16 @@ class IfcModel:
                 if not self.f.get_inverse(st):
                     api_style.remove_style(self.f, style=st)
         elif our_usage(mat) and not self.f.get_inverse(mat):   # 지정이 끊긴 코어 층 구성: 층·층 집합·쓰던 재료까지 치운다
-            self._drop_layer_set(mat.ForLayerSet)
+            self._drop_layer_set(usage_set(mat))
         elif mat.is_a("IfcMaterialLayerSet") and getattr(mat, "Description", None) == LAYER_MARK:   # 지붕 부속이 쓰던 층 집합(W2 아홉 번째 PR)
             self._drop_layer_set(mat)
 
     def _drop_layer_set(self, ls) -> None:
-        """코어 층 구성(IfcMaterialLayerSet)을 지운다. 다른 지정이 아직 쓰면 둔다. 층이 쓰던 재료는 사용처가 없으면 함께 지운다."""
+        """코어 층 구성(IfcMaterialLayerSet)을 지운다. 다른 지정이 아직 쓰면 둔다. 층이 쓰던 재료는 사용처가 없으면 함께 지운다.
+        보의 단면 재료 집합(IfcMaterialProfileSet, W2 열여덟 번째 PR)도 같은 규칙이다(_drop_profile_set)."""
+        if ls.is_a("IfcMaterialProfileSet"):
+            self._drop_profile_set(ls)
+            return
         if any(r.is_a("IfcMaterialLayerSetUsage") or r.is_a("IfcRelAssociatesMaterial") for r in self.f.get_inverse(ls)):
             return   # 아직 쓰는 지정이 있다(층 사용, 또는 지붕 부속의 층 집합 지정: W2 아홉 번째 PR)
         mats = [ly.Material for ly in ls.MaterialLayers if ly.Material is not None]
@@ -1236,12 +1249,12 @@ class IfcModel:
         f = self.f
         cur = ue.get_material(e, should_inherit=False)
         want = [(n, float(t)) for n, t in layers]
-        if our_usage(cur):
+        if our_usage(cur) and cur.is_a("IfcMaterialLayerSetUsage"):
             have = [(ly.Material.Name, float(ly.LayerThickness)) for ly in cur.ForLayerSet.MaterialLayers]
             if (have == want and cur.ForLayerSet.LayerSetName == label and cur.LayerSetDirection == axis and cur.DirectionSense == sense
                     and abs(float(cur.OffsetFromReferenceLine or 0.0) - offset) < 1e-6):
                 return
-        old_ls = cur.ForLayerSet if our_usage(cur) else None
+        old_ls = usage_set(cur) if our_usage(cur) else None
         ls = api_material.add_material_set(f, name=label, set_type="IfcMaterialLayerSet")
         ls.Description = LAYER_MARK
         for n, t in want:
@@ -1259,9 +1272,99 @@ class IfcModel:
         """투영한 층 구성이 있으면 뗀다(요소가 층 구성을 잃었다). 단일 재료 지정(재료 이름)은 그대로 둔다."""
         cur = ue.get_material(e, should_inherit=False)
         if our_usage(cur):
-            ls = cur.ForLayerSet
+            ls = usage_set(cur)
             api_material.unassign_material(self.f, products=[e])
             self._drop_layer_set(ls)
+
+    # ------------------------------------------------------------ 보의 단면 재료(W2 열여덟 번째 PR, IFC4 IfcMaterialProfileSet + Usage)
+    def _drop_profile_set(self, ps) -> None:
+        """코어 단면 재료 집합(IfcMaterialProfileSet, Description = LAYER_MARK 또는 보 유형 표식)을 지운다. 다른 지정이 아직 쓰면 둔다.
+        단면 재료(IfcMaterialProfile)·그 프로필(집합 전용 사본)·사용처가 없어진 재료도 함께 지운다."""
+        f = self.f
+        if any(r.is_a("IfcMaterialProfileSetUsage") or r.is_a("IfcRelAssociatesMaterial") for r in f.get_inverse(ps)):
+            return
+        mps = list(ps.MaterialProfiles or ())
+        mats = [mp.Material for mp in mps if mp.Material is not None]
+        profs = [mp.Profile for mp in mps if mp.Profile is not None]
+        f.remove(ps)
+        for mp in mps:
+            if not f.get_inverse(mp):
+                f.remove(mp)
+        for pr in profs:
+            if not f.get_inverse(pr):
+                pos = getattr(pr, "Position", None)
+                f.remove(pr)
+                if pos is not None and not f.get_inverse(pos):
+                    ue.remove_deep2(f, pos)
+        for m in mats:
+            try:
+                self._gc_material(m)
+            except RuntimeError:
+                pass   # 이미 지웠다
+
+    @staticmethod
+    def _profile_args(sc: dict) -> tuple:
+        """단면 -> (IFC 매개변수 프로필 클래스, 치수 속성들): 사각 IfcRectangleProfileDef·H IfcIShapeProfileDef·ㄷ IfcUShapeProfileDef·
+        ㄱ IfcLShapeProfileDef·각형 강관 IfcRectangleHollowProfileDef·원형 강관 IfcCircleHollowProfileDef. 모두 IFC2X3 에도 있다."""
+        sh = sc["shape"]
+        w, d = float(sc["width"]), float(sc["depth"])
+        if sh == "h":
+            return "IfcIShapeProfileDef", {"OverallWidth": w, "OverallDepth": d, "WebThickness": float(sc["web"]), "FlangeThickness": float(sc["flange"])}
+        if sh == "c":
+            return "IfcUShapeProfileDef", {"Depth": d, "FlangeWidth": w, "WebThickness": float(sc["web"]), "FlangeThickness": float(sc["flange"])}
+        if sh == "l":
+            return "IfcLShapeProfileDef", {"Depth": d, "Width": w, "Thickness": float(sc["thickness"])}
+        if sh == "box":
+            return "IfcRectangleHollowProfileDef", {"XDim": w, "YDim": d, "WallThickness": float(sc["thickness"])}
+        if sh == "pipe":
+            return "IfcCircleHollowProfileDef", {"Radius": w / 2.0, "WallThickness": float(sc["thickness"])}
+        return "IfcRectangleProfileDef", {"XDim": w, "YDim": d}
+
+    def _beam_profile(self, sc: dict, name: str, pos):
+        """단면 -> IFC 매개변수 프로필 엔티티(_profile_args). pos = 프로필 배치(없으면 None)."""
+        cls, attrs = self._profile_args(sc)
+        return self.f.create_entity(cls, ProfileType="AREA", ProfileName=name, Position=pos, **attrs)
+
+    def _profile_set(self, mat: str, label: str, sc: dict, mark: str):
+        """재료 하나 + 단면 프로필 하나의 IfcMaterialProfileSet(이름 = 단면 표기, Description = mark). 프로필은 집합 전용 사본(배치 없음:
+        단면 가운데가 원점, 몸체의 맞춤·회전은 사용(Usage)의 CardinalPoint·몸체 배치가 담는다)."""
+        f = self.f
+        mp = f.create_entity("IfcMaterialProfile", Name=label, Material=self._named_material(mat), Profile=self._beam_profile(sc, label, None))
+        return f.create_entity("IfcMaterialProfileSet", Name=label, Description=mark, MaterialProfiles=[mp])
+
+    @staticmethod
+    def _profile_sig(ps) -> tuple | None:
+        """단면 재료 집합의 비교용 서명 (재료 이름, 집합 이름, 프로필 클래스, 치수 속성들)."""
+        mps = ps.MaterialProfiles or ()
+        if len(mps) != 1 or mps[0].Material is None or mps[0].Profile is None:
+            return None
+        pr = mps[0].Profile
+        info = pr.get_info(include_identifier=False, recursive=False)
+        return (mps[0].Material.Name, ps.Name, pr.is_a(), tuple(sorted((k, float(v)) for k, v in info.items() if isinstance(v, float))))
+
+    def _want_sig(self, mat: str, label: str, sc: dict) -> tuple:
+        cls, attrs = self._profile_args(sc)
+        return (mat, label, cls, tuple(sorted(attrs.items())))
+
+    def _assign_profiles(self, eid: str, mat: str, label: str, sc: dict, cardinal: int) -> None:
+        """보에 단면 재료 지정(IfcMaterialProfileSetUsage, 보마다 집합 하나)을 맞춘다. 이미 같으면 건드리지 않는다(멱등: 엔티티를 만들지 않고 비교한다).
+        다른 재료 지정(단일 재료·외래 재료)은 대체한다: 구조 재료가 있는 보의 재료는 그것이다(벽 층 구성과 같은 규칙). 관계 GlobalId = part_guid(보, "beam:mat")."""
+        f = self.f
+        e = self.ents[eid]
+        cur = ue.get_material(e, should_inherit=False)
+        if our_usage(cur) and cur.is_a("IfcMaterialProfileSetUsage") and self._profile_sig(cur.ForProfileSet) == self._want_sig(mat, label, sc) \
+                and cur.CardinalPoint == cardinal:
+            return
+        old_set = usage_set(cur) if our_usage(cur) else None
+        if cur is not None:
+            api_material.unassign_material(f, products=[e])   # 사용(Usage)도 함께 지운다
+        new = self._profile_set(mat, label, sc, LAYER_MARK)
+        usage = f.create_entity("IfcMaterialProfileSetUsage", ForProfileSet=new, CardinalPoint=cardinal)
+        f.create_entity("IfcRelAssociatesMaterial", GlobalId=part_guid(eid, "beam:mat"), RelatedObjects=[e], RelatingMaterial=usage)
+        if old_set is not None:
+            self._drop_layer_set(old_set)
+        elif cur is not None:
+            self._gc_material(cur)
 
     # ------------------------------------------------------------ 투영 (늦게)
     def project(self, eid: str, spec: dict) -> None:
@@ -1432,7 +1535,8 @@ class IfcModel:
         for r in f.get_inverse(t):
             if r.is_a("IfcRelDefinesByType") and r.Description == mark:
                 return True
-            if r.is_a("IfcRelAssociatesMaterial") and r.RelatingMaterial.is_a("IfcMaterialLayerSet") and r.RelatingMaterial.Description == mark:
+            if r.is_a("IfcRelAssociatesMaterial") and (r.RelatingMaterial.is_a("IfcMaterialLayerSet") or r.RelatingMaterial.is_a("IfcMaterialProfileSet")) \
+                    and r.RelatingMaterial.Description == mark:   # 보 유형 단면 재료 집합(W2 열여덟 번째 PR)
                 return True
         return False
 
@@ -1448,6 +1552,10 @@ class IfcModel:
                 f.remove(r)
                 if not f.get_inverse(ls):
                     self._drop_type_set(ls)
+            elif r.is_a("IfcRelAssociatesMaterial") and r.RelatingMaterial.is_a("IfcMaterialProfileSet") and r.RelatingMaterial.Description == mark:
+                ps = r.RelatingMaterial   # 보 유형 단면 재료 집합(W2 열여덟 번째 PR)
+                f.remove(r)
+                self._drop_profile_set(ps)
         if f.get_inverse(t):   # 다른 도구가 붙인 관계(속성셋 등)가 남았다: 제품 지우기가 함께 치운다
             api_root.remove_product(f, product=t)
         else:
@@ -1509,20 +1617,41 @@ class IfcModel:
                 self._wt_drop_ent(t, BEAMTYPE_MARK)
             self._bt_sig.pop(tid, None)
         for tid in sorted(m):
-            name, beams = m[tid]
+            name, beams, mat = m[tid]
             t = self._by_guid(part_guid(tid, "beamtype"))
             if t is None:
                 t = self.f.create_entity("IfcBeamType", GlobalId=part_guid(tid, "beamtype"), Name=name, Tag=tid, PredefinedType="BEAM")
                 self._bt_sig.pop(tid, None)
-            if self._bt_sig.get(tid) != (name,):
+            if self._bt_sig.get(tid) != (name, mat):
                 if t.Tag != tid:
                     t.Tag = tid
                 if t.Name != name:
                     t.Name = name
                 if t.PredefinedType != "BEAM":
                     t.PredefinedType = "BEAM"
-                self._bt_sig[tid] = (name,)
+                self._bt_material(tid, t, mat)
+                self._bt_sig[tid] = (name, mat)
             self._wt_rel(tid, t, beams, "beamtype", BEAMTYPE_MARK)
+
+    def _bt_material(self, tid: str, t, mat) -> None:
+        """보 유형 재료(W2 열여덟 번째 PR): IfcBeamType 에 IfcMaterialProfileSet(재료 + 단면 프로필, Description = BEAMTYPE_MARK)을
+        IfcRelAssociatesMaterial(part_guid(유형, "beamtype:mat"))로 붙인다. mat = (재료, 단면 표기, 단면 (키, 값) 들) 또는 None(재료 없음 = 붙이지 않는다).
+        보마다의 사용(IfcMaterialProfileSetUsage)은 보 투영이 소유한다(벽 유형 층 집합과 벽의 층 사용처럼 따로 둔다)."""
+        f = self.f
+        mr = self._by_guid(part_guid(tid, "beamtype:mat"))
+        cur = mr.RelatingMaterial if mr is not None else None
+        if mat is not None:
+            sc = dict(mat[2])
+            if cur is not None and cur.is_a("IfcMaterialProfileSet") and self._profile_sig(cur) == self._want_sig(mat[0], mat[1], sc):
+                return
+        if mr is not None:
+            f.remove(mr)
+            if cur is not None and cur.is_a("IfcMaterialProfileSet"):
+                self._drop_profile_set(cur)
+        if mat is None:
+            return
+        ps = self._profile_set(mat[0], mat[1], dict(mat[2]), BEAMTYPE_MARK)
+        f.create_entity("IfcRelAssociatesMaterial", GlobalId=part_guid(tid, "beamtype:mat"), RelatedObjects=[t], RelatingMaterial=ps)
 
     # ------------------------------------------------------------ 지붕 유형(W2 여덟 번째 PR): 벽 유형과 같은 투영
     # IfcRoofType(GlobalId = part_guid(유형 id, "rooftype"), PredefinedType NOTDEFINED, ElementType = 기능, Tag = 유형 id) + 유형 IfcMaterialLayerSet
@@ -2049,14 +2178,22 @@ class IfcModel:
         sc = dict(spec["section"])
         ppos = f.createIfcAxis2Placement2D(f.createIfcCartesianPoint([float(spec["center"][0]), float(spec["center"][1])]),
                                            f.createIfcDirection([float(spec["roll"][0]), float(spec["roll"][1])]))
-        if sc["shape"] == "h":
-            prof = f.create_entity("IfcIShapeProfileDef", ProfileType="AREA", ProfileName=spec["profile_name"], Position=ppos, OverallWidth=float(sc["width"]),
-                                   OverallDepth=float(sc["depth"]), WebThickness=float(sc["web"]), FlangeThickness=float(sc["flange"]))
-        else:
-            prof = f.create_entity("IfcRectangleProfileDef", ProfileType="AREA", ProfileName=spec["profile_name"], Position=ppos, XDim=float(sc["width"]), YDim=float(sc["depth"]))
-        pos = f.createIfcAxis2Placement3D(f.createIfcCartesianPoint([0.0, 0.0, 0.0]), f.createIfcDirection([1.0, 0.0, 0.0]), f.createIfcDirection([0.0, 1.0, 0.0]))
+        prof = self._beam_profile(sc, spec["profile_name"], ppos)   # 단면 모양별 매개변수 프로필(ㄷ·ㄱ·강관: W2 열여덟 번째 PR)
+        # 경사 보(W2 열여덟 번째 PR): 배치는 수평 그대로 두고 돌출 틀의 축(Z)을 배치 xz 면 안에서 (cos, 0, sin) 으로 기울인다. 참조(X) = 배치 y(왼쪽)라
+        # 프로필 y 는 축에 수직인 위쪽이다(단면이 축에 수직). 수평 보는 이전과 같은 (1, 0, 0)
+        sl = spec.get("slope")
+        ax3 = [float(sl[0]), 0.0, float(sl[1])] if sl else [1.0, 0.0, 0.0]
+        pos = f.createIfcAxis2Placement3D(f.createIfcCartesianPoint([0.0, 0.0, 0.0]), f.createIfcDirection(ax3), f.createIfcDirection([0.0, 1.0, 0.0]))
         self._set_body(e, f.createIfcExtrudedAreaSolid(prof, pos, f.createIfcDirection([0.0, 0.0, 1.0]), float(spec["length"])))
         e.Representation.Representations[0].RepresentationType = "SweptSolid"
+        if "material" in spec:   # 구조 재료(W2 열여덟 번째 PR): IfcMaterialProfileSetUsage -> IfcMaterialProfileSet(재료 + 단면 프로필)
+            self._assign_profiles(eid, spec["material"], spec["profile_name"], sc, spec["cardinal"])
+        else:
+            cur = ue.get_material(e, should_inherit=False)
+            if our_usage(cur) and cur.is_a("IfcMaterialProfileSetUsage"):   # 구조 재료를 잃었다(유형에서 뗌·유형 재료 지움)
+                ps = cur.ForProfileSet
+                api_material.unassign_material(f, products=[e])
+                self._drop_profile_set(ps)
 
     def _csg_item(self, node):
         """(꼭짓점, 면, ((연산, 하위), ...)) -> IfcFacetedBrep 또는 IfcBooleanResult(DIFFERENCE·UNION·INTERSECTION) 사슬."""

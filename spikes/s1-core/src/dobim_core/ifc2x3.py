@@ -98,10 +98,42 @@ def _canonical_sets(f) -> None:
                 e[i] = sorted(v, key=_set_key)
 
 
+def _profile_sets_to_material(work, losses) -> None:
+    """IFC4 의 단면 재료 집합(IfcMaterialProfileSet·IfcMaterialProfile·IfcMaterialProfileSetUsage, 보의 구조 재료: W2 열여덟 번째 PR)은
+    IFC2x3 에 없다. IFC2x3 의 보·보 유형은 재료를 IfcMaterial 하나로 지정하는 것이 관행이라(단면은 몸체의 IfcProfileDef 가 담는다)
+    지정 관계의 대상을 첫 단면 재료의 IfcMaterial 로 바꾸고 집합·단면 재료·사용과 집합 전용 프로필을 지운다. 손실로 알린다."""
+    usages = list(work.by_type("IfcMaterialProfileSetUsage"))
+    sets = list(work.by_type("IfcMaterialProfileSet"))
+    if not usages and not sets:
+        return
+    for rel in work.by_type("IfcRelAssociatesMaterial"):
+        m = rel.RelatingMaterial
+        ps = m.ForProfileSet if m.is_a("IfcMaterialProfileSetUsage") else m if m.is_a("IfcMaterialProfileSet") else None
+        if ps is None:
+            continue
+        mats = [mp.Material for mp in (ps.MaterialProfiles or ()) if mp.Material is not None]
+        losses.add(m.is_a(), "단면 재료 집합 -> IfcMaterial(재료 이름만, 단면은 몸체 프로필)")
+        if mats:
+            rel.RelatingMaterial = mats[0]
+        else:
+            work.remove(rel)
+    profs = [mp.Profile for mp in work.by_type("IfcMaterialProfile") if mp.Profile is not None]
+    for u in usages:
+        work.remove(u)
+    for ps in sets:
+        work.remove(ps)
+    for mp in list(work.by_type("IfcMaterialProfile")):
+        work.remove(mp)
+    for pr in profs:   # 집합 전용 프로필(몸체가 쓰지 않는 것)
+        if not work.get_inverse(pr):
+            work.remove(pr)
+
+
 def to_ifc2x3(src: ifcopenshell.file, version: str = "0", stamp: int = 0) -> tuple[ifcopenshell.file, list]:
     """IFC4 파일 -> (IFC2x3 파일, 손실 목록). src 는 바꾸지 않는다(문자열로 복사해 작업한다)."""
     work = ifcopenshell.file.from_string(src.to_string())
     losses = _Losses()
+    _profile_sets_to_material(work, losses)
     oh = _owner_history(work, version, stamp)
     for e in work.by_type("IfcRoot"):
         if e.OwnerHistory is None:

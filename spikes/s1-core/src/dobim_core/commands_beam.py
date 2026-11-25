@@ -8,9 +8,13 @@ beam.create / set / move / type.set : 평면 두 점 사이의 수평 보(레벨
 beam.grid : 통심선을 따라 보를 한꺼번에 놓는다(통심선 교점 사이마다, 기본은 두 교점 모두에 기둥이 있는 칸만: 상용 도구의 '그리드에' 배치)
 삭제는 element.delete, 복사·회전·대칭은 element.copy·rotate·mirror 가 한다(commands_edit). 형상은 beams.py 가 정하고 도면·IFC(IfcBeam 몸체 =
 IfcRectangleProfileDef·IfcIShapeProfileDef 돌출, IfcBeamType + IfcRelDefinesByType)·일람표가 같은 값을 쓴다. 보가 없는 프로젝트는 바이트까지 그대로다.
+
+2부(W2 열여덟 번째 PR): 경사 보(beam.create·set end_offset), 보끼리 접합(다른 보 평면 외곽 안에서 끝나는 보를 주 보 옆면까지 자른다: 파생값),
+단면 추가(ㄷ형강 c·ㄱ형강 l·각형 강관 box·원형 강관 pipe, KS 표준 단면 preset), 보 유형 구조 재료(material: IFC4 IfcMaterialProfileSet + Usage).
 """
 from __future__ import annotations
 
+from math import atan2, degrees
 from typing import Annotated, Literal
 
 from pydantic import Field, model_validator
@@ -26,7 +30,7 @@ from dobim_core.errors import DobimError
 IDS_MAX = 500           # beam.type.set 이 한 번에 받는 보 수 상한
 GRID_BEAMS_MAX = 2000   # beam.grid 가 한 번에 만드는 보 수 상한
 ANS_IDS = 100           # 응답에 싣는 새 id 수 상한
-Preset = Literal[tuple(BM.H_PRESETS)]
+Preset = Literal[tuple(BM.PRESETS)]
 Coord = Annotated[float, Field(ge=-BM.COORD_MAX, le=BM.COORD_MAX, allow_inf_nan=False)]
 Pt = Annotated[list[Coord], Field(min_length=2, max_length=2, description="[x, y] mm(레벨 좌표)")]
 Dim = Annotated[float, Field(gt=0, le=BM.SEC_DIM_MAX, allow_inf_nan=False)]
@@ -68,10 +72,18 @@ def _write_beam(ctx, bid: str, q: dict, path: str) -> None:
 
 
 def retype(ctx, bid: str, tid: str, tp: dict, path: str) -> None:
-    """보 bid 에 유형(tid, params tp)을 입힌다: 단면을 유형 것으로."""
+    """보 bid 에 유형(tid, params tp)을 입힌다: 단면·구조 재료(W2 열여덟 번째 PR)를 유형 것으로. 유형 재료가 생기는 보에 단일 재료(material.set)가
+    있으면 먼저 뗀다(구조 재료가 재료를 대신한다: 벽 층 구성과 같다. 떼는 것도 효과로 남아 되돌리기가 되살린다)."""
     r = ctx.st.el[bid]
     p = r["params"]
-    _write_beam(ctx, bid, dict(p, btype=tid, section=dict(tp["section"])), path)
+    q = dict(p, btype=tid, section=dict(tp["section"]))
+    if "material" in tp:
+        if "material" not in p and ctx.material(bid) is not None:
+            ctx.set_material(bid, None)
+        q["material"] = tp["material"]
+    else:
+        q.pop("material", None)
+    _write_beam(ctx, bid, q, path)
     old = p.get("btype")
     if old != tid:
         if old is not None:
@@ -80,31 +92,39 @@ def retype(ctx, bid: str, tid: str, tp: dict, path: str) -> None:
 
 
 def detach(ctx, bid: str) -> None:
-    """보에서 유형을 뗀다(단면은 남는다)."""
+    """보에서 유형을 뗀다(단면은 남는다). 유형의 구조 재료(W2 열여덟 번째 PR)는 유형의 것이라 함께 떨어진다(그 뒤 재료는 material.set 으로)."""
     r = ctx.st.el[bid]
     old = r["params"].get("btype")
     if old is None:
         return
-    ctx.put_el(bid, dict(r, params={k: v for k, v in r["params"].items() if k != "btype"}))
+    ctx.put_el(bid, dict(r, params={k: v for k, v in r["params"].items() if k not in ("btype", "material")}))
     ctx.rel("of_type", bid, old, False)
 
 
-def _section(base: dict | None, preset, shape, width, depth, web, flange) -> dict:
-    """입력 -> 단면. preset 이 있으면 그 표준 단면, 아니면 base(없으면 사각 300x600) 위에 준 값만 바꾼다."""
+_DIM_KEYS = ("width", "depth", "web", "flange", "thickness")
+
+
+def _section(base: dict | None, preset, shape, width, depth, web, flange, thickness=None) -> dict:
+    """입력 -> 단면. preset 이 있으면 그 표준 단면, 아니면 base(없으면 사각 300x600) 위에 준 값만 바꾼다.
+    원형 강관(pipe)은 width·depth 가 바깥 지름이라 하나만 주면 다른 하나도 같게 맞춘다."""
+    vals = dict(zip(_DIM_KEYS, (width, depth, web, flange, thickness)))
     if preset is not None:
-        if any(v is not None for v in (shape, width, depth, web, flange)):
-            raise DobimError("CONSTRAINT", "preset 과 shape·width·depth·web·flange 를 함께 줄 수 없다", path="/preset")
+        if shape is not None or any(v is not None for v in vals.values()):
+            raise DobimError("CONSTRAINT", "preset 과 shape·width·depth·web·flange·thickness 를 함께 줄 수 없다", path="/preset")
         return BM.preset_section(preset)
     sc = dict(base) if base else {"shape": "rect", "width": 300.0, "depth": 600.0}
     if shape is not None and shape != sc["shape"]:
         sc = {"shape": shape, "width": sc["width"], "depth": sc["depth"]}
-        if shape == "h" and (web is None or flange is None):
-            raise DobimError("CONSTRAINT", "H형 단면은 web·flange 를 준다", path="/web")
-    for k, v in (("width", width), ("depth", depth), ("web", web), ("flange", flange)):
+        for k in BM.SHAPE_KEYS[shape][2:]:
+            if vals[k] is None:
+                raise DobimError("CONSTRAINT", f"{shape} 단면은 " + "·".join(BM.SHAPE_KEYS[shape][2:]) + " 를 준다", path=f"/{k}")
+    for k, v in vals.items():
         if v is not None:
-            if k in ("web", "flange") and sc["shape"] != "h":
-                raise DobimError("CONSTRAINT", f"{k} 는 H형 단면(shape h)에만 있다", path=f"/{k}")
+            if k not in BM.SHAPE_KEYS[sc["shape"]]:
+                raise DobimError("CONSTRAINT", f"{k} 는 {sc['shape']} 단면에 없다(" + ", ".join(BM.SHAPE_KEYS[sc["shape"]]) + ")", path=f"/{k}")
             sc[k] = float(v)
+    if sc["shape"] == "pipe" and (width is None) != (depth is None):   # 지름 하나만 주면 둘 다
+        sc["width"] = sc["depth"] = float(width if width is not None else depth)
     why = BM.section_problem(sc)
     if why:
         raise DobimError("CONSTRAINT", f"단면이 올바르지 않다: {why}", path="/shape")
@@ -113,37 +133,51 @@ def _section(base: dict | None, preset, shape, width, depth, web, flange) -> dic
 
 def _pub_type(ctx, tid: str) -> dict:
     p = ctx.st.el[tid]["params"]
-    return {"id": tid, "name": p["name"], "section": dict(p["section"]), "label": BM.section_label(p["section"]), "beams": len(beams_of(ctx, tid))}
+    out = {"id": tid, "name": p["name"], "section": dict(p["section"]), "label": BM.section_label(p["section"]), "beams": len(beams_of(ctx, tid))}
+    if "material" in p:
+        out["material"] = p["material"]
+    return out
 
 
 # ---------------------------------------------------------------- 보 유형
+Shape = Literal["rect", "h", "c", "l", "box", "pipe"]
+MatName = Annotated[str, Field(max_length=64)]
+
+
 class _SecIn(A):
-    preset: Preset | None = Field(None, description="KS H형강 표준 단면 이름(춤x폭x웨브x플랜지): " + ", ".join(BM.H_PRESETS))
-    shape: Literal["rect", "h"] | None = Field(None, description="rect 사각(철근콘크리트 보), h H형강")
-    width: Dim | None = Field(None, description="폭 mm(H형은 플랜지 폭 B)")
-    depth: Dim | None = Field(None, description="춤 mm(H형은 전체 높이 H)")
-    web: Dim | None = Field(None, description="H형 웨브 두께 t1 mm")
-    flange: Dim | None = Field(None, description="H형 플랜지 두께 t2 mm")
+    preset: Preset | None = Field(None, description="KS 표준 단면 이름: H형강(H-춤x폭x웨브x플랜지)·ㄷ형강(C-)·등변 ㄱ형강(L-)·원형 강관(P-지름x두께)·각형 강관(B-춤x폭x두께). "
+                                  "목록은 beamtype.list 의 presets")
+    shape: Shape | None = Field(None, description="rect 사각(철근콘크리트 보), h H형강, c ㄷ형강, l ㄱ형강, box 각형 강관, pipe 원형 강관")
+    width: Dim | None = Field(None, description="폭 mm(H·ㄷ형은 플랜지 폭 B, 원형 강관은 바깥 지름)")
+    depth: Dim | None = Field(None, description="춤 mm(H·ㄷ형은 전체 높이 H, 원형 강관은 바깥 지름)")
+    web: Dim | None = Field(None, description="H·ㄷ형 웨브 두께 t1 mm")
+    flange: Dim | None = Field(None, description="H·ㄷ형 플랜지 두께 t2 mm")
+    thickness: Dim | None = Field(None, description="ㄱ형강·강관 두께 t mm")
 
 
 class BeamTypeCreate(_SecIn):
     id: Id | None = None
     name: Name = Field(description="유형 이름(프로젝트 안에서 유일)")
+    material: Name | None = Field(None, description="구조 재료 이름(예: SS275, C24). 그 유형의 보 재료가 된다(IFC4 IfcMaterialProfileSet + Usage)")
 
 
 @command("beamtype.create", kind="mutation", risk="write", group="model.beam",
-         summary="보 유형(단면: 사각 폭·춤 또는 H형강 폭·춤·웨브·플랜지, KS H형강 표준 단면 preset)을 만든다. 보는 beam.create type 으로 놓는다",
+         summary="보 유형(단면: 사각·H형강·ㄷ형강·ㄱ형강·각형/원형 강관, KS 표준 단면 preset, 선택 구조 재료)을 만든다. 보는 beam.create type 으로 놓는다",
          args=BeamTypeCreate, since="0.22",
-         examples=[{"name": "G1 400x700", "shape": "rect", "width": 400, "depth": 700}, {"name": "SG1", "preset": "H-400x200x8x13"}])
+         examples=[{"name": "G1 400x700", "shape": "rect", "width": 400, "depth": 700}, {"name": "SG1", "preset": "H-400x200x8x13"},
+                   {"name": "SB1", "preset": "C-150x75x6.5x10", "material": "SS275"}])
 def beamtype_create(ctx, a: BeamTypeCreate):
     if len(_types(ctx)) >= BM.BEAMTYPES_MAX:
         raise DobimError("CONSTRAINT", f"보 유형은 {BM.BEAMTYPES_MAX}개까지다", path="/name")
     _name_taken(ctx, a.name)
-    sc = _section(None, a.preset, a.shape, a.width, a.depth, a.web, a.flange)
+    sc = _section(None, a.preset, a.shape, a.width, a.depth, a.web, a.flange, a.thickness)
     C._fresh_id(ctx, a, "beamtype")
     if ctx.external_def(a.id):
         ctx.warn("가져온 파일에 이 id 의 보 유형 정의가 되살려지지 않은 채 남아 있다: 새 정의가 그 속성을 덮어쓴다")
-    ctx.put_el(a.id, row("beamtype", "", "beam.type", {"name": a.name, "section": sc}))
+    p = {"name": a.name, "section": sc}
+    if a.material is not None:
+        p["material"] = a.material
+    ctx.put_el(a.id, row("beamtype", "", "beam.type", p))
     return {"id": a.id, "name": a.name, "label": BM.section_label(sc)}
 
 
@@ -151,28 +185,35 @@ class BeamTypeSet(_SecIn):
     forbid_null = True
     id: Id
     name: Name | None = None
+    material: MatName | None = Field(None, description="구조 재료 이름. 빈 문자열이면 유형 재료를 뗀다")
 
     @model_validator(mode="after")
     def _any(self):
-        if all(getattr(self, k) is None for k in ("name", "preset", "shape", "width", "depth", "web", "flange")):
+        if all(getattr(self, k) is None for k in ("name", "preset", "shape", "width", "depth", "web", "flange", "thickness", "material")):
             raise ValueError("바꿀 필드가 하나도 없다")
         return self
 
 
 @command("beamtype.set", kind="mutation", risk="write", group="model.beam",
-         summary="보 유형을 고친다(이름·단면). 그 유형의 모든 보가 따라간다",
-         args=BeamTypeSet, since="0.22", examples=[{"id": F.BT1, "depth": 800}])
+         summary="보 유형을 고친다(이름·단면·구조 재료). 그 유형의 모든 보가 따라간다",
+         args=BeamTypeSet, since="0.22", examples=[{"id": F.BT1, "depth": 800}, {"id": F.BT1, "material": "C24"}])
 def beamtype_set(ctx, a: BeamTypeSet):
     r = type_row(ctx, a.id)
     old = r["params"]
     if a.name is not None:
         _name_taken(ctx, a.name, skip=a.id)
-    p = {"name": a.name if a.name is not None else old["name"], "section": _section(old["section"], a.preset, a.shape, a.width, a.depth, a.web, a.flange)}
+    p = {"name": a.name if a.name is not None else old["name"],
+         "section": _section(old["section"], a.preset, a.shape, a.width, a.depth, a.web, a.flange, a.thickness)}
+    mat = old.get("material") if a.material is None else (a.material or None)
+    if mat is not None:
+        if K.row_params_error("beamtype", dict(p, material=mat)):
+            raise DobimError("CONSTRAINT", "material 이름이 올바르지 않다", path="/material")
+        p["material"] = mat
     if p == old:
         return {"id": a.id, "changed": False, "beams": 0}
     ctx.put_el(a.id, dict(r, params=p))
     n = 0
-    if p["section"] != old["section"]:   # 형상 키가 바뀐 때만 보를 다시 쓴다(이름은 보 행에 없다)
+    if p["section"] != old["section"] or p.get("material") != old.get("material"):   # 형상·재료 키가 바뀐 때만 보를 다시 쓴다(이름은 보 행에 없다)
         for bid in beams_of(ctx, a.id):
             before = ctx.st.el[bid]["params"]
             retype(ctx, bid, a.id, p, "/id")
@@ -195,7 +236,10 @@ def beamtype_duplicate(ctx, a: BeamTypeDup):
     _name_taken(ctx, a.name)
     holder = BeamTypeCreate(name=a.name, id=a.new_id)
     C._fresh_id(ctx, holder, "beamtype")
-    ctx.put_el(holder.id, row("beamtype", "", "beam.type", {"name": a.name, "section": dict(r["params"]["section"])}))
+    p = {"name": a.name, "section": dict(r["params"]["section"])}
+    if "material" in r["params"]:
+        p["material"] = r["params"]["material"]
+    ctx.put_el(holder.id, row("beamtype", "", "beam.type", p))
     return {"id": holder.id, "name": a.name}
 
 
@@ -224,7 +268,7 @@ class BeamTypeList(A):
 
 
 @command("beamtype.list", kind="query", risk="read", group="model.beam",
-         summary="보 유형 일람표(이름·단면·단면 표기·쓰는 보 수)와 KS H형강 표준 단면 이름", args=BeamTypeList, idempotent=True, since="0.22",
+         summary="보 유형 일람표(이름·단면·단면 표기·구조 재료·쓰는 보 수)와 KS 표준 단면 이름", args=BeamTypeList, idempotent=True, since="0.22",
          examples=[{}, {"limit": 5}])
 def beamtype_list(ctx, a: BeamTypeList):
     ids = sorted(_types(ctx), key=lambda t: (ctx.st.el[t]["params"]["name"], t))
@@ -235,7 +279,7 @@ def beamtype_list(ctx, a: BeamTypeList):
     items, cut = C._fit(rows, cursor_of=lambda k: C._enc_cursor(keys[start + k]))
     more = start + len(items) < len(ids)
     untyped = sum(1 for b in ctx.st.by_kind.get("beam", ()) if "btype" not in ctx.st.el[b]["params"])
-    return {"items": items, "untyped_beams": untyped, "presets": list(BM.H_PRESETS),
+    return {"items": items, "untyped_beams": untyped, "presets": list(BM.PRESETS),
             "page": C._page(C._enc_cursor(keys[start + len(items) - 1]) if more and items else None, len(ids), cut)}
 
 
@@ -252,11 +296,13 @@ class BeamCreate(A):
     offset: Num = Field(0.0, ge=-BM.OFFSET_MAX, le=BM.OFFSET_MAX, description="기준선 높이 mm(레벨 기준). anchor top 이면 보 윗면 = 레벨 + offset")
     anchor: Anchor = Field("top", description="기준선이 지나는 단면 자리(top 윗면·center 가운데·bottom 밑면)")
     roll: Num = Field(0.0, gt=-180.0, le=180.0, description="단면 회전(도, 기준선 둘레, 시작점에서 끝점을 볼 때 반시계 +)")
-    cutback: bool = Field(True, description="true 면 끝점이 기둥 단면 안에 있을 때 보를 기둥 면까지 자른다(STR-03)")
+    cutback: bool = Field(True, description="true 면 끝점이 기둥 단면 안이거나 다른 보(주 보)의 평면 외곽 안에 있을 때 보를 그 면까지 자른다(STR-03)")
+    end_offset: Num | None = Field(None, ge=-BM.OFFSET_MAX, le=BM.OFFSET_MAX,
+                                   description="끝점 기준선 높이 mm(레벨 기준). 주면 경사 보(시작 = offset, 끝 = end_offset), 없으면 수평 보")
     name: Name | None = None
 
 
-def _beam_params(name, start, end, offset, anchor, roll, cutback, tid, sc) -> dict:
+def _beam_params(name, start, end, offset, anchor, roll, cutback, tid, sc, end_offset=None, material=None) -> dict:
     p = {"name": name, "start": [float(start[0]), float(start[1])], "end": [float(end[0]), float(end[1])], "offset": float(offset),
          "anchor": anchor, "section": dict(sc)}
     if tid is not None:
@@ -265,20 +311,26 @@ def _beam_params(name, start, end, offset, anchor, roll, cutback, tid, sc) -> di
         p["roll"] = float(roll)
     if not cutback:
         p["cutback"] = False
+    if end_offset is not None and float(end_offset) != float(offset):   # 경사 보(W2 열여덟 번째 PR): 끝 높이가 같으면 수평 보(키 없음)
+        p["end_offset"] = float(end_offset)
+    if material is not None:   # 보 유형 구조 재료의 사본(W2 열여덟 번째 PR)
+        p["material"] = material
     return p
 
 
 @command("beam.create", kind="mutation", risk="write", group="model.beam",
-         summary="구조 보를 두 점 사이에 놓는다(레벨·기준선 높이·z 맞춤·단면 회전·기둥 면 자르기). IFC 는 IfcBeam(단면 프로필 돌출) + IfcBeamType",
+         summary="구조 보를 두 점 사이에 놓는다(레벨·기준선 높이·끝 높이(경사 보)·z 맞춤·단면 회전·기둥·보 면 자르기). IFC 는 IfcBeam(단면 프로필 돌출) + IfcBeamType",
          args=BeamCreate, since="0.22",
          examples=[{"level": F.LV2, "type": F.BT1, "start": [0, 0], "end": [6000, 0]},
-                   {"id": F.BM1, "level": F.LV2, "type": F.BT1, "start": [0, 4000], "end": [6000, 4000], "offset": -100, "anchor": "top"}])
+                   {"id": F.BM1, "level": F.LV2, "type": F.BT1, "start": [0, 4000], "end": [6000, 4000], "offset": -100, "anchor": "top"},
+                   {"level": F.LV2, "type": F.BT1, "start": [0, 8000], "end": [6000, 8000], "offset": 0, "end_offset": 600}])
 def beam_create(ctx, a: BeamCreate):
     C._fresh_id(ctx, a, "beam")
     ctx.authored(a.level, "level", what="레벨에 보를 추가하는 것")
     tp = type_row(ctx, a.type, "/type")["params"]
     a.name = a.name or f"BM-{a.id[-6:]}"
-    p = _check_beam(a.id, _beam_params(a.name, a.start, a.end, a.offset, a.anchor, a.roll, a.cutback, a.type, tp["section"]), "/start")
+    p = _check_beam(a.id, _beam_params(a.name, a.start, a.end, a.offset, a.anchor, a.roll, a.cutback, a.type, tp["section"], a.end_offset, tp.get("material")),
+                    "/start")
     ctx.put_el(a.id, row("beam", "IfcBeam", "beam.basic", p))
     ctx.rel("on_level", a.id, a.level, True)
     ctx.rel("of_type", a.id, a.type, True)
@@ -295,24 +347,29 @@ class BeamSet(A):
     anchor: Anchor | None = None
     roll: Num | None = Field(None, gt=-180.0, le=180.0)
     cutback: bool | None = None
+    end_offset: Num | None = Field(None, ge=-BM.OFFSET_MAX, le=BM.OFFSET_MAX,
+                                   description="끝점 기준선 높이 mm(경사 보). offset 과 같은 값이면 수평 보가 된다. 생략하면 그대로(수평 보는 끝 높이 = offset 을 따른다)")
     name: Name | None = None
 
     @model_validator(mode="after")
     def _any(self):
-        if all(getattr(self, k) is None for k in ("level", "start", "end", "offset", "anchor", "roll", "cutback", "name")):
+        if all(getattr(self, k) is None for k in ("level", "start", "end", "offset", "anchor", "roll", "cutback", "end_offset", "name")):
             raise ValueError("바꿀 필드가 하나도 없다")
         return self
 
 
 @command("beam.set", kind="mutation", risk="write", group="model.beam",
-         summary="보를 고친다(두 점·레벨·기준선 높이·z 맞춤·단면 회전·기둥 면 자르기·이름). 단면은 유형이 정한다(beamtype.set·beam.type.set)",
-         args=BeamSet, since="0.22", examples=[{"id": F.BM1, "offset": -150}, {"id": F.BM1, "end": [7000, 4000], "cutback": False}])
+         summary="보를 고친다(두 점·레벨·기준선 높이·끝 높이(경사 보)·z 맞춤·단면 회전·기둥·보 면 자르기·이름). 단면은 유형이 정한다(beamtype.set·beam.type.set)",
+         args=BeamSet, since="0.22", examples=[{"id": F.BM1, "offset": -150}, {"id": F.BM1, "end": [7000, 4000], "cutback": False}, {"id": F.BM1, "end_offset": 500}])
 def beam_set(ctx, a: BeamSet):
     r = ctx.authored(a.id, "beam")
     p = r["params"]
+    # 경사 보의 끝 높이는 따로 고치지 않으면 그대로다(시작 높이 offset 만 바꿔도 끝은 남는다). 수평 보는 끝 = 시작이라 offset 을 따라간다
+    eo = a.end_offset if a.end_offset is not None else p.get("end_offset")
     q = _beam_params(a.name if a.name is not None else p["name"], a.start if a.start is not None else p["start"], a.end if a.end is not None else p["end"],
                      a.offset if a.offset is not None else p["offset"], a.anchor if a.anchor is not None else p["anchor"],
-                     a.roll if a.roll is not None else p.get("roll", 0.0), a.cutback if a.cutback is not None else p.get("cutback", True), p.get("btype"), p["section"])
+                     a.roll if a.roll is not None else p.get("roll", 0.0), a.cutback if a.cutback is not None else p.get("cutback", True), p.get("btype"), p["section"],
+                     eo, p.get("material"))
     _write_beam(ctx, a.id, q, "/id")
     if a.level is not None:
         ctx.authored(a.level, "level", what="레벨에 보를 옮기는 것")
@@ -336,6 +393,8 @@ def beam_move(ctx, a: BeamMove):
     r = ctx.authored(a.id, "beam")
     p = r["params"]
     q = dict(p, start=[p["start"][0] + a.dx, p["start"][1] + a.dy], end=[p["end"][0] + a.dx, p["end"][1] + a.dy], offset=p["offset"] + a.dz)
+    if "end_offset" in p:   # 경사 보는 끝 높이도 함께 올린다
+        q["end_offset"] = p["end_offset"] + a.dz
     _write_beam(ctx, a.id, q, "/dx")
     return {"id": a.id}
 
@@ -458,7 +517,7 @@ def beam_grid(ctx, a: BeamGrid):
     made = []
     for pa, pb in spans:
         bid = ctx.new_id("beam")
-        p = _check_beam(bid, _beam_params(f"BM-{bid[-6:]}", pa, pb, a.offset, a.anchor, 0.0, True, a.type, tp["section"]), "/grids")
+        p = _check_beam(bid, _beam_params(f"BM-{bid[-6:]}", pa, pb, a.offset, a.anchor, 0.0, True, a.type, tp["section"], None, tp.get("material")), "/grids")
         ctx.put_el(bid, row("beam", "IfcBeam", "beam.basic", p))
         ctx.rel("on_level", bid, a.level, True)
         ctx.rel("of_type", bid, a.type, True)
@@ -491,14 +550,19 @@ def beam_list(ctx, a: BeamList):
                 "level": ctx.rels_out("on_level", b)[0], "start": p["start"], "end": p["end"], "offset": p["offset"], "anchor": p["anchor"]}
         if "roll" in p:
             item["roll"] = p["roll"]
+        if "end_offset" in p:   # 경사 보(W2 열여덟 번째 PR): 끝 높이와 기울기(도)
+            item["end_offset"] = p["end_offset"]
+            kc, ks, _l3 = BM.slope(p)
+            item["slope_deg"] = round(degrees(atan2(ks, kc)), 3)
+        if "material" in p:
+            item["material"] = p["material"]
         if st.el[b]["origin"] == "authored":
             ln, cl, _ar, vol = g.q(Q.beam_measure, b)
             c = g.q(Q.beam_cut, b)
             item.update(length=round(ln, 3), cut_length=round(cl, 3), volume_m3=round(vol / 1e9, 6))
-            if c[2] is not None:
-                item["start_cut"] = {"column": c[2], "length": round(c[0], 3)}
-            if c[3] is not None:
-                item["end_cut"] = {"column": c[3], "length": round(c[1], 3)}
+            for k, key in ((2, "start_cut"), (3, "end_cut")):   # 자른 상대: 기둥(column) 또는 주 보(beam, W2 열여덟 번째 PR)
+                if c[k] is not None:
+                    item[key] = {"beam" if st.el.get(c[k], {}).get("kind") == "beam" else "column": c[k], "length": round(c[k - 2], 3)}
         rows.append(item)
     items, cut = C._fit(rows, cursor_of=lambda k: C._enc_cursor(ids[start + k]))
     more = start + len(items) < len(ids)

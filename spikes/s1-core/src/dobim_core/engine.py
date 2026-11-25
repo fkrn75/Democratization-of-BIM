@@ -27,6 +27,7 @@ from typing import Any
 import ifcopenshell.guid
 
 from dobim_core import annot as AN
+from dobim_core import beams as BM
 from dobim_core import drawing as D
 from dobim_core import foreign_geom as FG
 from dobim_core import queries as Q
@@ -267,12 +268,16 @@ class Ctx:
         row = self.eng.st.el.get(eid)
         if row is not None and row["kind"] in ("wall", "slab", "roof") and "layers" in row["params"]:
             return layers_label(row["params"]["layers"])   # 층 구성이 재료를 정한다(투영 여부와 무관). 지붕 층 구성은 W2 여덟 번째 PR
+        if row is not None and row["kind"] == "beam" and "material" in row["params"]:
+            return row["params"]["material"]   # 보 유형의 구조 재료(W2 열여덟 번째 PR)가 재료를 정한다(IFC4 는 IfcMaterialProfileSetUsage)
         return self.eng.ifc.get_material(eid) if self._in_ifc(eid) else None
 
     def layered(self, eid) -> bool:
-        """층 구성(재료·두께 목록)을 가진 벽·슬래브·지붕인가. 이런 요소의 재료는 wall.layers·slab.layers·roof.layers 가 정한다."""
+        """층 구성(재료·두께 목록)을 가진 벽·슬래브·지붕, 또는 구조 재료가 있는 보(W2 열여덟 번째 PR)인가. 이런 요소의 재료는
+        wall.layers·slab.layers·roof.layers·beamtype.set material 이 정한다."""
         row = self.eng.st.el.get(eid)
-        return row is not None and row["kind"] in ("wall", "slab", "roof") and "layers" in row["params"]
+        return row is not None and (row["kind"] in ("wall", "slab", "roof") and "layers" in row["params"]
+                                    or row["kind"] == "beam" and "material" in row["params"])
 
     def det_id(self, label: str) -> str:
         """라벨에서 결정적으로 얻는 GlobalId(같은 프로젝트·같은 라벨이면 같은 값). 내용 주소 id 에 쓴다."""
@@ -367,6 +372,9 @@ class Ctx:
             raise DobimError("CONSTRAINT", f"재료를 가질 수 없는 요소다: {eid}", path="/id")
         if self.layered(eid):   # 재료는 층 구성이 정한다: 같은 이름표를 다시 주는 것(분할로 복사)·떼는 것(삭제 정리)은 할 일이 없고, 다른 재료는 거절한다
             if name is not None and name != self.material(eid):
+                if self.row(eid)["kind"] == "beam":
+                    raise DobimError("CONSTRAINT", f"구조 재료가 있는 보의 재료는 보 유형이 정한다: {eid}", path="/id",
+                                     hint="beamtype.set 의 material 로 바꾸거나 beam.type.set 으로 유형을 바꾸세요")
                 raise DobimError("CONSTRAINT", f"층 구성이 있는 요소의 재료는 층 구성이 정한다: {eid}", path="/id", hint="wall.layers·slab.layers 로 층을 바꾸세요")
             return False
         old = self.eng.ifc.get_material(eid)
@@ -1075,14 +1083,17 @@ class Engine:
         return out
 
     def beamtype_map(self) -> dict:
-        """보 유형 행(beamtype, W2 열다섯 번째 PR) -> {유형 id: (이름, 그 유형을 쓰는 IFC 보 id 들)}. 유형이 없으면 빈 표."""
+        """보 유형 행(beamtype, W2 열다섯 번째 PR) -> {유형 id: (이름, 그 유형을 쓰는 IFC 보 id 들, 재료 묶음 또는 None)}. 유형이 없으면 빈 표.
+        재료 묶음(W2 열여덟 번째 PR) = (재료 이름, 단면 표기, 단면 (키, 값) 들): 유형 재료가 있을 때만(IfcBeamType 의 IfcMaterialProfileSet)."""
         tids = self.st.by_kind.get("beamtype")
         if not tids:
             return {}
         out = {}
         for t in sorted(tids):
             beams = tuple(sorted(b for b in self.st.inn.get(("of_type", t), ()) if b in self.ifc.ents and self.st.el[b]["origin"] == "authored"))
-            out[t] = (self.st.el[t]["params"]["name"], beams)
+            tp = self.st.el[t]["params"]
+            mat = (tp["material"], BM.section_label(tp["section"]), tuple(sorted(tp["section"].items()))) if "material" in tp else None
+            out[t] = (tp["name"], beams, mat)
         return out
 
     def grid_map(self) -> dict:
