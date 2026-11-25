@@ -162,8 +162,8 @@ TAKEOFF_CATS = ("walls", "floors", "roofs", "ceilings", "finishes")
 
 
 class TakeoffSpec(A):
-    categories: list[Literal["walls", "floors", "roofs", "ceilings", "finishes"]] = Field(
-        default_factory=lambda: list(TAKEOFF_CATS), min_length=1, max_length=5, description="재료 물량을 낼 범주(기본: 벽·바닥·지붕·천장·마감)")
+    categories: list[Literal["walls", "floors", "roofs", "ceilings", "finishes", "beams"]] = Field(
+        default_factory=lambda: list(TAKEOFF_CATS), min_length=1, max_length=6, description="재료 물량을 낼 범주(기본: 벽·바닥·지붕·천장·마감). beams(보, W2 열다섯 번째 PR)는 부피만이고 기본에 들지 않는다")
     by_level: bool = Field(True, description="참이면 레벨별로 나눈다")
     units: Literal["mm", "m"] = Field("m", description="m 이면 면적 m²·부피 m³(기본)")
 

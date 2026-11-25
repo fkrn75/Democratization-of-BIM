@@ -12,6 +12,7 @@ from __future__ import annotations
 
 from math import sqrt
 
+from dobim_core import beams as BM
 from dobim_core import kinds as K
 from dobim_core import queries as Q
 from dobim_core import solids as SO
@@ -47,7 +48,7 @@ _FAMILY_CAT = {"IfcDoor": "doors", "IfcWindow": "windows", "IfcColumn": "columns
                "IfcStair": "stairs", "IfcRailing": "railings", "IfcSlab": "floors", "IfcWall": "walls", "IfcCovering": "finishes"}
 
 # 일람표 범주가 있는 요소 종류(행을 만드는 종류)
-ROW_KINDS = ("wall", "door", "slab", "roof", "stair", "railing", "space", "elevator", "solid", "finst")
+ROW_KINDS = ("wall", "door", "slab", "roof", "stair", "railing", "space", "elevator", "solid", "finst", "beam")   # 구조 보: W2 열다섯 번째 PR
 
 # ---------------------------------------------------------------- 필드
 COMMON_FIELDS = ("id", "kind", "category", "ifc_class", "name", "type", "level", "elevation", "material", "fire_rating", "is_external", "count")
@@ -174,6 +175,8 @@ def category_of(g, e) -> str | None:
         return "elevators"
     if kind == "solid":
         return _SOLID_CAT.get(p["category"], "generic")
+    if kind == "beam":   # 구조 보(W2 열다섯 번째 PR)
+        return "beams"
     if kind == "finst":
         return _FAMILY_CAT.get(g.q(_recipe_class, e), "generic")
     return None
@@ -273,6 +276,13 @@ def element_row(g, e) -> dict:
                 out["thickness"] = p["thickness"]
             elif m["top_area"] > 0:
                 out["thickness"] = m["volume"] / m["top_area"]
+    elif kind == "beam":   # 구조 보(W2 열다섯 번째 PR): 길이는 기둥 면 자르기 뒤의 길이, 체적 = 단면적 x 그 길이
+        _ln, cl, _a, vol = g.q(Q.beam_measure, e)
+        bt = p.get("btype")
+        out.update(type=Q.el(g, bt)["params"]["name"] if bt and Q.el(g, bt) is not None else BM.section_label(p["section"]),
+                   width=p["section"]["width"], depth=p["section"]["depth"], length=cl, volume=vol)
+        if lelev is not None:
+            out["elevation"] = lelev + p["offset"]
     elif kind == "finst":
         spec = g.q(Q.ifc_spec, e)
         out["ifc_class"] = g.q(_recipe_class, e)
@@ -528,7 +538,7 @@ def build_table(rows: list, columns: list, filters: list, sort: list, group_by: 
 
 
 # ---------------------------------------------------------------- 재료 물량(DOC-10)
-TAKEOFF_KINDS = ("wall", "slab", "roof", "solid")
+TAKEOFF_KINDS = ("wall", "slab", "roof", "solid", "beam")   # 구조 보(W2 열다섯 번째 PR): 부피만
 
 
 def takeoff_parts(g, e) -> tuple:

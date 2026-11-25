@@ -153,6 +153,7 @@ ASM_MARK = "DoBIM assembly"        # 조립품 IfcElementAssembly 투영(W2 열�
 WALLTYPE_MARK = "DoBIM wall type"   # 벽 유형 투영(W2 일곱 번째 PR)의 IfcRelDefinesByType·유형 층 집합 Description: 투영이 소유한다는 표식
 RAIL_PART_LABELS = ("balusters", "posts", "rails")   # 유형 난간의 부재 이름표(W2 열세 번째 PR, 이름표 순서 = 만드는 순서)
 RAILTYPE_MARK = "DoBIM railing type"   # 난간 유형 투영(W2 열세 번째 PR)의 표식(벽·지붕 유형과 같은 쓰임)
+BEAMTYPE_MARK = "DoBIM beam type"   # 보 유형 투영(W2 열다섯 번째 PR)의 표식(벽·지붕·난간 유형과 같은 쓰임)
 ROOFTYPE_MARK = "DoBIM roof type"   # 지붕 유형 투영(W2 여덟 번째 PR)의 표식(벽 유형과 같은 쓰임)
 # 처마 부속(W2 여덟 번째 PR, ARC-20)의 IFC 클래스·PredefinedType·ObjectType. IFC4 IfcCoveringTypeEnum 에 FASCIA·SOFFIT 가 없어 USERDEFINED + ObjectType 로 적는다
 EAVE_IFC = {"fascia": ("IfcCovering", {"PredefinedType": "USERDEFINED", "ObjectType": "FASCIA"}),
@@ -570,6 +571,8 @@ class IfcModel:
         self._rt_scanned = False
         self._lt_sig: dict[str, tuple] = {}   # 난간 유형 id -> 마지막으로 맞춘 (이름, 구성) (W2 열세 번째 PR)
         self._lt_scanned = False
+        self._bt_sig: dict[str, tuple] = {}   # 보 유형 id -> 마지막으로 맞춘 (이름,) (W2 열다섯 번째 PR)
+        self._bt_scanned = False
         self._grid_ent = None                 # 투영한 IfcGrid(W2 열 번째 PR, ARC-38) 또는 None
         self._grid_sig: str | None = None     # 그 IfcGrid 의 명세 서명(Description 끝에 적는다: 같으면 다시 쓰지 않는다)
         self._grid_scanned = False            # 가져온 파일의 투영 IfcGrid 를 한 번 훑었는가
@@ -1264,7 +1267,7 @@ class IfcModel:
     def project(self, eid: str, spec: dict) -> None:
         kind = spec["kind"]
         {"level": self._project_level, "wall": self._project_wall, "door": self._project_door, "slab": self._project_slab, "stair": self._project_stair, "space": self._project_space, "railing": self._project_railing, "elevator": self._project_elevator, "roof": self._project_roof,
-         "site": self._project_site, "solid": self._project_solid, "curtwall": self._project_curtwall, "stackwall": self._project_stackwall, "ftype": lambda i, sp: fp.project_type(self, i, sp), "finst": lambda i, sp: fp.project_inst(self, i, sp)}[kind](eid, spec)
+         "site": self._project_site, "solid": self._project_solid, "curtwall": self._project_curtwall, "stackwall": self._project_stackwall, "beam": self._project_beam, "ftype": lambda i, sp: fp.project_type(self, i, sp), "finst": lambda i, sp: fp.project_inst(self, i, sp)}[kind](eid, spec)
         # 의도를 IFC 에도 복제한다. 정본은 의도 저장소이고 이 속성셋은 매번 덮어쓴다.
         e = self.ents[eid]
         text = json.dumps(spec["intent"], sort_keys=True, separators=(",", ":"))
@@ -1489,6 +1492,37 @@ class IfcModel:
                     t.PredefinedType = pre
                 self._lt_sig[tid] = (name, bal)
             self._wt_rel(tid, t, rails, "railtype", RAILTYPE_MARK)
+
+    # ------------------------------------------------------------ 보 유형(W2 열다섯 번째 PR, STR-02): 난간 유형과 같은 투영
+    # IfcBeamType(GlobalId = part_guid(유형 id, "beamtype"), PredefinedType BEAM, Tag = 유형 id) + 그 유형의 보(IfcBeam)들을 묶는
+    # IfcRelDefinesByType(part_guid(유형, "beamtype:rel")). IFC2X3 에도 IfcBeamType(BEAM)이 있어 그대로 나간다. 단면은 보마다의 몸체 프로필이 담는다
+    def sync_beam_types(self, m: dict) -> None:
+        """m = {유형 id: (이름, 보 id 들)} 에 IFC 를 맞춘다. 유형이 없으면 아무것도 하지 않는다."""
+        if self.base_mode and not self._bt_scanned:
+            self._bt_scanned = True
+            self._wt_scan_base({part_guid(t, "beamtype") for t in m}, "IfcBeamType", "beamtype", BEAMTYPE_MARK)
+        if not m and not self._bt_sig:
+            return
+        for tid in sorted(set(self._bt_sig) - set(m)):
+            t = self._by_guid(part_guid(tid, "beamtype"))
+            if t is not None:
+                self._wt_drop_ent(t, BEAMTYPE_MARK)
+            self._bt_sig.pop(tid, None)
+        for tid in sorted(m):
+            name, beams = m[tid]
+            t = self._by_guid(part_guid(tid, "beamtype"))
+            if t is None:
+                t = self.f.create_entity("IfcBeamType", GlobalId=part_guid(tid, "beamtype"), Name=name, Tag=tid, PredefinedType="BEAM")
+                self._bt_sig.pop(tid, None)
+            if self._bt_sig.get(tid) != (name,):
+                if t.Tag != tid:
+                    t.Tag = tid
+                if t.Name != name:
+                    t.Name = name
+                if t.PredefinedType != "BEAM":
+                    t.PredefinedType = "BEAM"
+                self._bt_sig[tid] = (name,)
+            self._wt_rel(tid, t, beams, "beamtype", BEAMTYPE_MARK)
 
     # ------------------------------------------------------------ 지붕 유형(W2 여덟 번째 PR): 벽 유형과 같은 투영
     # IfcRoofType(GlobalId = part_guid(유형 id, "rooftype"), PredefinedType NOTDEFINED, ElementType = 기능, Tag = 유형 id) + 유형 IfcMaterialLayerSet
@@ -2000,6 +2034,29 @@ class IfcModel:
                 if oid in vps:
                     wanted[f"void:{oid}"]["psets"] = vps[oid]
             self._sync_parts(eid, wanted)
+
+    def _project_beam(self, eid, spec):
+        """구조 보(W2 열다섯 번째 PR, STR-02): 배치 = 레벨 좌표계 안의 기준선 시작점(x 축 = 보 방향), 몸체 = 단면 프로필
+        (사각 IfcRectangleProfileDef·H형 IfcIShapeProfileDef, 이름 = 단면 표기)을 보 방향으로 돌출한 IfcExtrudedAreaSolid(SweptSolid).
+        돌출 틀: 축(Z) = 배치 x(보 방향), 참조(X) = 배치 y(보 왼쪽), 그래서 프로필 (a, b) = (왼쪽, 위)다. 프로필 배치가 기준선에서 본 단면 가운데와 회전(roll)을 담는다."""
+        f = self.f
+        e = self.ents[eid]
+        e.Name = spec["name"]
+        if hasattr(e, "PredefinedType") and e.PredefinedType != "BEAM":
+            e.PredefinedType = "BEAM"
+        self._contain(eid, spec["level"])
+        self._place(e, self.ents[spec["level"]].ObjectPlacement, spec["origin"], (spec["xdir"][0], spec["xdir"][1], 0.0))
+        sc = dict(spec["section"])
+        ppos = f.createIfcAxis2Placement2D(f.createIfcCartesianPoint([float(spec["center"][0]), float(spec["center"][1])]),
+                                           f.createIfcDirection([float(spec["roll"][0]), float(spec["roll"][1])]))
+        if sc["shape"] == "h":
+            prof = f.create_entity("IfcIShapeProfileDef", ProfileType="AREA", ProfileName=spec["profile_name"], Position=ppos, OverallWidth=float(sc["width"]),
+                                   OverallDepth=float(sc["depth"]), WebThickness=float(sc["web"]), FlangeThickness=float(sc["flange"]))
+        else:
+            prof = f.create_entity("IfcRectangleProfileDef", ProfileType="AREA", ProfileName=spec["profile_name"], Position=ppos, XDim=float(sc["width"]), YDim=float(sc["depth"]))
+        pos = f.createIfcAxis2Placement3D(f.createIfcCartesianPoint([0.0, 0.0, 0.0]), f.createIfcDirection([1.0, 0.0, 0.0]), f.createIfcDirection([0.0, 1.0, 0.0]))
+        self._set_body(e, f.createIfcExtrudedAreaSolid(prof, pos, f.createIfcDirection([0.0, 0.0, 1.0]), float(spec["length"])))
+        e.Representation.Representations[0].RepresentationType = "SweptSolid"
 
     def _csg_item(self, node):
         """(꼭짓점, 면, ((연산, 하위), ...)) -> IfcFacetedBrep 또는 IfcBooleanResult(DIFFERENCE·UNION·INTERSECTION) 사슬."""

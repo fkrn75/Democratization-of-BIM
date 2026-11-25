@@ -175,7 +175,7 @@ def _solid_intent(p) -> dict:
 def _parse_intent(kind: str, text: str) -> dict:
     """DoBIM_Intent 텍스트를 현재 코어 스키마로 해석한다. 못 하면 ValueError. 숫자는 float 로 맞춘다(저작 행과 같은 모양)."""
     d = json.loads(text)
-    extra = {"level": (), "wall": ("level", "joins"), "door": ("host",), "slab": ("level",), "stair": ("level",), "space": ("level",), "railing": ("level",), "elevator": ("level",), "roof": ("level",), "site": (), "solid": ("level",), "curtwall": ("level",), "stackwall": ("level",)}[kind]
+    extra = {"level": (), "wall": ("level", "joins"), "door": ("host",), "slab": ("level",), "stair": ("level",), "space": ("level",), "railing": ("level",), "elevator": ("level",), "roof": ("level",), "site": (), "solid": ("level",), "curtwall": ("level",), "stackwall": ("level",), "beam": ("level",)}[kind]
     if not isinstance(d, dict) or set(d) != {"kind", "params", "family_id", *extra} or d["kind"] != kind or d["family_id"] != FAMILY[kind]:
         raise ValueError("의도 모양이 현재 스키마와 다르다")
     p = d["params"]
@@ -240,6 +240,11 @@ def _parse_intent(kind: str, text: str) -> dict:
         why = K.row_params_error("stackwall", out)
         if why:
             raise ValueError(f"스택 벽이 올바르지 않다({why})")
+    elif kind == "beam":   # 구조 보(W2 열다섯 번째 PR): 숫자를 float 로 맞춘 뒤 코어 행 검사(cutback 은 false 만 있다)
+        out = _curtwall_intent(p)
+        why = K.row_params_error("beam", out)
+        if why:
+            raise ValueError(f"보가 올바르지 않다({why})")
     elif kind == "curtwall":   # 커튼월(W2 ARC-22): 숫자를 float 로 맞춘 뒤 코어 행 검사
         out = _curtwall_intent(p)
         why = K.row_params_error("curtwall", out)
@@ -483,7 +488,7 @@ def _parse_intent(kind: str, text: str) -> dict:
         if not isinstance(lv, str) or not _ID.match(lv) or not isinstance(joins, list) or not all(isinstance(j, str) and _ID.match(j) for j in joins):
             raise ValueError("레벨·조인 참조가 올바르지 않다")
         res["level"], res["joins"] = lv, sorted(set(joins))
-    elif kind in ("slab", "stair", "space", "railing", "elevator", "roof", "solid", "curtwall", "stackwall"):
+    elif kind in ("slab", "stair", "space", "railing", "elevator", "roof", "solid", "curtwall", "stackwall", "beam"):
         if not isinstance(d["level"], str) or not _ID.match(d["level"]):
             raise ValueError("레벨 참조가 올바르지 않다")
         res["level"] = d["level"]
@@ -540,6 +545,22 @@ def _restore_rail_types(rows: dict, rels: set, plan: "ImportPlan") -> None:
             r["params"] = {k: v for k, v in r["params"].items() if k not in ("rltype", "parts")}
             r.pop("spec_hash", None)
             plan.warnings.append(f"{g}: 난간 유형 {str(tid)[:22]} 정의를 되살리지 못해 난간에서 유형을 뗐다(높이는 남는다)")
+
+
+def _restore_beam_types(rows: dict, rels: set, plan: "ImportPlan") -> None:
+    """보 유형(W2 열다섯 번째 PR): 저작 보의 params.btype 이 되살린 보 유형 정의를 가리키면 타입 관계(of_type)를 잇고, 아니면 유형만 뗀다
+    (단면은 보에 남는다: beam.type.set null 과 같다)."""
+    for g in sorted(rows):
+        r = rows[g]
+        tid = r["params"].get("btype") if r["kind"] == "beam" and isinstance(r.get("params"), dict) else None
+        if tid is None:
+            continue
+        if rows.get(tid, {}).get("kind") == "beamtype":
+            rels.add(("of_type", g, tid))
+        else:
+            r["params"] = {k: v for k, v in r["params"].items() if k != "btype"}
+            r.pop("spec_hash", None)
+            plan.warnings.append(f"{g}: 보 유형 {str(tid)[:22]} 정의를 되살리지 못해 보에서 유형을 뗐다(단면은 남는다)")
 
 
 def _finst_dependency_error(g: str, it: dict, cand: dict, cls_of: dict) -> str | None:
@@ -819,7 +840,7 @@ def _restore_defs(f, rows: dict, rels: set, taken: set, plan: "ImportPlan") -> N
             else:
                 ok[eid] = parsed[eid]
     # 벽 유형(W2 일곱 번째 PR, ARC-11)·지붕 유형(W2 여덟 번째 PR): 유형 이름은 유일하다(walltype·rooftype.create 의 규칙). 겹치면 어느 쪽이 원본인지 알 수 없다
-    for tk, what in (("walltype", "벽 유형"), ("rooftype", "지붕 유형"), ("railtype", "난간 유형")):
+    for tk, what in (("walltype", "벽 유형"), ("rooftype", "지붕 유형"), ("railtype", "난간 유형"), ("beamtype", "보 유형")):
         tkeys: dict = {}
         for eid in sorted(e for e, d in parsed.items() if d["kind"] == tk):
             tkeys.setdefault(parsed[eid]["params"]["name"], []).append(eid)
@@ -986,7 +1007,7 @@ def plan_import(data: bytes) -> ImportPlan:
                     bad = "레벨 참조가 없다"
                 elif any(cand.get(w, {}).get("kind") != "wall" or cand[w]["params"].get("stack") != g or cand[w]["level"] != it["level"] for w in it["params"]["parts"]):
                     bad = "부분 벽이 없거나 이 스택 벽에 속하지 않는다"
-            elif it["kind"] in ("slab", "stair", "space", "railing", "elevator", "roof", "solid", "curtwall"):
+            elif it["kind"] in ("slab", "stair", "space", "railing", "elevator", "roof", "solid", "curtwall", "beam"):
                 if cand.get(it["level"], {}).get("kind") != "level":
                     bad = "레벨 참조가 없다"
                 elif it["kind"] == "solid" and cls_of.get(g) != K.SO.SOLID_CATEGORIES[it["params"]["category"]][0]:
@@ -1011,12 +1032,12 @@ def plan_import(data: bytes) -> ImportPlan:
         if it["kind"] in ("ftype", "finst"):
             rows[g] = {"kind": it["kind"], "ifc_class": cls_of[g], "origin": "authored", "family_id": it["family_id"], "params": it["params"]}
         else:
-            cls = K.SO.SOLID_CATEGORIES[it["params"]["category"]][0] if it["kind"] == "solid" else {"level": "IfcBuildingStorey", "wall": "IfcWall", "door": "IfcDoor", "slab": "IfcSlab", "stair": "IfcStair", "space": "IfcSpace", "railing": "IfcRailing", "elevator": "IfcTransportElement", "roof": "IfcRoof", "site": "IfcSite", "curtwall": "IfcCurtainWall", "stackwall": "IfcWall"}[it["kind"]]
+            cls = K.SO.SOLID_CATEGORIES[it["params"]["category"]][0] if it["kind"] == "solid" else {"level": "IfcBuildingStorey", "wall": "IfcWall", "door": "IfcDoor", "slab": "IfcSlab", "stair": "IfcStair", "space": "IfcSpace", "railing": "IfcRailing", "elevator": "IfcTransportElement", "roof": "IfcRoof", "site": "IfcSite", "curtwall": "IfcCurtainWall", "stackwall": "IfcWall", "beam": "IfcBeam"}[it["kind"]]
             rows[g] = {"kind": it["kind"], "ifc_class": cls, "origin": "authored", "family_id": FAMILY[it["kind"]], "params": it["params"]}
         if it["kind"] == "wall":
             rels.add(("on_level", g, it["level"]))
             rels.update(("joins", min(g, j), max(g, j)) for j in it["joins"])
-        elif it["kind"] in ("slab", "stair", "space", "railing", "elevator", "roof", "solid", "curtwall", "stackwall"):
+        elif it["kind"] in ("slab", "stair", "space", "railing", "elevator", "roof", "solid", "curtwall", "stackwall", "beam"):
             rels.add(("on_level", g, it["level"]))
         elif it["kind"] == "door":
             rels.add(("hosts", it["host"], g))
@@ -1125,6 +1146,7 @@ def plan_import(data: bytes) -> ImportPlan:
     _restore_wall_types(rows, rels, plan)   # 벽 유형(W2 일곱 번째 PR): 정의를 되살린 뒤에 벽의 타입 관계를 잇는다
     _restore_roof_types(rows, rels, plan)   # 지붕 유형(W2 여덟 번째 PR)
     _restore_rail_types(rows, rels, plan)   # 난간 유형(W2 열세 번째 PR)
+    _restore_beam_types(rows, rels, plan)   # 보 유형(W2 열다섯 번째 PR)
     # 5) 공간 소속(on_level): 외래·분리 요소도 층에 담긴 관계를 남긴다(레벨 삭제 검사와 element.query level 필터가 쓴다)
     for p in prods:
         g = p.GlobalId

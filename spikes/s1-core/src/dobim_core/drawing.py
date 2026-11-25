@@ -24,6 +24,7 @@ from math import sqrt
 from dobim_core import foreign_symbols as FSYM
 from dobim_core import kinds as K
 from dobim_core import arcgeom as AG
+from dobim_core import beams as BM
 from dobim_core import curtain as CW
 from dobim_core import queries as Q
 from dobim_core import roofeaves as RE
@@ -3831,6 +3832,8 @@ def _other_occ_boxes(g, v):
         occ.extend(g.q(_roof_solid_vpieces, v, rf))
     for cw in g.q(scope_curtains, v):   # 커튼월의 불투명·문 패널(W2 ARC-22): 없으면 조각은 이전과 같다
         occ.extend(g.q(curtain_vpieces, v, cw))
+    for bm in g.q(scope_beams, v):   # 구조 보(W2 열다섯 번째 PR): 없으면 조각은 이전과 같다
+        occ.extend(g.q(_beam_vpieces, v, bm))
     return tuple(sorted(_occ_boxed(occ), key=_W_KEY))
 
 
@@ -5173,6 +5176,8 @@ def _occ_index(g, v):
         pieces.extend(g.q(_solid_vpieces, v, e))
     for cw in g.q(scope_curtains, v):   # 커튼월의 불투명·문 패널(W2 ARC-22): 없으면 조각은 이전과 같다
         pieces.extend(g.q(curtain_vpieces, v, cw))
+    for bm in g.q(scope_beams, v):   # 구조 보(W2 열다섯 번째 PR): 없으면 조각은 이전과 같다
+        pieces.extend(g.q(_beam_vpieces, v, bm))
     boxes, bins = [], {}
     for i, (z0, z1, poly) in enumerate(pieces):
         s0, s1 = min(q[0] for q in poly), max(q[0] for q in poly)
@@ -5258,9 +5263,20 @@ def solid_lines(g, v, e):
     if cfg is None or info is None:
         return ()
     verts, faces, edges, nrm, _bb = info
+    out = _mesh_lines(g, v, cfg, verts, faces, edges, nrm, _plan_lo(g, cfg, e, cfg[2] - cfg[3]) if cfg[0] == "plan" else None)
+    if cfg[0] == "plan":
+        p = Q.el(g, e)["params"]
+        if p["category"] == "ramp" and p["form"] == "panel":   # 경사로(W1 1-F 3차): 걸음선 오름 화살표
+            out.extend(ramp_arrow(p))
+    return tuple(out)
+
+
+def _mesh_lines(g, v, cfg, verts, faces, edges, nrm, lo):
+    """다면체 하나의 선분 목록(솔리드·구조 보가 같이 쓴다). 평면: 절단 높이 cfg[2] 의 절단선 + 위를 향한 면의 모서리(lo~절단 높이),
+    단면·입면: 절단선(단면만) + 보는 쪽을 향한 면의 모서리(가림 조각·외래 가림 반영)."""
     out = []
     if cfg[0] == "plan":
-        c, lo = cfg[2], _plan_lo(g, cfg, e, cfg[2] - cfg[3])
+        c = cfg[2]
         fo = g.q(_fview, v)   # 외래 요소가 위에서 가린다(IO-04 5차). 외래 요소가 없으면 None 이라 값은 이전과 같다
         for a, b in SO.plane_section(verts, faces, nrm, (0.0, 0.0, 1.0), c):
             if sqrt((b[0] - a[0]) ** 2 + (b[1] - a[1]) ** 2) > SEG_MIN:
@@ -5291,10 +5307,7 @@ def solid_lines(g, v, e):
                     out.append(("proj", ax, ay, bx, by))
                 else:
                     out.extend(_fplan_seg(fo, ("proj", ax, ay, bx, by), c - (a[2] + dz * t0), c - (a[2] + dz * t1)))
-        p = Q.el(g, e)["params"]
-        if p["category"] == "ramp" and p["form"] == "panel":   # 경사로(W1 1-F 3차): 걸음선 오름 화살표
-            out.extend(ramp_arrow(p))
-        return tuple(out)
+        return out
     d = (cfg[3], cfg[4], 0.0)
     idx = g.q(_occ_index, v)
     if cfg[9]:
@@ -5319,7 +5332,7 @@ def solid_lines(g, v, e):
         occ = _occ_near(idx, min(e0[0], e1[0]), max(e0[0], e1[0]), min(e0[2], e1[2]), max(e0[2], e1[2]), max(e0[1], e1[1]))
         for t0, t1 in _fvis(fo, e0, e1, _vis(e0, e1, occ)):
             out.append(("proj", e0[0] + t0 * (e1[0] - e0[0]), e0[2] + t0 * (e1[2] - e0[2]), e0[0] + t1 * (e1[0] - e0[0]), e0[2] + t1 * (e1[2] - e0[2])))
-    return tuple(out)
+    return out
 
 
 RAMP_ARROW = 0.3   # 경사로 화살촉 길이 = 폭 x 이 값(상한 400mm, 걸음선 길이의 반)
@@ -5355,6 +5368,138 @@ def _solid_wall_occ(g, v, w):
     for e in g.q(scope_solids, v):
         pieces.extend(g.q(_solid_vpieces, v, e))
     return [p for p in pieces if min(q[0] for q in p[2]) <= bb[2] + EPS and max(q[0] for q in p[2]) >= bb[0] - EPS and p[0] <= bb[3] + EPS and p[1] >= bb[1] - EPS]
+
+
+# ================================================================ 구조 보 (kinds "beam", W2 열다섯 번째 PR, STR-02)
+# 형상은 beams.mesh 의 다면체다(IFC 투영과 같은 단면·기둥 면 자르기). 보가 없으면 도면은 이전과 같다.
+#   평면: 절단 높이에 걸치거나 그 아래(보이는 깊이 안)인 보는 솔리드와 같은 절단선·위를 향한 면 모서리와 절단 채움,
+#         절단 높이 위에서 다음 레벨(없으면 위 끝 없음) 아래에 걸친 보는 외곽 사각형을 숨은선(파선)으로 그린다(구조 평면의 보 숨은선 관행).
+#         반사 천장 평면은 솔리드처럼 아직 그리지 않는다
+#   단면·입면: 보는 쪽을 향한 면의 모서리(다른 요소·보 자신의 가림 반영) + 단면의 절단선과 절단 채움(볼록 조각마다의 절단 다각형).
+#   가림: 단면 회전(roll)이 없는 보는 볼록 조각(사각형 단면 각기둥)이 수직 각기둥이라 다른 요소의 선을 가린다(회전한 보는 가리지 않는다: 알려진 한계)
+HIDDEN_DASH, HIDDEN_GAP = 2.0, 1.0   # 숨은선 파선의 마디·간격(용지 mm)
+
+
+def beam_info(g, b):
+    """(꼭짓점(절대 z), 면, 모서리, 면 법선, 경계 상자, 볼록 조각들(꼭짓점 8개씩), 평면 외곽 사각형) 또는 None. 저작 보만 그린다."""
+    row = Q.el(g, b)
+    if row is None or row["kind"] != "beam" or row["origin"] != "authored":
+        return None
+    p = row["params"]
+    zr = g.q(Q.beam_zref, b)
+    cut = g.q(Q.beam_cut, b)[:2]
+    verts, faces = BM.mesh(p, zr, cut)
+    edges, nrm = SO.feature_edges(verts, faces)
+    return (tuple(verts), tuple(tuple(tuple(lp) for lp in f) for f in faces), edges, nrm, SO.mesh_bbox(verts),
+            tuple(tuple(pc) for pc in BM.pieces(p, zr, cut)), tuple(BM.plan_rect(p, cut)))
+
+
+def all_beams(g):
+    out = []
+    for b in range(Q.NB):
+        out.extend(e for e in Q.bucket_ids(g, "beam", b) if g.q(beam_info, e) is not None)
+    return tuple(sorted(out))
+
+
+def _level_above(g, lv):
+    """레벨 lv 바로 위 레벨의 높이(없으면 None): 평면이 숨은선으로 보이는 보의 위 끝."""
+    z = g.q(Q.level_info, lv)[1]
+    zs = [h for b in range(Q.NB) for h in (g.q(Q.level_info, x)[1] for x in Q.bucket_ids(g, "level", b)) if h > z + EPS]
+    return min(zs) if zs else None
+
+
+def scope_beams(g, v):
+    """뷰가 그리는 보. 평면은 높이 범위가 (보이는 깊이 아래 끝, 다음 레벨) 에 걸치는 것(윗면이 보이는 깊이 아래 끝과 같은 보, 곧 바닥
+    슬래브 밑의 그 층 보는 바닥에 가려 그리지 않는다), 단면·입면은 모델 전체."""
+    cfg = g.q(view_cfg, v)
+    if cfg is None or cfg[0] == "site":
+        return ()
+    if cfg[0] == "plan":
+        if cfg[1] is None or is_rcp(cfg) or Q.el(g, cfg[1])["kind"] != "level" or not g.q(all_beams):
+            return ()   # 보가 없으면 다른 레벨을 읽지 않는다(레벨을 더해도 평면 뷰가 영향받지 않는 이전 의존 그대로)
+        lo = cfg[2] - cfg[3]
+        top = g.q(_level_above, cfg[1])
+        return tuple(e for e in g.q(all_beams) if (bb := g.q(beam_info, e)[4])[5] > lo + EPS and (top is None or bb[2] <= top - EPS))
+    return g.q(all_beams)
+
+
+def _dashed(cls, a, b, dash, gap):
+    """선분을 파선 조각으로(마디부터 시작, 끝은 잘린 마디)."""
+    dx, dy = b[0] - a[0], b[1] - a[1]
+    ln = sqrt(dx * dx + dy * dy)
+    out = []
+    if ln < SEG_MIN:
+        return out
+    ux, uy = dx / ln, dy / ln
+    t = 0.0
+    while t < ln - SEG_MIN:
+        t1 = min(t + dash, ln)
+        out.append((cls, a[0] + ux * t, a[1] + uy * t, a[0] + ux * t1, a[1] + uy * t1))
+        t = t1 + gap
+    return out
+
+
+def beam_lines(g, v, b):
+    """보 하나가 뷰에 기여하는 선분."""
+    cfg = g.q(view_cfg, v)
+    info = g.q(beam_info, b)
+    if cfg is None or info is None:
+        return ()
+    verts, faces, edges, nrm, bb, _pcs, rect = info
+    if cfg[0] == "plan":
+        if bb[2] >= cfg[2] - EPS:   # 절단 높이 위의 보: 외곽 사각형 숨은선(파선)
+            out = []
+            for i in range(4):
+                out.extend(_dashed("proj", rect[i], rect[(i + 1) % 4], HIDDEN_DASH * cfg[4], HIDDEN_GAP * cfg[4]))
+            return tuple(out)
+        return tuple(_mesh_lines(g, v, cfg, verts, faces, edges, nrm, cfg[2] - cfg[3]))
+    return tuple(_mesh_lines(g, v, cfg, verts, faces, edges, nrm, None))
+
+
+def beam_fills(g, v, b):
+    """보의 절단 채움 다각형: 평면은 절단 높이에 걸칠 때 수평 절단, 단면은 절단면 절단(볼록 조각마다). 입면은 없음."""
+    cfg = g.q(view_cfg, v)
+    info = g.q(beam_info, b)
+    if cfg is None or info is None:
+        return ()
+    bb, pcs = info[4], info[5]
+    out = []
+    if cfg[0] == "plan":
+        c = cfg[2]
+        if not bb[2] < c - EPS < c + EPS < bb[5]:
+            return ()
+        for pc in pcs:
+            poly = BM.convex_order([(q[0], q[1]) for q in BM.piece_cut(pc, (0.0, 0.0, 1.0), c)])
+            if poly:
+                out.append(tuple(poly))
+        return tuple(out)
+    if not cfg[9]:
+        return ()
+    d = (cfg[3], cfg[4], 0.0)
+    c = cfg[1] * d[0] + cfg[2] * d[1] + cfg[7]
+    for pc in pcs:
+        poly = BM.convex_order([(_sw(cfg, q)[0], q[2]) for q in BM.piece_cut(pc, d, c)])
+        if poly:
+            out.append(tuple(poly))
+    return tuple(out)
+
+
+def _beam_vpieces(g, v, b):
+    """단면·입면에서 보가 가리는 볼록 기둥 조각 ((z0, z1, 다각형(s,w)), ...). 단면 회전(roll)이 있는 보는 없다."""
+    cfg = g.q(view_cfg, v)
+    info = g.q(beam_info, b)
+    if cfg is None or info is None or Q.el(g, b)["params"].get("roll"):
+        return ()
+    out = []
+    for pc in info[5]:
+        poly = _clip_w([_sw(cfg, q) for q in (pc[0], pc[1], pc[5], pc[4])], cfg[7], cfg[8])
+        if len(poly) < 3:
+            continue
+        if _area2(poly) < 0:
+            poly = poly[::-1]
+        if _area2(poly) > 2 * EPS:
+            out.append((min(q[2] for q in pc), max(q[2] for q in pc), tuple(poly)))
+    return tuple(out)
 
 
 # ---------------------------------------------------------------- 벽의 모양 개구부(18단계): 입면 윤곽선과 평면 유리선
@@ -5577,6 +5722,8 @@ def view_lines(g, v):
         segs.extend(g.q(solid_lines, v, so))
     for cw in g.q(scope_curtains, v):   # 커튼월(W2 네 번째 PR, ARC-22): 없으면 선분은 이전과 같다
         segs.extend(g.q(curtain_lines, v, cw))
+    for bm in g.q(scope_beams, v):   # 구조 보(W2 열다섯 번째 PR): 없으면 선분은 이전과 같다
+        segs.extend(g.q(beam_lines, v, bm))
     for fe in g.q(scope_foreign, v):   # 외래 IFC 요소(1단계 외래 도면 경로): 형상 있는 외래 요소가 없으면 선분은 이전과 같다
         segs.extend(g.q(foreign_lines, v, fe))
     if cfg[0] == "elev":
@@ -5670,6 +5817,8 @@ def view_lines_hier(g, v):
         segs.extend(g.q(solid_lines, v, so))
     for cw in g.q(scope_curtains, v):   # 커튼월(W2 네 번째 PR, ARC-22): 없으면 선분은 이전과 같다
         segs.extend(g.q(curtain_lines, v, cw))
+    for bm in g.q(scope_beams, v):   # 구조 보(W2 열다섯 번째 PR): 없으면 선분은 이전과 같다
+        segs.extend(g.q(beam_lines, v, bm))
     for fe in g.q(scope_foreign, v):   # 외래 IFC 요소: 외래 벽(IfcWall)의 LoadBearing 이 거짓이면 절단선을 cutn 으로(2차)
         fl = g.q(foreign_lines, v, fe)
         if fe in fnb:
@@ -5736,6 +5885,8 @@ def view_fills(g, v):
         out.extend(g.q(foreign_fills, v, fe))
     for cw in g.q(scope_curtains, v):   # 커튼월 멀리언·패널 절단면(W2 ARC-22): 없으면 채움은 이전과 같다
         out.extend(g.q(curtain_fills, v, cw))
+    for bm in g.q(scope_beams, v):   # 구조 보 절단면(W2 열다섯 번째 PR): 없으면 채움은 이전과 같다
+        out.extend(g.q(beam_fills, v, bm))
     res = tuple(tuple((round(p[0], 3), round(p[1], 3)) for p in poly) for poly in out)
     crop = g.q(view_opts, v).get("crop")
     return res if crop is None else _crop_polys(res, crop)
@@ -5799,7 +5950,8 @@ VIEW_SCOPED = frozenset({view_cfg, scope_walls, view_omitted, plan_pieces, plan_
                          vfam_hosted_edges, scope_slabs, plan_slab_parts, _slab_vpieces, slab_vbbox, slab_cut_rects, slab_vedges, slab_nbr_walls, slab_lines,
                          scope_stairs, scope_railings, railing_lines, scope_elevators, elevator_lines, plan_elevator_labels, plan_roof_marks, scope_roofs, _roof_vpieces, _roof_solid_vpieces, roof_cut_rects, roof_plan_parts, roof_lines, plan_stair_parts, _stair_vpieces, stair_vbbox, stair_cut_rects, stair_vedges, stair_nbr_walls, stair_lines,
                          scope_spaces, plan_space_labels, view_labels, site_lines, site_labels, site_dims, _elev_signs, site_sign_lines, site_sign_labels, _site_sec, _gl_z, site_section_lines, site_section_labels, vwall_hidden, view_hidden_lines, plan_fire_lines, plan_fire_labels, elev_finish, view_opts, view_dims, view_dim_labels,
-                         grid_marks, view_grid_lines, view_grid_labels})
+                         grid_marks, view_grid_lines, view_grid_labels,
+                         scope_beams, beam_lines, beam_fills, _beam_vpieces})   # 구조 보(W2 열다섯 번째 PR)
 
 
 def forget_views(g, vids) -> int:

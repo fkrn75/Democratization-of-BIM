@@ -1074,6 +1074,17 @@ class Engine:
             out[t] = (p["name"], "baluster" in p["parts"], rails)
         return out
 
+    def beamtype_map(self) -> dict:
+        """보 유형 행(beamtype, W2 열다섯 번째 PR) -> {유형 id: (이름, 그 유형을 쓰는 IFC 보 id 들)}. 유형이 없으면 빈 표."""
+        tids = self.st.by_kind.get("beamtype")
+        if not tids:
+            return {}
+        out = {}
+        for t in sorted(tids):
+            beams = tuple(sorted(b for b in self.st.inn.get(("of_type", t), ()) if b in self.ifc.ents and self.st.el[b]["origin"] == "authored"))
+            out[t] = (self.st.el[t]["params"]["name"], beams)
+        return out
+
     def grid_map(self) -> dict:
         """통심선 행 -> {id: (기호, 선분, 원호 정보 또는 None)}(W2 열 번째 PR, IfcGrid 투영). 없으면 빈 표."""
         from dobim_core import arcgeom as AG
@@ -1116,6 +1127,7 @@ class Engine:
             self.ifc.sync_wall_types(self.walltype_map())   # 벽 유형(W2 일곱 번째 PR): IfcWallType·층 집합·타입 지정 관계. 유형이 없으면 아무것도 하지 않는다
             self.ifc.sync_roof_types(self.rooftype_map())   # 지붕 유형(W2 여덟 번째 PR): IfcRoofType. 유형이 없으면 아무것도 하지 않는다
             self.ifc.sync_rail_types(self.railtype_map())   # 난간 유형(W2 열세 번째 PR): IfcRailingType. 유형이 없으면 아무것도 하지 않는다
+            self.ifc.sync_beam_types(self.beamtype_map())   # 보 유형(W2 열다섯 번째 PR): IfcBeamType. 유형이 없으면 아무것도 하지 않는다
             self.ifc.sync_grids(self.grid_map())   # 통심선 IfcGrid(W2 열 번째 PR, ARC-38). 통심선이 없으면 아무것도 하지 않는다
             self.ifc.sync_groups(*self.group_maps())   # 모델 그룹 IfcGroup·조립품 IfcElementAssembly(W2 열한 번째 PR). 없으면 아무것도 하지 않는다
         except BaseException as ex:
