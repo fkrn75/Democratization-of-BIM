@@ -317,7 +317,7 @@ CW_RECT = [[0, 0], [0, 5000], [8000, 5000], [8000, 0]]   # 시계 방향(입력 
 def test_5_시계_방향_외곽의_처마_변_번호(base):
     r = base.run("roof.create", {"id": RF, "level": F.LV2, "boundary": CW_RECT, "form": "hip", "pitch": 30, "overhang": 500})
     assert r["ok"] and any("시계 방향" in w for w in r["warnings"])
-    w = base.run("roof.eaves.set", {"id": RF, "fascia": {"edges": [1]}})   # 저장 번호(기본): 경고한다
+    w = base.run("roof.eaves.set", {"id": RF, "fascia": {"edges": [1]}, "numbering": "stored"})   # 저장 번호(명시, W2 열여섯 번째 PR 전의 기본): 경고한다
     assert w["ok"] and any("numbering=input" in x for x in w["warnings"])
     e = ok(base.run("roof.eaves", {"id": RF}))["edges"]
     on = [x for x in e if "fascia" in x["on"]]

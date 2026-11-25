@@ -1114,6 +1114,8 @@ def ifc_spec(g, e):
             spec["slopes"] = tuple(p["slopes"])
         if "overhangs" in p:   # 외곽선 지붕의 변마다 내밀기(W2 여덟 번째 PR): 없으면 명세는 이전과 같다
             spec["overhangs"] = tuple(p["overhangs"])
+        if "bulges" in p:   # 평지붕의 변마다 볼록도(W2 열여섯 번째 PR): 없으면 명세는 이전과 같다
+            spec["bulges"] = tuple(p["bulges"])
         if "axis" in p:   # 압출 지붕(W2 여덟 번째 PR): 축·프로파일
             spec["axis"] = tuple(p["axis"])
             spec["profile"] = tuple(tuple(q) for q in p["profile"])
