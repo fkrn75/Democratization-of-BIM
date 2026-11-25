@@ -1931,7 +1931,8 @@ def _curtwall_params(p):
 # beam = 평면 두 점 사이의 수평 보(IfcBeam). 단면(사각·H형)은 보 유형(beamtype)의 사본을 행이 갖고(params.btype + 관계 of_type), 유형을 고치면
 #   그 유형의 보 행만 다시 쓴다(벽·지붕·난간 유형과 같은 설계). 형상은 beams.py 가 정한다(도면·IFC·수량이 같은 값)
 def _beamtype_params(p):
-    return _check_opt("beamtype", p, {"name": _name, "section": lambda v: BM.section_problem(v) is None}, {})
+    # 선택 material: 구조 재료 이름(W2 열여덟 번째 PR). 그 유형의 보가 사본을 갖고 IFC4 는 IfcMaterialProfileSet 으로 낸다
+    return _check_opt("beamtype", p, {"name": _name, "section": lambda v: BM.section_problem(v) is None}, {"material": _name})
 
 
 def _beam_coord(v) -> bool:
@@ -1942,7 +1943,8 @@ def _beam_params(p):
     err = _check_opt("beam", p, {"name": _name, "start": _beam_coord, "end": _beam_coord,
                                  "offset": lambda v: num_ok(v) and abs(v) <= BM.OFFSET_MAX, "anchor": lambda v: v in BM.ANCHORS,
                                  "section": lambda v: BM.section_problem(v) is None},
-                     {"btype": id_ok, "roll": lambda v: num_ok(v) and v != 0 and -180.0 < v <= 180.0, "cutback": lambda v: v is False})
+                     {"btype": id_ok, "roll": lambda v: num_ok(v) and v != 0 and -180.0 < v <= 180.0, "cutback": lambda v: v is False,
+                      "end_offset": lambda v: num_ok(v) and abs(v) <= BM.OFFSET_MAX, "material": _name})   # 경사 보·구조 재료(W2 열여덟 번째 PR)
     if err is not None:
         return err
     why = BM.beam_problem(p)
