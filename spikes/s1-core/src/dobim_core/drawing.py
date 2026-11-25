@@ -5485,10 +5485,14 @@ def beam_fills(g, v, b):
 
 
 def _beam_vpieces(g, v, b):
-    """단면·입면에서 보가 가리는 볼록 기둥 조각 ((z0, z1, 다각형(s,w)), ...). 단면 회전(roll)이 있는 보는 없다."""
+    """단면·입면에서 보가 가리는 볼록 기둥 조각 ((z0, z1, 다각형(s,w)), ...). 단면 회전(roll)이 있는 보와 경사 보(W2 열여덟 번째 PR)는
+    조각이 수직 각기둥이 아니라 없다(가리지 않는다: 알려진 한계)."""
     cfg = g.q(view_cfg, v)
     info = g.q(beam_info, b)
-    if cfg is None or info is None or Q.el(g, b)["params"].get("roll"):
+    if cfg is None or info is None:
+        return ()
+    bp = Q.el(g, b)["params"]
+    if bp.get("roll") or "end_offset" in bp:
         return ()
     out = []
     for pc in info[5]:
