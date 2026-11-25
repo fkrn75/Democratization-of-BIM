@@ -2281,7 +2281,9 @@ def _beam_params(p):
                                  "offset": lambda v: num_ok(v) and abs(v) <= BM.OFFSET_MAX, "anchor": lambda v: v in BM.ANCHORS,
                                  "section": lambda v: BM.section_problem(v) is None},
                      {"btype": id_ok, "roll": lambda v: num_ok(v) and v != 0 and -180.0 < v <= 180.0, "cutback": lambda v: v is False,
-                      "end_offset": lambda v: num_ok(v) and abs(v) <= BM.OFFSET_MAX, "material": _name})   # 경사 보·구조 재료(W2 열여덟 번째 PR)
+                      "end_offset": lambda v: num_ok(v) and abs(v) <= BM.OFFSET_MAX, "material": _name,   # 경사 보·구조 재료(W2 열여덟 번째 PR)
+                      "bulge": lambda v: num_ok(v) and v != 0 and abs(v) <= BM.BULGE_MAX, "vertical_ends": lambda v: v is True,   # 곡선 보·경사 보 끝면·
+                      "skew_cut": lambda v: v is True, "gap": lambda v: num_ok(v) and 0 < v <= BM.GAP_MAX})                        # 보끼리 접합 옵션(W2 열아홉 번째 PR)
     if err is not None:
         return err
     why = BM.beam_problem(p)

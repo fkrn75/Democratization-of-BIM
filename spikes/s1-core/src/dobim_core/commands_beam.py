@@ -11,6 +11,9 @@ IfcRectangleProfileDef·IfcIShapeProfileDef 돌출, IfcBeamType + IfcRelDefinesB
 
 2부(W2 열여덟 번째 PR): 경사 보(beam.create·set end_offset), 보끼리 접합(다른 보 평면 외곽 안에서 끝나는 보를 주 보 옆면까지 자른다: 파생값),
 단면 추가(ㄷ형강 c·ㄱ형강 l·각형 강관 box·원형 강관 pipe, KS 표준 단면 preset), 보 유형 구조 재료(material: IFC4 IfcMaterialProfileSet + Usage).
+
+3부(W2 열아홉 번째 PR): 곡선 보(beam.create·set bulge: 원호 기준선, 호를 따라 단면 스윕), 경사 보 끝면 연직 자르기(vertical_ends), 보끼리 접합 간격(gap)과
+비스듬한 주 보 옆면에 맞춘 경사 자르기(skew_cut).
 """
 from __future__ import annotations
 
@@ -34,6 +37,8 @@ Preset = Literal[tuple(BM.PRESETS)]
 Coord = Annotated[float, Field(ge=-BM.COORD_MAX, le=BM.COORD_MAX, allow_inf_nan=False)]
 Pt = Annotated[list[Coord], Field(min_length=2, max_length=2, description="[x, y] mm(레벨 좌표)")]
 Dim = Annotated[float, Field(gt=0, le=BM.SEC_DIM_MAX, allow_inf_nan=False)]
+Bulge = Annotated[float, Field(ge=-BM.BULGE_MAX, le=BM.BULGE_MAX, allow_inf_nan=False)]
+Gap = Annotated[float, Field(ge=0, le=BM.GAP_MAX, allow_inf_nan=False)]
 
 
 # ---------------------------------------------------------------- 공통 도우미
@@ -299,10 +304,16 @@ class BeamCreate(A):
     cutback: bool = Field(True, description="true 면 끝점이 기둥 단면 안이거나 다른 보(주 보)의 평면 외곽 안에 있을 때 보를 그 면까지 자른다(STR-03)")
     end_offset: Num | None = Field(None, ge=-BM.OFFSET_MAX, le=BM.OFFSET_MAX,
                                    description="끝점 기준선 높이 mm(레벨 기준). 주면 경사 보(시작 = offset, 끝 = end_offset), 없으면 수평 보")
+    bulge: Bulge | None = Field(None, description="곡선 보(원호) 볼록도 tan(중심각/4): 양수 = 반시계(진행 방향 오른쪽으로 부푼다), 1 = 반원. start·end 는 호의 두 끝. "
+                                "0 이거나 없으면 직선 보. 수평 보만(end_offset 과 함께 줄 수 없다)")
+    vertical_ends: bool = Field(False, description="경사 보(end_offset)의 끝면을 축에 수직이 아니라 연직면으로 자른다(기둥 면과 나란히)")
+    skew_cut: bool = Field(False, description="보끼리 접합에서 끝면을 주 보 옆면과 나란한 연직면으로 자른다(비스듬히 만나는 보의 경사 자르기). 직선 보만")
+    gap: Gap = Field(0.0, description="보끼리 접합 간격 mm: 주 보 옆면에서 이만큼 떨어져 끝낸다(기둥 면 자르기에는 적용하지 않는다). 0 이면 붙인다")
     name: Name | None = None
 
 
-def _beam_params(name, start, end, offset, anchor, roll, cutback, tid, sc, end_offset=None, material=None) -> dict:
+def _beam_params(name, start, end, offset, anchor, roll, cutback, tid, sc, end_offset=None, material=None, bulge=None, vertical_ends=False, skew_cut=False,
+                 gap=0.0) -> dict:
     p = {"name": name, "start": [float(start[0]), float(start[1])], "end": [float(end[0]), float(end[1])], "offset": float(offset),
          "anchor": anchor, "section": dict(sc)}
     if tid is not None:
@@ -315,22 +326,32 @@ def _beam_params(name, start, end, offset, anchor, roll, cutback, tid, sc, end_o
         p["end_offset"] = float(end_offset)
     if material is not None:   # 보 유형 구조 재료의 사본(W2 열여덟 번째 PR)
         p["material"] = material
+    if bulge:   # 곡선 보(W2 열아홉 번째 PR): 0 이면 직선 보(키 없음)
+        p["bulge"] = float(bulge)
+    if vertical_ends:
+        p["vertical_ends"] = True
+    if skew_cut:
+        p["skew_cut"] = True
+    if gap:
+        p["gap"] = float(gap)
     return p
 
 
 @command("beam.create", kind="mutation", risk="write", group="model.beam",
-         summary="구조 보를 두 점 사이에 놓는다(레벨·기준선 높이·끝 높이(경사 보)·z 맞춤·단면 회전·기둥·보 면 자르기). IFC 는 IfcBeam(단면 프로필 돌출) + IfcBeamType",
+         summary="구조 보를 두 점 사이에 놓는다(레벨·기준선 높이·끝 높이(경사 보)·원호(bulge)·z 맞춤·단면 회전·기둥·보 면 자르기·접합 간격). IFC 는 IfcBeam(단면 프로필 돌출·곡선 보는 스윕) + IfcBeamType",
          args=BeamCreate, since="0.22",
          examples=[{"level": F.LV2, "type": F.BT1, "start": [0, 0], "end": [6000, 0]},
                    {"id": F.BM1, "level": F.LV2, "type": F.BT1, "start": [0, 4000], "end": [6000, 4000], "offset": -100, "anchor": "top"},
-                   {"level": F.LV2, "type": F.BT1, "start": [0, 8000], "end": [6000, 8000], "offset": 0, "end_offset": 600}])
+                   {"level": F.LV2, "type": F.BT1, "start": [0, 8000], "end": [6000, 8000], "offset": 0, "end_offset": 600},
+                   {"level": F.LV2, "type": F.BT1, "start": [0, 12000], "end": [6000, 12000], "bulge": 0.4142135624},
+                   {"level": F.LV2, "type": F.BT1, "start": [0, 16000], "end": [6000, 16000], "offset": 0, "end_offset": 600, "vertical_ends": True}])
 def beam_create(ctx, a: BeamCreate):
     C._fresh_id(ctx, a, "beam")
     ctx.authored(a.level, "level", what="레벨에 보를 추가하는 것")
     tp = type_row(ctx, a.type, "/type")["params"]
     a.name = a.name or f"BM-{a.id[-6:]}"
-    p = _check_beam(a.id, _beam_params(a.name, a.start, a.end, a.offset, a.anchor, a.roll, a.cutback, a.type, tp["section"], a.end_offset, tp.get("material")),
-                    "/start")
+    p = _check_beam(a.id, _beam_params(a.name, a.start, a.end, a.offset, a.anchor, a.roll, a.cutback, a.type, tp["section"], a.end_offset, tp.get("material"),
+                                       a.bulge, a.vertical_ends, a.skew_cut, a.gap), "/start")
     ctx.put_el(a.id, row("beam", "IfcBeam", "beam.basic", p))
     ctx.rel("on_level", a.id, a.level, True)
     ctx.rel("of_type", a.id, a.type, True)
@@ -349,18 +370,25 @@ class BeamSet(A):
     cutback: bool | None = None
     end_offset: Num | None = Field(None, ge=-BM.OFFSET_MAX, le=BM.OFFSET_MAX,
                                    description="끝점 기준선 높이 mm(경사 보). offset 과 같은 값이면 수평 보가 된다. 생략하면 그대로(수평 보는 끝 높이 = offset 을 따른다)")
+    bulge: Bulge | None = Field(None, description="곡선 보 볼록도(tan(중심각/4), 양수 = 반시계). 0 이면 직선 보로 되돌린다. 생략하면 그대로")
+    vertical_ends: bool | None = Field(None, description="경사 보 끝면 연직 자르기(true/false). 생략하면 그대로")
+    skew_cut: bool | None = Field(None, description="보끼리 접합의 경사 자르기(true/false). 생략하면 그대로")
+    gap: Gap | None = Field(None, description="보끼리 접합 간격 mm. 0 이면 붙인다. 생략하면 그대로")
     name: Name | None = None
 
     @model_validator(mode="after")
     def _any(self):
-        if all(getattr(self, k) is None for k in ("level", "start", "end", "offset", "anchor", "roll", "cutback", "end_offset", "name")):
+        if all(getattr(self, k) is None for k in ("level", "start", "end", "offset", "anchor", "roll", "cutback", "end_offset", "bulge", "vertical_ends", "skew_cut", "gap",
+                                                  "name")):
             raise ValueError("바꿀 필드가 하나도 없다")
         return self
 
 
 @command("beam.set", kind="mutation", risk="write", group="model.beam",
-         summary="보를 고친다(두 점·레벨·기준선 높이·끝 높이(경사 보)·z 맞춤·단면 회전·기둥·보 면 자르기·이름). 단면은 유형이 정한다(beamtype.set·beam.type.set)",
-         args=BeamSet, since="0.22", examples=[{"id": F.BM1, "offset": -150}, {"id": F.BM1, "end": [7000, 4000], "cutback": False}, {"id": F.BM1, "end_offset": 500}])
+         summary="보를 고친다(두 점·레벨·기준선 높이·끝 높이(경사 보)·원호(bulge)·z 맞춤·단면 회전·기둥·보 면 자르기·접합 간격·이름). 단면은 유형이 정한다(beamtype.set·beam.type.set)",
+         args=BeamSet, since="0.22", examples=[{"id": F.BM1, "offset": -150}, {"id": F.BM1, "end": [7000, 4000], "cutback": False}, {"id": F.BM1, "end_offset": 500},
+                                               {"id": F.BM1, "gap": 50, "skew_cut": True},
+                                               {"id": F.BM1, "end_offset": -150, "skew_cut": False, "bulge": 0.3}])   # 예시는 차례로 실행된다: 마지막이 곡선으로 되돌린다
 def beam_set(ctx, a: BeamSet):
     r = ctx.authored(a.id, "beam")
     p = r["params"]
@@ -369,7 +397,9 @@ def beam_set(ctx, a: BeamSet):
     q = _beam_params(a.name if a.name is not None else p["name"], a.start if a.start is not None else p["start"], a.end if a.end is not None else p["end"],
                      a.offset if a.offset is not None else p["offset"], a.anchor if a.anchor is not None else p["anchor"],
                      a.roll if a.roll is not None else p.get("roll", 0.0), a.cutback if a.cutback is not None else p.get("cutback", True), p.get("btype"), p["section"],
-                     eo, p.get("material"))
+                     eo, p.get("material"), a.bulge if a.bulge is not None else p.get("bulge"),
+                     a.vertical_ends if a.vertical_ends is not None else p.get("vertical_ends", False),
+                     a.skew_cut if a.skew_cut is not None else p.get("skew_cut", False), a.gap if a.gap is not None else p.get("gap", 0.0))
     _write_beam(ctx, a.id, q, "/id")
     if a.level is not None:
         ctx.authored(a.level, "level", what="레벨에 보를 옮기는 것")
@@ -481,7 +511,7 @@ def beam_grid(ctx, a: BeamGrid):
         sel = allg
     skipped_arc = [gid for gid in sel if gid not in lines]
     if skipped_arc:
-        ctx.warn(f"원호 통심선 {len(skipped_arc)}개는 건너뛴다(곡선 보는 다음 PR)")
+        ctx.warn(f"원호 통심선 {len(skipped_arc)}개는 건너뛴다(곡선 보는 beam.create bulge 로 놓는다: 원호 통심선 일괄 배치는 다음 PR)")
     g = ctx.fresh()
     elev = g.q(Q.level_info, a.level)[1]
     probe = {"section": tp["section"], "anchor": a.anchor}
@@ -554,6 +584,12 @@ def beam_list(ctx, a: BeamList):
             item["end_offset"] = p["end_offset"]
             kc, ks, _l3 = BM.slope(p)
             item["slope_deg"] = round(degrees(atan2(ks, kc)), 3)
+        if "bulge" in p:   # 곡선 보(W2 열아홉 번째 PR): 볼록도·반지름·중심각(도). length 는 호 길이
+            ai = BM.arc_info(p)
+            item.update(bulge=p["bulge"], radius=round(ai[2], 3), sweep_deg=round(degrees(ai[5]), 3))
+        for k in ("vertical_ends", "skew_cut", "gap"):
+            if k in p:
+                item[k] = p[k]
         if "material" in p:
             item["material"] = p["material"]
         if st.el[b]["origin"] == "authored":

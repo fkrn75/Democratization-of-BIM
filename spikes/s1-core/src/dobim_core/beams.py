@@ -12,6 +12,11 @@
   선택 btype : 보 유형 id(관계 of_type 과 같은 뜻). 유형을 고치면 그 유형의 보 행 section·material 을 다시 쓴다(벽·난간 유형과 같은 설계)
   선택 cutback: false 면 기둥 면·보 면 자르기를 하지 않는다(없으면 자른다)
   선택 material: 구조 재료 이름(보 유형 재료의 사본, 2부). 있으면 보의 재료는 이것이다(IFC4 IfcMaterialProfileSetUsage)
+  선택 bulge : 곡선 보(원호, 3부). 볼록도 tan(중심각/4), 양수 = 반시계(진행 방향 오른쪽으로 부푼다: 지붕·계단·개구의 bulges 와 같은 규약).
+               0 < |bulge| <= 1(반원까지). 수평 보만(end_offset·vertical_ends·skew_cut 과 함께 둘 수 없다). start·end 는 호의 두 끝이다
+  선택 vertical_ends: true 면 경사 보의 끝면을 축에 수직이 아니라 연직면으로 자른다(3부, 경사 보만)
+  선택 skew_cut: true 면 보끼리 접합에서 끝면을 주 보 옆면과 나란한 연직면으로 자른다(3부, 비스듬히 만나는 T 결합의 경사 자르기)
+  선택 gap   : 보끼리 접합 간격 mm(3부). 주 보 옆면에서 이만큼 떨어져 끝낸다(기둥 면 자르기에는 적용하지 않는다)
 
 단면 좌표 (a, b): a = 진행 방향 왼쪽 +, b = 단면의 위 +. 기준선이 (0, 0) 이다. 경사 보의 단면은 축에 수직이고(웨브는 연직면 안), 끝면도 축에 수직이다.
 기둥 접합(STR-03, 단순화): 보 끝점이 평면에서 기둥(IfcColumn 패밀리 인스턴스)의 각기둥 단면 안에 있고 높이가 겹치면, 보 축을 그 기둥 면까지
@@ -21,6 +26,7 @@ from __future__ import annotations
 
 from math import pi, sqrt
 
+from dobim_core import arcgeom as AG
 from dobim_core import solids as SO
 
 # 사각(철근콘크리트 보, IfcRectangleProfileDef)·H형강(IfcIShapeProfileDef)·ㄷ형강(IfcUShapeProfileDef)·ㄱ형강(IfcLShapeProfileDef)·
@@ -38,6 +44,14 @@ CUT_MIN = 10.0                               # 기둥·보 면 자르기 뒤 남
 BEAMTYPES_MAX = 1000                         # 프로젝트의 보 유형 수 상한
 SLOPE_MAX_DEG = 80.0                         # 경사 보 기울기 상한(도). 이보다 서면 기둥·가새의 몫이다
 SLOPE_TAN_MAX = 5.671281819617709            # tan(80도)
+BULGE_MAX = 1.0                              # 곡선 보 볼록도 상한(반원)
+GAP_MAX = 1000.0                             # 보끼리 접합 간격 상한 mm
+SKEW_SIN_MIN = 0.34                          # 경사 자르기: 보 축과 주 보 옆면이 이루는 각의 사인 하한(약 20도). 더 얕으면 끝면이 너무 길어져 맞추지 않는다
+ARC_FACET_RAD = 4.5 * pi / 180.0             # 곡선 보 조각 하나의 중심각 상한(4.5도: 이웃 옆면 법선 차가 모서리선 기준(약 5도) 밑이라 현 이음선이 그려지지 않는다)
+ARC_N_MAX = 360                              # 곡선 보 하나의 조각 수 상한
+SLAB_MM = 10.0                               # 경사 보 가림 조각의 높이 조각 두께(mm)
+SLAB_POLYS = 600                             # 경사 보 하나의 가림 다각형 수 예산(조각 수 x 높이 조각 수)
+SLAB_MAX = 200                               # 볼록 조각 하나의 높이 조각 수 상한
 
 # H형강 표준 단면(KS D 3502 의 H 형강 치수 표: 춤 H x 폭 B x 웨브 t1 x 플랜지 t2, mm). 필릿 반지름 r 은 형상에 넣지 않는다
 H_PRESETS = {
@@ -264,8 +278,67 @@ def slope(p) -> tuple:
 
 
 def length3(p) -> float:
-    """축 실길이(경사 보는 3D 길이, 수평 보는 평면 길이)."""
+    """축 실길이(경사 보는 3D 길이, 곡선 보는 호 길이, 수평 직선 보는 평면 길이)."""
+    if curved(p):
+        return arc_length(p)
     return slope(p)[2] if sloped(p) else axis(p)[4]
+
+
+# ---------------------------------------------------------------- 곡선 보(3부): 원호 축
+def curved(p) -> bool:
+    """곡선 보인가(볼록도 bulge 가 있다)."""
+    return "bulge" in p
+
+
+def arc_info(p) -> tuple:
+    """곡선 보 축의 (cx, cy, r, a0, sg, sw): 중심·반지름·시작각(라디안)·방향(+1 반시계)·중심각 크기. arcgeom.info 와 같은 뜻이고
+    볼록도에서 바로 구한다(bulge_arc 와 같은 식: 현 가운데에서 중심까지 d = c(1 - bu^2)/(4 bu), 왼쪽 법선 방향). 삼각함수는 arcgeom 의 결정적 판."""
+    x0, y0 = float(p["start"][0]), float(p["start"][1])
+    x1, y1 = float(p["end"][0]), float(p["end"][1])
+    dx, dy = x1 - x0, y1 - y0
+    c = sqrt(dx * dx + dy * dy)
+    bu = float(p["bulge"])
+    d = c * (1.0 - bu * bu) / (4.0 * bu)
+    cx = (x0 + x1) / 2.0 - dy / c * d
+    cy = (y0 + y1) / 2.0 + dx / c * d
+    r = c * (1.0 + bu * bu) / (4.0 * abs(bu))
+    return (cx, cy, r, AG.atan2(y0 - cy, x0 - cx), 1.0 if bu > 0 else -1.0, 4.0 * AG._atan_small(abs(bu)))
+
+
+def arc_length(p) -> float:
+    """곡선 보 기준선(축)의 호 길이."""
+    ai = arc_info(p)
+    return ai[2] * ai[5]
+
+
+def _arc_n(r, phi) -> int:
+    """중심각 phi 인 호를 나누는 조각 수: 한 조각 중심각 ARC_FACET_RAD 이하, 현-호 거리 arcgeom.FACET_SAG 이하."""
+    step = ARC_FACET_RAD
+    k = 2.0 * sqrt(2.0 * AG.FACET_SAG / r)
+    if k < step:
+        step = k
+    n = int(phi / step)
+    if n * step < phi:
+        n += 1
+    return max(1, min(ARC_N_MAX, n))
+
+
+def arc_stations(p, cut) -> tuple:
+    """곡선 보의 조각 경계 (arc_info, 호를 따라 잰 경계 거리 u 목록(자른 구간 [cut[0], 호 길이 - cut[1]] 등분, 양 끝 포함), cos(조각 반각)).
+    경계마다 단면은 호의 접선에 수직(방사 평면)이고, 단면의 왼쪽 거리 a 는 이웃 두 현에 평행한 옵셋선에 놓이도록 1/cos(반각) 배로 늘린다(마이터).
+    그래서 옆면은 모두 평면이고(회전·구멍 단면도) 조각마다 일정 단면을 현을 따라 돌출한 모양이다."""
+    ai = arc_info(p)
+    r, sw = ai[2], ai[5]
+    u0, u1 = float(cut[0]), r * sw - float(cut[1])
+    n = _arc_n(r, (u1 - u0) / r)
+    step = (u1 - u0) / n
+    us = [u0 + step * k for k in range(n)] + [u1]
+    return ai, us, AG.sincos(step / r / 2.0)[1]
+
+
+def arc_xy(ai, u, cb, a) -> tuple:
+    """경계 u 에서 단면의 왼쪽 거리 a 인 점의 평면 좌표(마이터 늘림 포함)."""
+    return AG.point(ai, u, a / cb)
 
 
 def beam_problem(p) -> str | None:
@@ -287,6 +360,23 @@ def beam_problem(p) -> str | None:
             return f"경사 보의 기울기는 {SLOPE_MAX_DEG:g}도 이하여야 한다"
         if sqrt(ln * ln + dz * dz) > LEN_MAX:
             return f"보 실길이는 {LEN_MAX:g} mm 이하여야 한다"
+    if p.get("vertical_ends") is True and not sloped(p):
+        return "vertical_ends 는 경사 보(end_offset)에만 줄 수 있다"
+    if curved(p):
+        for k in ("end_offset", "vertical_ends", "skew_cut"):
+            if k in p:
+                return f"bulge(곡선 보)와 {k} 는 함께 둘 수 없다(곡선 보는 수평 보다)"
+        bu = abs(float(p["bulge"]))
+        if ln * bu / 2.0 < AG.ARC_SAG_MIN:
+            return f"호 가운데가 현에서 {AG.ARC_SAG_MIN:g} mm 이상 떨어져야 곡선 보다(거의 직선이면 bulge 를 빼세요)"
+        ai = arc_info(p)
+        if ai[2] > AG.ARC_R_MAX:
+            return f"곡선 보 반지름이 {AG.ARC_R_MAX:g} mm 를 넘는다(직선 보를 쓰세요)"
+        a0, a1 = a_range(p)
+        if ai[2] - max(abs(a0), abs(a1)) * 1.002 < AG.ARC_INNER_MIN:
+            return "곡선 보 반지름이 단면 폭의 반보다 커야 한다(안쪽 면 반지름이 1 mm 이상)"
+        if ai[2] * ai[5] > LEN_MAX:
+            return f"곡선 보 호 길이는 {LEN_MAX:g} mm 이하여야 한다"
     return None
 
 
@@ -297,7 +387,7 @@ def _point_in(pt, poly) -> bool:
 
 
 def _crossings(ax, ay, ux, uy, ln, poly) -> list:
-    """축선 (ax, ay) + t (ux, uy), 0 <= t <= ln 이 다각형 경계를 지나는 t 들."""
+    """축선 (ax, ay) + t (ux, uy), 0 <= t <= ln 이 다각형 경계를 지나는 (t, 그 변의 단위 방향) 들."""
     out = []
     n = len(poly)
     for i in range(n):
@@ -310,7 +400,34 @@ def _crossings(ax, ay, ux, uy, ln, poly) -> list:
         t = (wx * ey - wy * ex) / den
         s = (wx * uy - wy * ux) / den
         if -1e-9 <= s <= 1.0 + 1e-9 and -1e-6 <= t <= ln + 1e-6:
-            out.append(t)
+            el = sqrt(ex * ex + ey * ey)
+            out.append((t, (ex / el, ey / el)))
+    return out
+
+
+def _crossings_arc(ai, ln, poly) -> list:
+    """곡선 보 축(호, 길이 ln)이 다각형 경계를 지나는 (호를 따라 잰 거리 u, 그 변의 단위 방향) 들. 변과 원의 교점 중 호 안(0 <= u <= ln)에 드는 것."""
+    cx, cy, r = ai[0], ai[1], ai[2]
+    out = []
+    n = len(poly)
+    for i in range(n):
+        (px, py), (qx, qy) = poly[i], poly[(i + 1) % n]
+        ex, ey = qx - px, qy - py
+        aa = ex * ex + ey * ey
+        if aa < 1e-18:
+            continue
+        fx, fy = px - cx, py - cy
+        bb = 2.0 * (fx * ex + fy * ey)
+        disc = bb * bb - 4.0 * aa * (fx * fx + fy * fy - r * r)
+        if disc < 0.0:
+            continue
+        sq = sqrt(disc)
+        el = sqrt(aa)
+        for s in ((-bb - sq) / (2.0 * aa), (-bb + sq) / (2.0 * aa)):
+            if -1e-9 <= s <= 1.0 + 1e-9:
+                u = AG.u_of(ai, (px + ex * s, py + ey * s))
+                if -1e-6 <= u <= ln + 1e-6:
+                    out.append((u, (ex / el, ey / el)))
     return out
 
 
@@ -321,35 +438,112 @@ def end_inside(p, k, post) -> bool:
     return bb[0] - 0.01 <= ex <= bb[2] + 0.01 and bb[1] - 0.01 <= ey <= bb[3] + 0.01 and _point_in((float(ex), float(ey)), post[4])
 
 
-def trims(p, zr, columns) -> tuple:
-    """기둥(보) 면 자르기: (시작에서 줄인 평면 길이, 끝에서 줄인 평면 길이, 시작 기둥 id 또는 None, 끝 기둥 id 또는 None).
+def trims_ex(p, zr, columns, gap=0.0, beam_ids=()) -> tuple:
+    """기둥(보) 면 자르기: (시작에서 줄인 길이, 끝에서 줄인 길이, 시작 기둥 id 또는 None, 끝 기둥 id 또는 None, 시작 변 방향, 끝 변 방향).
+    길이는 직선 보는 평면 길이, 곡선 보는 호를 따라 잰 길이. 변 방향 = 자른 주 보(beam_ids 에 든 것)의 외곽 변의 평면 단위 방향(경사 자르기용), 기둥이면 None.
     zr = 보의 (아래 z, 위 z) 절대 높이(경사 보는 끝마다 ((아래, 위), (아래, 위))), columns = ((기둥 id, 아래 z, 위 z, 경계 상자 (x0, y0, x1, y1), 세계 다각형), ...).
     끝점이 기둥 단면 안(경계 포함)이고 높이가 1mm 넘게 겹치면 그 끝에서 가장 가까운 경계 교차점까지 줄인다. 여러 기둥이면 가장 많이 줄이는 것.
-    남는 길이가 CUT_MIN 보다 짧아지면 줄이지 않는다(두 끝이 같은 기둥 안 등). 보끼리 접합도 주 보를 '기둥'으로 넘겨 같은 함수가 한다."""
+    남는 길이가 CUT_MIN 보다 짧아지면 줄이지 않는다(두 끝이 같은 기둥 안 등). 보끼리 접합도 주 보를 '기둥'으로 넘겨 같은 함수가 한다.
+    gap(3부)은 주 보(beam_ids)로 자른 끝에만 더하는 간격이다. 간격을 더해 남는 길이가 CUT_MIN 보다 짧아지면 간격 없이 다시 본다."""
+    none = (0.0, 0.0, None, None, None, None)
     if p.get("cutback") is False or not columns:
-        return (0.0, 0.0, None, None)
+        return none
     zre = zr if isinstance(zr[0], tuple) else (zr, zr)
-    ax, ay, ux, uy, ln = axis(p)
-    ends = ((ax, ay), (ax + ux * ln, ay + uy * ln))
-    best = [(0.0, None), (0.0, None)]
+    cv = curved(p)
+    if cv:
+        ai = arc_info(p)
+        ln = ai[2] * ai[5]
+        ends = ((float(p["start"][0]), float(p["start"][1])), (float(p["end"][0]), float(p["end"][1])))
+    else:
+        ax, ay, ux, uy, ln = axis(p)
+        ends = ((ax, ay), (ax + ux * ln, ay + uy * ln))
+    best = [(0.0, None, None), (0.0, None, None)]
     for cid, z0, z1, bb, poly in columns:
         for k, (ex, ey) in enumerate(ends):
             if min(zre[k][1], z1) - max(zre[k][0], z0) <= 1.0:
                 continue
             if not (bb[0] - 0.01 <= ex <= bb[2] + 0.01 and bb[1] - 0.01 <= ey <= bb[3] + 0.01) or not _point_in((ex, ey), poly):
                 continue
-            ts = _crossings(ax, ay, ux, uy, ln, poly)
+            ts = _crossings_arc(ai, ln, poly) if cv else _crossings(ax, ay, ux, uy, ln, poly)
             if k == 0:
-                ts = [t for t in ts if t > 1e-6]
-                cut = min(ts) if ts else None
+                ts = [x for x in ts if x[0] > 1e-6]
+                hit = min(ts, key=lambda x: x[0]) if ts else None
+                cut = hit[0] if hit else None
             else:
-                ts = [t for t in ts if t < ln - 1e-6]
-                cut = ln - max(ts) if ts else None
+                ts = [x for x in ts if x[0] < ln - 1e-6]
+                hit = max(ts, key=lambda x: x[0]) if ts else None
+                cut = ln - hit[0] if hit else None
             if cut is not None and cut > best[k][0] + 1e-9:
-                best[k] = (cut, cid)
-    if ln - best[0][0] - best[1][0] < CUT_MIN:
-        return (0.0, 0.0, None, None)
-    return (best[0][0], best[1][0], best[0][1], best[1][1])
+                best[k] = (cut, cid, hit[1])
+    for use_gap in ((True, False) if gap > 0.0 else (False,)):
+        c = [best[k][0] + (gap if use_gap and best[k][1] in beam_ids else 0.0) for k in (0, 1)]
+        if ln - c[0] - c[1] >= CUT_MIN:
+            return (c[0], c[1], best[0][1], best[1][1],
+                    best[0][2] if best[0][1] in beam_ids else None, best[1][2] if best[1][1] in beam_ids else None)
+    return none
+
+
+def trims(p, zr, columns) -> tuple:
+    """trims_ex 의 앞 넷(자르기 길이 둘과 상대 id 둘). 간격·변 방향 없이."""
+    return trims_ex(p, zr, columns)[:4]
+
+
+def end_shears(p, edges) -> tuple | None:
+    """끝면이 축에 수직이 아닌 보의 끝면 기울기: ((ka0, kb0), (ka1, kb1)) 또는 None(두 끝 모두 축에 수직).
+    끝 하나의 끝면은 연직면이고, 단면 점 (a, b)(a = 왼쪽, b = 단면 위)의 끝 위치가 축 방향으로 ka·a + kb·b 만큼 밀린다(축 방향 길이).
+    kb = 경사 보의 연직 끝면(vertical_ends 이거나 경사 자르기가 걸린 끝): 평면 위치가 b 에 안 따르게 tan(경사각) = s/c.
+    ka = 경사 자르기(skew_cut): 끝이 닿은 주 보 외곽 변(edges 의 단위 방향)과 나란한 연직면. 보 축과 변이 이루는 각의 사인이 SKEW_SIN_MIN 보다 작으면 맞추지 않는다."""
+    vert = p.get("vertical_ends") is True
+    skew = p.get("skew_cut") is True
+    if not vert and not skew or curved(p):
+        return None
+    c, s, _l3 = slope(p)
+    tb = s / c if sloped(p) else 0.0
+    _ax, _ay, ux, uy, _ln = axis(p)
+    out = []
+    for k in (0, 1):
+        ka = 0.0
+        e = edges[k] if skew and edges else None
+        if e is not None:
+            nx, ny = -e[1], e[0]
+            nu = nx * ux + ny * uy
+            ns = -nx * uy + ny * ux
+            if abs(nu) >= SKEW_SIN_MIN:
+                ka = -ns / (nu * c)
+        out.append((ka, tb if (vert or ka != 0.0) else 0.0))
+    if all(x == 0.0 and y == 0.0 for x, y in out):
+        return None
+    return tuple(out)
+
+
+def clip_planes(p, cut, ends) -> tuple:
+    """끝면이 축에 수직이 아닌 보(end_shears 가 낸 ends)의 IFC 자르기용 값: (두 끝의 연직 자르기 면, 돌출 시작·끝 어긋남).
+    자르기 면 = (축 위 점의 배치 안 좌표 (x, y, z), 안쪽을 향한 수평 법선 (nx, ny)): 배치는 자른 시작점이 원점이고 x = 평면 방향이다.
+    돌출은 (시작 어긋남 lo, 끝 어긋남 hi) 만큼 더 길게(축 방향) 한 뒤 두 면으로 잘라낸다(잘라낼 자리가 1mm 여유 안에 든다)."""
+    c, s, _l3 = slope(p)
+    ln = length3(p)
+    L = ln - cut[0] - cut[1]
+    _ax, _ay, ux, uy, _l = axis(p)
+    outline = section_outline(p)
+    planes, lo, hi = [], 0.0, L
+    for k in (0, 1):
+        ka, kb = ends[k]
+        if ka == 0.0:
+            nx, ny = (1.0, 0.0) if k == 0 else (-1.0, 0.0)
+        else:
+            # 끝면 평면은 옆으로 a 만큼 갈 때 평면 위치가 ka·c·a 밀리는 연직면이다: 법선 (축 성분, 왼쪽 성분) ∝ (1, -ka c)
+            nl = sqrt(ka * ka * c * c + 1.0)
+            nx, ny = 1.0 / nl, -ka * c / nl
+            if k == 1:
+                nx, ny = -nx, -ny
+        t = 0.0 if k == 0 else L
+        planes.append(((t * c, 0.0, t * s), (nx, ny)))
+        sh = [q[0] * ka + q[1] * kb for q in outline]
+        if k == 0:
+            lo = min(sh)
+        else:
+            hi = L + max(sh)
+    return tuple(planes), (lo - 1.0, hi + 1.0)
 
 
 def end_zranges(p, z_ref) -> tuple:
@@ -395,18 +589,76 @@ def _to3(o, D, S, U, t0):
     return g
 
 
-def mesh(p, z_ref, cut) -> tuple:
-    """(꼭짓점, 면) 다면체(solids 의 표현): 단면 바깥 윤곽(+ 강관 구멍)을 축 [cut[0], 실길이 - cut[1]] 구간에 돌출. z_ref = 기준선 시작점 절대 높이."""
-    o, D, S, U, ln = frame(p, z_ref)
-    return SO._extrude(section_outline(p), section_holes(p), _to3(o, D, S, U, cut[0]), None, ln - cut[0] - cut[1])
+def _to3_ends(o, D, S, U, t0, L, ends):
+    """끝면이 축에 수직이 아닌 보의 to3(2D 점, t): t == 0 은 시작 끝면, 그 밖은 끝 끝면(t = 자른 길이 L). 끝면 점은 (a, b) 에 따라 축 방향으로
+    ka·a + kb·b 만큼 밀린다(end_shears). 옆면은 모두 축에 평행한 모서리를 가져 평면이다."""
+    f = _to3(o, D, S, U, t0)
+    (a0, b0), (a1, b1) = ends
+
+    def g(q, t):
+        if t == 0.0:
+            return f(q, q[0] * a0 + q[1] * b0)
+        return f(q, L + q[0] * a1 + q[1] * b1)
+    return g
 
 
-def pieces(p, z_ref, cut) -> list:
-    """볼록 조각(사각형 단면 각기둥)마다 꼭짓점 8개 [(아래 4: 시작 끝면), (위 4: 끝 끝면)]. 절단 채움·가림이 쓴다."""
+def _curved_mesh(p, z_ref, cut) -> tuple:
+    """곡선 보 다면체: 호를 나눈 경계(arc_stations)마다 단면 바깥 윤곽(+ 강관 구멍)을 놓고 이웃 경계끼리 잇는다. 양 끝은 호의 접선에 수직인 방사 평면이다."""
+    ai, us, cb = arc_stations(p, cut)
+    loops = [section_outline(p)] + list(section_holes(p))
+    verts, faces = [], []
+    blk = []   # blk[고리][경계] = 그 고리의 첫 꼭짓점 번호
+    for lp in loops:
+        row = []
+        for u in us:
+            row.append(len(verts))
+            for a, b in lp:
+                x, y = arc_xy(ai, u, cb, a)
+                verts.append((x, y, z_ref + b))
+        blk.append(row)
+    n = len(us) - 1
+    faces.append([[blk[i][0] + k for k in range(len(lp))][::-1] for i, lp in enumerate(loops)])
+    faces.append([[blk[i][n] + k for k in range(len(lp))] for i, lp in enumerate(loops)])
+    for i, lp in enumerate(loops):
+        m = len(lp)
+        for s in range(n):
+            b0, b1 = blk[i][s], blk[i][s + 1]
+            for k in range(m):
+                j = (k + 1) % m
+                faces.append([[b0 + k, b0 + j, b1 + j, b1 + k]])
+    return verts, faces
+
+
+def mesh(p, z_ref, cut, ends=None) -> tuple:
+    """(꼭짓점, 면) 다면체(solids 의 표현): 단면 바깥 윤곽(+ 강관 구멍)을 축 [cut[0], 실길이 - cut[1]] 구간에 돌출. z_ref = 기준선 시작점 절대 높이.
+    ends = end_shears 값(끝면이 축에 수직이 아닌 보, 3부)이면 끝면을 연직면으로 비스듬히 자른다. 곡선 보는 호를 따라 쓴다."""
+    if curved(p):
+        return _curved_mesh(p, z_ref, cut)
     o, D, S, U, ln = frame(p, z_ref)
-    f = _to3(o, D, S, U, cut[0])
     L = ln - cut[0] - cut[1]
-    return [[f(q, 0.0) for q in quad] + [f(q, L) for q in quad] for quad in section_quads(p)]
+    if ends is None:
+        return SO._extrude(section_outline(p), section_holes(p), _to3(o, D, S, U, cut[0]), None, L)
+    return SO._extrude(section_outline(p), section_holes(p), _to3_ends(o, D, S, U, cut[0], L, ends), None, L)
+
+
+def pieces(p, z_ref, cut, ends=None) -> list:
+    """볼록 조각(사각형 단면 각기둥)마다 꼭짓점 8개 [(아래 4: 시작 끝면), (위 4: 끝 끝면)]. 절단 채움·가림이 쓴다.
+    곡선 보는 현(호 조각)마다 조각을 낸다(이웃 경계의 마이터 단면 사이). ends(3부)는 mesh 와 같다."""
+    if curved(p):
+        ai, us, cb = arc_stations(p, cut)
+        quads = section_quads(p)
+        out = []
+        for k in range(len(us) - 1):
+            for quad in quads:
+                out.append([(*arc_xy(ai, us[k], cb, a), z_ref + b) for a, b in quad] + [(*arc_xy(ai, us[k + 1], cb, a), z_ref + b) for a, b in quad])
+        return out
+    o, D, S, U, ln = frame(p, z_ref)
+    L = ln - cut[0] - cut[1]
+    if ends is None:
+        f = _to3(o, D, S, U, cut[0])
+        return [[f(q, 0.0) for q in quad] + [f(q, L) for q in quad] for quad in section_quads(p)]
+    g = _to3_ends(o, D, S, U, cut[0], L, ends)
+    return [[g(q, 0.0) for q in quad] + [g(q, L) for q in quad] for quad in section_quads(p)]
 
 
 _BOX_EDGES = ((0, 1), (1, 2), (2, 3), (3, 0), (4, 5), (5, 6), (6, 7), (7, 4), (0, 4), (1, 5), (2, 6), (3, 7))
@@ -451,12 +703,28 @@ def convex_order(pts2) -> list:
     return out if len(out) >= 3 else []
 
 
-def plan_rect(p, cut) -> list:
-    """평면에서 본 보의 외곽 사각형(반시계 4점, 회전 단면의 폭 범위): 숨은선·평면 가림·보끼리 접합이 쓴다. cut = 축 방향(실길이) 자른 길이.
-    경사 보는 축에 수직인 단면이 평면에서 진행 방향으로도 퍼지므로(b x sin) 그 범위까지 넣는다."""
+def plan_rect(p, cut, ends=None) -> list:
+    """평면에서 본 보의 외곽(반시계 다각형, 회전 단면의 폭 범위): 숨은선·평면 가림·보끼리 접합이 쓴다. cut = 축 방향(실길이) 자른 길이.
+    직선 보는 사각형 4점이다. 경사 보는 축에 수직인 단면이 평면에서 진행 방향으로도 퍼지므로(b x sin) 그 범위까지 넣는다.
+    ends(3부)가 있으면 끝면이 비스듬한 평행사변형이다. 곡선 보는 호를 따라 오른쪽 가장자리(a 최소)를 가고 왼쪽 가장자리(a 최대)로 돌아오는 다각형이다."""
     ax, ay, ux, uy, ln = axis(p)
     a0, a1 = a_range(p)
+    if curved(p):
+        ai, us, cb = arc_stations(p, cut)
+        return [arc_xy(ai, u, cb, a0) for u in us] + [arc_xy(ai, u, cb, a1) for u in reversed(us)]
     sx, sy = -uy, ux
+    if ends is not None:
+        c, s, l3 = slope(p)
+        b0, b1 = b_range(p)
+        L = l3 - cut[0] - cut[1]
+        pts = []
+        for k, a in ((0, a0), (1, a0), (1, a1), (0, a1)):
+            ka, kb = ends[k]
+            t = cut[0] if k == 0 else cut[0] + L
+            xs = [(t + a * ka + b * kb) * c - b * s for b in (b0, b1)]
+            x = min(xs) if k == 0 else max(xs)
+            pts.append((ax + ux * x + sx * a, ay + uy * x + sy * a))
+        return pts
     if not sloped(p):
         t0, t1 = cut[0], ln - cut[1]
     else:
@@ -465,3 +733,96 @@ def plan_rect(p, cut) -> list:
         al = [t * c - b * s for t in (cut[0], l3 - cut[1]) for b in (b0, b1)]
         t0, t1 = min(al), max(al)
     return [(ax + ux * t + sx * a, ay + uy * t + sy * a) for t, a in ((t0, a0), (t1, a0), (t1, a1), (t0, a1))]
+
+
+# ---------------------------------------------------------------- 수량(곡선 보)과 경사 보 가림 조각(3부)
+def centroid(p) -> tuple:
+    """단면 도심 (a, b)(a = 왼쪽 +, b = 위 +, 기준선 기준, 회전·기준선 반영). 곡선 보 체적(파푸스)과 끝면이 비스듬한 보 체적이 쓴다. 원형 강관은 가운데."""
+    sc = p["section"]
+    cb = _center_b(sc, p["anchor"])
+    if sc["shape"] == "pipe":
+        ac, bc = 0.0, 0.0
+    else:
+        tot = sx = sy = 0.0
+        for a0, a1, b0, b1 in _boxes(sc):
+            ar = (a1 - a0) * (b1 - b0)
+            tot += ar
+            sx += ar * (a0 + a1) / 2.0
+            sy += ar * (b0 + b1) / 2.0
+        ac, bc = sx / tot, sy / tot
+    r = p.get("roll")
+    if not r:
+        return (ac, bc + cb)
+    sn, cs = SO.sincos_deg(float(r))
+    return (ac * cs - (bc + cb) * sn, ac * sn + (bc + cb) * cs)
+
+
+def centroid_a(p) -> float:
+    """단면 도심의 a(왼쪽 +)."""
+    return centroid(p)[0]
+
+
+def volume(p, cl, ends=None) -> float:
+    """자른 길이 cl(기준선 길이) 보의 체적 mm3. 직선 보 = 단면적 x cl. 곡선 보는 단면 도심이 기준선에서 a 만큼 옆이면 도심의 호 길이가
+    cl x (1 - sg·a/r) 라 체적 = 단면적 x 그 길이(파푸스 정리: 안쪽이 짧다). 단면이 a 대칭(사각·H·강관)이면 단면적 x cl 이다.
+    끝면이 비스듬하면(ends, end_shears) 끝면마다 단면 점이 밀리는 평균(도심)만큼 길이가 달라진다: cl + (끝 밀림 - 시작 밀림)의 도심 값."""
+    a = section_area(p["section"])
+    if ends is not None:
+        ca, cb = centroid(p)
+        return a * (cl + (ends[1][0] * ca + ends[1][1] * cb) - (ends[0][0] * ca + ends[0][1] * cb))
+    if not curved(p):
+        return a * cl
+    ai = arc_info(p)
+    return a * cl * (1.0 - ai[4] * centroid_a(p) / ai[2])
+
+
+def convex_clip(subject, clipper) -> list:
+    """볼록 다각형(반시계) subject 를 볼록 다각형(반시계) clipper 안쪽으로 자른다(Sutherland-Hodgman). 겹치지 않으면 []."""
+    out = list(subject)
+    n = len(clipper)
+    for i in range(n):
+        if not out:
+            return []
+        (cx, cy), (dx, dy) = clipper[i], clipper[(i + 1) % n]
+        ex, ey = dx - cx, dy - cy
+        nxt = []
+        m = len(out)
+        for j in range(m):
+            pt, qt = out[j], out[(j + 1) % m]
+            fp = ex * (pt[1] - cy) - ey * (pt[0] - cx)
+            fq = ex * (qt[1] - cy) - ey * (qt[0] - cx)
+            if fp >= 0.0:
+                nxt.append(pt)
+            if (fp >= 0.0) != (fq >= 0.0):
+                t = fp / (fp - fq)
+                nxt.append((pt[0] + t * (qt[0] - pt[0]), pt[1] + t * (qt[1] - pt[1])))
+        out = nxt
+    return out
+
+
+def slab_slices(pcs) -> list:
+    """볼록 조각들(꼭짓점 8개씩)을 높이 조각으로 썬다: ((z0, z1, 평면 볼록 다각형(반시계)), ...). 조각의 다각형은 높이 구간 [z0, z1] 전체를 덮는 자리
+    (두 높이의 수평 절단 다각형의 교집합)라 보가 실제로 가리지 않는 곳을 가리지 않는다(안쪽 근사: 기운 면 근처 한 조각 높이 만큼 덜 가린다).
+    조각 높이는 SLAB_MM 이고, 가림 다각형 수가 SLAB_POLYS 를 넘지 않게 조각당 높이 조각 수를 SLAB_MAX 안에서 줄인다.
+    수직 각기둥이 아닌 조각(경사 보)의 단면·입면 가림에 쓴다(지붕 판이 높이 조각으로 가리는 것과 같은 방식)."""
+    out = []
+    kmax = max(4, min(SLAB_MAX, SLAB_POLYS // max(1, len(pcs))))
+    for pc in pcs:
+        zs = [q[2] for q in pc]
+        zlo, zhi = min(zs), max(zs)
+        span = zhi - zlo
+        if span <= 1e-6:
+            continue
+        k = max(1, min(kmax, int(span / SLAB_MM + 0.999999)))
+        h = span / k
+        cuts = [convex_order([(q[0], q[1]) for q in piece_cut(pc, (0.0, 0.0, 1.0), zlo + h * i)]) for i in range(k + 1)]
+        for i in range(k):
+            a, b = cuts[i], cuts[i + 1]
+            if len(a) < 3 or len(b) < 3:
+                continue
+            poly = convex_clip(a, b)
+            if len(poly) >= 3:
+                poly = convex_order(poly)
+            if len(poly) >= 3 and abs(sum(poly[j][0] * poly[(j + 1) % len(poly)][1] - poly[(j + 1) % len(poly)][0] * poly[j][1] for j in range(len(poly)))) > 1e-6:
+                out.append((zlo + h * i, zlo + h * (i + 1), tuple(poly)))
+    return out
