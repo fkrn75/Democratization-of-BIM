@@ -1362,7 +1362,9 @@ def ifc_spec(g, e):
     if kind == "stair" and "sketch" in p:   # 스케치 계단(W2 열일곱 번째 PR): 걸음선 대신 sketch
         sk = p["sketch"]
         return {"kind": kind, "name": p["name"], "level": g.q(stair_level, e), "width": p["width"], "height": p["height"], "risers": p["risers"],
-                "base_offset": p["base_offset"], "sketch": (("bulges", tuple(sk.get("bulges", ()))), ("path", tuple(tuple(q) for q in sk["path"]))),
+                "base_offset": p["base_offset"],
+                "sketch": (("bulges", tuple(sk.get("bulges", ()))), *((("corners", tuple(sk["corners"])),) if "corners" in sk else ()),   # 꺾인 모서리(W2 스무 번째 PR): 없으면 명세는 이전과 같다
+                           ("path", tuple(tuple(q) for q in sk["path"]))),
                 "intent": intent}
     if kind == "stair" and "spiral" in p:   # 방사 계단(W2 열일곱 번째 PR): 걸음선 대신 spiral
         sp = p["spiral"]
