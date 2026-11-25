@@ -116,7 +116,8 @@ PRE = {**_DRAFT_PRE, "history.redo": [("history.undo", {})], "ifc.restore": [_EX
        "beam.set": [_BT1, _BM1], "beam.move": [_BT1, _BM1], "beam.type.set": [_BT1, _BM1], "beam.grid": [_BT1], "beam.list": [_BT1, _BM1],   # W2 열다섯 번째 PR
        "rooftype.list": [_RT1], "roof.type.set": [_RF1, _RT1], "roof.layers": [_RF1], "roof.eaves.set": [_RF1], "roof.eaves": [_RF1],   # W2 여덟 번째 PR
        "area.delete": [_LA1], "area.list": [_LA1], "area.legal": [_W4, _SI1, _LA1], "area.export": [_W4, _SI1, _LA1],
-       "opening.vertical": [_S1], "opening.delete": [_OP1],
+       "opening.vertical": [_S1, _RF1], "opening.delete": [_OP1], "opening.face": [_RF1], "opening.set": [_OP1],   # W2 열네 번째 PR: 지붕 원 개구·면 개구·고치기
+       "opening.move": [_S1, ("opening.vertical", {"id": F.OP1, "host": F.S1, "boundary": [[1000, 1000], [2000, 1000], [2000, 2000], [1000, 2000]]})],
        **{c: [_CW1] for c in ("curtain.set", "curtain.grid", "curtain.mullion.set", "curtain.panel.set", "curtain.type.set", "curtain.move", "curtain.parts",
                                 "curtain.detach", "curtain.material.set")},   # 커튼월 상단 떼기·커튼월별 재료(W2 열 번째 PR)
        "curtain.attach": [_RF1, _CWR],   # 지붕 아래를 지나는 커튼월(W2 열 번째 PR)

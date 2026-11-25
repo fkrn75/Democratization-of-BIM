@@ -45,6 +45,7 @@ from dobim_core.solids import OPENINGS_MAX
 from dobim_core.roofpoly import FACES_MAX as _POLY_FACES_MAX   # 다각형 외곽 지붕(W1 1-F 4차)의 경사면 수 상한(직사각형은 4)
 from dobim_core.roofskel import FACES_MAX as _SKEL_FACES_MAX   # 외곽선 지붕(W2 여덟 번째 PR)의 경사면 수 상한
 ROOF_FACES_MAX = max(_POLY_FACES_MAX, _SKEL_FACES_MAX)
+from dobim_core.hostvoid import VOID_MARGIN   # 지붕·천장 개구 솔리드 여유(W2 열네 번째 PR)
 from dobim_core.kinds import _plane_of as plane_of
 from dobim_core.family import ifcproj as fp
 from dobim_core.viewdefs import DEFS_PSET
@@ -849,7 +850,7 @@ class IfcModel:
                         if r.is_a("IfcRelFillsElement") and r.RelatedBuildingElement == e:
                             self.openings[eid] = r.RelatingOpeningElement
                             self._opening_gid[eid] = r.RelatingOpeningElement.GlobalId
-                if kind in ("slab", "stair", "roof", "wall", "railing"):   # 난간 부재(W2 열세 번째 PR)
+                if kind in ("slab", "stair", "roof", "wall", "railing", "solid"):   # 난간 부재(W2 열세 번째 PR), 천장판 개구(W2 열네 번째 PR)
                     self._adopt_parts(eid, kind, e)
                 elif kind == "curtwall":   # 커튼월 부속(W2 ARC-22)
                     self._cw_adopt(eid, e)
@@ -2020,9 +2021,19 @@ class IfcModel:
         if "csg" in spec:   # 불리언(W2 여섯 번째 PR): 피연산자 IfcFacetedBrep 들의 IfcBooleanResult 사슬, 표현 종류 CSG
             self._set_body(e, self._csg_item(spec["csg"]))
             e.Representation.Representations[0].RepresentationType = "CSG"
-            return
-        self._set_body(e, self._brep(spec["verts"], spec["faces"]))
-        e.Representation.Representations[0].RepresentationType = "Brep"
+        else:
+            self._set_body(e, self._brep(spec["verts"], spec["faces"]))
+            e.Representation.Representations[0].RepresentationType = "Brep"
+        if spec.get("voids") or eid in self.parts:   # 천장판 개구(W2 열네 번째 PR): 판을 수직으로 관통하는 IfcOpeningElement(이름표 void:<개구 id>). 없으면 이전과 같다
+            zs = [v[2] for v in spec["verts"]]
+            z0, depth = min(zs) - VOID_MARGIN, max(zs) - min(zs) + 2.0 * VOID_MARGIN
+            vps = dict(spec.get("void_psets", ()))
+            wanted = {}
+            for oid, oname, lp in spec.get("voids", ()):
+                wanted[f"void:{oid}"] = {"cls": "IfcOpeningElement", "name": f"{oname}-void:{oid}", "rel": "void", "solid": (lambda lp=lp: self._solid(lp, depth, z0=z0))}
+                if oid in vps:
+                    wanted[f"void:{oid}"]["psets"] = vps[oid]
+            self._sync_parts(eid, wanted)
 
     def _project_beam(self, eid, spec):
         """구조 보(W2 열다섯 번째 PR, STR-02): 배치 = 레벨 좌표계 안의 기준선 시작점(x 축 = 보 방향), 몸체 = 단면 프로필
@@ -2093,6 +2104,8 @@ class IfcModel:
             return [f"opening:{i}" for i in range(SLAB_OPENINGS_MAX)] + ["parapet"]
         if kind == "wall":   # 모양 개구부(18단계)
             return [f"opening:{i}" for i in range(OPENINGS_MAX)]
+        if kind == "solid":   # 천장판 개구(W2 열네 번째 PR)만 있다(이름으로 찾는다)
+            return []
         if kind == "railing":   # 유형 난간의 부재(W2 열세 번째 PR)
             return list(RAIL_PART_LABELS)
         return [f"face:{i}" for i in range(ROOF_FACES_MAX)] if kind == "roof" else ["flight:0", "flight:1", "landing", "winder"]
@@ -2128,7 +2141,18 @@ class IfcModel:
                     label = name[cut + 1:]
                     if label not in have and p.GlobalId == part_guid(eid, label):
                         have[label] = p
-        if kind in ("wall", "slab"):   # 독립 개구 객체(W2 세 번째 PR, ARC-34): 이름 끝의 void:<개구 id> 를 읽고 GlobalId(part_guid)로 확인한다
+        if kind == "roof":   # 지붕 개구(W2 열네 번째 PR): 면 IfcSlab 을 뚫는 개구의 이름 끝 void:<개구 id>:<면 번호> 를 읽고 GlobalId 로 확인한다
+            for flb in sorted(lb for lb in have if lb.startswith("face:")):
+                for r in getattr(have[flb], "HasOpenings", None) or ():
+                    p = r.RelatedOpeningElement
+                    name = p.Name if isinstance(p.Name, str) else ""
+                    cut = name.rfind("-void:")
+                    if cut < 0:
+                        continue
+                    label = "void:" + name[cut + len("-void:"):]
+                    if label not in have and p.GlobalId == part_guid(eid, label):
+                        have[label] = p
+        if kind in ("wall", "slab", "solid"):   # 독립 개구 객체(W2 세 번째 PR, ARC-34; 천장판 W2 열네 번째 PR): 이름 끝의 void:<개구 id> 를 읽고 GlobalId(part_guid)로 확인한다
             for r in getattr(e, "HasOpenings", None) or ():
                 p = r.RelatedOpeningElement
                 name = p.Name if isinstance(p.Name, str) else ""
@@ -2154,7 +2178,9 @@ class IfcModel:
         f = self.f
         host = self.ents[eid]
         have = self.parts.setdefault(eid, {})
-        for label in sorted(set(have) - set(wanted)):
+        on_part = any("on" in w for w in wanted.values()) or any(lb.count(":") > 1 and lb.startswith("void:") for lb in have)
+        # 다른 부속을 뚫는 개구(지붕 면 개구, W2 열네 번째 PR)는 그 부속보다 먼저 지운다. 그런 개구가 없으면 순서는 이전과 같다(이름표 순)
+        for label in sorted(set(have) - set(wanted), key=(lambda lb: (not lb.startswith("void:"), lb)) if on_part else None):
             self._drop_part(eid, label)
         for label in sorted(wanted):
             w = wanted[label]
@@ -2162,18 +2188,21 @@ class IfcModel:
             if part is not None and not part.is_a(w["cls"]):
                 self._drop_part(eid, label)
                 part = None
+            if part is not None and "on" in w and not any(r.RelatingBuildingElement == have.get(w["on"]) for r in (part.VoidsElements or ())):
+                self._drop_part(eid, label)   # 뚫는 부속이 바뀌었다(지붕 면 부속을 다시 만든 경우): 개구를 새로 단다
+                part = None
             if part is None:
                 part = api_root.create_entity(f, ifc_class=w["cls"])
                 part.GlobalId = part_guid(eid, label)
                 have[label] = part
                 if w["rel"] == "void":
-                    api_feature.add_feature(f, feature=part, element=host)
+                    api_feature.add_feature(f, feature=part, element=have[w["on"]] if "on" in w else host)
                 else:
                     api_aggregate.assign_object(f, products=[part], relating_object=host)
             part.Name = w["name"]
             for k, v in w.get("attrs", {}).items():
                 setattr(part, k, v)
-            self._place(part, host.ObjectPlacement, (0.0, 0.0, 0.0), (1.0, 0.0, 0.0))
+            self._place(part, (have[w["on"]] if "on" in w else host).ObjectPlacement, (0.0, 0.0, 0.0), (1.0, 0.0, 0.0))
             self._set_body(part, w["solid"]())
             if "reptype" in w and part.Representation.Representations[0].RepresentationType != w["reptype"]:   # 처마 부속(W2 여덟 번째 PR)은 Brep
                 part.Representation.Representations[0].RepresentationType = w["reptype"]
@@ -2430,6 +2459,28 @@ class IfcModel:
         down = (-xv[2], -yv[2], -nz[2])   # 전역 (0,0,-1) 의 로컬 성분
         return f.createIfcExtrudedAreaSolid(prof, pos, f.createIfcDirection([float(v) for v in down]), float(thickness))
 
+    def _face_void_solid(self, loop, plane, t):
+        """지붕 면 개구(W2 열네 번째 PR): 윗면 위 경계 고리(평면 투영 loop)를 면 평면에 올린 프로필을 면 법선 반대쪽(아래)으로 판 두께(면에 수직)만큼 돌출한다.
+        경계면과 겹치지 않게 법선 방향으로 VOID_MARGIN 위에서 시작해 두께 + 2 x VOID_MARGIN 만큼 내린다. 지붕 두께는 수직으로 재므로 면에 수직인 두께는 t / sqrt(1 + a² + b²)."""
+        f = self.f
+        a, b, c = plane
+        nl = math.sqrt(a * a + b * b + 1.0)
+        nz = (-a / nl, -b / nl, 1.0 / nl)
+        xl = math.sqrt(1.0 + a * a)
+        xv = (1.0 / xl, 0.0, a / xl)
+        yv = (nz[1] * xv[2] - nz[2] * xv[1], nz[2] * xv[0] - nz[0] * xv[2], nz[0] * xv[1] - nz[1] * xv[0])
+        o = (loop[0][0], loop[0][1], a * loop[0][0] + b * loop[0][1] + c)
+        o = (o[0] + nz[0] * VOID_MARGIN, o[1] + nz[1] * VOID_MARGIN, o[2] + nz[2] * VOID_MARGIN)
+        pts = []
+        for x, y in loop:
+            q = (x - o[0], y - o[1], a * x + b * y + c - o[2])
+            pts.append((q[0] * xv[0] + q[1] * xv[1] + q[2] * xv[2], q[0] * yv[0] + q[1] * yv[1] + q[2] * yv[2]))
+        pl = f.createIfcPolyline([f.createIfcCartesianPoint([float(u), float(v)]) for u, v in pts + [pts[0]]])
+        prof = f.createIfcArbitraryClosedProfileDef("AREA", None, pl)
+        pos = f.createIfcAxis2Placement3D(f.createIfcCartesianPoint([float(v) for v in o]), f.createIfcDirection([float(v) for v in nz]),
+                                          f.createIfcDirection([float(v) for v in xv]))
+        return f.createIfcExtrudedAreaSolid(prof, pos, f.createIfcDirection([0.0, 0.0, -1.0]), float(t / nl + 2.0 * VOID_MARGIN))
+
     def _project_roof(self, eid, spec):
         """경사 지붕: IfcRoof 자신은 형상이 없고 경사면마다 하위 IfcSlab(PredefinedType ROOF)이 집합한다. 면의 몸체는 면 평면을 프로필로 한 비스듬한 압출이다.
         배치는 레벨 좌표계 원점이고 처마 높이는 레벨 + base_offset 이므로 레벨 높이는 읽지 않는다."""
@@ -2464,6 +2515,21 @@ class IfcModel:
             cls, attrs = EAVE_IFC[pc[1]]
             wanted[f"eave:{pc[0]}"] = {"cls": cls, "name": f"{spec['name']}-eave:{pc[0]}", "rel": "aggregate", "attrs": attrs, "reptype": "Brep",
                                        "solid": (lambda pc=pc: self._brep(*RE.piece_mesh(pc)))}
+        if spec.get("voids"):   # 지붕 개구(W2 열네 번째 PR): 뚫는 면 IfcSlab 마다 IfcOpeningElement(이름표 void:<개구 id>:<면 번호>)
+            t = spec["thickness"]
+            vz0 = gm["zlow"] - t - VOID_MARGIN
+            vdepth = gm["ztop"] - gm["zlow"] + t + 2.0 * VOID_MARGIN
+            vps = dict(spec.get("void_psets", ()))
+            for oid, oname, mode, lp, faces in spec["voids"]:
+                for i in faces:
+                    lb = f"void:{oid}:{i}"
+                    if mode == "face":
+                        sol = (lambda lp=lp, pl=gm["planes"][i]: self._face_void_solid(lp, pl, t))
+                    else:
+                        sol = (lambda lp=lp: self._solid(lp, vdepth, z0=vz0))
+                    wanted[lb] = {"cls": "IfcOpeningElement", "name": f"{oname}-void:{oid}:{i}", "rel": "void", "on": f"face:{i}", "solid": sol}
+                    if oid in vps:
+                        wanted[lb]["psets"] = vps[oid]
         old_em = self._eave_mats.get(eid) or {}
         self._eave_mats[eid] = dict(spec.get("eave_materials", ()))   # 처마 부속 종류별 재료(W2 아홉 번째 PR)
         self._sync_parts(eid, wanted)
