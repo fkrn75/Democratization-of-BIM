@@ -1606,11 +1606,19 @@ class StairCreate(A):
     base_offset: Num = Field(0.0, description="레벨 높이에서 아래 끝까지 mm")
     name: Name | None = None
     turn: StairTurn | None = Field(None, description="꺾인 계단(층참 있는 L형·U형). 주면 run 은 층참 아래 단 묶음의 걸음선이다. IFC 는 IfcStair 아래 IfcStairFlight 둘과 층참 IfcSlab 으로 나간다")
+    check: bool = Field(False, description="참이면 응답에 계단 검사 경고(stair_warnings: 챌판 높이 > 180mm·디딤판 깊이 < 260mm·돌음 회전부 디딤 깊이)를 더한다(W2 스무 번째 PR). "
+                                           "거절하지 않고 알리기만 한다. 비우면 응답은 이전과 같다")
 
 
-@command("stair.create", kind="mutation", risk="write", group="model.stair", summary="계단 생성(레벨 + 걸음선 + 폭 + 오름 + 챌판 수, 선택: 꺾인 계단 turn)",
+def _stair_check_key(p: dict) -> dict:
+    """계단 검사 경고의 별도 응답 키(stair_warnings, 비어도 키가 있다). 직선·꺾인 계단에서는 check 를 줄 때만 붙는다(기존 응답을 바꾸지 않는다)."""
+    return {"stair_warnings": K.stair_rule_warnings(p)}
+
+
+@command("stair.create", kind="mutation", risk="write", group="model.stair", summary="계단 생성(레벨 + 걸음선 + 폭 + 오름 + 챌판 수, 선택: 꺾인 계단 turn, 계단 검사 check)",
          args=StairCreate, since="0.2",
-         examples=[{"level": F.LV1, "run": [1000, 1000, 5000, 1000], "width": 1200, "height": 3000, "risers": 18}])
+         examples=[{"level": F.LV1, "run": [1000, 1000, 5000, 1000], "width": 1200, "height": 3000, "risers": 18},
+                   {"level": F.LV1, "run": [1000, 9000, 5000, 9000], "width": 1200, "height": 3000, "risers": 18, "check": True}])
 def stair_create(ctx, a: StairCreate):
     _fresh_id(ctx, a, "stair")
     ctx.authored(a.level, "level", what="레벨에 계단을 추가하는 것")
@@ -1622,7 +1630,7 @@ def stair_create(ctx, a: StairCreate):
         _stair_checked(p)
     ctx.put_el(a.id, row("stair", "IfcStair", "stair.straight", p))
     ctx.rel("on_level", a.id, a.level, True)
-    return {"id": a.id}
+    return {"id": a.id, **(_stair_check_key(p) if a.check else {})}
 
 
 class StairSpiralSpec(A):
@@ -1698,7 +1706,10 @@ class StairSketchSpec(A):
     """스케치 계단의 보행선(W2 열일곱 번째 PR, ARC-29): 직선과 원호를 접하게 이은 꺾은선. 폭 가운데 선이고 디딤판은 그 길이를 같게 나눈다."""
     path: Annotated[list[SlabPt], Field(min_length=2, max_length=K.STAIR_SKETCH_PTS)] = Field(description="보행선 꼭짓점 [[x,y],...] mm(아래 첫 챌판에서 위 끝까지, 2~64개)")
     bulges: Annotated[list[Annotated[float, Field(ge=-1, le=1, allow_inf_nan=False)]], Field(max_length=K.STAIR_SKETCH_PTS - 1)] | None = Field(
-        None, description="변마다 볼록도 tan(중심각/4)(+ 반시계 호, 0 = 직선, 꼭짓점 수 - 1 개). 이웃 변은 접선이 이어져야 한다")
+        None, description="변마다 볼록도 tan(중심각/4)(+ 반시계 호, 0 = 직선, 꼭짓점 수 - 1 개). 이웃 변은 접선이 이어져야 한다(꺾인 모서리는 corners)")
+    corners: Annotated[list[Annotated[int, Field(ge=0, le=K.STAIR_CORNER_M_MAX)]], Field(max_length=K.STAIR_SKETCH_PTS - 2)] | None = Field(
+        None, description="꺾인 모서리(W2 스무 번째 PR): 안쪽 꼭짓점마다 모서리 디딤판 수(꼭짓점 수 - 2 개, 0 = 꺾이지 않는 꼭짓점·접선 연속, 1 = 층참 하나, 2 이상 = 쐐기 돌음 디딤판). "
+                          "모서리는 폭/2 반지름의 접하는 보행선 원호가 되고 그 원호를 같은 길이로 나눈 쐐기 디딤판이 안쪽 모서리 점에서 퍼진다. 꺾임각 10~135도, 이웃 변은 직선이어야 한다")
 
 
 def _stair_sketch(s: StairSketchSpec) -> dict:
@@ -1708,6 +1719,11 @@ def _stair_sketch(s: StairSketchSpec) -> dict:
             raise DobimError("CONSTRAINT", "bulges 는 변마다 하나(꼭짓점 수 - 1 개)다", path="/bulges")
         if any(s.bulges):   # 모두 0 이면 키를 두지 않는다
             out["bulges"] = [float(b) for b in s.bulges]
+    if s.corners is not None:
+        if len(s.corners) != len(s.path) - 2:
+            raise DobimError("CONSTRAINT", "corners 는 안쪽 꼭짓점마다 하나(꼭짓점 수 - 2 개)다", path="/corners")
+        if any(s.corners):   # 모두 0 이면 키를 두지 않는다
+            out["corners"] = [int(c) for c in s.corners]
     for i in range(len(out["path"]) - 1):
         (x0, y0), (x1, y1) = out["path"][i], out["path"][i + 1]
         if (x1 - x0) ** 2 + (y1 - y0) ** 2 < 1.0:
@@ -1734,9 +1750,11 @@ class StairSketchCreate(StairSketchSpec):
 
 @command("stair.sketch", kind="mutation", risk="write", group="model.stair",
          summary="스케치 계단 생성(보행선 꺾은선 + 변마다 볼록도(원호) + 폭 + 오름 + 챌판 수). 보행선 길이를 디딤판 수로 같게 나눠 보행선에 수직인 챌판으로 단을 만든다. "
-                 "직선과 원호를 접하게 이어야 한다(꺾인 모서리는 꺾인 계단 turn). 계단 검사는 경고(warnings). IFC 는 IfcStair(STRAIGHT_RUN_STAIR·CURVED_RUN_STAIR) + IfcStairFlight(STRAIGHT·CURVED)",
+                 "직선과 원호를 접하게 이어야 한다. 꺾인 모서리는 corners(꼭짓점마다 모서리 디딤판 수, 1 = 층참·2 이상 = 쐐기 돌음 디딤판, 폭/2 반지름 보행선 원호를 같은 길이로 나눔)로 준다. "
+                 "계단 검사는 경고(warnings). IFC 는 IfcStair(STRAIGHT_RUN_STAIR·CURVED_RUN_STAIR·QUARTER/HALF/THREE_QUARTER_WINDING·TURN_STAIR) + IfcStairFlight(STRAIGHT·CURVED·WINDER)",
          args=StairSketchCreate, since="0.23",
-         examples=[{"level": F.LV1, "path": [[1000, 8000], [4000, 8000], [6000, 10000]], "bulges": [0, 0.41421356], "width": 1200, "height": 3000, "risers": 18}])
+         examples=[{"level": F.LV1, "path": [[1000, 8000], [4000, 8000], [6000, 10000]], "bulges": [0, 0.41421356], "width": 1200, "height": 3000, "risers": 18},
+                   {"level": F.LV1, "path": [[1000, 12000], [4000, 12000], [4000, 15000]], "corners": [3], "width": 1200, "height": 3000, "risers": 18}])
 def stair_sketch(ctx, a: StairSketchCreate):
     _fresh_id(ctx, a, "stair")
     ctx.authored(a.level, "level", what="레벨에 계단을 추가하는 것")
@@ -1760,6 +1778,7 @@ class StairSet(A):
     clear_turn: bool = Field(False, description="참이면 꺾임을 지워 직선 계단으로 되돌린다")
     spiral: StairSpiralSpec | None = Field(None, description="방사 계단 평면 정의(W2 열일곱 번째 PR). 직선·꺾인 계단에 주면 방사 계단으로 바꾼다(걸음선·꺾임은 지워진다)")
     sketch: StairSketchSpec | None = Field(None, description="스케치 계단 보행선(W2 열일곱 번째 PR). 다른 계단에 주면 스케치 계단으로 바꾼다")
+    check: bool = Field(False, description="참이면 응답에 계단 검사 경고(stair_warnings)를 더한다(W2 스무 번째 PR). 바꿀 필드는 따로 있어야 한다")
 
     @model_validator(mode="after")
     def _any(self):
@@ -1810,7 +1829,20 @@ def stair_set(ctx, a: StairSet):
         _stair_checked(p)
     rail = _follow_railings(ctx, a.id, r["params"], p)   # 이 계단이 낸 난간이 따라간다
     ctx.put_el(a.id, dict(r, params=p))
-    return {"id": a.id, **({"railings": rail} if rail else {}), **(_stair_warn(p) if "spiral" in p or "sketch" in p else {})}
+    return {"id": a.id, **({"railings": rail} if rail else {}), **(_stair_warn(p) if "spiral" in p or "sketch" in p else {}), **(_stair_check_key(p) if a.check else {})}
+
+
+@command("stair.check", kind="query", risk="read", group="model.stair",
+         summary="계단 검사(W2 스무 번째 PR): 챌판 높이 > 180mm, 디딤판 깊이 < 260mm(방사·스케치는 보행선 위), 돌음 회전부 디딤 깊이 < 260mm(안쪽 끝에서 300mm 보행선)를 경고로 알린다. "
+                 "직선·꺾인·방사·스케치 계단 모두 같은 규칙이고 거절하지 않는다. 응답 warnings 가 비면 통과. 기준값은 공동주택·중고등학교 계단(주택건설기준 16조) 값이라 용도별 기준은 사용자가 확인한다",
+         args=IdArg, since="0.24", idempotent=True, examples=[{"id": F.ST1}])
+def stair_check(ctx, a: IdArg):
+    r = ctx.row(a.id, "stair")
+    if r["origin"] != "authored":
+        raise DobimError("CONSTRAINT", "저작 계단만 검사한다(외래 계단의 형상은 IFC 가 정본이다)", path="/id")
+    p = r["params"]
+    kind = "spiral" if "spiral" in p else "sketch" if "sketch" in p else "turn" if "turn" in p else "straight"
+    return {"id": a.id, "form": kind, "riser_height": p["height"] / p["risers"], "warnings": K.stair_rule_warnings(p)}
 
 
 @command("stair.move", kind="mutation", risk="write", group="model.stair", summary="계단을 평행 이동한다",
@@ -2184,11 +2216,28 @@ def _spiral_rail_specs(p: dict, side: str, inset: float) -> list:
 
 def _sketch_rail_specs(p: dict, side: str, inset: float) -> list:
     """스케치 계단(W2 열일곱 번째 PR)의 난간 자리: 보행선을 왼쪽(kL)·오른쪽(kR)으로 폭/2 - inset 만큼 들인 꺾은선(원호는 11.25도 이하 현).
-    직선 단 묶음과 같이 첫 챌판 위에서 시작해 (챌판 수 - 1) x 챌판 높이 오른다(난간 높이는 자기 길이에 비례해 오르므로 원호 안·바깥 난간은 디딤판과 조금 어긋날 수 있다)."""
+    직선 단 묶음과 같이 첫 챌판 위에서 시작해 (챌판 수 - 1) x 챌판 높이 오른다(난간 높이는 자기 길이에 비례해 오르므로 원호 안·바깥 난간은 디딤판과 조금 어긋날 수 있다).
+    꺾인 모서리(corners)가 있으면 구간마다 난간을 따로 둔다(표식 kL0·kR0·kL1…, 순서 = 직선·원호 구간과 모서리가 보행선을 따라 나오는 순서): 모서리의 안쪽·바깥 난간은 길이가
+    보행선과 크게 달라 한 줄로 이으면 디딤판과 어긋나므로 구간마다 보행선 위 시작·끝 높이(sketch_walk_z)에 맞춰 base_offset·rise 를 준다."""
     lay = K.stair_sketch_layout(p)
     w = p["width"]
     m = w / 2.0 - min(inset, w / 2.0 - 1.0)
     out = []
+    if lay["corners"]:   # 꺾인 모서리가 있으면 구간(직선·원호 변 묶음, 모서리 하나)마다 난간을 따로 둔다: 난간은 자기 길이에 비례해 오르므로 모서리 안쪽·바깥 난간 길이가
+        groups = []      # 보행선과 크게 달라 한 줄로 이으면 디딤판과 어긋난다. 구간마다 보행선 위 시작·끝 높이(sketch_walk_z)에 맞춰 base_offset·rise 를 준다
+        for i, s in enumerate(lay["segs"]):
+            if s["kind"] == "corner" or not groups or lay["segs"][groups[-1][-1]]["kind"] == "corner":
+                groups.append([i])
+            else:
+                groups[-1].append(i)
+        for gi, ids in enumerate(groups):
+            a = lay["starts"][ids[0]]
+            b = lay["starts"][ids[-1]] + lay["segs"][ids[-1]]["len"]
+            za, zb = K.sketch_walk_z(lay, a), K.sketch_walk_z(lay, b)
+            for name, tag, sg in (("left", "kL", 1.0), ("right", "kR", -1.0)):
+                if side in ("both", name):
+                    out.append({"tag": f"{tag}{gi}", "path": K.sketch_offset_path(lay, sg * m, set(ids)), "base_offset": p["base_offset"] + lay["rise"] + za, "rise": zb - za})
+        return out
     for name, tag, sg in (("left", "kL", 1.0), ("right", "kR", -1.0)):
         if side in ("both", name):
             out.append({"tag": tag, "path": K.sketch_offset_path(lay, sg * m), "base_offset": p["base_offset"] + lay["rise"], "rise": (p["risers"] - 1) * lay["rise"]})
@@ -4069,6 +4118,9 @@ def element_get(ctx, a: ElementGet):
             kl = K.stair_sketch_layout(p)
             out["derived"] = {"bottom": zb, "top": zt, "riser_height": kl["rise"], "tread_depth": kl["td"], "treads": p["risers"] - 1,
                               "walkline_length": kl["length"], "arcs": sum(1 for s in kl["segs"] if s["kind"] == "arc"), "volume_m3": K.stair_volume(p) / 1e9}
+            if kl["corners"]:   # 꺾인 모서리(W2 스무 번째 PR): 모서리 수·모서리 디딤판 수·직선·원호 구간의 가장 짧은 디딤 깊이(tread_depth)·모서리 디딤판 보행선 깊이
+                out["derived"].update({"corners": len(kl["corners"]), "winder_treads": sum(c["m"] for c in kl["corners"]),
+                                       "winder_walkline_tread": min(abs(c["sw"]) * kl["segs"][c["seg"]]["r"] * 3.141592653589793 / 180.0 / c["m"] for c in kl["corners"])})
             if (w := K.stair_rule_warnings(p)):
                 out["derived"]["warnings"] = w
         elif "spiral" in p:   # 방사 계단(W2 열일곱 번째 PR): 보행선 디딤 깊이·디딤판 각·총 회전각·체적

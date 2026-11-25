@@ -2554,7 +2554,18 @@ class IfcModel:
         e.Name = spec["name"]
         sk = dict(spec["sketch"])
         curved = any(sk["bulges"])
+        cors = sk.get("corners", ())
         e.PredefinedType = "CURVED_RUN_STAIR" if curved else "STRAIGHT_RUN_STAIR"
+        if cors:   # 꺾인 모서리(W2 스무 번째 PR): 호가 없으면 총 꺾임각으로 사분(90)·반(180)·3/4(270) 돌음·꺾임 계단, 그 밖의 각은 NOTDEFINED
+            skl = stair_sketch_layout({"width": spec["width"], "height": spec["height"], "risers": spec["risers"],
+                                       "sketch": {"path": [list(q) for q in sk["path"]], "corners": list(cors), **({"bulges": list(sk["bulges"])} if sk["bulges"] else {})}})
+            tot = sum(abs(c["sw"]) for c in skl["corners"])
+            quarters = next((q for q in (1, 2, 3) if abs(tot - 90.0 * q) <= 10.0), None)
+            winding = any(c["m"] >= 2 for c in skl["corners"])
+            if not curved:
+                e.PredefinedType = ("NOTDEFINED" if quarters is None else
+                                    {1: "QUARTER_WINDING_STAIR", 2: "HALF_WINDING_STAIR", 3: "THREE_QUARTER_WINDING_STAIR"}[quarters] if winding else
+                                    {1: "QUARTER_TURN_STAIR", 2: "HALF_TURN_STAIR", 3: "THREE_QUARTER_TURN_STAIR"}[quarters])
         self._contain(eid, spec["level"])
         self._place(e, self.ents[spec["level"]].ObjectPlacement, (0.0, 0.0, 0.0), (1.0, 0.0, 0.0))
         if e.Representation is not None:   # 직선이던 계단이 스케치 계단이 되었다: 계단 자신의 몸체를 없앤다
@@ -2564,12 +2575,14 @@ class IfcModel:
         skp = {"path": [list(q) for q in sk["path"]]}
         if sk["bulges"]:
             skp["bulges"] = list(sk["bulges"])
+        if cors:
+            skp["corners"] = list(cors)
         lay = stair_sketch_layout({"width": spec["width"], "height": spec["height"], "risers": spec["risers"], "sketch": skp})
         z0 = spec["base_offset"]
         n = spec["risers"]
         wanted = {"sketch": {"cls": "IfcStairFlight", "name": f"{spec['name']}-flight1", "rel": "aggregate",
                              "attrs": {"NumberOfRisers": n, "NumberOfTreads": n - 1, "RiserHeight": float(lay["rise"]), "TreadLength": float(lay["td"]),
-                                       "PredefinedType": "CURVED" if curved else "STRAIGHT"},
+                                       "PredefinedType": "WINDER" if any(c["m"] >= 2 for c in lay["corners"]) else "CURVED" if curved else "STRAIGHT"},
                              "solid": (lambda: [self._solid(q, t["z"] - t["zb"], z0=z0 + t["zb"]) for t in lay["treads"] for q in t["pieces"]])}}
         self._sync_parts(eid, wanted)
 
