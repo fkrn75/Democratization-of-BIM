@@ -707,6 +707,8 @@ def stair_pieces(p) -> list:
     """계단의 속이 찬 볼록 조각 [(다각형, 밑면 z, 윗면 z), ...] (계단 아래 끝 기준 상대 높이): 직선·꺾인 단 묶음은 디딤판마다, 층참·돌음 쐐기·방사 디딤판. 체적 수량이 쓴다."""
     if "spiral" in p:
         return [(t["poly"], t["zb"], t["z"]) for t in stair_spiral_layout(p)["treads"]]
+    if "sketch" in p:
+        return [(q, t["zb"], t["z"]) for t in stair_sketch_layout(p)["treads"] for q in t["pieces"]]
     lay = stair_layout(p)
     out = []
     w = p["width"]
@@ -742,7 +744,12 @@ def stair_rule_warnings(p) -> list:
     """계단 검사(경고, 거절하지 않는다): 챌판 높이 > STAIR_RISE_MAX, 디딤판 깊이 < STAIR_TREAD_MIN. 방사 계단은 보행선(안쪽 끝에서 300mm) 위 디딤 길이로 잰다.
     반환 [{"code", "message", "value", "limit"}]. 용도별 기준(초등학교 16cm·관람석 등)은 사용자가 확인한다."""
     rise = p["height"] / p["risers"]
-    tread = stair_spiral_layout(p)["tread"] if "spiral" in p else stair_layout(p)["flights"][0]["td"]
+    if "spiral" in p:
+        tread = stair_spiral_layout(p)["tread"]
+    elif "sketch" in p:   # 스케치 계단: 사용자가 그린 보행선 위 디딤 깊이
+        tread = stair_sketch_layout(p)["td"]
+    else:
+        tread = stair_layout(p)["flights"][0]["td"]
     out = []
     if rise > STAIR_RISE_MAX + 1e-9:
         out.append({"code": "STAIR_RISE", "message": f"챌판 높이 {rise:.1f}mm 가 {STAIR_RISE_MAX:g}mm 를 넘는다", "value": round(rise, 3), "limit": STAIR_RISE_MAX})
@@ -752,7 +759,162 @@ def stair_rule_warnings(p) -> list:
     return out
 
 
+# ---- 스케치 계단(W2 열일곱 번째 PR, ARC-29): 보행선(꺾은선, 변마다 선택 볼록도 = 원호) 하나 + 폭. 보행선 길이를 디딤판 수(챌판 수 - 1)로 같게 나눠
+# 디딤판마다 보행선에 수직인 챌판 선 사이를 채운다(보행선 = 계단 폭 가운데). 이웃 변은 접선이 이어져야 한다(직선 + 원호 보행선, 꺾인 모서리는 거절).
+#   sketch = {"path": [[x, y], ...] 2~STAIR_SKETCH_PTS 점, "bulges": [변마다 tan(중심각/4), + 반시계] (선택, 하나라도 0 이 아니면 둔다)}
+STAIR_SKETCH_PTS = 64
+STAIR_SKETCH_TANGENT = 0.5   # 이웃 변 접선이 이어졌다고 보는 각 허용(도)
+
+
+def _sketch_ok(v) -> bool:
+    if not isinstance(v, dict) or not {"path"} <= set(v) <= {"path", "bulges"}:
+        return False
+    pts = v["path"]
+    if not (isinstance(pts, list) and 2 <= len(pts) <= STAIR_SKETCH_PTS and all(_pt_ok(q) for q in pts)):
+        return False
+    if any((pts[i + 1][0] - pts[i][0]) ** 2 + (pts[i + 1][1] - pts[i][1]) ** 2 < 1.0 for i in range(len(pts) - 1)):
+        return False
+    if "bulges" in v:
+        b = v["bulges"]
+        if not (isinstance(b, list) and len(b) == len(pts) - 1 and all(num_ok(x) and abs(x) <= 1.0 for x in b) and any(b)):
+            return False
+    return True
+
+
+def sketch_segs(sk) -> list:
+    """보행선 변들: 직선 {"kind": "line", "a", "u": 단위 방향, "len"} 또는 원호 {"kind": "arc", "c": 중심, "r", "a0": 시작 각(도), "sw": 부호 있는 중심각(도), "len"}."""
+    pts = [(float(q[0]), float(q[1])) for q in sk["path"]]
+    bs = sk.get("bulges") or [0.0] * (len(pts) - 1)
+    out = []
+    for i in range(len(pts) - 1):
+        a, b = pts[i], pts[i + 1]
+        dx, dy = b[0] - a[0], b[1] - a[1]
+        c = sqrt(dx * dx + dy * dy)
+        bu = float(bs[i])
+        if bu == 0:
+            out.append({"kind": "line", "a": a, "u": (dx / c, dy / c), "len": c})
+            continue
+        d = c * (1.0 - bu * bu) / (4.0 * bu)          # 현 가운데에서 중심까지(왼쪽 법선 방향, 부호 있음): solidops.bulge_arc 와 같은 규약
+        cx, cy = (a[0] + b[0]) / 2.0 - dy / c * d, (a[1] + b[1]) / 2.0 + dx / c * d
+        r = c * (1.0 + bu * bu) / (4.0 * abs(bu))
+        sw = 4.0 * AG.atan2(bu, 1.0) * 180.0 / 3.141592653589793
+        a0 = AG.atan2(a[1] - cy, a[0] - cx) * 180.0 / 3.141592653589793
+        out.append({"kind": "arc", "c": (cx, cy), "r": r, "a0": a0, "sw": sw, "len": r * abs(sw) * 3.141592653589793 / 180.0})
+    return out
+
+
+def seg_pt(s, t, m=0.0):
+    """변 s 위 길이 t 의 보행선 점에서 왼쪽으로 m 떨어진 점."""
+    if s["kind"] == "line":
+        ux, uy = s["u"]
+        return (s["a"][0] + ux * t - uy * m, s["a"][1] + uy * t + ux * m)
+    sn, cs = sincos_deg(s["a0"] + s["sw"] * t / s["len"])
+    rr = s["r"] - (1.0 if s["sw"] > 0 else -1.0) * m   # 반시계 호의 왼쪽은 중심 쪽
+    return (s["c"][0] + rr * cs, s["c"][1] + rr * sn)
+
+
+def seg_tan(s, t):
+    """변 s 위 길이 t 의 진행 방향(단위)."""
+    if s["kind"] == "line":
+        return s["u"]
+    sn, cs = sincos_deg(s["a0"] + s["sw"] * t / s["len"])
+    g = 1.0 if s["sw"] > 0 else -1.0
+    return (-sn * g, cs * g)
+
+
+def stair_sketch_problem(p) -> str | None:
+    """스케치 계단의 교차 검사: 이웃 변의 접선이 이어지는가, 원호 반지름이 폭의 절반보다 큰가."""
+    segs = sketch_segs(p["sketch"])
+    h = p["width"] / 2.0
+    for i, s in enumerate(segs):
+        if s["kind"] == "arc" and s["r"] <= h + 1.0:
+            return f"보행선 {i + 1}번 원호의 반지름({s['r']:.0f})이 계단 폭의 절반({h:g}) + 1mm 보다 커야 한다"
+        if i:
+            t0, t1 = seg_tan(segs[i - 1], segs[i - 1]["len"]), seg_tan(s, 0.0)
+            cr, dt = t0[0] * t1[1] - t0[1] * t1[0], t0[0] * t1[0] + t0[1] * t1[1]
+            if dt <= 0 or abs(cr) > sincos_deg(STAIR_SKETCH_TANGENT)[0]:
+                return (f"보행선 {i + 1}번 꼭짓점에서 꺾인다(이웃 변의 접선이 이어져야 한다: 직선과 원호를 접하게 잇거나, 꺾인 계단은 stair.create turn 을 쓰세요)")
+    return None
+
+
+def stair_sketch_layout(p) -> dict:
+    """스케치 계단의 형상 배치(순수 함수: 그리기·IFC·수량·난간이 같은 값을 쓴다). z 는 계단 아래 끝 기준 상대 높이.
+      {"segs": 보행선 변들, "length": 보행선 길이, "td": 디딤판 깊이(보행선 위), "rise",
+       "treads": [{"s0", "s1": 보행선 위 시작·끝 길이, "z": 윗면, "zb": 밑면(0 = 직선 계단처럼 아래 끝까지 속이 찬 덩어리), "pieces": [볼록 사각형, ...],
+                   "sides": [((x,y),(x,y)), ...] 옆선 조각(왼쪽·오른쪽), "risers": (챌판 선 시작, 끝) 두 개(시작·끝 챌판, 각 (왼쪽 점, 오른쪽 점))}, ...]}
+    디딤판 j 의 보행선 구간 [j·td, (j+1)·td] 를 변마다 자르고, 원호 조각은 STAIR_SPIRAL_ARC 이하로 더 나눠 볼록 사각형(안쪽·바깥 현)을 만든다."""
+    segs = sketch_segs(p["sketch"])
+    n, h = p["risers"], p["width"] / 2.0
+    rise = p["height"] / n
+    total = sum(s["len"] for s in segs)
+    td = total / (n - 1)
+    starts = []
+    acc = 0.0
+    for s in segs:
+        starts.append(acc)
+        acc += s["len"]
+
+    def at(sv):
+        """보행선 길이 sv 의 (변, 변 안 길이)."""
+        for i in range(len(segs) - 1, -1, -1):
+            if sv >= starts[i] - 1e-9:
+                return segs[i], min(max(sv - starts[i], 0.0), segs[i]["len"])
+        return segs[0], 0.0
+
+    def cut(sv):
+        s, t = at(sv)
+        return (seg_pt(s, t, h), seg_pt(s, t, -h))
+    treads = []
+    for j in range(n - 1):
+        s0, s1 = j * td, (j + 1) * td if j < n - 2 else total
+        pieces, sides = [], []
+        for i, s in enumerate(segs):
+            lo, hi = max(s0, starts[i]), min(s1, starts[i] + s["len"])
+            if hi - lo <= 1e-9:
+                continue
+            t0, t1 = lo - starts[i], hi - starts[i]
+            k = 1 if s["kind"] == "line" else max(1, int(-(-(abs(s["sw"]) * (t1 - t0) / s["len"]) // STAIR_SPIRAL_ARC)))
+            for q in range(k):
+                ta, tb = t0 + (t1 - t0) * q / k, t0 + (t1 - t0) * (q + 1) / k
+                quad = [seg_pt(s, ta, -h), seg_pt(s, tb, -h), seg_pt(s, tb, h), seg_pt(s, ta, h)]
+                a2 = sum(quad[e][0] * quad[(e + 1) % 4][1] - quad[(e + 1) % 4][0] * quad[e][1] for e in range(4))
+                if a2 < 0:
+                    quad.reverse()
+                pieces.append(tuple(quad))
+                sides += [(seg_pt(s, ta, h), seg_pt(s, tb, h)), (seg_pt(s, ta, -h), seg_pt(s, tb, -h))]
+        treads.append({"s0": s0, "s1": s1, "z": (j + 1) * rise, "zb": 0.0, "pieces": pieces, "sides": sides, "risers": (cut(s0), cut(s1))})
+    return {"segs": segs, "starts": starts, "length": total, "td": td, "rise": rise, "treads": treads}
+
+
+def sketch_walk_pt(lay, sv, m=0.0):
+    """스케치 계단 보행선 길이 sv 의 점(왼쪽 m)과 진행 방향."""
+    segs, starts = lay["segs"], lay["starts"]
+    for i in range(len(segs) - 1, -1, -1):
+        if sv >= starts[i] - 1e-9 or i == 0:
+            t = min(max(sv - starts[i], 0.0), segs[i]["len"])
+            return seg_pt(segs[i], t, m), seg_tan(segs[i], t)
+
+
+def sketch_offset_path(lay, m) -> list:
+    """보행선을 왼쪽으로 m 들인 꺾은선(원호는 STAIR_SPIRAL_ARC 이하 현). 난간·평면 옆선이 쓴다."""
+    out = []
+    for s in lay["segs"]:
+        k = 1 if s["kind"] == "line" else max(1, int(-(-abs(s["sw"]) // STAIR_SPIRAL_ARC)))
+        for q in range(k + 1):
+            if out and q == 0:
+                continue
+            out.append(list(seg_pt(s, s["len"] * q / k, m)))
+    return out
+
+
 def _stair_params(p):
+    if isinstance(p, dict) and "sketch" in p:   # 스케치 계단(W2 열일곱 번째 PR): 걸음선·꺾임·방사 없이 sketch 하나
+        if "run" in p or "turn" in p or "spiral" in p:
+            return "stair.sketch 가 있으면 stair.run·turn·spiral 을 둘 수 없다"
+        err = _check_opt("stair", p, {"name": _name, "width": _pos, "height": _pos,
+                                      "risers": lambda v: type(v) is int and STAIR_RISERS_MIN <= v <= STAIR_RISERS_MAX, "base_offset": num_ok},
+                         {"sketch": _sketch_ok})
+        return err or stair_sketch_problem(p)
     if isinstance(p, dict) and "spiral" in p:   # 방사 계단(W2 열일곱 번째 PR): 걸음선·꺾임 없이 spiral 하나
         if "run" in p or "turn" in p:
             return "stair.spiral 이 있으면 stair.run·stair.turn 을 둘 수 없다"
@@ -779,6 +941,8 @@ def stair_layout(p) -> dict:
     방사 계단(spiral)은 단 묶음·층참이 없고 "spiral" 키에 stair_spiral_layout 이 온다."""
     if "spiral" in p:
         return {"flights": [], "landing": None, "rise": p["height"] / p["risers"], "spiral": stair_spiral_layout(p)}
+    if "sketch" in p:
+        return {"flights": [], "landing": None, "rise": p["height"] / p["risers"], "sketch": stair_sketch_layout(p)}
     x1, y1, x2, y2 = p["run"]
     n, w = p["risers"], p["width"]
     rise = p["height"] / n

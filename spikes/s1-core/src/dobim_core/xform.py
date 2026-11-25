@@ -139,6 +139,12 @@ def stair(p: dict, xf: Xf) -> dict:
         sp = p["spiral"]
         c = xf.pt(sp["center"][0], sp["center"][1])
         return dict(p, spiral=dict(sp, center=c, start=xf.ang(sp["start"]), sweep=-sp["sweep"] if xf.mirror else sp["sweep"]))
+    if "sketch" in p:   # 스케치 계단(W2 열일곱 번째 PR): 보행선 꼭짓점을 옮긴다(오르는 순서 그대로). 대칭이면 호의 회전 방향이 바뀐다(볼록도 부호)
+        sk = p["sketch"]
+        q = dict(sk, path=[xf.pt(a[0], a[1]) for a in sk["path"]])
+        if xf.mirror and "bulges" in sk:
+            q["bulges"] = [-b + 0.0 for b in sk["bulges"]]
+        return dict(p, sketch=q)
     q = dict(p, run=_line(xf, p["run"], False))   # 걸음선은 오르는 방향이라 뒤집지 않는다
     if xf.mirror and "turn" in p:   # 대칭이면 꺾는 쪽이 바뀐다
         q["turn"] = dict(p["turn"], side="right" if p["turn"]["side"] == "left" else "left")

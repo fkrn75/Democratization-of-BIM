@@ -1269,6 +1269,11 @@ def ifc_spec(g, e):
         if "rotation" in p:   # 승강기 회전(W2 열일곱 번째 PR). 없으면 명세는 이전과 같다
             spec["rotation"] = p["rotation"]
         return spec
+    if kind == "stair" and "sketch" in p:   # 스케치 계단(W2 열일곱 번째 PR): 걸음선 대신 sketch
+        sk = p["sketch"]
+        return {"kind": kind, "name": p["name"], "level": g.q(stair_level, e), "width": p["width"], "height": p["height"], "risers": p["risers"],
+                "base_offset": p["base_offset"], "sketch": (("bulges", tuple(sk.get("bulges", ()))), ("path", tuple(tuple(q) for q in sk["path"]))),
+                "intent": intent}
     if kind == "stair" and "spiral" in p:   # 방사 계단(W2 열일곱 번째 PR): 걸음선 대신 spiral
         sp = p["spiral"]
         return {"kind": kind, "name": p["name"], "level": g.q(stair_level, e), "width": p["width"], "height": p["height"], "risers": p["risers"],

@@ -35,6 +35,9 @@ VP = "4" + "0" * 19 + "p1"     # 1F 평면(절단 1200)
 VS = "4" + "0" * 19 + "s1"     # 계단 중심을 지나는 단면(x = 10000, 동쪽을 본다)
 VE = "4" + "0" * 19 + "e1"     # 남측 입면
 C0 = [10000, 6000]
+SK = ST[:-1] + "5"
+SKETCH = {"path": [[1000, 12000], [4000, 12000], [6000, 14000], [6000, 16000]], "bulges": [0, math.tan(math.radians(90 / 4)), 0], "width": 1200, "height": 3000,
+          "risers": 18}   # 직선 3000 + 사분원 R2000 + 직선 2000 (접선 연속)
 SPIRAL = {"center": C0, "radius_in": 300, "radius_out": 1500, "start": 0, "direction": "ccw", "sweep": 360, "height": 3000, "risers": 18}
 
 
@@ -290,6 +293,8 @@ def test_5_방사_계단과_회전_승강기_IFC_왕복(tmp_path):
         ok(b.run("stair.spiral", {"id": ST[:-1] + "9", "level": F.LV1, **dict(SPIRAL, center=[20000, 6000], radius_in=3000, radius_out=4200, sweep=90, risers=8,
                                                                                   height=1200, direction="cw")}))
         ok(b.run("railing.from_stair", {"stair": ST}))
+        ok(b.run("stair.sketch", {"id": SK, "level": F.LV1, **SKETCH}))
+        ok(b.run("railing.from_stair", {"stair": SK}))
         ok(b.run("slab.create", {"id": F.S1, "level": F.LV2, "boundary": [[0, 6000], [8000, 6000], [8000, 12000], [0, 12000]], "thickness": 200}))
         ok(b.run("elevator.create", {"id": EL, "level": F.LV1, "shaft": [2000, 7000, 4000, 9500], "rise": 6000, "rotation": 30,
                                      "doors": {"face": "S", "w": 900, "h": 2100, "levels": [F.LV1, F.LV2]}}))
@@ -301,6 +306,10 @@ def test_5_방사_계단과_회전_승강기_IFC_왕복(tmp_path):
         names = {ok(b.run("element.get", {"id": x}))["params"]["name"]: x for x in (ST, ST[:-1] + "9")}
         by = {names[e.Name]: e for e in sts.values() if e.Name in names}
         assert by[ST].PredefinedType == "SPIRAL_STAIR" and by[ST[:-1] + "9"].PredefinedType == "CURVED_RUN_STAIR"
+        sk = next(e for e in f.by_type("IfcStair") if e.GlobalId not in {by[ST].GlobalId, by[ST[:-1] + "9"].GlobalId} and e.Representation is None
+                  and [o for r in e.IsDecomposedBy for o in r.RelatedObjects if o.GlobalId == part_guid(SK, "sketch")])
+        skf = [o for r in sk.IsDecomposedBy for o in r.RelatedObjects]
+        assert sk.PredefinedType == "CURVED_RUN_STAIR" and len(skf) == 1 and skf[0].PredefinedType == "CURVED" and skf[0].NumberOfTreads == 17
         assert by[ST].Representation is None
         fl = [o for r in by[ST].IsDecomposedBy for o in r.RelatedObjects]
         assert len(fl) == 1 and fl[0].is_a("IfcStairFlight") and fl[0].PredefinedType == "SPIRAL" and fl[0].GlobalId == part_guid(ST, "spiral")
@@ -406,5 +415,85 @@ def test_6_승강기_회전_대칭_편집(base):
     assert n1 == pytest.approx((-n0[0], n0[1]))
     assert err(base.run("element.copy", {"ids": [EL], "dx": 1000, "dy": 0}))["code"] == "CONSTRAINT"   # 복사는 안 된다(구멍 소유)
     for _ in range(2):
+        ok(base.run("history.undo", {}))
+    assert base.eng.state_hash() == h0
+
+
+# ---------------------------------------------------------------- 7. 스케치 계단(보행선 직선 + 원호)
+def sketch(s, **kw):
+    return ok(s.run("stair.sketch", {"id": SK, "level": F.LV1, **dict(SKETCH, **kw)}))
+
+
+def test_7_스케치_계단_형상과_거절(base):
+    r = sketch(base)
+    p = params(base, SK)
+    assert "run" not in p and p["sketch"]["path"][0] == [1000.0, 12000.0] and p["sketch"]["bulges"][1] == pytest.approx(math.tan(math.radians(22.5)))
+    L = 3000 + 2000 * math.pi / 2 + 2000
+    assert r["length"] == pytest.approx(L) and "warnings" not in r        # 디딤 L/17 = 479mm, 챌판 166.7mm
+    kl = K.stair_sketch_layout(p)
+    assert len(kl["treads"]) == 17 and kl["td"] == pytest.approx(L / 17)
+    for t in kl["treads"]:   # 조각은 반시계 볼록 사각형, 디딤판 하나의 조각 넓이 합 = 폭 x 보행선 길이(원호는 현 근사)
+        for q in t["pieces"]:
+            assert K.polygon_area2([list(x) for x in q]) > 0
+    tot = sum(area(q) for t in kl["treads"] for q in t["pieces"])
+    assert tot == pytest.approx(1200 * L, rel=0.01)
+    assert erow(base, SK)["volume"] == pytest.approx(K.stair_volume(p)) and erow(base, SK)["tread"] == pytest.approx(L / 17)
+    der = ok(base.run("element.get", {"id": SK}))["derived"]
+    assert der["arcs"] == 1 and der["walkline_length"] == pytest.approx(L)
+    # 거절: 꺾인 모서리(접선 불연속), 폭의 절반보다 작은 원호 반지름, 볼록도 수
+    e = err(base.run("stair.sketch", {"level": F.LV1, "path": [[0, 0], [3000, 0], [3000, 3000]], "width": 1000}))
+    assert e["code"] == "CONSTRAINT" and "꺾인다" in e["message"]
+    e = err(base.run("stair.sketch", dict(SKETCH, level=F.LV1, width=4200)))
+    assert e["code"] == "CONSTRAINT" and "반지름" in e["message"]
+    assert err(base.run("stair.sketch", dict(SKETCH, level=F.LV1, bulges=[0, 0.4])))["code"] == "CONSTRAINT"
+    # 직선 보행선 스케치 계단 = 직선 계단과 같은 평면 선
+    ok(base.run("view.create", {"id": VP, "name": "1F", "type": "plan", "level": F.LV1, "cut_height": 1200}))
+    ok(base.run("stair.create", {"id": ST, "level": F.LV1, "run": [0, 20000, 6000, 20000]}))
+    ok(base.run("stair.sketch", {"id": ST[:-1] + "9", "level": F.LV1, "path": [[0, 24000], [6000, 24000]]}))
+    g = g_of(base)
+    a = sorted((c, round(x0, 6), round(y0 - 20000, 6), round(x1, 6), round(y1 - 20000, 6)) for c, x0, y0, x1, y1 in D.merge_lines(g.q(D.plan_stair_parts, VP, ST)[0]))
+    b = sorted((c, round(x0, 6), round(y0 - 24000, 6), round(x1, 6), round(y1 - 24000, 6)) for c, x0, y0, x1, y1 in D.merge_lines(g.q(D.plan_stair_parts, VP, ST[:-1] + "9")[0]))
+    assert a == b
+    assert erow(base, ST)["volume"] == pytest.approx(erow(base, ST[:-1] + "9")["volume"])
+
+
+def test_7_스케치_계단_도면(base):
+    views(base)
+    ok(base.run("view.create", {"id": VS[:-1] + "2", "name": "S2", "type": "section", "p1": [2000, 10000], "p2": [2000, 18000]}))
+    sketch(base)
+    g = g_of(base)
+    segs = g.q(D.plan_stair_parts, VP, SK)[0]
+    assert sum(1 for x in segs if x[0] == "cut") == 1 and sum(1 for x in segs if x[0] == "symbol") >= 3
+    risers = [x for x in segs if x[0] == "proj" and math.hypot(x[3] - x[1], x[4] - x[2]) == pytest.approx(1200)]
+    assert len(risers) >= 7                                                                    # 절단 1200 아래 디딤판 7개의 시작 챌판
+    rects = g.q(D.stair_cut_rects, VS[:-1] + "2", SK)
+    assert rects and any(x[0] == "cut" for x in g.q(D.stair_lines, VS[:-1] + "2", SK))
+    assert g.q(D.stair_lines, VE, SK)
+    same_as_full(base, (VP, VS, VE, VS[:-1] + "2"))
+
+
+def test_7_스케치_계단_편집과_난간(base):
+    sketch(base)
+    h0 = base.eng.state_hash()
+    r = ok(base.run("railing.from_stair", {"stair": SK}))
+    rl = {params(base, x)["src_tag"]: params(base, x) for x in r["created"]}
+    assert set(rl) == {"kL", "kR"} and len(rl["kL"]["path"]) == 2 + 8 + 1                      # 직선 2점 + 사분원 8현 + 직선 끝
+    assert rl["kL"]["path"][0] == pytest.approx([1000, 12550]) and rl["kR"]["path"][-1] == pytest.approx([6550, 16000])
+    m = ok(base.run("stair.move", {"id": SK, "dx": 100, "dy": 0}))
+    assert m["path"][0] == [1100.0, 12000.0] and sorted(m["railings"]["moved"]) == sorted(r["created"])
+    ok(base.run("element.mirror", {"ids": [SK], "axis": [0, 0, 0, 1000]}))                       # 대칭: 호의 방향이 바뀐다
+    p = params(base, SK)
+    assert p["sketch"]["path"][0] == [-1100.0, 12000.0] and p["sketch"]["bulges"][1] == pytest.approx(-math.tan(math.radians(22.5)))
+    assert K.row_params_error("stair", p) is None
+    ok(base.run("element.rotate", {"ids": [SK], "center": [0, 0], "angle": 30}))
+    ok(base.run("stair.set", {"id": SK, "risers": 20, "width": 1000}))
+    ok(base.run("stair.set", {"id": SK, "spiral": {"center": C0, "radius_out": 1500, "sweep": 300}}))   # 형식 바꾸기
+    p = params(base, SK)
+    assert "sketch" not in p and "spiral" in p
+    ok(base.run("stair.set", {"id": SK, "sketch": {"path": [[0, 0], [5000, 0]]}}))
+    p = params(base, SK)
+    assert "spiral" not in p and p["sketch"] == {"path": [[0.0, 0.0], [5000.0, 0.0]]}
+    assert err(base.run("stair.set", {"id": SK, "turn": {"type": "L", "risers_a": 8}}))["code"] == "CONSTRAINT"
+    for _ in range(7):
         ok(base.run("history.undo", {}))
     assert base.eng.state_hash() == h0

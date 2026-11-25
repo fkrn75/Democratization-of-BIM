@@ -2108,7 +2108,7 @@ class IfcModel:
             return []
         if kind == "railing":   # 유형 난간의 부재(W2 열세 번째 PR)
             return list(RAIL_PART_LABELS)
-        return [f"face:{i}" for i in range(ROOF_FACES_MAX)] if kind == "roof" else ["flight:0", "flight:1", "landing", "winder", "spiral"]   # spiral: 방사 계단(W2 열일곱 번째 PR)
+        return [f"face:{i}" for i in range(ROOF_FACES_MAX)] if kind == "roof" else ["flight:0", "flight:1", "landing", "winder", "spiral", "sketch"]   # spiral·sketch: 방사·스케치 계단(W2 열일곱 번째 PR)
 
     def _adopt_parts(self, eid: str, kind: str, e) -> None:
         """가져온 파일에서 요소에 이미 달린 부속(GlobalId 가 part_guid 와 같고 요소와 관계가 이어진 것)을 이어받는다."""
@@ -2341,6 +2341,9 @@ class IfcModel:
         if "spiral" in spec:   # 방사 계단(W2 열일곱 번째 PR)
             self._project_spiral_stair(eid, spec)
             return
+        if "sketch" in spec:   # 스케치 계단(W2 열일곱 번째 PR)
+            self._project_sketch_stair(eid, spec)
+            return
         turn = dict(spec["turn"]) if "turn" in spec else None
         if turn is not None and turn.get("winders") is not None:   # 돌음 계단(23.3): 층참 대신 쐐기 디딤판
             e.PredefinedType = "QUARTER_WINDING_STAIR" if turn["type"] == "L" else "HALF_WINDING_STAIR"
@@ -2403,6 +2406,34 @@ class IfcModel:
         wanted = {"spiral": {"cls": "IfcStairFlight", "name": f"{spec['name']}-flight1", "rel": "aggregate",
                              "attrs": {"NumberOfRisers": n, "NumberOfTreads": n - 1, "RiserHeight": float(lay["rise"]), "TreadLength": float(lay["tread"]), "PredefinedType": "SPIRAL"},
                              "solid": (lambda: [self._solid(t["poly"], t["z"] - t["zb"], z0=z0 + t["zb"]) for t in lay["treads"]])}}
+        self._sync_parts(eid, wanted)
+
+    def _project_sketch_stair(self, eid, spec):
+        """스케치 계단(W2 열일곱 번째 PR, ARC-29): 방사 계단과 같이 IfcStair 자신은 형상이 없고 IfcStairFlight 하나(이름표 sketch)가 디딤판 조각마다
+        수직 압출 솔리드를 담는다. 보행선에 원호가 있으면 CURVED_RUN_STAIR + 단 묶음 CURVED(보행선이 굽은 단 묶음), 직선뿐이면 STRAIGHT_RUN_STAIR + STRAIGHT."""
+        from dobim_core.kinds import stair_sketch_layout
+        f = self.f
+        e = self.ents[eid]
+        e.Name = spec["name"]
+        sk = dict(spec["sketch"])
+        curved = any(sk["bulges"])
+        e.PredefinedType = "CURVED_RUN_STAIR" if curved else "STRAIGHT_RUN_STAIR"
+        self._contain(eid, spec["level"])
+        self._place(e, self.ents[spec["level"]].ObjectPlacement, (0.0, 0.0, 0.0), (1.0, 0.0, 0.0))
+        if e.Representation is not None:   # 직선이던 계단이 스케치 계단이 되었다: 계단 자신의 몸체를 없앤다
+            shape = e.Representation
+            e.Representation = None
+            ue.remove_deep2(f, shape)
+        skp = {"path": [list(q) for q in sk["path"]]}
+        if sk["bulges"]:
+            skp["bulges"] = list(sk["bulges"])
+        lay = stair_sketch_layout({"width": spec["width"], "height": spec["height"], "risers": spec["risers"], "sketch": skp})
+        z0 = spec["base_offset"]
+        n = spec["risers"]
+        wanted = {"sketch": {"cls": "IfcStairFlight", "name": f"{spec['name']}-flight1", "rel": "aggregate",
+                             "attrs": {"NumberOfRisers": n, "NumberOfTreads": n - 1, "RiserHeight": float(lay["rise"]), "TreadLength": float(lay["td"]),
+                                       "PredefinedType": "CURVED" if curved else "STRAIGHT"},
+                             "solid": (lambda: [self._solid(q, t["z"] - t["zb"], z0=z0 + t["zb"]) for t in lay["treads"] for q in t["pieces"]])}}
         self._sync_parts(eid, wanted)
 
     def _project_railing(self, eid, spec):
