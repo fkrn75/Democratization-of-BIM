@@ -135,9 +135,38 @@ def space(p: dict, xf: Xf) -> dict:
 
 
 def stair(p: dict, xf: Xf) -> dict:
+    if "spiral" in p:   # 방사 계단(W2 열일곱 번째 PR): 중심을 옮기고 시작 각을 돌린다. 대칭이면 회전 방향이 바뀐다(총 회전각 부호)
+        sp = p["spiral"]
+        c = xf.pt(sp["center"][0], sp["center"][1])
+        return dict(p, spiral=dict(sp, center=c, start=xf.ang(sp["start"]), sweep=-sp["sweep"] if xf.mirror else sp["sweep"]))
+    if "sketch" in p:   # 스케치 계단(W2 열일곱 번째 PR): 보행선 꼭짓점을 옮긴다(오르는 순서 그대로). 대칭이면 호의 회전 방향이 바뀐다(볼록도 부호)
+        sk = p["sketch"]
+        q = dict(sk, path=[xf.pt(a[0], a[1]) for a in sk["path"]])
+        if xf.mirror and "bulges" in sk:
+            q["bulges"] = [-b + 0.0 for b in sk["bulges"]]
+        return dict(p, sketch=q)
     q = dict(p, run=_line(xf, p["run"], False))   # 걸음선은 오르는 방향이라 뒤집지 않는다
     if xf.mirror and "turn" in p:   # 대칭이면 꺾는 쪽이 바뀐다
         q["turn"] = dict(p["turn"], side="right" if p["turn"]["side"] == "left" else "left")
+    return q
+
+
+def elevator(p: dict, xf: Xf) -> dict:
+    """승강기(W2 열일곱 번째 PR): 샤프트 가운데를 옮기고(크기는 그대로) 회전각을 돌린다. 대칭은 회전각 2φ - θ 에 로컬 y 를 뒤집은 것과 같아
+    문 면 N·S 가 바뀐다(카는 가운데라 그대로). 회전각 0 이면 rotation 키를 두지 않는다."""
+    x1, y1, x2, y2 = p["shaft"]
+    hw, hd = (x2 - x1) / 2.0, (y2 - y1) / 2.0
+    if xf.kind == "move":
+        q = dict(p, shaft=[x1 + xf.m[4], y1 + xf.m[5], x2 + xf.m[4], y2 + xf.m[5]])
+        return q
+    c = xf.pt((x1 + x2) / 2.0, (y1 + y2) / 2.0)
+    q = dict(p, shaft=[_r6(c[0] - hw), _r6(c[1] - hd), _r6(c[0] + hw), _r6(c[1] + hd)])
+    a = xf.ang(p.get("rotation", 0.0))
+    q.pop("rotation", None)
+    if a:
+        q["rotation"] = a
+    if xf.mirror and "doors" in p and p["doors"]["face"] in ("N", "S"):
+        q["doors"] = dict(p["doors"], face="S" if p["doors"]["face"] == "N" else "N")
     return q
 
 
@@ -260,7 +289,7 @@ def beam(p: dict, xf: Xf) -> dict:
     return q
 
 
-BY_KIND = {"wall": wall, "slab": slab, "space": space, "stair": stair, "railing": railing, "roof": roof, "grid": grid, "solid": solid, "beam": beam}
+BY_KIND = {"wall": wall, "slab": slab, "space": space, "stair": stair, "railing": railing, "roof": roof, "grid": grid, "solid": solid, "beam": beam, "elevator": elevator}
 
 
 def params(kind: str, p: dict, xf: Xf) -> dict:

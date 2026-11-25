@@ -67,7 +67,7 @@ CATEGORY_FIELDS = {
     "roofs": ("form", "pitch", "thickness", "area", "volume"),
     "ceilings": ("thickness", "area", "volume", "width", "length", "height"),
     "finishes": ("thickness", "area", "volume", "width", "length", "height"),
-    "stairs": ("width", "height", "risers", "riser_height", "tread", "length"),
+    "stairs": ("width", "height", "risers", "riser_height", "tread", "length", "volume"),   # volume: W2 열일곱 번째 PR(방사 계단 수량과 함께)
     "railings": ("height", "length", "rise"),
     "columns": ("width", "length", "height", "volume"),
     "beams": ("width", "depth", "length", "volume"),
@@ -245,8 +245,14 @@ def element_row(g, e) -> dict:
     elif kind == "stair":
         lay = K.stair_layout(p)
         fl = lay["flights"]
-        out.update(width=p["width"], height=p["height"], risers=p["risers"], riser_height=lay["rise"],
-                   tread=fl[0]["td"] if fl else None, length=sum(f["length"] for f in fl))
+        if "sketch" in lay:   # 스케치 계단(W2 열일곱 번째 PR): 그린 보행선 위 디딤 깊이·길이
+            out.update(width=p["width"], height=p["height"], risers=p["risers"], riser_height=lay["rise"], tread=lay["sketch"]["td"], length=lay["sketch"]["length"])
+        elif "spiral" in lay:   # 방사 계단(W2 열일곱 번째 PR): 디딤 깊이·길이는 보행선(안쪽 끝에서 300mm) 위 값
+            out.update(width=p["width"], height=p["height"], risers=p["risers"], riser_height=lay["rise"], tread=lay["spiral"]["tread"], length=lay["spiral"]["walk_len"])
+        else:
+            out.update(width=p["width"], height=p["height"], risers=p["risers"], riser_height=lay["rise"],
+                       tread=fl[0]["td"] if fl else None, length=sum(f["length"] for f in fl))
+        out["volume"] = K.stair_volume(p)
     elif kind == "railing":
         out.update(height=p["height"], length=_polyline_len(p["path"]), rise=p["rise"])
     elif kind == "space":

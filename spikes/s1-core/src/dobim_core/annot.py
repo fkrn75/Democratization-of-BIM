@@ -793,6 +793,12 @@ def tag_anchor(g, target):
         path = row["params"]["path"]
         i = max(1, len(path) // 2)
         return ((path[i - 1][0] + path[i][0]) / 2.0, (path[i - 1][1] + path[i][1]) / 2.0)
+    if row["kind"] == "stair" and "sketch" in row["params"]:   # 스케치 계단(W2 열일곱 번째 PR): 보행선 가운데 점
+        lay = K.stair_sketch_layout(row["params"])
+        return K.sketch_walk_pt(lay, lay["length"] / 2.0)[0]
+    if row["kind"] == "stair" and "spiral" in row["params"]:   # 방사 계단(W2 열일곱 번째 PR): 폭 가운데 원 위 가운데 각의 점
+        sp = row["params"]["spiral"]
+        return K._spiral_pt(sp["center"], sp["r_in"] + row["params"]["width"] / 2.0, sp["start"] + sp["sweep"] / 2.0)
     if row["kind"] == "stair":
         x0, y0, x1, y1 = row["params"]["run"]
         return ((x0 + x1) / 2.0, (y0 + y1) / 2.0)

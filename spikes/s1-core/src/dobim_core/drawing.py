@@ -1727,6 +1727,15 @@ def stair_info(g, s):
         return None
     zb, zt = g.q(Q.stair_zrange, s)
     p = row["params"]
+    if "spiral" in p:   # 방사 계단(W2 열일곱 번째 PR): 폭 가운데 원 위 첫 챌판 점·접선을 걸음선 틀로, 디딤 깊이는 보행선 위 값
+        x1, y1, ux, uy, length = K.stair_spiral_frame(p)
+        n = p["risers"]
+        return (zb, zt, x1, y1, ux, uy, length, p["width"], n, K.stair_spiral_layout(p)["tread"], (zt - zb) / n)
+    if "sketch" in p:   # 스케치 계단(W2 열일곱 번째 PR): 보행선 첫 점·첫 접선, 보행선 길이·디딤 깊이
+        kl = K.stair_sketch_layout(p)
+        (x1, y1), (ux, uy) = K.sketch_walk_pt(kl, 0.0)
+        n = p["risers"]
+        return (zb, zt, x1, y1, ux, uy, kl["length"], p["width"], n, kl["td"], (zt - zb) / n)
     x1, y1, x2, y2 = p["run"]
     dx, dy = x2 - x1, y2 - y1
     length = sqrt(dx * dx + dy * dy)
@@ -1790,6 +1799,113 @@ def stair_winders(g, s):
     zb = info[0]
     wedges = tuple((tuple(tuple(q) for q in w["poly"]), zb + w["zb"], zb + w["z"], w["a0"], w["a1"], w["q0"], w["qm"]) for w in wd["wedges"])
     return (wedges, wd["center"], wd["radius"], wd["sweep"], wd["e0"], wd["e90"])
+
+
+def stair_spiral(g, s):
+    """방사 계단(W2 열일곱 번째 PR, kinds.stair_spiral_layout)의 그리기 값 또는 None:
+    (디딤판들 ((다각형, 밑면 z, 윗면 z, 시작 각, 끝 각, 모서리 점들), ...), 중심, 안쪽 반지름, 바깥 반지름, 폭 가운데 반지름, 시작 각, 총 회전각, 디딤판 각). z 는 절대 높이."""
+    info = g.q(stair_info, s)
+    if info is None:
+        return None
+    p = Q.el(g, s)["params"]
+    if "spiral" not in p:
+        return None
+    sl = K.stair_spiral_layout(p)
+    zb = info[0]
+    treads = tuple((t["poly"], zb + t["zb"], zb + t["z"], t["a0"], t["a1"], t["corners"]) for t in sl["treads"])
+    return (treads, sl["center"], sl["r_in"], sl["r_out"], sl["r_mid"], sl["start"], sl["sweep"], sl["step"])
+
+
+def stair_sketch(g, s):
+    """스케치 계단(W2 열일곱 번째 PR, kinds.stair_sketch_layout)의 그리기 값 또는 None: (배치, 아래 끝 절대 z). 디딤판 z 는 배치 값 + 아래 끝."""
+    info = g.q(stair_info, s)
+    if info is None:
+        return None
+    p = Q.el(g, s)["params"]
+    if "sketch" not in p:
+        return None
+    return (K.stair_sketch_layout(p), info[0])
+
+
+def _walk_poly(lay, t0, t1, m=0.0):
+    """스케치 보행선 길이 t0 ~ t1 구간을 왼쪽 m 으로 따라가는 꺾은선 점들(직선 변은 끝점만, 원호는 10도 이하 현)."""
+    pts = []
+    for s, st in zip(lay["segs"], lay["starts"]):
+        lo, hi = max(t0, st), min(t1, st + s["len"])
+        if hi - lo <= 1e-9:
+            continue
+        k = 1 if s["kind"] == "line" else max(1, int(-(-(abs(s["sw"]) * (hi - lo) / s["len"]) // 10.0)))
+        for q in range(k + 1):
+            if pts and q == 0:
+                continue
+            pts.append(K.seg_pt(s, lo - st + (hi - lo) * q / k, m))
+    return pts
+
+
+def _plan_sketch(sk, cutz, width):
+    """스케치 계단의 평면(직선 계단 규약을 보행선 따라): 윗면이 절단 높이 이하인 디딤판의 챌판 선·옆선(proj), 보행선 진행 화살표(symbol),
+    절단 높이가 계단 안이면 첫 안 보이는 디딤판의 시작 챌판에서 계단을 비스듬히 가로지르는 절단선(cut). 절단선 위쪽은 그리지 않는다."""
+    lay, zb = sk
+    treads = lay["treads"]
+    h = width / 2.0
+    vis = [t for t in treads if zb + t["z"] <= cutz + EPS]
+    whole = len(vis) == len(treads)
+    segs = []
+    for t in vis:
+        segs += [("proj", a[0], a[1], b[0], b[1]) for a, b in t["sides"]]
+        a, b = t["risers"][0]
+        segs.append(("proj", a[0], a[1], b[0], b[1]))
+    if whole:
+        a, b = treads[-1]["risers"][1]
+        segs.append(("proj", a[0], a[1], b[0], b[1]))
+    td, length = lay["td"], lay["length"]
+    tmax = length if whole else treads[len(vis)]["s0"]
+    t_start = min(td * 0.5, tmax)
+    t_end = (length - min(td * 0.5, length * 0.1)) if whole else tmax - min(td * 0.3, tmax * 0.1)
+    if t_end - t_start > EPS:
+        pts = _walk_poly(lay, t_start, t_end)
+        segs += [("symbol", pts[i][0], pts[i][1], pts[i + 1][0], pts[i + 1][1]) for i in range(len(pts) - 1)]
+        (ex, ey), (tx, ty) = K.sketch_walk_pt(lay, t_end)
+        hl = min(width * STAIR_ARROW, 400.0, t_end - t_start)
+        for sgn in (1.0, -1.0):
+            segs.append(("symbol", ex, ey, ex - tx * hl - sgn * ty * hl * 0.4, ey - ty * hl + sgn * tx * hl * 0.4))
+    if not whole:
+        e = min(td * 0.5, 150.0)
+        p0, p1 = K.sketch_walk_pt(lay, max(tmax - e, 0.0), h)[0], K.sketch_walk_pt(lay, min(tmax + e, length), -h)[0]
+        segs.append(("cut", p0[0], p0[1], p1[0], p1[1]))
+    return segs
+
+
+def _plan_spiral(sg, cutz, width):
+    """방사 계단의 평면: 절단 높이 아래(윗면 <= 절단 높이) 디딤판 윤곽(proj), 폭 가운데 원호 진행 화살표(symbol, 첫 디딤판 가운데에서 오르는 쪽으로),
+    절단 높이가 계단 안이면 첫 안 보이는 디딤판의 시작 챌판을 비스듬히 가로지르는 절단선(cut)과 화살촉. 절단선 위쪽은 직선 계단처럼 그리지 않는다."""
+    treads, c, ri, ro, rm, a_s, _sweep, step = sg
+    vis = [t for t in treads if t[2] <= cutz + EPS]
+    segs = []
+    for t in vis:
+        poly = t[0]
+        segs += [("proj", poly[i][0], poly[i][1], poly[(i + 1) % len(poly)][0], poly[(i + 1) % len(poly)][1]) for i in range(len(poly))]
+    whole = len(vis) == len(treads)
+    a_b = None if whole else treads[len(vis)][3]                              # 첫 안 보이는 디딤판의 시작 각
+    a0 = a_s + step * 0.5
+    a1 = (a_s + step * len(treads) - step * 0.5) if whole else (a_b - step * 0.3)
+    span = a1 - a0
+    if span * step > EPS:
+        nseg = max(2, int(abs(span) / 10.0 + 0.5))
+        pts = [K._spiral_pt(c, rm, a0 + span * i / nseg) for i in range(nseg + 1)]
+        segs += [("symbol", pts[i][0], pts[i][1], pts[i + 1][0], pts[i + 1][1]) for i in range(nseg)]
+        sn, cs = K.sincos_deg(a1)
+        gsn = 1.0 if step > 0 else -1.0
+        tx, ty = -sn * gsn, cs * gsn                                          # 오르는 쪽 접선
+        hl = min(width * STAIR_ARROW, 400.0, rm * abs(span) * 3.141592653589793 / 180.0)
+        ex, ey = pts[-1]
+        for sgn in (1.0, -1.0):
+            segs.append(("symbol", ex, ey, ex - tx * hl - sgn * ty * hl * 0.4, ey - ty * hl + sgn * tx * hl * 0.4))
+    if not whole:                                                             # 절단선: 안쪽 끝(조금 아래 각)에서 바깥 끝(조금 위 각)으로 비스듬히
+        e = 0.25 * step
+        p0, p1 = K._spiral_pt(c, ri, a_b - e), K._spiral_pt(c, ro, a_b + e)
+        segs.append(("cut", p0[0], p0[1], p1[0], p1[1]))
+    return segs
 
 
 def _winder_pt(wg, f, r=None):
@@ -1872,6 +1988,12 @@ def plan_stair_parts(g, v, s):
     info = g.q(stair_info, s)
     if info is None or cfg is None or cfg[0] != "plan" or cfg[2] < info[0] - EPS:
         return ((), ())
+    sgp = g.q(stair_spiral, s)
+    if sgp is not None:                                                       # 방사 계단(W2 열일곱 번째 PR)
+        return (tuple(_plan_spiral(sgp, cfg[2], info[7])), ())
+    skp = g.q(stair_sketch, s)
+    if skp is not None:                                                       # 스케치 계단(W2 열일곱 번째 PR)
+        return (tuple(_plan_sketch(skp, cfg[2], info[7])), ())
     flights, ld = g.q(stair_geom, s)
     wg = g.q(stair_winders, s)
     if wg is not None:                                                        # 돌음 계단: 아래 단 묶음이 다 보이면 회전부 쐐기를 잇는다
@@ -1934,6 +2056,16 @@ def _stair_vpieces(g, v, s):
         quad = _clip_w(quad, cfg[7], cfg[8])
         if len(quad) >= 3 and _area2(quad) > 2 * EPS:
             out.append((w[1], w[2], tuple(quad)))
+    sgp = g.q(stair_spiral, s)
+    skp = g.q(stair_sketch, s)
+    sk_pieces = () if skp is None else [(q, skp[1] + t["zb"], skp[1] + t["z"]) for t in skp[0]["treads"] for q in t["pieces"]]
+    for t in [*(() if sgp is None else sgp[0]), *sk_pieces]:                  # 방사 디딤판·스케치 디딤판 조각(W2 열일곱 번째 PR): 볼록 각기둥
+        quad = [_sw(cfg, q) for q in t[0]]
+        if _area2(quad) < 0:
+            quad.reverse()
+        quad = _clip_w(quad, cfg[7], cfg[8])
+        if len(quad) >= 3 and _area2(quad) > 2 * EPS:
+            out.append((t[1], t[2], tuple(quad)))
     return tuple(out)
 
 
@@ -2008,6 +2140,27 @@ def stair_vedges(g, v, s):
             raw.append(((a[0], a[1], w[1]), (a[0], a[1], w[2])))
             for z in (w[1], w[2]):
                 raw.append(((a[0], a[1], z), (b[0], b[1], z)))
+    sgp = g.q(stair_spiral, s)
+    for t in (() if sgp is None else sgp[0]):                                 # 방사 디딤판: 윗면·밑면 둘레, 수직 모서리는 디딤판 모서리에만(바깥 원호 현 꼭짓점은 매끈한 면)
+        pts = [_sw(cfg, q) for q in t[0]]
+        for i in range(len(pts)):
+            a, b = pts[i], pts[(i + 1) % len(pts)]
+            for z in (t[1], t[2]):
+                raw.append(((a[0], a[1], z), (b[0], b[1], z)))
+        for q in t[5]:
+            a = _sw(cfg, q)
+            raw.append(((a[0], a[1], t[1]), (a[0], a[1], t[2])))
+    skp = g.q(stair_sketch, s)
+    for t in (() if skp is None else skp[0]["treads"]):                       # 스케치 디딤판: 옆선·챌판 선의 윗면·밑면, 챌판 양 끝 수직 모서리
+        z0, z1 = skp[1] + t["zb"], skp[1] + t["z"]
+        for a, b in [*t["sides"], *t["risers"]]:
+            pa, pb = _sw(cfg, a), _sw(cfg, b)
+            for z in (z0, z1):
+                raw.append(((pa[0], pa[1], z), (pb[0], pb[1], z)))
+        for a, b in t["risers"]:
+            for q in (a, b):
+                pq = _sw(cfg, q)
+                raw.append(((pq[0], pq[1], z0), (pq[0], pq[1], z1)))
     out = []
     for e0, e1 in raw:
         if abs(e1[0] - e0[0]) < EPS and abs(e1[1] - e0[1]) < EPS and abs(e1[2] - e0[2]) < EPS:
@@ -2195,6 +2348,21 @@ def elevator_info(g, e):
     return (gm["shaft"], gm["cab"], gm["z0"] + lv, gm["z1"] + lv, gm["cab_z1"] + lv)
 
 
+def elevator_rot(g, e):
+    """승강기 회전(W2 열일곱 번째 PR, kinds.elevator_rot) (중심 x, y, sin, cos) 또는 None. 그리기는 로컬(회전 전) 좌표로 만든 뒤 이 값으로 돌린다."""
+    row = Q.el(g, e)
+    return None if row is None else K.elevator_rot(row["params"])
+
+
+def _rot_segs(rot, segs):
+    """평면 선분들((등급, x0, y0, x1, y1), ...)을 승강기 회전으로 돌린다."""
+    out = []
+    for cls, x0, y0, x1, y1 in segs:
+        a, b = K.rot_pt(rot, x0, y0), K.rot_pt(rot, x1, y1)
+        out.append((cls, a[0], a[1], b[0], b[1]))
+    return out
+
+
 def all_elevators(g):
     out = []
     for b in range(Q.NB):
@@ -2283,7 +2451,8 @@ def elevator_lines(g, v, e):
         if in_cab:
             x1, y1, x2, y2 = cab
             out += [("symbol", x1, y1, x2, y2), ("symbol", x1, y2, x2, y1)]
-        return tuple(out)
+        rot = g.q(elevator_rot, e)
+        return tuple(out) if rot is None else tuple(_rot_segs(rot, out))
     raw = _box_edges(*shaft, ext["pit_z0"], z1) + _box_edges(*cab, z0, zc)
     if ext["mach_z1"] > z1 + EPS:   # 기계실: 샤프트 위의 같은 평면 크기 상자
         raw += _box_edges(*shaft, z1, ext["mach_z1"])
@@ -2292,6 +2461,9 @@ def elevator_lines(g, v, e):
         for _lid, zl in ext["doors"]["stops"]:
             zt_ = zl + ext["doors"]["h"]
             raw += [((xa, ya, zl), (xb, yb, zl)), ((xb, yb, zl), (xb, yb, zt_)), ((xb, yb, zt_), (xa, ya, zt_)), ((xa, ya, zt_), (xa, ya, zl))]
+    rot = g.q(elevator_rot, e)
+    if rot is not None:   # 회전한 승강기: 로컬 모서리를 샤프트 가운데로 돌린다
+        raw = [((*K.rot_pt(rot, a[0], a[1]), a[2]), (*K.rot_pt(rot, b[0], b[1]), b[2])) for a, b in raw]
     occ = []
     for w in g.q(scope_walls, v):
         occ.extend(g.q(vpieces, v, w))
@@ -4838,12 +5010,21 @@ def detail_extent(g, e, kind, cfg):
         for w in (() if wg is None else wg[0]):
             pts += list(w[0])
             zs += [w[1], w[2]]
+        sgp = g.q(stair_spiral, e)
+        for t in (() if sgp is None else sgp[0]):
+            pts += list(t[0])
+            zs += [t[1], t[2]]
+        skp = g.q(stair_sketch, e)
+        for t in (() if skp is None else skp[0]["treads"]):
+            pts += [q for pc in t["pieces"] for q in pc]
+            zs += [skp[1] + t["zb"], skp[1] + t["z"]]
     else:
         ev = g.q(elevator_info, e)
         if ev is None:
             return None
         x1, y1, x2, y2 = ev[0]
-        pts = [(x1, y1), (x2, y1), (x2, y2), (x1, y2)]
+        rot = g.q(elevator_rot, e)
+        pts = [K.rot_pt(rot, x, y) for x, y in ((x1, y1), (x2, y1), (x2, y2), (x1, y2))]
         ex = g.q(elevator_ext, e)
         zs = [ex["pit_z0"], ex["mach_z1"]]   # 피트·기계실이 없으면 샤프트 아래·위와 같다
     if kind == "plan":
@@ -4863,6 +5044,9 @@ def _plan_stair_dims(g, s, cfg):
     flights, ld = g.q(stair_geom, s)
     sc, tag = cfg[4], s[-6:]
     out = []
+    if g.q(stair_spiral, s) is not None or g.q(stair_sketch, s) is not None:  # 방사·스케치 계단: 첫 챌판의 폭(오르는 반대쪽에 단다)
+        h = info[7] / 2.0
+        out.append(_dim_off(f"detail:{tag}:width:0", _st_pt(info, 0.0, h), _st_pt(info, 0.0, -h), (-info[4], -info[5]), DIM_OFF * sc, sc, _fmt_mm(info[7])))
     for i, fi in enumerate(flights):
         _zb, _zt, _x, _y, ux, uy, length, width, n, td, _rise, _sk = fi
         h = width / 2.0
@@ -4931,7 +5115,20 @@ def _plan_elev_dims(g, e, cfg):
         nx, ny = ex["doors"]["normal"]
         far = nx < 0 or ny < 0   # 샤프트 치수가 있는 -y·-x 쪽 면은 더 바깥에 단다
         out.append(_dim_off(f"detail:{tag}:door", (xa, ya), (xb, yb), (nx, ny), DIM_OFF * (2.4 if far else 0.9) * sc, sc, f"문 {_fmt_mm(ex['doors']['w'])}"))
-    return [d for d in out if d is not None]
+    rot = g.q(elevator_rot, e)
+    return [d if rot is None else _rot_dim(rot, d) for d in out if d is not None]
+
+
+def _rot_dim(rot, d):
+    """치수 항목(_dim_off 결과)을 승강기 회전으로 돌린다(점·연장선·방향 벡터, 소수 3자리)."""
+    r = lambda *vs: tuple(round(x, 3) + 0.0 for x in vs)   # noqa: E731
+
+    def pp(x, y):
+        return K.rot_pt(rot, x, y)
+    kind, aid, e0, e1, ab, text, mid, u = d
+    a0, a1, b0, b1 = pp(e0[0], e0[1]), pp(e0[2], e0[3]), pp(e1[0], e1[1]), pp(e1[2], e1[3])
+    pa, pb = pp(ab[0], ab[1]), pp(ab[2], ab[3])
+    return (kind, aid, r(*a0, *a1), r(*b0, *b1), r(*pa, *pb), text, r(*pp(*mid)), r(*K.rot_vec(rot, *u)))
 
 
 def _sec_elev_dims(g, e, cfg):
@@ -4939,7 +5136,8 @@ def _sec_elev_dims(g, e, cfg):
     if info is None:
         return []
     (x1, y1, x2, y2), _cab, z0, z1, zc = info
-    ss = [_sw(cfg, p) for p in ((x1, y1), (x2, y1), (x2, y2), (x1, y2))]
+    rot = g.q(elevator_rot, e)
+    ss = [_sw(cfg, K.rot_pt(rot, *p)) for p in ((x1, y1), (x2, y1), (x2, y2), (x1, y2))]
     if max(p[1] for p in ss) < cfg[7] - EPS or min(p[1] for p in ss) > cfg[8] + EPS:   # 단면 깊이 밖
         return []
     smin, smax = min(p[0] for p in ss), max(p[0] for p in ss)
@@ -5004,6 +5202,16 @@ def view_dim_labels(g, v):
         flights, ld = g.q(stair_geom, s)
         if plan:
             if cfg[2] < info[0] - EPS:
+                continue
+            skp = g.q(stair_sketch, s)
+            if skp is not None:   # 스케치 계단: 보행선 가운데의 오른쪽 밖
+                x, y = K.sketch_walk_pt(skp[0], skp[0]["length"] / 2.0, -info[7] / 2.0 - 4.0 * sc)[0]
+                out.append((round(x, 3), round(y, 3), f"{info[8]}단 챌판 {_fmt_mm(info[10])} 디딤 {_fmt_mm(info[9])}", LABEL_SUB_H, "middle"))
+                continue
+            sgp = g.q(stair_spiral, s)
+            if sgp is not None:   # 방사 계단: 가운데 각의 바깥 반지름 밖
+                x, y = K._spiral_pt(sgp[1], sgp[3] + 4.0 * sc, sgp[5] + sgp[6] / 2.0)
+                out.append((round(x, 3), round(y, 3), f"{info[8]}단 챌판 {_fmt_mm(info[10])} 디딤 {_fmt_mm(info[9])}", LABEL_SUB_H, "middle"))
                 continue
             fi = flights[0]
             h = fi[7] / 2.0

@@ -43,7 +43,7 @@ MAX_IMPORT_BYTES = 256 * 1024 * 1024
 MAX_MM = 1e9   # 의도 숫자의 상한(1000 km). 이보다 큰 값은 제곱하는 계산이 넘치므로 해석하지 않고 외래로 둔다
 KIND_OF = IMPORTABLE_BY_CLASS   # 요소 종류 표의 정본은 kinds.py 다(의도를 복원할 수 있는 종류만 뽑은 것)
 FAMILY = FAMILY_OF_KIND
-K_ELEV_OPT = ("pit", "machine", "doors", "stops", "hole_slabs", "hole_clearance")   # 승강기의 선택 파라미터(commands.ELEV_OPT 와 같다)
+K_ELEV_OPT = ("pit", "machine", "doors", "stops", "hole_slabs", "hole_clearance", "rotation")   # 승강기의 선택 파라미터(commands.ELEV_OPT 와 같다)
 _ID = re.compile(r"^[0-9A-Za-z_$]{22}$")
 NAME_MAX = 255
 
@@ -452,9 +452,35 @@ def _parse_intent(kind: str, text: str) -> dict:
                 out[k] = list(p[k])
         if "hole_clearance" in p:
             out["hole_clearance"] = _num(p["hole_clearance"], nonneg=True)
+        if "rotation" in p:   # 승강기 회전(W2 열일곱 번째 PR): 범위 검사는 코어 행 검사가 한다
+            out["rotation"] = _num(p["rotation"])
         why = K.row_params_error("elevator", out)
         if why:
             raise ValueError(f"승강기가 올바르지 않다({why})")
+    elif kind == "stair" and isinstance(p, dict) and "sketch" in p:   # 스케치 계단(W2 열일곱 번째 PR)
+        sk = p["sketch"]
+        if (set(p) != {"name", "width", "height", "risers", "base_offset", "sketch"} or not isinstance(sk, dict) or not {"path"} <= set(sk) <= {"path", "bulges"}
+                or not isinstance(sk["path"], list) or any(not isinstance(q, list) or len(q) != 2 for q in sk["path"]) or type(p["risers"]) is not int
+                or ("bulges" in sk and not isinstance(sk["bulges"], list))):
+            raise ValueError("스케치 계단 params 가 다르다")
+        out = {"name": _name(p["name"]), "width": _num(p["width"], pos=True), "height": _num(p["height"], pos=True), "risers": p["risers"],
+               "base_offset": _num(p["base_offset"]), "sketch": {"path": [[_num(q[0]), _num(q[1])] for q in sk["path"]]}}
+        if "bulges" in sk:
+            out["sketch"]["bulges"] = [_num(v) for v in sk["bulges"]]
+        why = K.row_params_error("stair", out)
+        if why:
+            raise ValueError(f"스케치 계단이 올바르지 않다({why})")
+    elif kind == "stair" and isinstance(p, dict) and "spiral" in p:   # 방사 계단(W2 열일곱 번째 PR)
+        sp = p["spiral"]
+        if (set(p) != {"name", "width", "height", "risers", "base_offset", "spiral"} or not isinstance(sp, dict) or set(sp) != {"center", "r_in", "start", "sweep"}
+                or not isinstance(sp["center"], list) or len(sp["center"]) != 2 or type(p["risers"]) is not int):
+            raise ValueError("방사 계단 params 가 다르다")
+        out = {"name": _name(p["name"]), "width": _num(p["width"], pos=True), "height": _num(p["height"], pos=True), "risers": p["risers"],
+               "base_offset": _num(p["base_offset"]),
+               "spiral": {"center": [_num(v) for v in sp["center"]], "r_in": _num(sp["r_in"], nonneg=True), "start": _num(sp["start"]), "sweep": _num(sp["sweep"])}}
+        why = K.row_params_error("stair", out)
+        if why:
+            raise ValueError(f"방사 계단이 올바르지 않다({why})")
     elif kind == "stair":
         if (set(p) - {"turn"} != {"name", "run", "width", "height", "risers", "base_offset"} or not isinstance(p["run"], list) or len(p["run"]) != 4
                 or type(p["risers"]) is not int or not K.STAIR_RISERS_MIN <= p["risers"] <= K.STAIR_RISERS_MAX):
