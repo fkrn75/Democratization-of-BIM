@@ -2855,3 +2855,78 @@ W1 이 끝나고 W2 의 첫 과업으로 직선 축뿐이던 벽에 원호 축�
 - 단면: 각형·원형 강관, ㄷ형강·ㄱ형강, 덧판·헌치, 필릿 반지름, 단면 라이브러리 확장(KS 표 전체)·사용자 단면.
 - 보 유형 재료(구조 재료 등급)와 IFC IfcMaterialProfileSet, 보 태그·기호(보 일람 부호 G1·B1 표기), 반사 천장 평면의 보, 가시성·그래픽 범주(VG)에 보.
 - 보가 슬래브·벽을 자르거나 슬래브에 붙는 접합, 구조 평면 뷰 분야(STR-09).
+
+## 77. W2 열여덟 번째 PR: 구조 보 2부 — 경사 보·보끼리 접합·단면 추가·구조 재료 (2026-11-25, 브랜치 phase2/w2-struct-beam2)
+
+75절(구조 보 1부)의 "남은 것" 가운데 요구 STR-02·STR-03·STR-07 의 다음 몫을 넣는다. 성능 재확인 v2 에서 지붕틀·계단 보처럼 기운 보와 큰 보에 걸리는 작은 보를 일반 솔리드로 만들고 끝을 손으로 맞췄으며, 강관·ㄷ형강 부재는 보 유형으로 만들 수 없었다. 보를 쓰지 않은 프로젝트와 1부 보 가운데 다른 보에 닿지 않고 새 키를 쓰지 않은 보는 저장 형식·도면·IFC 가 그대로다. 시험은 `tests/test_w2_struct_beam2.py`(합성 좌표, 함수 6개). 곡선 보(원호)는 다음 PR 로 넘긴다(77.7).
+
+### 77.1 경사 보
+- 요구: 시작·끝 높이를 따로 주는 보. 형상·단면·입면·IFC, 수량은 실길이.
+- 이전 동작: 보 축은 언제나 수평(offset 하나). 기운 보는 solid form member 로 대신했다.
+- 설계: 보 행 선택 키 `end_offset`(끝점 기준선 높이, 레벨 기준 mm). 없으면 수평 보이고 offset 과 같은 값은 적지 않는다(beam.create·set 이 같으면 키를 뗀다). 기울기 80도 이하(그보다 서면 기둥·가새의 몫), 평면 길이 10 mm 이상, 실길이 200 m 이하. 상용 도구의 경사 보(시작·끝 레벨 오프셋)와 같은 입력이다.
+- 형상(beams.frame): 축 D = (평면 방향 x cos, sin), 단면은 축에 수직이고 웨브는 연직면 안(위 U = (-평면 방향 x sin, cos)), 끝면도 축에 수직이다. 단면 회전(roll)·맞춤(anchor)은 수평 보와 같은 뜻(축에 수직인 단면에서).
+- 편집: beam.set end_offset(생략하면 경사 보의 끝 높이는 그대로, 수평 보는 offset 을 따른다), beam.move dz 는 두 높이를 함께, 복사·회전·대칭은 그대로 옮긴다. beam.list 에 end_offset·slope_deg, length 는 실길이.
+- 기둥 면 자르기: 평면에서 잰 자르기 길이를 축 방향 길이(/cos)로 바꾼다. 높이 겹침은 끝마다 그 끝의 단면 높이 범위로 본다. 끝면이 축에 수직이라 기둥 면과 비스듬히 만난다(연직 자르기는 한계).
+- 도면: 평면 외곽 사각형은 축에 수직인 단면이 진행 방향으로 퍼지는 만큼(b x sin)까지 넣는다(숨은선·보끼리 접합). 단면 절단 채움은 볼록 조각의 평면 절단이라 축을 가로지르는 단면에서 넓이 = 단면적 / cos 이다(시험). 입면·단면 투영선은 다면체 모서리 그대로. 경사 보의 볼록 조각은 수직 각기둥이 아니라 다른 요소를 가리지 않는다(회전한 보와 같은 한계).
+- 수량: 일람표 길이·체적(단면적 x 자른 실길이), 재료 물량.
+
+### 77.2 보끼리 접합(T·L)
+- 요구: 보 끝이 다른 보 옆면에 닿으면 그 면까지 자르기(기둥 면 자르기와 같은 규칙, 주 보가 이긴다), 주 보 이동 시 추종.
+- 이전 동작: 기둥만 끝을 잘랐다. 작은 보는 큰 보 가운데까지 들어가 겹쳤다(체적 중복).
+- 설계(queries.beam_mains·beam_cut): 보 b 의 끝점이 다른 보 m 의 평면 외곽 사각형 안(경계 포함)이고 끝의 높이 범위가 m 과 1 mm 넘게 겹치면, m 을 기둥처럼 넘겨 같은 trims 가 끝에서 가장 가까운 m 의 경계(옆면)까지 줄인다. 기둥과 주 보가 함께 닿으면 더 많이 줄이는 쪽, 남는 평면 길이 10 mm 미만이면 줄이지 않는다. cutback false 면 기둥·보 모두 끈다.
+- 주 보: 서로 끝이 닿으면(L 결합, 통심선 교점에서 만나는 두 보) 순위가 앞선 보가 주 보다: 춤이 큰 것, 같으면 폭이 큰 것, 같으면 id 가 작은 것. 주 보는 잘리지 않는다. T 결합은 주 보 끝이 작은 보 안에 없어 순위와 무관하게 작은 보만 잘린다. 한 줄로 이어지는 두 보(끝이 맞닿음)는 옆면 교차가 없어 서로 자르지 않는다. 근거: 상용 도구의 보 접합도 큰 보가 작은 보를 자르고(조인 순서) 작은 보의 끝은 큰 보 웨브·옆면에서 끝난다.
+- 순환 없음: 주 보의 외곽은 기둥 면 자르기만 반영한 형상(beam_col_cut)이라 보끼리 자르기는 서로를 읽지 않는다. 후보는 평면 5 m 격자 칸(beam_post_index)으로 찾는다.
+- 파생값이라 params 에 결과를 적지 않는다: 주 보를 옮기거나 춤을 바꾸거나 지우면 따라간다(시험). beam.list 의 start_cut·end_cut 은 {"beam": id} 또는 {"column": id}.
+- 의도한 변화: 1부에서 만든 보 가운데 끝이 다른 보 외곽 안에 있는 보(beam.grid between=intersections 로 기둥 없는 교점에 놓은 보 등)는 이제 잘린다(길이·체적·IFC 몸체 길이). 기둥이 있는 교점은 기둥 면(더 많이 줄인다)이 정해 그대로다.
+
+### 77.3 단면 추가
+- 요구: ㄷ형강·ㄱ형강·원형/각형 강관(KS 근거 대표 규격), RC 보는 사각 그대로.
+- 단면(beams.SHAPE_KEYS): 모든 단면이 width·depth 를 갖는다(일람표 폭·춤, 맞춤 기준). c(ㄷ형강: web·flange, 웨브가 왼쪽), l(ㄱ형강: thickness, 세로 다리 왼쪽·가로 다리 아래), box(각형 강관: thickness), pipe(원형 강관: width = depth = 바깥 지름, thickness; 하나만 주면 둘 다). 검사: ㄷ은 web < width·2 flange < depth, ㄱ은 thickness < width·depth, 강관은 2 thickness < 폭·춤.
+- 표준 단면(preset): KS D 3502 홈 형강 6개(C-100x50x5x7.5 ~ C-300x90x9x13)·등변 산형강 6개(L-50x50x6 ~ L-130x130x12), KS D 3566 일반 구조용 탄소 강관 5개(P-114.3x4.5 ~ P-267.4x6), KS D 3568 일반 구조용 각형 강관 6개(B-100x100x4.5 ~ B-250x250x9, B-200x100x6). 필릿·모서리 반지름은 형상에 넣지 않는다(H형강과 같다). 표기 = 이름(C-춤x폭x웨브x플랜지, L-춤x폭x두께, B-춤x폭x두께, P-지름x두께). beamtype.list presets 에 H형강 15개와 함께.
+- 형상: 바깥 윤곽(ㄷ 8점·ㄱ 6점·각형 4점·원형 32각형) + 강관 구멍. 볼록 조각(절단 채움·가림): ㄷ 3·ㄱ 2·각형 4·원형 고리 조각 32. 단면적은 원형 강관만 참 원(π/4 (D² - d²)), 나머지는 조각 넓이 합과 같다(시험).
+- 명령: beamtype.create·set 에 shape c·l·box·pipe 와 thickness. 다른 모양으로 바꿀 때 그 모양의 치수 키를 함께 준다.
+
+### 77.4 구조 재료와 IFC 단면 재료 집합
+- 요구: IfcMaterialProfileSet(+Usage)로 재료·프로필 연결(IFC4), IFC2X3 은 근거 있는 대체.
+- 설계: 보 유형 선택 키 `material`(구조 재료 이름, beamtype.create·set, set 에서 빈 문자열이면 뗀다). 그 유형의 보 행이 사본(params.material)을 갖고(단면과 같은 설계), 보의 재료는 그것이다: material.set 으로 다른 재료를 주면 CONSTRAINT(유형이 정한다, 벽 층 구성과 같은 규칙). 단일 재료가 있는 보에 재료 있는 유형을 입히면 단일 재료를 먼저 떼어 되돌리기가 되살린다. 유형을 떼면(beam.type.set null·beamtype.delete detach) 유형 재료도 떨어진다(단면은 남는다).
+- IFC4: 보마다 IfcRelAssociatesMaterial(GlobalId = part_guid(보, "beam:mat")) -> IfcMaterialProfileSetUsage(CardinalPoint = 맞춤: top 8·center 5·bottom 2) -> IfcMaterialProfileSet(Name = 단면 표기, Description = 코어 표식) -> IfcMaterialProfile(재료, 집합 전용 매개변수 프로필: 배치 없음, 단면 가운데가 원점). 보 유형은 IfcBeamType 에 IfcMaterialProfileSet(Description = 보 유형 표식)을 IfcRelAssociatesMaterial(part_guid(유형, "beamtype:mat"))로. 벽 유형 층 집합과 벽의 층 사용을 따로 두는 66절 설계와 같다. 코어 지정은 투영이 소유한다(재료 이름 입력으로 읽지 않고 부속 스냅숏에 넣지 않는다). 같은 구성이면 엔티티를 만들지 않고 비교해 건드리지 않는다(가져온 파일을 다시 투영해도 바이트 같음). 재료를 잃거나 보를 지우면 사용·집합·단면 재료·집합 전용 프로필·안 쓰는 재료를 치운다.
+- 근거: IFC4 의 보·기둥은 재료를 IfcMaterialProfileSetUsage 로 지정하고(Material Profile Set Usage 개념, 유형은 IfcMaterialProfileSet), CardinalPoint 가 축과 단면의 상대 위치를 담는다.
+- IFC2X3: IfcMaterialProfileSet·Usage 가 없다(IFC4 에서 생김). 변환(ifc2x3._profile_sets_to_material)이 지정 관계의 대상을 첫 단면 재료의 IfcMaterial 로 바꾸고 집합·사용·단면 재료·집합 전용 프로필을 지운다. IFC2X3 의 보 재료는 IfcMaterial 하나로 지정하는 것이 관행이고 단면은 몸체 프로필이 담는다. 손실 목록에 "단면 재료 집합 -> IfcMaterial" 로 알린다.
+
+### 77.5 IFC 몸체
+- 단면 프로필: c IfcUShapeProfileDef(Depth·FlangeWidth·WebThickness·FlangeThickness), l IfcLShapeProfileDef(Depth·Width·Thickness), box IfcRectangleHollowProfileDef(XDim·YDim·WallThickness), pipe IfcCircleHollowProfileDef(Radius·WallThickness). 모두 IFC2X3 에도 있다. ㄷ·ㄱ형 프로필의 원점은 경계 상자 가운데이고 웨브가 -x, ㄱ형 가로 다리가 -y 다(ifcopenshell.geom 으로 확인, 코어 단면 좌표와 같다).
+- 경사 보: 배치는 수평 그대로(x = 평면 방향) 두고 IfcExtrudedAreaSolid 의 Position 축(Z)을 (cos, 0, sin) 으로 기울인다. 참조(X) = 배치 y(왼쪽)라 프로필 y 가 축에 수직인 위다. 원점은 자른 길이만큼 축을 따라 옮긴 시작점, Depth = 자른 실길이. 수평 보는 이전과 같은 (1, 0, 0)이라 바이트 같다.
+- 확인(시험): ㄷ형강 경사 보(주 보에 접합)의 몸체 부피(ifcopenshell.geom) = 단면적 x 자른 실길이(상대 1e-4), IFC4·IFC2X3 검증 오류 0, 가져오기 왕복 해시·IFC 바이트 같음, 유형 재료 바꾸기 되돌리기·보 지우기 되돌리기 해시 같음, 유형 재료를 모두 떼면 단면 재료 엔티티가 남지 않는다.
+
+### 77.6 하위 호환·기준 변화
+- 저장 형식: 보 행 선택 키 end_offset·material, 보 유형 선택 키 material, 단면 모양 c·l·box·pipe 와 키 thickness. 새 키를 쓰지 않는 행은 그대로다. 새 명령은 없고 beam.create·set(end_offset), beamtype.create·set(shape c·l·box·pipe, thickness, material, preset 23개 추가)이 넓어졌다.
+- 의도한 동작 변화: 보끼리 접합(77.2 끝). 그 밖의 1부 보(다른 보 외곽 안에서 끝나지 않는 보)는 도면·IFC·수량 그대로다.
+- 의도한 IFC 출력 변화: 경사 보의 기운 돌출 축, 새 단면 프로필, 구조 재료가 있는 보·보 유형의 IfcMaterialProfileSet(+Usage), IFC2X3 의 대체 IfcMaterial. 보끼리 접합으로 잘린 보의 몸체 길이.
+- 기준 도면 183 파일 바이트 같음(보 없음). 회귀 기준값(C-4 코퍼스·골든)은 바꾸지 않았다.
+
+### 77.7 한계(다음 PR)
+- 곡선 보(원호, bulge)와 원호 통심선 일괄 배치: 이번 범위에서 뺐다(축이 곡선이면 IFC 는 IfcSweptDiskSolid 가 아니라 IfcSurfaceCurveSweptAreaSolid·IfcFixedReferenceSweptAreaSolid 류가 필요하고 도면 조각도 현마다라 별도 PR 로).
+- 경사 보 끝면의 연직 자르기(기둥 면과 나란히), 경사 보의 가림 조각, 보끼리 접합의 간격(cutback 거리)·웨브까지 자르기(플랜지 따내기), 비스듬한 주 보 옆면의 경사 자르기.
+- 단면: 필릿·모서리 반지름, 비등변 ㄱ형강·립 ㄷ형강·T형강, KS 표 전체, 사용자 단면. 보 태그·부호, 반사 천장 평면의 보, 보 시스템·가새·트러스.
+- 구조 재료 등급의 물성(강도) 속성, 유형 재료와 보마다 단일 재료를 함께 두기.
+
+### 77.8 검증
+- 새 시험 `tests/test_w2_struct_beam2.py`(함수 6개): 경사 보·새 단면 순수 형상(실길이·축에 수직인 단면 높이·평면 외곽·끝 높이 범위·거절, 단면별 윤곽·구멍·볼록 조각 수와 넓이 = 단면적, ㄷ형 웨브 쪽), 경사 보 명령(만들기·실길이 목록·일람표·dz 옮기기·수평으로 되돌리기·되돌리기, 기둥 면 자르기 축 방향 길이, IFC 명세 원점·길이, 평면 채움·단면 채움 넓이 = 단면적/cos·입면 가림 없음·증분 = 전체, 대칭, model.validate), 보끼리 접합(T 결합 옆면까지·beam.list end_cut·주 보 옮기기 추종·L 결합 주 보 순위·춤을 바꾸면 주 보가 바뀜·높이 안 겹침·cutback·한 줄 이음·기둥과 함께·일람표 길이·주 보 지우기·증분 = 전체), 새 단면과 구조 재료(preset·지름 하나·거절, 유형 재료 -> 보 재료, material.set 거절, 일람표·재료 물량, 단일 재료 대체와 되돌리기, 유형 재료 바꾸기·떼기, 유형 떼기, 단면 채움 조각 ㄷ 3·각형 4·원형 32·ㄱ 2), 저장하고 다시 열기(경사 보·접합·재료), IFC(ㄷ형 프로필·기운 돌출 축·자른 실길이 Depth·원형 강관 프로필, 보 IfcMaterialProfileSetUsage CardinalPoint·IfcMaterialProfile·보 유형 IfcMaterialProfileSet, 몸체 부피, IFC2X3 대체 IfcMaterial·검증 오류 0, 왕복 해시·바이트, 되돌리기 해시, 보 지우기, 재료를 모두 떼면 단면 재료 엔티티 0). 1부 시험(test_w2_struct_beam.py)은 고치지 않고 통과.
+- run-all 은 마지막 코드 커밋 e30b33e 에서 한 번(2026-11-25 17:41 시작): s1-core 전체(test_slow 제외) 통과, test_slow 통과(C-4 회귀 코퍼스 기준값 그대로), parity 불일치 0·통과(넓힌 예시 포함), parity_g 통과, 로컬 Revit 표본(test_foreign_drawings·test_foreign_occlusion) 저장소 밖 기준선과 같음, s10-headless 통과, 기준 도면 `run_baseline.py --sheets` 183 파일이 main 3fd3cd5 와 바이트 같음.
+
+### 77.9 bench
+- 도면 경로 파일(drawing·queries)을 바꿔 잼: 브랜치 e30b33e 와 main 3fd3cd5 를 번갈아 3회, 중앙값(같은 노트북, 측정 전 남은 python 기록).
+
+| 모델 | 뷰 | main 중앙값 | 브랜치 중앙값 | 변화 | 선분·SVG |
+|---|---|---|---|---|---|
+| 5만 요소 | 평면 | 11.41초 | 10.91초 | -4.3% | 같음 |
+| 5만 요소 | 단면 | 22.55초 | 22.09초 | -2.0% | 같음 |
+| 5만 요소 | 입면 | 32.02초 | 31.64초 | -1.2% | 같음 |
+| 5만 요소 | 반사 천장 평면 | 11.09초 | 10.74초 | -3.1% | 같음 |
+| 5만 요소 | 면적 평면 gross | 12.43초 | 12.09초 | -2.7% | 같음 |
+| 5만 요소 | 면적 평면 legal | 14.52초 | 13.41초 | -7.7% | 같음 |
+| 외래 혼합 | 평면 | 16.13초 | 15.64초 | -3.0% | 같음 |
+| 외래 혼합 | 단면 | 23.43초 | 23.20초 | -0.9% | 같음 |
+| 외래 혼합 | 입면 | 27.17초 | 26.74초 | -1.6% | 같음 |
+
+- 모든 뷰가 +10% 안이고 선분 수·SVG 바이트가 같다. 이번 측정은 노트북이 75·74절 때보다 느려(main 입면 중앙값 25.9초 -> 32.0초) 5만 요소 입면은 main·브랜치 모두 30초를 넘었다(가장 느린 회차 브랜치 32.86초·main 32.43초): 기준대로 main 과의 상대 비교로 판단한다. 외래 혼합 열기 -2.8~+0.6%. 보가 없는 모델에서 새로 타는 경로는 1부와 같다(보 버킷 목록 조회뿐, 보끼리 접합 후보 찾기는 보가 둘 이상일 때만 당긴다).
