@@ -2670,3 +2670,73 @@ W1 이 끝나고 W2 의 첫 과업으로 직선 축뿐이던 벽에 원호 축�
 ### 71.6 한계(다음 몫)
 - 문: 패밀리 문의 벽 끝 허용(DOOR_END_ALLOW)은 아직 없다(조인 범위·also_cuts 로 푼다). 얇은 벽에서 문틀이 벽면 밖으로 나오는 만큼의 평면 표시는 레시피 그대로다.
 - 난간 유형: 난간대·발루스터 단면은 원 근사(IFC), 사각·원형 단면 선택과 단면 프로파일 패밀리, 발루스터 패턴(반복 무늬·시작/끝 개별 부재), 상부 난간대 끝 처리(연장·꺾음), 손스침(벽 부착 핸드레일), 유리 패널 난간, 난간 유형별 재료는 다음 PR.
+
+## 73. W2 열다섯 번째 PR: 구조 보 1부 STR-02·STR-03·STR-07 (2026-11-25, 브랜치 phase2/w2-struct-beam)
+
+성능 재확인 v2 에서 두 건물 모두 기둥은 패밀리(column.section)로 놓았지만 보는 전용 객체가 없어 일반 솔리드(solid.create category beam, form member)로 형상만 만들었다(보·트러스 1,653개, 보 34개). 그래서 보 유형으로 단면을 한꺼번에 바꾸지 못했고, 기둥에 닿는 보 끝을 손으로 맞췄으며, IFC 는 IfcFacetedBrep 몸체의 IfcBeam 에 유형(IfcBeamType)·프로필이 없었다. 이 PR 은 큰 주제(구조 요소)의 1부로 보 객체의 핵심만 넣는다. 보를 쓰지 않은 프로젝트의 저장 형식·도면·IFC 는 그대로다. 시험은 `tests/test_w2_struct_beam.py`(합성 좌표).
+
+### 73.1 기존 구조 요소 조사
+- 있는 것: 기둥 = 패밀리 column.section(IfcColumn, 단면 사각·원·모따기, 인스턴스 높이) 과 solid category column. 보·가새 = solid form member(3D 축선 + 단면 rect·circle·h·box·pipe, anchor top·center·bottom, IfcFacetedBrep 몸체의 IfcBeam·IfcMember). 통심선(grid, 직선·원호, IfcGrid). 일람표 범주 beams·columns(솔리드·패밀리에서 온 행).
+- 없는 것: 보 전용 객체와 보 유형, 보-기둥 접합(끝 자르기), 통심선 따라 일괄 배치, 보 단면 프로필의 IFC(IfcRectangleProfileDef·IfcIShapeProfileDef)와 IfcBeamType, 평면의 보 숨은선, 보의 절단 채움.
+
+### 73.2 보 유형(STR-07)
+- 새 비 IFC 의도 종류 `beamtype`(벽 65절·지붕 66절·난간 71절 유형과 같은 설계, 정의는 DoBIM_Defs 로 왕복): 이름 + 단면. 단면은 사각 `{"shape":"rect","width","depth"}`(철근콘크리트 보) 또는 H형강 `{"shape":"h","width","depth","web","flange"}`(폭 B·춤 H·웨브 t1·플랜지 t2, web < width·2 flange < depth). 치수 상한 3,000 mm.
+- 표준 단면: `preset` 으로 KS D 3502 H형강 치수 표의 15개(H-200x100x5.5x8 ~ H-700x300x13x24, 넓은 플랜지 H-200x200 ~ H-400x400)를 고른다. 필릿 반지름은 형상에 넣지 않는다. 표기 = 'H-춤x폭x웨브x플랜지'(KS 표기 순서), 사각은 'R-폭x춤'.
+- 명령(since 0.22): beamtype.create·set·duplicate·delete(detach)·list(표준 단면 이름 포함), beam.type.set(null 이면 유형만 떼고 단면은 남는다). 보 행이 유형 id(params.btype + 관계 of_type)와 단면 사본(params.section)을 갖고, beamtype.set 은 단면이 바뀐 때만 그 유형의 보 행을 다시 쓴다. element.delete 는 쓰는 보가 있는 유형을 거절한다.
+
+### 73.3 보(STR-02)
+- 새 IFC 종류 `beam`(IfcBeam, 생성 순서 1). params = 이름 + start·end(평면 두 점, 레벨 좌표) + offset(기준선 높이, 레벨 기준) + anchor(top·center·bottom: 기준선이 지나는 단면 자리, 상용 도구의 z 맞춤과 같고 기본은 윗면) + section, 선택 btype·roll(단면 회전, 도, 기준선 둘레)·cutback(false 만 적는다). 축은 수평이고 길이는 10 mm ~ 200 m.
+- 명령: beam.create(type 필수)·set(두 점·레벨·높이·맞춤·회전·자르기·이름, 단면은 유형이 정한다)·move(dx·dy·dz)·list(축 길이·자른 길이·접합 기둥·체적). 지우기는 element.delete, 복사·배열·회전·대칭·다른 층으로 복사는 element.copy·rotate·mirror(대칭이면 roll 부호가 바뀐다). 실행 취소·다시 실행·저장·다시 열기는 다른 요소와 같다.
+- 형상(beams.py, 순수 함수): 단면 바깥 윤곽(사각 4점·H 12점)을 축 방향으로 돌출한 다면체. 도면·IFC·수량이 같은 값을 쓴다.
+
+### 73.4 기둥 접합(STR-03, 단순화)과 통심선 일괄 배치
+- 보 끝점이 평면에서 기둥(호스트 없는 IfcColumn 패밀리 인스턴스)의 xy 압출 단면 안(경계 포함)에 있고 높이가 1 mm 넘게 겹치면, 그 끝에서 축이 기둥 경계를 지나는 가장 가까운 점(기둥 면)까지 축을 줄인다. 여러 기둥이면 가장 많이 줄이는 것, 남는 길이가 10 mm 보다 짧아지면 줄이지 않는다. 끝면은 축에 수직이다. 근거: 상용 도구는 기둥 중심에 그린 보를 기둥 면까지 자동으로 자른다(조인 컷백). 접합은 파생값이라(params 에 결과를 적지 않는다) 기둥을 옮기거나 지우면 보가 따라가고, cutback false 로 끈다. 단면 경사 자르기·보끼리 접합(작은 보가 큰 보 웨브에서 끝나는 것)·간격(cutback 거리)은 다음 PR.
+- beam.grid: 고른 직선 통심선(없으면 전부)마다 다른 통심선과의 교점을 축 위 순서로 모아 이웃 교점 사이 칸마다 보 하나를 놓는다. between = columns(기본: 두 교점 모두에 기둥이 있는 칸만, 상용 도구의 '그리드에' 보 배치) 또는 intersections(모든 칸). 같은 레벨에 같은 두 끝의 보가 이미 있으면 건너뛰어 다시 실행해도 겹치지 않는다. 원호 통심선은 건너뛴다(경고). 한 번에 2,000개까지.
+
+### 73.5 도면
+- 평면: 절단 높이에 걸치거나 아래(보이는 깊이 안)인 보는 솔리드와 같은 규칙(절단선, 위를 향한 면 모서리), 절단 높이에 걸치면 볼록 조각(사각형 단면 각기둥, H 는 3개)의 수평 절단 다각형을 채운다. 절단 높이 위에서 다음 레벨 높이 아래에 걸친 보는 평면 외곽 사각형을 숨은선(파선, 용지 2 mm·간격 1 mm)으로 그린다. 근거: 구조 평면과 건축 평면은 천장 밑 보를 숨은선으로 나타내는 관행(KS 제도 통칙의 숨은선 = 파선). 윗면이 보이는 깊이 아래 끝과 같은 보(바닥 슬래브 밑의 그 층 보)는 바닥에 가려 그리지 않는다. 반사 천장 평면은 솔리드처럼 아직 그리지 않는다.
+- 단면: 절단선 + 절단 채움(볼록 조각마다 절단면 다각형: H 형강은 플랜지·웨브 3 조각). 입면·단면 투영선은 보는 쪽 면의 모서리이고 다른 요소와 보 자신이 가린다. 단면 회전이 없는 보는 볼록 조각이 수직 각기둥이라 다른 요소(벽·솔리드·커튼월 등)의 선을 가린다(회전한 보는 가리지 않는다: 한계).
+- GUI 장면(scene.py)은 보를 요소별 선·채움으로 담는다. 솔리드 선분 함수는 공용 다면체 선분 함수로 나눴다(솔리드 값은 같다: 기준 도면 바이트 같음).
+
+### 73.6 IFC 매핑
+- IfcBeam(PredefinedType BEAM). 배치 = 레벨 배치 안의 기준선 시작점(기둥 면 자르기 반영)·x 축 = 보 방향. 몸체 = IfcExtrudedAreaSolid(SweptSolid): 돌출 틀의 축(Z)이 배치 x(보 방향), 참조(X)가 배치 y(보 왼쪽)라 프로필 (x, y) = (왼쪽, 위). 프로필 = IfcRectangleProfileDef(XDim 폭·YDim 춤) 또는 IfcIShapeProfileDef(OverallWidth·OverallDepth·WebThickness·FlangeThickness), ProfileName = 단면 표기, Position = 기준선에서 본 단면 가운데 + 회전(roll). 근거: IFC4 의 보는 단면 프로필을 축 방향으로 돌출한 SweptSolid 가 표준 표현이고 매개변수 프로필이 단면 치수를 그대로 담는다.
+- 유형: IfcBeamType(GlobalId = part_guid(유형 id, "beamtype"), Tag = 유형 id, PredefinedType BEAM) + IfcRelDefinesByType(part_guid(유형, "beamtype:rel")). 유형이 없으면 아무것도 쓰지 않는다. IFC2X3 에도 IfcBeamType·두 프로필이 있어 그대로 나간다(IfcBeam 의 PredefinedType 은 IFC2X3 에 없어 손실 목록에 든다, 기둥과 같다).
+- 재료: material.set 이 보에 단일 재료를 붙인다(다른 요소와 같다). 유형 재료·IfcMaterialProfileSet 은 다음 PR.
+- 가져오기: DoBIM_Intent 의 beam 의도를 IfcBeam 에서 되살리고(IMPORTABLE_BY_CLASS), btype 은 보 유형 정의를 되살린 뒤 관계를 잇는다(없으면 유형만 뗀다). 일반 솔리드 범주 beam 의 IfcBeam 은 의도가 solid 라 이전처럼 솔리드로 되살린다. IFC4·IFC2X3 검증 오류 0, 가져오기 왕복 해시·IFC 바이트 같음(시험).
+
+### 73.7 일람표·수량
+- 일람표 범주 beams 에 보 행: 유형(유형 이름, 유형이 없으면 단면 표기)·폭·춤·길이(기둥 면 자르기 뒤)·체적(단면적 x 그 길이)·재료·높이(레벨 + offset). 재료 물량(schedule.takeoff)은 categories 에 beams 를 주면 보 체적을 재료별로 낸다(기본 범주는 그대로). model.stats 에 beam·beamtype 수(있을 때만).
+
+### 73.8 하위 호환·기준 변화
+- 새 종류 beam·beamtype 과 새 명령 11개(beamtype.create·set·duplicate·delete·list, beam.create·set·move·type.set·grid·list)는 쓸 때만 행이 생긴다. 보가 없는 프로젝트의 저장 형식·도면·IFC·일람표·model.stats 는 그대로다(기준 도면 183 파일 바이트 같음).
+- schedule.takeoff 의 categories 에 beams 를 받는다(기본 범주 목록은 그대로).
+- 의도한 IFC 출력 변화: 보를 쓴 모델의 IfcBeam(SweptSolid 프로필 몸체)·IfcBeamType·IfcRelDefinesByType. 그 밖은 그대로다.
+- 회귀 기준값은 바꾸지 않았다.
+
+### 73.9 검증
+- 새 시험 `tests/test_w2_struct_beam.py`(함수 10개): 단면·형상·기둥 면 자르기(순수), 보 유형·보 명령(유형 편집 반영·높이·맞춤·회전·옮기기·되돌리기·다시 하기·목록·유형 떼기·복제·지우기·복사·대칭·model.validate), 기둥 면 자르기(기둥 옮기기 추종·cutback·높이 안 겹침·일람표·재료 물량), 통심선 일괄 배치(기둥 칸·모든 칸·다시 실행 건너뛰기·되돌리기), 도면(평면 숨은선 파선·평면 절단 채움·단면 H 3 조각 채움 넓이 = 단면적·입면·가림 조각·GUI 장면·증분 = 전체 재계산), 입면에서 보가 벽 윗선을 가림(회전한 보는 가리지 않음), 평면 범위(바닥 밑 그 층 보 제외)·레벨 바꾸기·재료, 저장하고 다시 열기, 보가 없으면 도면 그대로, IFC4·IFC2X3 검증 오류 0·프로필·IfcBeamType·왕복 해시·바이트·되돌리기. 통합 시험 두 곳(모든 종류를 한 프로젝트에서 만들기, 매개변수 참조 표)과 PROJECTED_KINDS 순서에 보를 더했다.
+- run-all 은 마지막 코드 커밋 d1dc860 에서 한 번(2026-11-25 07:02 시작): s1-core 전체(test_slow 제외) 통과, test_slow 통과(C-4 회귀 코퍼스 기준값 그대로), parity 불일치 0·통과(새 명령 11개 예시 포함), parity_g 통과, 로컬 Revit 표본(test_foreign_drawings·test_foreign_occlusion) 저장소 밖 기준선과 같음, s10-headless 통과, 기준 도면 `run_baseline.py --sheets` 183 파일이 main a8bc8e4 와 바이트 같음.
+
+### 73.10 bench
+- 도면 경로 파일(drawing·queries·kinds·scene)을 바꿔 잼: 브랜치 d1dc860 과 main a8bc8e4 를 번갈아 3회, 중앙값(같은 노트북, 다른 무거운 계산 없음).
+
+| 모델 | 뷰 | main 중앙값 | 브랜치 중앙값 | 변화 | 선분·SVG |
+|---|---|---|---|---|---|
+| 5만 요소 | 평면 | 8.91초 | 8.75초 | -1.7% | 같음 |
+| 5만 요소 | 단면 | 18.18초 | 18.09초 | -0.5% | 같음 |
+| 5만 요소 | 입면 | 26.01초 | 26.01초 | +0.0% | 같음 |
+| 5만 요소 | 반사 천장 평면 | 8.44초 | 8.27초 | -2.0% | 같음 |
+| 5만 요소 | 면적 평면 gross | 9.58초 | 9.36초 | -2.3% | 같음 |
+| 5만 요소 | 면적 평면 legal | 10.75초 | 10.56초 | -1.7% | 같음 |
+| 외래 혼합 | 평면 | 13.83초 | 13.57초 | -1.9% | 같음 |
+| 외래 혼합 | 단면 | 20.12초 | 19.81초 | -1.5% | 같음 |
+| 외래 혼합 | 입면 | 23.35초 | 22.98초 | -1.6% | 같음 |
+
+- 모든 뷰가 +10% 안이고 30초 안(가장 느린 회차 26.84초, main 입면), 선분 수·SVG 바이트 같음. 외래 혼합 열기 -0.5~+0.6%. 보가 없는 모델에서 새로 타는 경로는 뷰마다 보 버킷 목록 조회뿐이다(평면은 보가 없으면 다른 레벨을 읽지 않는다).
+
+### 73.11 한계(다음 PR)
+- 경사 보(시작·끝 높이가 다른 보)·곡선 보(원호 통심선 포함)·보 시스템(영역 안 등간격 작은 보)·가새(브레이스)·트러스.
+- 보끼리 접합(작은 보가 큰 보 웨브·면에서 끝나기), 비스듬한 기둥 면의 경사 자르기, 자르기 간격(cutback 거리), 철골 접합부 상세(STR-13 범위 밖).
+- 단면: 각형·원형 강관, ㄷ형강·ㄱ형강, 덧판·헌치, 필릿 반지름, 단면 라이브러리 확장(KS 표 전체)·사용자 단면.
+- 보 유형 재료(구조 재료 등급)와 IFC IfcMaterialProfileSet, 보 태그·기호(보 일람 부호 G1·B1 표기), 반사 천장 평면의 보, 가시성·그래픽 범주(VG)에 보.
+- 보가 슬래브·벽을 자르거나 슬래브에 붙는 접합, 구조 평면 뷰 분야(STR-09).
