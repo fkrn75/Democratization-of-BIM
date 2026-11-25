@@ -459,14 +459,16 @@ def _parse_intent(kind: str, text: str) -> dict:
             raise ValueError(f"승강기가 올바르지 않다({why})")
     elif kind == "stair" and isinstance(p, dict) and "sketch" in p:   # 스케치 계단(W2 열일곱 번째 PR)
         sk = p["sketch"]
-        if (set(p) != {"name", "width", "height", "risers", "base_offset", "sketch"} or not isinstance(sk, dict) or not {"path"} <= set(sk) <= {"path", "bulges"}
+        if (set(p) != {"name", "width", "height", "risers", "base_offset", "sketch"} or not isinstance(sk, dict) or not {"path"} <= set(sk) <= {"path", "bulges", "corners"}
                 or not isinstance(sk["path"], list) or any(not isinstance(q, list) or len(q) != 2 for q in sk["path"]) or type(p["risers"]) is not int
-                or ("bulges" in sk and not isinstance(sk["bulges"], list))):
+                or ("bulges" in sk and not isinstance(sk["bulges"], list)) or ("corners" in sk and not isinstance(sk["corners"], list))):
             raise ValueError("스케치 계단 params 가 다르다")
         out = {"name": _name(p["name"]), "width": _num(p["width"], pos=True), "height": _num(p["height"], pos=True), "risers": p["risers"],
                "base_offset": _num(p["base_offset"]), "sketch": {"path": [[_num(q[0]), _num(q[1])] for q in sk["path"]]}}
         if "bulges" in sk:
             out["sketch"]["bulges"] = [_num(v) for v in sk["bulges"]]
+        if "corners" in sk:   # 꺾인 모서리(W2 스무 번째 PR): 정수 범위·개수는 코어 행 검사가 한다
+            out["sketch"]["corners"] = list(sk["corners"])
         why = K.row_params_error("stair", out)
         if why:
             raise ValueError(f"스케치 계단이 올바르지 않다({why})")
