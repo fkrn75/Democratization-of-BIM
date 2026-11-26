@@ -5271,13 +5271,25 @@ def annot_dim_heights(ctx, a: DimHeights):
 class TagCreate(A):
     id: Id | None = None
     view: Id = Field(description="태그를 둘 평면 뷰")
-    target: Id = Field(description="벽·문·슬래브·공간·계단·패밀리 인스턴스(창·기둥 등)·지붕·난간. 지붕·난간은 다중 범주 필드(name·level·material·ifc_class)만")
+    target: Id = Field(description="벽·문·슬래브·공간·계단·패밀리 인스턴스(창·기둥 등)·지붕·난간·구조 보. 지붕·난간은 다중 범주 필드(name·level·material·ifc_class)만. "
+                                    "보 필드: name·type(유형 이름)·section(전체 단면 표기)·size(약식 'H-400x200')·width·depth·length·offset·level·material")
     fields: Annotated[list[Annotated[str, Field(max_length=16)]], Field(min_length=1, max_length=4)] = ["name"]
-    offset: Annotated[list[Off], Field(min_length=2, max_length=2)] = [400.0, 400.0]
+    offset: Annotated[list[Off], Field(min_length=2, max_length=2)] | None = Field(
+        None, description="글 자리 = 대상 대표점 + offset(mm). 없으면 지시선 태그는 [400, 400], 보 축 방향 태그는 [0, 0](보 가운데에 얹는다)")
+    align: Literal["leader", "axis"] | None = Field(
+        None, description="leader = 대표점에서 지시선을 빼 가로로 쓴 글(기본), axis = 보 축 방향으로 눕혀 보 가운데에 얹는 글(지시선 없음, 거꾸로 서지 않게). "
+                          "없으면 보는 axis, 나머지는 leader. axis 는 보에만")
     name: Name | None = None
 
 
-def _tag_checked(ctx, view, target, fields):
+def _tag_offset(a):
+    """태그의 간격: 정한 값, 없으면 지시선 태그 [400, 400]·보 축 방향 태그 [0, 0]."""
+    if a.offset is not None:
+        return list(a.offset)
+    return [0.0, 0.0] if a.align == "axis" else [400.0, 400.0]
+
+
+def _tag_checked(ctx, view, target, fields, align=None):
     vr = ctx.row(view, "view")
     tr = ctx.authored(target, what="태그 대상(낡은 값을 보이게 된다)")
     if vr["params"]["type"] != "plan":
@@ -5288,32 +5300,49 @@ def _tag_checked(ctx, view, target, fields):
     if bad:
         raise DobimError("CONSTRAINT", f"{tr['kind']} 에 없는 표시 필드: {', '.join(bad)}", path="/fields",
                          hint="가능: " + ", ".join(AN.TAG_ALLOWED[tr["kind"]]))
-    if _level_of(ctx, tr["kind"], target) != vr["params"]["level"]:
-        raise DobimError("CONSTRAINT", "태그 대상이 이 평면 뷰의 레벨에 있지 않다", path="/target")
+    if align == "axis" and tr["kind"] != "beam":
+        raise DobimError("CONSTRAINT", f"축 방향 태그(align axis)는 보에만 단다: {tr['kind']}", path="/align")
+    if not _tag_in_view(ctx, vr, view, tr["kind"], target):
+        raise DobimError("CONSTRAINT", "태그 대상이 이 평면 뷰의 레벨에 있지 않다" + ("(반사 천장 평면은 뷰가 그리는 보만)" if vr["params"].get("rcp") and tr["kind"] == "beam" else ""),
+                         path="/target")
+
+
+def _tag_in_view(ctx, vr, view, kind, eid) -> bool:
+    """태그 대상이 이 평면 뷰에 보이는 자리인가: 대상이 뷰의 레벨에 있다. 반사 천장 평면의 보는 레벨 대신 뷰가 그리는 보(절단면에 걸치거나 밑면이 절단면 위
+    보이는 깊이 안, 어느 레벨이든: 위층 바닥을 받치는 보가 이 층 천장 밑에 보인다, W2 스물한 번째 PR)면 된다."""
+    if kind == "beam" and vr["params"].get("rcp"):
+        return eid in ctx.fresh().q(D.scope_beams, view)
+    return _level_of(ctx, kind, eid) == vr["params"]["level"]
 
 
 @command("annot.tag.create", kind="mutation", risk="write", group="annot",
-         summary="태그 생성",
+         summary="태그 생성(구조 보는 보 축 방향으로 눕혀 가운데에 얹는 태그가 기본: 유형 이름·단면 표기 등). 평면·반사 천장 평면 뷰에 둔다",
          args=TagCreate, since="0.1", examples=[{"view": F.V1, "target": F.D1, "fields": ["name", "width"]}])
 def annot_tag_create(ctx, a: TagCreate):
     _fresh_id(ctx, a, "tag")
-    _tag_checked(ctx, a.view, a.target, a.fields)
+    if a.align is None and ctx.st.el.get(a.target, {}).get("kind") == "beam":   # 보는 축 방향 태그가 기본(상용 도구의 보 태그처럼 보를 따라 눕는다)
+        a.align = "axis"
+    _tag_checked(ctx, a.view, a.target, a.fields, a.align)
+    off = _tag_offset(a)
     ax, ay = AN.tag_anchor(ctx.fresh(), a.target)
     params = {"name": a.name or f"TAG-{a.id[-6:]}", "view": a.view, "target": a.target, "fields": list(a.fields),
-              "off": list(a.offset), "home": [round(ax + a.offset[0], 3), round(ay + a.offset[1], 3)]}
+              "off": off, "home": [round(ax + off[0], 3), round(ay + off[1], 3)]}
+    if a.align == "axis":   # 쓸 때만 키가 생긴다: 다른 태그의 저장 형식은 이전과 같다
+        params["align"] = "axis"
     return _new_annot(ctx, a, "tag", params)
 
 
-TagKind = Literal["wall", "door", "slab", "space", "stair", "finst", "roof", "railing"]
+TagKind = Literal["wall", "door", "slab", "space", "stair", "finst", "roof", "railing", "beam"]
 
 
 class TagAll(A):
     view: Id = Field(description="태그를 둘 평면 뷰")
-    kinds: Annotated[list[TagKind], Field(min_length=1, max_length=8)] = Field(
+    kinds: Annotated[list[TagKind], Field(min_length=1, max_length=9)] = Field(
         description="태그할 범주(여러 개면 다중 범주 태그). finst = 패밀리 인스턴스(창·기둥 등)")
     fields: Annotated[list[Annotated[str, Field(max_length=16)]], Field(min_length=1, max_length=4)] = Field(
         ["name"], description="표시 필드. 여러 범주에 쓰려면 모든 범주에 있는 필드(name·level·material·ifc_class)")
-    offset: Annotated[list[Off], Field(min_length=2, max_length=2)] = [400.0, 400.0]
+    offset: Annotated[list[Off], Field(min_length=2, max_length=2)] | None = Field(None, description="글 자리 간격 mm. 없으면 지시선 태그 [400, 400], 보 축 방향 태그 [0, 0]")
+    align: Literal["leader", "axis"] | None = Field(None, description="보 태그의 모양: axis(기본) = 보 축 방향 글, leader = 지시선 가로 글. 보가 아닌 범주에는 쓰지 않는다")
 
 
 @command("annot.tag.all", kind="mutation", risk="write", group="annot",
@@ -5324,22 +5353,32 @@ def annot_tag_all(ctx, a: TagAll):
     if vr["params"]["type"] != "plan":
         raise DobimError("CONSTRAINT", "태그는 평면 뷰에 둔다", path="/view")
     kinds = sorted(set(a.kinds))
+    if a.align is not None and "beam" not in kinds:
+        raise DobimError("CONSTRAINT", "align 은 보(beam) 태그에만 쓴다", path="/align")
     for k in kinds:
         bad = [f for f in a.fields if f not in AN.TAG_ALLOWED[k]]
         if bad:
             raise DobimError("CONSTRAINT", f"{k} 에 없는 표시 필드: {', '.join(bad)}", path="/fields",
                              hint="여러 범주에 함께 쓰는 필드: " + ", ".join(AN.MULTI_FIELDS))
-    st, lv = ctx.st, vr["params"]["level"]
+    st = ctx.st
+    rcp_beams = frozenset(ctx.fresh().q(D.scope_beams, a.view)) if vr["params"].get("rcp") and "beam" in kinds else None   # 반사 천장 평면: 뷰가 그리는 보(한 번만 묻는다)
     tagged = {st.el[t]["params"]["target"] for t in ctx.rels_in("annot_of", a.view) if st.el[t]["kind"] == "tag"}
     out = []
     for k in kinds:
         for e in sorted(st.by_kind.get(k, ())):
-            if e in tagged or st.el[e]["origin"] != "authored" or _level_of(ctx, k, e) != lv:
+            if e in tagged or st.el[e]["origin"] != "authored":
+                continue
+            if not ((e in rcp_beams) if k == "beam" and rcp_beams is not None else _level_of(ctx, k, e) == vr["params"]["level"]):
                 continue
             tid = _det_id("annot.tag.all", a.view, e)
             if tid in st.el:   # 같은 id 의 다른 요소가 있다(정상 흐름에서는 없다): 건너뛴다
                 continue
-            annot_tag_create(ctx, TagCreate(id=tid, view=a.view, target=e, fields=list(a.fields), offset=list(a.offset)))
+            opt = {}   # 정하지 않은 선택 값은 넘기지 않는다(명시적 null 은 거절)
+            if a.offset is not None:
+                opt["offset"] = list(a.offset)
+            if k == "beam" and a.align is not None:
+                opt["align"] = a.align
+            annot_tag_create(ctx, TagCreate(id=tid, view=a.view, target=e, fields=list(a.fields), **opt))
             out.append({"id": tid, "target": e, "kind": k})
     if not out:
         ctx.warn("새로 단 태그가 없다(대상이 없거나 이미 태그가 있다)")
@@ -5386,7 +5425,7 @@ def annot_rebind(ctx, a: AnnotRebind):
         if a.a is not None or a.b is not None:
             raise DobimError("CONSTRAINT", "태그에는 target, fields 만 쓴다", path="/a")
         p["target"], p["fields"] = a.target or p["target"], list(a.fields or p["fields"])
-        _tag_checked(ctx, p["view"], p["target"], p["fields"])
+        _tag_checked(ctx, p["view"], p["target"], p["fields"], p.get("align"))
         ax, ay = AN.tag_anchor(ctx.fresh(), p["target"])
         p["home"] = [round(ax + p["off"][0], 3), round(ay + p["off"][1], 3)]
     ctx.put_el(a.id, dict(r, params=p))

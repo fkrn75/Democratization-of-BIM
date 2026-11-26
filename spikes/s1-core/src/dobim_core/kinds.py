@@ -392,9 +392,10 @@ def _dim_params(p):
 
 
 def _tag_params(p):
-    return _check_fields("tag", p, {"name": _name, "view": id_ok, "target": id_ok,
-                                    "fields": lambda v: isinstance(v, list) and 1 <= len(v) <= 4 and all(text_ok(x, 1, 16) for x in v),
-                                    "off": _pt_ok, "home": _pt_ok})
+    return _check_opt("tag", p, {"name": _name, "view": id_ok, "target": id_ok,
+                                 "fields": lambda v: isinstance(v, list) and 1 <= len(v) <= 4 and all(text_ok(x, 1, 16) for x in v),
+                                 "off": _pt_ok, "home": _pt_ok},
+                      {"align": lambda v: v == "axis"})   # align = 보 축 방향 태그(W2 스물한 번째 PR). 없으면 지시선이 있는 가로 글 태그(이전과 같다)
 
 
 def _ftype_params(p):
@@ -2541,7 +2542,7 @@ def _beam_params(p):
 
 
 # 태그 대상 종류(annot.TAG_FIELDS 와 같다: 가져오기가 복원한 태그 대상을 이 종류로 검사한다)
-TAG_TARGET_KINDS = ("wall", "door", "slab", "space", "stair", "finst", "roof", "railing")
+TAG_TARGET_KINDS = ("wall", "door", "slab", "space", "stair", "finst", "roof", "railing", "beam")
 
 
 # ---------------------------------------------------------------- 모델 그룹·조립품(W2 열한 번째 PR, ARC-46·COL-11)

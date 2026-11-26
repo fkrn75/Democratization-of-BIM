@@ -888,6 +888,11 @@ def beam_measure(g, b):
     return (ln, cl, a, BM.volume(p, cl, g.q(beam_ends, b)))
 
 
+def beam_tagpos(g, b):
+    """보 태그 자리 (x, y, 접선 x, 접선 y)(W2 스물한 번째 PR): 기둥·보 면으로 자른 뒤 남은 축의 가운데(곡선 보는 호 가운데)와 그 점의 진행 방향. beams.mid_frame."""
+    return BM.mid_frame(el(g, b)["params"], g.q(beam_cut, b)[:2])
+
+
 # ---------------------------------------------------------------- 공간
 def space_level(g, s):
     return rel_out(g, "on_level", s)[0]
