@@ -129,6 +129,8 @@ def _tag_values(p: dict) -> None:
         raise ValueError("태그의 간격·위치가 올바르지 않다")
     if not set(p["fields"]) <= _TAG_ANY:
         raise ValueError("태그에 없는 표시 필드가 있다")
+    if "leader" in p and not K.tag_leader_ok(p["leader"]):   # 지시선 설정(W2 스물여섯 번째 PR): 값 범위는 kinds 의 파라미터 검사가 이미 본다
+        raise ValueError("태그의 지시선 설정이 올바르지 않다")
 
 
 def _grid_values(p: dict) -> None:

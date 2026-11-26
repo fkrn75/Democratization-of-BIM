@@ -808,10 +808,39 @@ def annot_draw(g, a):
     ax, ay = tag_anchor(g, p["target"])
     if not (isfinite(ax) and isfinite(ay)):
         return ("invalid", a, kind, "non_finite", *_r(*p["home"]))
-    if p.get("align") == "axis":   # 보 축 방향 태그(W2 스물한 번째 PR): 여섯째 값 = 보 진행 방향(단위 벡터). 글은 이 방향으로 눕고 거꾸로 서지 않게 내보낸다
+    axis = p.get("align") == "axis"
+    d = None
+    if axis:   # 보 축 방향 태그(W2 스물한 번째 PR): 여섯째 값 = 보 진행 방향(단위 벡터). 글은 이 방향으로 눕고 거꾸로 서지 않게 내보낸다
         tx, ty = g.q(Q.beam_tagpos, p["target"])[2:]
-        return ("tag", a, _r(ax, ay), _r(ax + p["off"][0], ay + p["off"][1]), st[1], (round(tx, 6) + 0.0, round(ty, 6) + 0.0))
-    return ("tag", a, _r(ax, ay), _r(ax + p["off"][0], ay + p["off"][1]), st[1])
+        d = (round(tx, 6) + 0.0, round(ty, 6) + 0.0)
+    lab = _r(ax + p["off"][0], ay + p["off"][1])
+    if "leader" not in p and "side" not in p:   # 지시선·글 자리 옵션(W2 스물여섯 번째 PR)이 없는 태그: 이전 항목 모양 그대로
+        return ("tag", a, _r(ax, ay), lab, st[1], d) if axis else ("tag", a, _r(ax, ay), lab, st[1])
+    # 옵션이 있는 태그: ("tag", id, 기준점, 글 자리, 글, 보 진행 방향 | None, 지시선 꺾은선 점들, 글 맞춤("start"·"middle"·"end"))
+    pts = tag_leader_pts(p, (ax, ay), lab, axis)
+    if not all(isfinite(v) for pt in pts for v in pt):
+        return ("invalid", a, kind, "non_finite", *_r(*p["home"]))
+    return ("tag", a, _r(ax, ay), lab, st[1], d, pts, p.get("side", "start"))
+
+
+def tag_leader_pts(p, anc, lab, axis):
+    """태그 지시선의 꺾은선 점들(뷰 좌표). 시작점 = 부착 끝점(대상 대표점) 또는 자유 끝점(대표점 + tip), 꺾임점(대표점 + bend)이 있으면 그다음, 끝 = 글 자리.
+    지시선이 없으면 빈 튜플. params.leader 가 없으면 지시선 태그(가로 글)는 켜짐·부착, 보 축 방향 태그는 꺼짐이다(이전 모양).
+    모든 점은 대표점 기준 간격이라 대상을 옮기면 글·끝점·꺾임점이 함께 따라간다."""
+    ld = p.get("leader")
+    if not (ld.get("on", True) if ld is not None else not axis):
+        return ()
+    ld = ld or {}
+    tip = (anc[0] + ld["tip"][0], anc[1] + ld["tip"][1]) if ld.get("end") == "free" else anc
+    pts = [_r(*tip)]
+    if "bend" in ld:
+        pts.append(_r(anc[0] + ld["bend"][0], anc[1] + ld["bend"][1]))
+    pts.append(tuple(lab))
+    out = [pts[0]]
+    for pt in pts[1:]:
+        if pt != out[-1]:   # 겹친 점은 한 번만(길이 0 선분을 그리지 않는다)
+            out.append(pt)
+    return tuple(out) if len(out) >= 2 else ()
 
 
 def tag_anchor(g, target):

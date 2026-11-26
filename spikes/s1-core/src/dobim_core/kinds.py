@@ -391,11 +391,26 @@ def _dim_params(p):
                                        "dirs": lambda v: _json_ok(v) and isinstance(v, dict)})
 
 
+def tag_leader_ok(v) -> bool:
+    """태그 지시선 설정(W2 스물여섯 번째 PR): {on: bool, end: attached | free, tip: [dx, dy](end 가 free 일 때만, 필수), bend: [dx, dy]}. 간격은 모두 대표점 기준."""
+    if not (isinstance(v, dict) and set(v) <= {"on", "end", "tip", "bend"} and v):
+        return False
+    if "on" in v and type(v["on"]) is not bool:
+        return False
+    if v.get("end", "attached") not in ("attached", "free") or ("end" in v and not isinstance(v["end"], str)):
+        return False
+    if ("tip" in v) != (v.get("end") == "free"):
+        return False
+    return all(_pt_ok(v[k]) and all(abs(x) <= 1e5 for x in v[k]) for k in ("tip", "bend") if k in v)
+
+
 def _tag_params(p):
     return _check_opt("tag", p, {"name": _name, "view": id_ok, "target": id_ok,
                                  "fields": lambda v: isinstance(v, list) and 1 <= len(v) <= 4 and all(text_ok(x, 1, 16) for x in v),
                                  "off": _pt_ok, "home": _pt_ok},
-                      {"align": lambda v: v == "axis"})   # align = 보 축 방향 태그(W2 스물한 번째 PR). 없으면 지시선이 있는 가로 글 태그(이전과 같다)
+                      {"align": lambda v: v == "axis",   # align = 보 축 방향 태그(W2 스물한 번째 PR). 없으면 지시선이 있는 가로 글 태그(이전과 같다)
+                       "leader": tag_leader_ok,   # 지시선 설정·글 맞춤·고정(손으로 옮긴 태그, W2 스물여섯 번째 PR): 쓸 때만 키가 생긴다
+                       "side": lambda v: v in ("middle", "end"), "pin": lambda v: v is True})
 
 
 def _ftype_params(p):
