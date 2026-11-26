@@ -846,27 +846,46 @@ def beam_mains(g, b):
     return tuple(out)
 
 
-def beam_cut(g, b):
-    """기둥·보 면 자르기 (시작에서 줄인 길이, 끝에서 줄인 길이, 시작 쪽 기둥·주 보 id, 끝 쪽 id)(축 방향 길이, beams.trims). 자를 것이 없으면 (0, 0, None, None).
-    보끼리 접합(W2 열여덟 번째 PR): 주 보(beam_mains)를 기둥과 같은 규칙으로 넘긴다. 기둥과 주 보가 함께 닿으면 더 많이 줄이는 쪽."""
+def beam_cut_ex(g, b):
+    """beam_cut 의 앞 넷 + (시작 변 방향, 끝 변 방향)(W2 열아홉 번째 PR): 주 보로 자른 끝에서 그 주 보 외곽 변의 평면 단위 방향(경사 자르기용), 아니면 None.
+    보끼리 접합 간격(gap)은 주 보로 자른 끝에만 더한다(축 방향 길이). 자를 것이 없으면 (0, 0, None, None, None, None)."""
     p = el(g, b)["params"]
     if p.get("cutback") is False:
-        return (0.0, 0.0, None, None)
+        return (0.0, 0.0, None, None, None, None)
     mains = g.q(beam_mains, b) if g.q(count, "beam") > 1 else ()
     if not mains:
-        return g.q(beam_col_cut, b)
+        return g.q(beam_col_cut, b) + (None, None)
     cols = g.q(beam_columns) if g.q(count, "finst") else ()
-    return _to_axis(p, BM.trims(p, BM.end_zranges(p, g.q(beam_zref, b)), tuple(cols) + mains))
+    gap = float(p.get("gap", 0.0))
+    cs = BM.slope(p)[0] if BM.sloped(p) else 1.0   # 간격은 축 방향 길이로 주고 trims 는 평면 길이로 잰다
+    c = BM.trims_ex(p, BM.end_zranges(p, g.q(beam_zref, b)), tuple(cols) + mains, gap * cs, frozenset(m[0] for m in mains))
+    return _to_axis(p, c[:4]) + c[4:]
+
+
+def beam_cut(g, b):
+    """기둥·보 면 자르기 (시작에서 줄인 길이, 끝에서 줄인 길이, 시작 쪽 기둥·주 보 id, 끝 쪽 id)(축 방향 길이, beams.trims). 자를 것이 없으면 (0, 0, None, None).
+    보끼리 접합(W2 열여덟 번째 PR): 주 보(beam_mains)를 기둥과 같은 규칙으로 넘긴다. 기둥과 주 보가 함께 닿으면 더 많이 줄이는 쪽.
+    곡선 보(W2 열아홉 번째 PR)는 길이를 호를 따라 잰다. 간격(gap)·변 방향은 beam_cut_ex."""
+    return g.q(beam_cut_ex, b)[:4]
+
+
+def beam_ends(g, b):
+    """끝면이 축에 수직이 아닌 보의 끝면 기울기(beams.end_shears) 또는 None(경사 보 연직 끝면·경사 자르기가 없다)."""
+    p = el(g, b)["params"]
+    if "vertical_ends" not in p and "skew_cut" not in p:
+        return None
+    c = g.q(beam_cut_ex, b)
+    return BM.end_shears(p, (c[4], c[5]))
 
 
 def beam_measure(g, b):
-    """(축 실길이, 자른 실길이, 단면적 mm2, 체적 mm3). 경사 보는 3D 길이다."""
+    """(축 실길이, 자른 실길이, 단면적 mm2, 체적 mm3). 경사 보는 3D 길이, 곡선 보는 호 길이다(곡선 보 체적은 beams.volume)."""
     p = el(g, b)["params"]
     ln = BM.length3(p)
     c = g.q(beam_cut, b)
     cl = ln - c[0] - c[1]
     a = BM.section_area(p["section"])
-    return (ln, cl, a, a * cl)
+    return (ln, cl, a, BM.volume(p, cl, g.q(beam_ends, b)))
 
 
 # ---------------------------------------------------------------- 공간
@@ -1258,10 +1277,23 @@ def ifc_spec(g, e):
                     "origin": (ax + ux * kc * c[0], ay + uy * kc * c[0], p["offset"] + ks * c[0]), "xdir": (ux, uy), "slope": (kc, ks),
                     "length": l3 - c[0] - c[1], "section": tuple(sorted(sc.items())), "profile_name": BM.section_label(sc), "center": (-cb * sn, cb * cs),
                     "roll": (cs, sn), "intent": intent}
+        elif BM.curved(p):   # 곡선 보(W2 열아홉 번째 PR): 배치 = 자른 시작점에서 호의 접선 방향. 기준선은 배치 안의 원호(arc = (반지름, 방향 +1 반시계, 중심각, 끝점))
+            ai = BM.arc_info(p)
+            r_, sg_ = ai[2], ai[4]
+            phi = (r_ * ai[5] - c[0] - c[1]) / r_
+            x0_, y0_ = AG.point(ai, c[0], 0.0)
+            tx_, ty_ = AG.tangent(ai, c[0])
+            sp_, cp_ = AG.sincos(phi)
+            spec = {"kind": kind, "name": p["name"], "level": g.q(beam_level, e), "origin": (x0_, y0_, p["offset"]), "xdir": (tx_, ty_),
+                    "arc": (r_, sg_, phi, (r_ * sp_, sg_ * r_ * (1.0 - cp_))), "length": r_ * phi, "section": tuple(sorted(sc.items())),
+                    "profile_name": BM.section_label(sc), "center": (-cb * sn, cb * cs), "roll": (cs, sn), "intent": intent}
         else:
             spec = {"kind": kind, "name": p["name"], "level": g.q(beam_level, e), "origin": (ax + ux * c[0], ay + uy * c[0], p["offset"]), "xdir": (ux, uy),
                     "length": ln - c[0] - c[1], "section": tuple(sorted(sc.items())), "profile_name": BM.section_label(sc), "center": (-cb * sn, cb * cs),
                     "roll": (cs, sn), "intent": intent}
+        ends = g.q(beam_ends, e)
+        if ends is not None:   # 끝면이 축에 수직이 아니다(연직 끝면·경사 자르기, W2 열아홉 번째 PR): 연직 자르기 면 둘과 돌출 여유. 없으면 명세는 이전과 같다
+            spec["clips"], spec["ext"] = BM.clip_planes(p, c[:2], ends)
         if "material" in p:   # 구조 재료(W2 열여덟 번째 PR): IFC4 IfcMaterialProfileSetUsage(맞춤 = 기준선 자리의 CardinalPoint). 없으면 명세는 이전과 같다
             spec["material"] = p["material"]
             spec["cardinal"] = {"top": 8, "center": 5, "bottom": 2}[p["anchor"]]

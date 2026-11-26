@@ -5596,10 +5596,11 @@ def beam_info(g, b):
     p = row["params"]
     zr = g.q(Q.beam_zref, b)
     cut = g.q(Q.beam_cut, b)[:2]
-    verts, faces = BM.mesh(p, zr, cut)
+    ends = g.q(Q.beam_ends, b)   # 끝면이 축에 수직이 아닌 보(경사 보 연직 끝면·경사 자르기, W2 열아홉 번째 PR). 없으면 None 이라 값은 이전과 같다
+    verts, faces = BM.mesh(p, zr, cut, ends)
     edges, nrm = SO.feature_edges(verts, faces)
     return (tuple(verts), tuple(tuple(tuple(lp) for lp in f) for f in faces), edges, nrm, SO.mesh_bbox(verts),
-            tuple(tuple(pc) for pc in BM.pieces(p, zr, cut)), tuple(BM.plan_rect(p, cut)))
+            tuple(tuple(pc) for pc in BM.pieces(p, zr, cut, ends)), tuple(BM.plan_rect(p, cut, ends)))
 
 
 def all_beams(g):
@@ -5657,8 +5658,8 @@ def beam_lines(g, v, b):
     if cfg[0] == "plan":
         if bb[2] >= cfg[2] - EPS:   # 절단 높이 위의 보: 외곽 사각형 숨은선(파선)
             out = []
-            for i in range(4):
-                out.extend(_dashed("proj", rect[i], rect[(i + 1) % 4], HIDDEN_DASH * cfg[4], HIDDEN_GAP * cfg[4]))
+            for i in range(len(rect)):   # 직선 보는 사각형 4변, 곡선 보는 호를 나눈 다각형(W2 열아홉 번째 PR)
+                out.extend(_dashed("proj", rect[i], rect[(i + 1) % len(rect)], HIDDEN_DASH * cfg[4], HIDDEN_GAP * cfg[4]))
             return tuple(out)
         return tuple(_mesh_lines(g, v, cfg, verts, faces, edges, nrm, cfg[2] - cfg[3]))
     return tuple(_mesh_lines(g, v, cfg, verts, faces, edges, nrm, None))
@@ -5700,7 +5701,17 @@ def _beam_vpieces(g, v, b):
     if cfg is None or info is None:
         return ()
     bp = Q.el(g, b)["params"]
-    if bp.get("roll") or "end_offset" in bp:
+    if "end_offset" in bp:   # 경사 보(W2 열아홉 번째 PR): 볼록 조각이 수직 각기둥이 아니라 높이 조각으로 썰어 가린다(안쪽 근사: 덜 가린다)
+        out = []
+        for z0, z1, poly in BM.slab_slices(info[5]):
+            sw = [_sw(cfg, q) for q in poly]
+            if _area2(sw) < 0:
+                sw.reverse()
+            sw = _clip_w(sw, cfg[7], cfg[8])
+            if len(sw) >= 3 and _area2(sw) > 2 * EPS:
+                out.append((z0 - 2 * EPS, z1 + 2 * EPS, tuple(sw)))   # z 를 조금 겹쳐 이음매 높이의 선이 새지 않게(지붕 판 조각과 같다)
+        return tuple(out)
+    if bp.get("roll"):
         return ()
     out = []
     for pc in info[5]:

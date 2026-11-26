@@ -286,6 +286,8 @@ def beam(p: dict, xf: Xf) -> dict:
     q["end"] = xf.pt(p["end"][0], p["end"][1])
     if xf.mirror and "roll" in p and p["roll"] != 180.0:
         q["roll"] = -p["roll"]
+    if xf.mirror and "bulge" in p:   # 곡선 보(W2 열아홉 번째 PR): 대칭은 호의 반시계·시계를 뒤집는다(부풀어 오른 쪽이 거울 쪽으로)
+        q["bulge"] = -p["bulge"] + 0.0
     return q
 
 

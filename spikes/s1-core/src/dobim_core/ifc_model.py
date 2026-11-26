@@ -2176,16 +2176,44 @@ class IfcModel:
         self._contain(eid, spec["level"])
         self._place(e, self.ents[spec["level"]].ObjectPlacement, spec["origin"], (spec["xdir"][0], spec["xdir"][1], 0.0))
         sc = dict(spec["section"])
-        ppos = f.createIfcAxis2Placement2D(f.createIfcCartesianPoint([float(spec["center"][0]), float(spec["center"][1])]),
-                                           f.createIfcDirection([float(spec["roll"][0]), float(spec["roll"][1])]))
-        prof = self._beam_profile(sc, spec["profile_name"], ppos)   # 단면 모양별 매개변수 프로필(ㄷ·ㄱ·강관: W2 열여덟 번째 PR)
-        # 경사 보(W2 열여덟 번째 PR): 배치는 수평 그대로 두고 돌출 틀의 축(Z)을 배치 xz 면 안에서 (cos, 0, sin) 으로 기울인다. 참조(X) = 배치 y(왼쪽)라
-        # 프로필 y 는 축에 수직인 위쪽이다(단면이 축에 수직). 수평 보는 이전과 같은 (1, 0, 0)
-        sl = spec.get("slope")
-        ax3 = [float(sl[0]), 0.0, float(sl[1])] if sl else [1.0, 0.0, 0.0]
-        pos = f.createIfcAxis2Placement3D(f.createIfcCartesianPoint([0.0, 0.0, 0.0]), f.createIfcDirection(ax3), f.createIfcDirection([0.0, 1.0, 0.0]))
-        self._set_body(e, f.createIfcExtrudedAreaSolid(prof, pos, f.createIfcDirection([0.0, 0.0, 1.0]), float(spec["length"])))
-        e.Representation.Representations[0].RepresentationType = "SweptSolid"
+        arc = spec.get("arc")
+        if arc:   # 곡선 보(W2 열아홉 번째 PR): 단면 프로필을 원호 기준선을 따라 스윕(IfcSurfaceCurveSweptAreaSolid, 아래)
+            ca, cb_ = float(spec["center"][0]), float(spec["center"][1])
+            # 스윕 틀: 프로필 (x, y) = (위, 오른쪽)(기준 곡면 법선 = 위, y = 접선 x 위). 코어 단면 (a, b) = (왼쪽, 위) 는 (x, y) = (b, -a)
+            ppos = f.createIfcAxis2Placement2D(f.createIfcCartesianPoint([cb_, -ca]), f.createIfcDirection([float(spec["roll"][1]), -float(spec["roll"][0])]))
+            prof = self._beam_profile(sc, spec["profile_name"], ppos)
+            r, sg, phi, end = arc
+            P3 = lambda *v: f.createIfcCartesianPoint([float(x) for x in v])
+            # 원 = 중심(배치 안 (0, sg r)) 둘레, 축 = sg(시계 호는 아래 -z 로 뒤집어 매개변수 증가 방향 = 진행 방향), x 방향 = 중심에서 시작점. 끝은 직교 좌표 점 + 매개변수(라디안)
+            circ = f.createIfcCircle(f.createIfcAxis2Placement3D(P3(0.0, sg * r, 0.0), f.createIfcDirection([0.0, 0.0, float(sg)]), f.createIfcDirection([0.0, -float(sg), 0.0])), float(r))
+            tc = f.createIfcTrimmedCurve(circ, [P3(0.0, 0.0, 0.0), f.createIfcParameterValue(0.0)], [P3(end[0], end[1], 0.0), f.createIfcParameterValue(float(phi))], True, "CARTESIAN")
+            plane = f.createIfcPlane(f.createIfcAxis2Placement3D(P3(0.0, 0.0, 0.0), None, None))
+            self._set_body(e, f.createIfcSurfaceCurveSweptAreaSolid(prof, f.createIfcAxis2Placement3D(P3(0.0, 0.0, 0.0), None, None), tc, 0.0, float(phi), plane))
+            e.Representation.Representations[0].RepresentationType = "AdvancedSweptSolid"
+        else:
+            ppos = f.createIfcAxis2Placement2D(f.createIfcCartesianPoint([float(spec["center"][0]), float(spec["center"][1])]),
+                                               f.createIfcDirection([float(spec["roll"][0]), float(spec["roll"][1])]))
+            prof = self._beam_profile(sc, spec["profile_name"], ppos)   # 단면 모양별 매개변수 프로필(ㄷ·ㄱ·강관: W2 열여덟 번째 PR)
+            # 경사 보(W2 열여덟 번째 PR): 배치는 수평 그대로 두고 돌출 틀의 축(Z)을 배치 xz 면 안에서 (cos, 0, sin) 으로 기울인다. 참조(X) = 배치 y(왼쪽)라
+            # 프로필 y 는 축에 수직인 위쪽이다(단면이 축에 수직). 수평 보는 이전과 같은 (1, 0, 0)
+            sl = spec.get("slope")
+            ax3 = [float(sl[0]), 0.0, float(sl[1])] if sl else [1.0, 0.0, 0.0]
+            clips = spec.get("clips")
+            if clips:   # 끝면이 축에 수직이 아니다(연직 끝면·경사 자르기, W2 열아홉 번째 PR): 돌출을 끝마다 더 길게 하고 연직 반공간 둘로 잘라낸다(IfcBooleanClippingResult)
+                lo, hi = spec["ext"]
+                org = [float(lo) * ax3[0], 0.0, float(lo) * ax3[2]]
+                pos = f.createIfcAxis2Placement3D(f.createIfcCartesianPoint(org), f.createIfcDirection(ax3), f.createIfcDirection([0.0, 1.0, 0.0]))
+                item = f.createIfcExtrudedAreaSolid(prof, pos, f.createIfcDirection([0.0, 0.0, 1.0]), float(hi - lo))
+                for (pt, nrm) in clips:
+                    pl = f.createIfcPlane(f.createIfcAxis2Placement3D(f.createIfcCartesianPoint([float(v) for v in pt]), f.createIfcDirection([float(nrm[0]), float(nrm[1]), 0.0]),
+                                                                      f.createIfcDirection([0.0, 0.0, 1.0])))
+                    item = f.createIfcBooleanClippingResult("DIFFERENCE", item, f.createIfcHalfSpaceSolid(pl, True))
+                self._set_body(e, item)
+                e.Representation.Representations[0].RepresentationType = "Clipping"
+            else:
+                pos = f.createIfcAxis2Placement3D(f.createIfcCartesianPoint([0.0, 0.0, 0.0]), f.createIfcDirection(ax3), f.createIfcDirection([0.0, 1.0, 0.0]))
+                self._set_body(e, f.createIfcExtrudedAreaSolid(prof, pos, f.createIfcDirection([0.0, 0.0, 1.0]), float(spec["length"])))
+                e.Representation.Representations[0].RepresentationType = "SweptSolid"
         if "material" in spec:   # 구조 재료(W2 열여덟 번째 PR): IfcMaterialProfileSetUsage -> IfcMaterialProfileSet(재료 + 단면 프로필)
             self._assign_profiles(eid, spec["material"], spec["profile_name"], sc, spec["cardinal"])
         else:
