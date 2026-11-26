@@ -1710,6 +1710,12 @@ class StairSketchSpec(A):
     corners: Annotated[list[Annotated[int, Field(ge=0, le=K.STAIR_CORNER_M_MAX)]], Field(max_length=K.STAIR_SKETCH_PTS - 2)] | None = Field(
         None, description="꺾인 모서리(W2 스무 번째 PR): 안쪽 꼭짓점마다 모서리 디딤판 수(꼭짓점 수 - 2 개, 0 = 꺾이지 않는 꼭짓점·접선 연속, 1 = 층참 하나, 2 이상 = 쐐기 돌음 디딤판). "
                           "모서리는 폭/2 반지름의 접하는 보행선 원호가 되고 그 원호를 같은 길이로 나눈 쐐기 디딤판이 안쪽 모서리 점에서 퍼진다. 꺾임각 10~135도, 이웃 변은 직선이어야 한다")
+    landings: Annotated[list[Annotated[int, Field(ge=0)]], Field(max_length=K.STAIR_LANDINGS_MAX)] | None = Field(
+        None, description="구간 층참(W2 스물세 번째 PR): 디딤판 대신 평평한 층참으로 만들 직선 변 번호(0 부터, 변 = 보행선 꼭짓점 사이, 오름차순, 최대 8개). 층참 변은 디딤판 하나를 차지하고 "
+                          "윗면은 앞 디딤판보다 챌판 하나 위다(챌판 수·높이 배분 그대로). 층참 뒤 디딤판은 층참 윗면 - 150mm 까지만 채운다. 원호 변은 층참이 될 수 없다")
+    balanced: Annotated[list[Annotated[int, Field(ge=0, le=1)]], Field(max_length=K.STAIR_SKETCH_PTS - 2)] | None = Field(
+        None, description="균형 돌음(W2 스물세 번째 PR): 안쪽 꼭짓점마다 0/1(corners 와 같은 길이, 1 = 그 모서리 쐐기를 균형 돌음으로). 쐐기 디딤판을 보행선(폭 가운데) 위 같은 깊이(층참을 뺀 보행선 / 층참 아닌 디딤판 수)로 "
+                          "나누고 부채를 모서리 양쪽 이웃 직선 디딤판 쪽으로 넓힌다(이웃 한 장씩은 안쪽이 깊고 바깥이 얕은 사다리꼴). 모서리 디딤판 수는 2 이상이고 모서리 보행선을 같은 깊이로 나눈 수 이상이어야 한다. 비우면 같은 각 쐐기")
 
 
 def _stair_sketch(s: StairSketchSpec) -> dict:
@@ -1724,6 +1730,14 @@ def _stair_sketch(s: StairSketchSpec) -> dict:
             raise DobimError("CONSTRAINT", "corners 는 안쪽 꼭짓점마다 하나(꼭짓점 수 - 2 개)다", path="/corners")
         if any(s.corners):   # 모두 0 이면 키를 두지 않는다
             out["corners"] = [int(c) for c in s.corners]
+    if s.landings is not None:   # 층참 변 번호: 중복을 없애고 오름차순으로 둔다(빈 목록이면 키를 두지 않는다)
+        if s.landings:
+            out["landings"] = sorted(set(int(i) for i in s.landings))
+    if s.balanced is not None:
+        if len(s.balanced) != len(s.path) - 2:
+            raise DobimError("CONSTRAINT", "balanced 는 안쪽 꼭짓점마다 하나(꼭짓점 수 - 2 개)다", path="/balanced")
+        if any(s.balanced):   # 모두 0 이면 키를 두지 않는다
+            out["balanced"] = [int(b) for b in s.balanced]
     for i in range(len(out["path"]) - 1):
         (x0, y0), (x1, y1) = out["path"][i], out["path"][i + 1]
         if (x1 - x0) ** 2 + (y1 - y0) ** 2 < 1.0:
@@ -1751,10 +1765,13 @@ class StairSketchCreate(StairSketchSpec):
 @command("stair.sketch", kind="mutation", risk="write", group="model.stair",
          summary="스케치 계단 생성(보행선 꺾은선 + 변마다 볼록도(원호) + 폭 + 오름 + 챌판 수). 보행선 길이를 디딤판 수로 같게 나눠 보행선에 수직인 챌판으로 단을 만든다. "
                  "직선과 원호를 접하게 이어야 한다. 꺾인 모서리는 corners(꼭짓점마다 모서리 디딤판 수, 1 = 층참·2 이상 = 쐐기 돌음 디딤판, 폭/2 반지름 보행선 원호를 같은 길이로 나눔)로 준다. "
-                 "계단 검사는 경고(warnings). IFC 는 IfcStair(STRAIGHT_RUN_STAIR·CURVED_RUN_STAIR·QUARTER/HALF/THREE_QUARTER_WINDING·TURN_STAIR) + IfcStairFlight(STRAIGHT·CURVED·WINDER)",
+                 "구간 층참은 landings(평평한 층참으로 만들 직선 변 번호), 균형 돌음은 balanced(모서리 쐐기를 이웃 직선 디딤판까지 넓혀 보행선 깊이를 고르게). "
+                 "계단 검사는 경고(warnings). IFC 는 IfcStair(STRAIGHT_RUN_STAIR·CURVED_RUN_STAIR·TWO_STRAIGHT_RUN_STAIR·QUARTER/HALF/THREE_QUARTER_WINDING·TURN_STAIR) + IfcStairFlight(STRAIGHT·CURVED·WINDER) + 층참 IfcSlab(LANDING)",
          args=StairSketchCreate, since="0.23",
          examples=[{"level": F.LV1, "path": [[1000, 8000], [4000, 8000], [6000, 10000]], "bulges": [0, 0.41421356], "width": 1200, "height": 3000, "risers": 18},
-                   {"level": F.LV1, "path": [[1000, 12000], [4000, 12000], [4000, 15000]], "corners": [3], "width": 1200, "height": 3000, "risers": 18}])
+                   {"level": F.LV1, "path": [[1000, 12000], [4000, 12000], [4000, 15000]], "corners": [3], "width": 1200, "height": 3000, "risers": 18},
+                   {"level": F.LV1, "path": [[1000, 16000], [4000, 16000], [5500, 16000], [8500, 16000]], "landings": [1], "width": 1200, "height": 3000, "risers": 18},
+                   {"level": F.LV1, "path": [[1000, 18000], [4000, 18000], [4000, 21000]], "corners": [4], "balanced": [1], "width": 1200, "height": 3000, "risers": 18}])
 def stair_sketch(ctx, a: StairSketchCreate):
     _fresh_id(ctx, a, "stair")
     ctx.authored(a.level, "level", what="레벨에 계단을 추가하는 것")
@@ -1842,7 +1859,8 @@ def stair_check(ctx, a: IdArg):
         raise DobimError("CONSTRAINT", "저작 계단만 검사한다(외래 계단의 형상은 IFC 가 정본이다)", path="/id")
     p = r["params"]
     kind = "spiral" if "spiral" in p else "sketch" if "sketch" in p else "turn" if "turn" in p else "straight"
-    return {"id": a.id, "form": kind, "riser_height": p["height"] / p["risers"], "warnings": K.stair_rule_warnings(p)}
+    bal = K.stair_balanced_info(p)   # 균형 돌음(W2 스물세 번째 PR): 근거 값(보행선 위 깊이·안쪽 300mm 깊이·이웃 직선 디딤판 바깥쪽 깊이). 없으면 키를 두지 않는다(응답은 이전과 같다)
+    return {"id": a.id, "form": kind, "riser_height": p["height"] / p["risers"], "warnings": K.stair_rule_warnings(p), **({"balanced": bal} if bal else {})}
 
 
 @command("stair.move", kind="mutation", risk="write", group="model.stair", summary="계단을 평행 이동한다",
@@ -2223,17 +2241,13 @@ def _sketch_rail_specs(p: dict, side: str, inset: float) -> list:
     w = p["width"]
     m = w / 2.0 - min(inset, w / 2.0 - 1.0)
     out = []
-    if lay["corners"]:   # 꺾인 모서리가 있으면 구간(직선·원호 변 묶음, 모서리 하나)마다 난간을 따로 둔다: 난간은 자기 길이에 비례해 오르므로 모서리 안쪽·바깥 난간 길이가
-        groups = []      # 보행선과 크게 달라 한 줄로 이으면 디딤판과 어긋난다. 구간마다 보행선 위 시작·끝 높이(sketch_walk_z)에 맞춰 base_offset·rise 를 준다
-        for i, s in enumerate(lay["segs"]):
-            if s["kind"] == "corner" or not groups or lay["segs"][groups[-1][-1]]["kind"] == "corner":
-                groups.append([i])
-            else:
-                groups[-1].append(i)
-        for gi, ids in enumerate(groups):
+    if lay["corners"] or lay["landings"]:   # 꺾인 모서리·층참이 있으면 구간(직선·원호 변 묶음, 모서리 하나, 층참 하나)마다 난간을 따로 둔다: 난간은 자기 길이에 비례해 오르므로 모서리 안쪽·바깥 난간 길이가
+        for gi, (kind, ids) in enumerate(K.sketch_groups(lay["segs"])):   # 보행선과 크게 달라 한 줄로 이으면 디딤판과 어긋난다. 구간마다 보행선 위 시작·끝 높이(sketch_walk_z)에 맞춰 base_offset·rise 를 준다
             a = lay["starts"][ids[0]]
             b = lay["starts"][ids[-1]] + lay["segs"][ids[-1]]["len"]
             za, zb = K.sketch_walk_z(lay, a), K.sketch_walk_z(lay, b)
+            if kind == "landing":   # 층참 난간은 평평하다(윗면 높이 = 층참 앞 챌판 위). 다음 단 묶음 난간은 그 위 챌판 하나 높이에서 시작한다
+                zb = za
             for name, tag, sg in (("left", "kL", 1.0), ("right", "kR", -1.0)):
                 if side in ("both", name):
                     out.append({"tag": f"{tag}{gi}", "path": K.sketch_offset_path(lay, sg * m, set(ids)), "base_offset": p["base_offset"] + lay["rise"] + za, "rise": zb - za})
@@ -4122,9 +4136,13 @@ def element_get(ctx, a: ElementGet):
             kl = K.stair_sketch_layout(p)
             out["derived"] = {"bottom": zb, "top": zt, "riser_height": kl["rise"], "tread_depth": kl["td"], "treads": p["risers"] - 1,
                               "walkline_length": kl["length"], "arcs": sum(1 for s in kl["segs"] if s["kind"] == "arc"), "volume_m3": K.stair_volume(p) / 1e9}
+            if kl["landings"]:   # 구간 층참(W2 스물세 번째 PR): 층참 수·가장 얕은 층참 깊이
+                out["derived"].update({"landings": len(kl["landings"]), "landing_depth": min(x["len"] for x in kl["landings"])})
+            if any(c.get("bal") for c in kl["corners"]):   # 균형 돌음: 균형 모서리 수·보행선(폭 가운데) 위 쐐기 깊이 최솟값
+                out["derived"].update({"balanced_corners": sum(1 for c in kl["corners"] if c.get("bal")), "balanced_walk_tread": min(c["depth"] for c in kl["corners"] if c.get("bal"))})
             if kl["corners"]:   # 꺾인 모서리(W2 스무 번째 PR): 모서리 수·모서리 디딤판 수·직선·원호 구간의 가장 짧은 디딤 깊이(tread_depth)·모서리 디딤판 보행선 깊이
                 out["derived"].update({"corners": len(kl["corners"]), "winder_treads": sum(c["m"] for c in kl["corners"]),
-                                       "winder_walkline_tread": min(abs(c["sw"]) * kl["segs"][c["seg"]]["r"] * 3.141592653589793 / 180.0 / c["m"] for c in kl["corners"])})
+                                       "winder_walkline_tread": min((c["depth"] if c.get("bal") else abs(c["sw"]) * kl["segs"][c["seg"]]["r"] * 3.141592653589793 / 180.0 / c["m"]) for c in kl["corners"])})
             if (w := K.stair_rule_warnings(p)):
                 out["derived"]["warnings"] = w
         elif "spiral" in p:   # 방사 계단(W2 열일곱 번째 PR): 보행선 디딤 깊이·디딤판 각·총 회전각·체적
