@@ -125,14 +125,31 @@ def problem(boundary, bulges, overhangs) -> str | None:
     return r if isinstance(r, str) else None
 
 
-def geom(boundary, bulges, overhangs, base_offset) -> dict:
-    """roof_geom 과 같은 꼴의 dict(새 목록이라 고쳐도 캐시는 그대로다)."""
+def geom(boundary, bulges, overhangs, base_offset, fall=None) -> dict:
+    """roof_geom 과 같은 꼴의 dict(새 목록이라 고쳐도 캐시는 그대로다).
+    fall = (cos, sin, 기울기) 이면 배수 물매(W2 스물두 번째 PR): 윗면이 물이 흐르는 방향 (cos, sin) 으로 기울어진 평면 하나다.
+    처마 윤곽에서 가장 낮은 점(흐름 방향 끝)이 레벨 + base_offset 이고 거기서 반대쪽으로 기울기만큼 오른다(두께는 여전히 윗면에서 수직 아래)."""
     r = _build(tuple((float(q[0]), float(q[1])) for q in boundary), tuple(float(v) for v in bulges) if bulges else (),
                tuple(float(o) for o in overhangs), float(base_offset))
     if isinstance(r, str):
         raise ValueError(r)
     face, parts, pl, lp, src, ol, smooth = r
     z0 = float(base_offset)
+    if fall is not None:
+        cs, sn, k = fall
+        dmax = max(q[0] * cs + q[1] * sn for q in ol)
+        a, b, c = -k * cs, -k * sn, z0 + k * dmax
+        pl = (a, b, c)
+
+        def up(q):
+            return (q[0], q[1], a * q[0] + b * q[1] + c)
+        face = tuple(up(q) for q in face)
+        parts = tuple(tuple(up(q) for q in pc) for pc in parts)
+        zs = [q[2] for q in face]
+        cx, cy = sum(q[0] for q in ol) / len(ol), sum(q[1] for q in ol) / len(ol)
+        return {"faces": [list(face)], "ridges": [], "hips": [], "valleys": [], "perimeter": list(face), "arrows": [((cx, cy), (cs, sn))], "outline": list(ol),
+                "planes": [pl], "pieces": [(list(pc), pl) for pc in parts], "fpitch": [0.0], "zlow": min(zs), "ztop": max(zs),
+                "eave_loop": list(lp), "eave_src": list(src), "smooth": list(smooth), "fall_pct": k * 100.0}
     return {"faces": [list(face)], "ridges": [], "hips": [], "valleys": [], "perimeter": list(face), "arrows": [], "outline": list(ol), "planes": [pl],
             "pieces": [(list(pc), pl) for pc in parts], "fpitch": [0.0], "zlow": z0, "ztop": z0,
             "eave_loop": list(lp), "eave_src": list(src), "smooth": list(smooth)}

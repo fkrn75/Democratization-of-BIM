@@ -394,7 +394,7 @@ def _parse_intent(kind: str, text: str) -> dict:
         if why:
             raise ValueError(f"난간이 올바르지 않다({why})")
     elif kind == "roof":
-        if (set(p) - {"ridge", "dir", "slopes", "overhangs", "rtype", "layers", "eaves", "axis", "profile", "cw_input", "bulges"} != {"name", "boundary", "form", "pitch", "overhang", "base_offset", "thickness"}
+        if (set(p) - {"ridge", "dir", "slopes", "overhangs", "rtype", "layers", "eaves", "axis", "profile", "cw_input", "bulges", "parapet", "fall", "drains", "drain_diameter"} != {"name", "boundary", "form", "pitch", "overhang", "base_offset", "thickness"}
                 or not isinstance(p["boundary"], list)
                 or not 3 <= len(p["boundary"]) <= K.RS.PTS_MAX or any(not isinstance(q, list) or len(q) != 2 for q in p["boundary"])
                 or ("slopes" in p and (not isinstance(p["slopes"], list) or len(p["slopes"]) != len(p["boundary"])))
@@ -432,6 +432,20 @@ def _parse_intent(kind: str, text: str) -> dict:
             out["eaves"] = {k: {x: (list(v) if x == "edges" else (v if x == "material" else _num(v, pos=True))) for x, v in d.items()} for k, d in p["eaves"].items()}
         if "cw_input" in p:   # 시계 방향으로 받은 외곽(W2 아홉 번째 PR): 값 검사는 코어 행 검사가 한다(True 만)
             out["cw_input"] = p["cw_input"]
+        if "parapet" in p:   # 평지붕 파라펫(W2 스물두 번째 PR): 변 번호는 정수 그대로
+            if not isinstance(p["parapet"], dict) or set(p["parapet"]) != {"height", "thickness", "edges"} or not isinstance(p["parapet"]["edges"], list):
+                raise ValueError("지붕 파라펫이 올바르지 않다")
+            out["parapet"] = {"height": _num(p["parapet"]["height"], pos=True), "thickness": _num(p["parapet"]["thickness"], pos=True), "edges": list(p["parapet"]["edges"])}
+        if "fall" in p:   # 평지붕 배수 물매·배수구(W2 스물두 번째 PR)
+            if not isinstance(p["fall"], dict) or set(p["fall"]) != {"dir", "pct"}:
+                raise ValueError("지붕 배수 물매가 올바르지 않다")
+            out["fall"] = {"dir": _num(p["fall"]["dir"]), "pct": _num(p["fall"]["pct"], pos=True)}
+        if "drains" in p:
+            if not isinstance(p["drains"], list) or any(not isinstance(q, list) or len(q) != 2 for q in p["drains"]):
+                raise ValueError("지붕 배수구가 올바르지 않다")
+            out["drains"] = [[_num(q[0]), _num(q[1])] for q in p["drains"]]
+        if "drain_diameter" in p:
+            out["drain_diameter"] = _num(p["drain_diameter"], pos=True)
         why = K.row_params_error("roof", out)
         if why:
             raise ValueError(f"지붕이 올바르지 않다({why})")

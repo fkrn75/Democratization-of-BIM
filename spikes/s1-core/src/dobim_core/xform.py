@@ -189,6 +189,13 @@ def roof(p: dict, xf: Xf) -> dict:
     if xf.mirror and "bulges" in p:   # 평지붕 원호 변(W2 열여섯 번째 PR): 같은 변을 따라 옮긴다(대칭이 호를 뒤집고 외곽 순서를 뒤집어 다시 뒤집으므로 부호는 그대로)
         n = len(p["boundary"])
         q["bulges"] = [p["bulges"][(n - 2 - j) % n] for j in range(n)]
+    if "drains" in p:   # 평지붕 배수구(W2 스물두 번째 PR)·배수 물매 방향도 함께 옮긴다
+        q["drains"] = _pts(xf, p["drains"], keep_order=True)
+    if "fall" in p:
+        q["fall"] = dict(p["fall"], dir=xf.ang(p["fall"]["dir"]))
+    if xf.mirror and "parapet" in p:   # 파라펫 변 번호도 같은 변을 따라 옮긴다(처마 부속과 같은 규칙)
+        n = len(p["boundary"])
+        q["parapet"] = dict(p["parapet"], edges=sorted((n - 2 - i) % n for i in p["parapet"]["edges"]))
     if xf.mirror and ("overhangs" in p or "eaves" in p):   # 외곽선 지붕의 변마다 내밀기·처마 부속의 변 번호(W2 여덟 번째 PR)도 같은 변을 따라 옮긴다
         n = len(p["boundary"])
         if "overhangs" in p:

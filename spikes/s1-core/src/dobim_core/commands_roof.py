@@ -22,6 +22,7 @@ from dobim_core import commands as C
 from dobim_core import fixture as F
 from dobim_core import kinds as K
 from dobim_core import roofeaves as RE
+from dobim_core import roofparapet as RPR
 from dobim_core.commands import A, Id, Name, Pos, command, row
 from dobim_core.errors import DobimError
 
@@ -479,3 +480,145 @@ def roof_eaves(ctx, a: RoofEaves):
             e["eave_z"] = [round(min(zs), 3), round(max(zs), 3)]
         edges.append(e)
     return {"id": a.id, "edges": edges, "eaves": RE.summary(K.roof_eave_pieces(p)), "settings": {k: {x: v for x, v in d.items() if x != "edges"} for k, d in ev.items()}}
+
+
+# ---------------------------------------------------------------- 평지붕 파라펫·배수(W2 스물두 번째 PR)
+class RoofParapetSet(A):
+    forbid_null = True
+    id: Id
+    height: Pos | None = Field(None, le=K.RPR.PARAPET_H_MAX, description="지붕 윗면 위로 올라온 높이 mm(파라펫이 없으면 필수)")
+    thickness: Pos | None = Field(None, le=K.RPR.PARAPET_T_MAX, description="두께 mm(처마 윤곽에서 안쪽으로). 파라펫이 없으면 200")
+    edges: list[Annotated[int, Field(strict=True, ge=0, lt=128)]] | Literal["all"] | None = Field(None, description="파라펫을 세울 외곽 변 번호들 또는 all(원호 변은 그 호의 모든 현). 파라펫이 없으면 all")
+    numbering: Literal["stored", "input"] = Field("input", description="edges 번호의 기준(roof.eaves.set 과 같다). input(기본) = roof.create·roof.set 에 준 외곽 순서, stored = 저장된 외곽(반시계) 순서")
+    clear: bool = Field(False, description="참이면 파라펫을 뗀다(다른 필드와 함께 줄 수 없다)")
+
+    @model_validator(mode="after")
+    def _any(self):
+        given = any(getattr(self, k) is not None for k in ("height", "thickness", "edges"))
+        if self.clear and given:
+            raise ValueError("clear 와 height·thickness·edges 를 함께 줄 수 없다")
+        if not self.clear and not given:
+            raise ValueError("바꿀 것이 없다(height·thickness·edges 를 주거나 clear 로 뗀다)")
+        return self
+
+
+def _roof_edges_stored(ctx, p, es, numbering, what):
+    """edges(입력 또는 저장 번호)를 저장 순서 번호 목록으로(시계 방향으로 받은 지붕의 번호 대응은 roof.eaves.set 과 같다)."""
+    n = len(p["boundary"])
+    if es == "all":
+        return list(range(n))
+    if any(x >= n for x in es):
+        raise DobimError("CONSTRAINT", f"{what}.edges 의 변 번호는 0~{n - 1} 이어야 한다(외곽 꼭짓점 {n}개)", path="/edges")
+    if len(set(es)) != len(es):
+        raise DobimError("CONSTRAINT", f"{what}.edges 에 같은 변이 두 번 있다", path="/edges")
+    if p.get("cw_input") and numbering == "input":
+        es = [stored_edge(x, n) for x in es]
+    return sorted(es)
+
+
+@command("roof.parapet.set", kind="mutation", risk="write", group="model.roof",
+         summary="평지붕 외곽 변(전부 또는 변 번호)에 파라펫 벽을 높이·두께로 세운다·바꾼다·뗀다(clear). 지붕 윗면 위에 앉고 이웃한 변끼리 모서리를 맞물리며(마이터), "
+                 "지붕을 고치면 따라간다. IFC 는 IfcRoof 에 집합한 IfcWall(PARAPET)(조각마다 하나)",
+         args=RoofParapetSet, since="0.24",
+         examples=[{"id": F.RF1, "height": 900, "thickness": 200}, {"id": F.RF1, "height": 1100, "edges": [0, 2]}, {"id": F.RF1, "clear": True}])
+def roof_parapet_set(ctx, a: RoofParapetSet):
+    r = ctx.authored(a.id, "roof", what="파라펫 지정")
+    p = dict(r["params"])
+    if p["form"] != "flat":
+        raise DobimError("CONSTRAINT", "파라펫은 평지붕(form=flat)에만 세울 수 있다", path="/id", hint="roof.create form=flat 으로 평지붕을 만드세요")
+    if a.clear:
+        p.pop("parapet", None)
+    else:
+        old = p.get("parapet")
+        if old is None and a.height is None:
+            raise DobimError("CONSTRAINT", "파라펫이 아직 없다: height 가 필요하다", path="/height")
+        es = a.edges if a.edges is not None else ("all" if old is None else None)
+        stored = old["edges"] if es is None else _roof_edges_stored(ctx, p, es, a.numbering, "parapet")
+        p["parapet"] = {"height": float(a.height if a.height is not None else old["height"]),
+                        "thickness": float(a.thickness if a.thickness is not None else (old["thickness"] if old else 200.0)), "edges": stored}
+    if p == r["params"]:
+        return {"id": a.id, "changed": False}
+    _write_roof(ctx, a.id, p, "/id")
+    return {"id": a.id, "changed": True, "parapet": RPR.summary(K.roof_parapet_pieces(p))}
+
+
+class RoofParapet(A):
+    id: Id
+
+
+@command("roof.parapet", kind="query", risk="read", group="model.roof",
+         summary="평지붕 파라펫의 설정과 변마다 길이(바깥 면)·조각 수, 전체 길이·바깥 면 넓이·부피", args=RoofParapet, idempotent=True, since="0.24", examples=[{"id": F.RF1}])
+def roof_parapet(ctx, a: RoofParapet):
+    r = ctx.row(a.id, "roof")
+    p = r["params"]
+    if "parapet" not in p:
+        return {"id": a.id, "parapet": None}
+    pcs = K.roof_parapet_pieces(p)
+    per = {}
+    for lb, _kd, q, _zb, _zt in pcs:
+        i = int(lb.split(":")[1])
+        d = per.setdefault(i, {"edge": i, "pieces": 0, "length": 0.0})
+        d["pieces"] += 1
+        d["length"] += sqrt((q[2][0] - q[1][0]) ** 2 + (q[2][1] - q[1][1]) ** 2)
+    n = len(p["boundary"])
+    edges = []
+    for i in sorted(per):
+        e = dict(per[i], length=round(per[i]["length"], 3))
+        if p.get("cw_input"):
+            e["input_edge"] = stored_edge(i, n)
+        edges.append(e)
+    return {"id": a.id, "parapet": dict(p["parapet"]), "edges": edges, "total": RPR.summary(pcs)}
+
+
+DrainPt = Annotated[list[Annotated[float, Field(ge=-1e7, le=1e7, allow_inf_nan=False)]], Field(min_length=2, max_length=2, description="[x,y] mm")]
+
+
+class _Fall(A):
+    dir: C.Num = Field(description="물이 흐르는 방향 도(+x 가 0, 반시계)")
+    pct: Pos = Field(le=K.ROOF_FLAT_FALL_MAX, description=f"물매 %(0 초과 {K.ROOF_FLAT_FALL_MAX:g} 이하)")
+
+
+class RoofDrainageSet(A):
+    forbid_null = True
+    id: Id
+    fall: _Fall | None = Field(None, description="배수 물매(상부면 기울기 화살표): 윗면이 dir 방향으로 pct % 기운 평면 하나가 된다. 처마 윤곽의 가장 낮은 점이 레벨 + base_offset")
+    drains: Annotated[list[DrainPt], Field(min_length=1, max_length=K.ROOF_DRAINS_MAX)] | None = Field(None, description="배수구(roof drain) 위치 [[x,y],...](전체 교체). 지붕(처마 윤곽) 안쪽이고 파라펫 밖이어야 한다")
+    drain_diameter: Pos | None = Field(None, le=K.ROOF_DRAIN_D_MAX, description=f"배수구 지름 mm(기본 {K.ROOF_DRAIN_D_DEFAULT:g}). 배수구가 있을 때만")
+    clear: Annotated[list[Literal["fall", "drains"]], Field(max_length=2)] | None = Field(None, description="뗄 것(fall = 물매 0 으로 되돌림, drains = 배수구 모두·지름도)")
+
+    @model_validator(mode="after")
+    def _any(self):
+        if all(getattr(self, k) is None for k in ("fall", "drains", "drain_diameter", "clear")):
+            raise ValueError("바꿀 것이 없다(fall·drains·drain_diameter 를 주거나 clear 로 뗀다)")
+        for k in self.clear or ():
+            if getattr(self, k) is not None or (k == "drains" and self.drain_diameter is not None):
+                raise ValueError(f"{k} 를 주면서 clear 에 넣을 수 없다")
+        return self
+
+
+@command("roof.drainage.set", kind="mutation", risk="write", group="model.roof",
+         summary="평지붕의 배수를 정한다: 배수 물매(fall = 상부면 기울기 화살표, 윗면이 한 방향으로 기운 평면)와 배수구(roof drain) 점들. 물매·배수구를 주지 않은 평지붕은 물매 0 그대로. "
+                 "IFC 는 배수구마다 IfcRoof 에 집합한 IfcWasteTerminal(ROOFDRAIN)",
+         args=RoofDrainageSet, since="0.24",
+         examples=[{"id": F.RF1, "fall": {"dir": 0, "pct": 2}, "drains": [[5000, 2000]], "drain_diameter": 110}, {"id": F.RF1, "clear": ["fall"]}])
+def roof_drainage_set(ctx, a: RoofDrainageSet):
+    r = ctx.authored(a.id, "roof", what="배수 지정")
+    p = dict(r["params"])
+    if p["form"] != "flat":
+        raise DobimError("CONSTRAINT", "배수 물매·배수구는 평지붕(form=flat)에만 둘 수 있다", path="/id", hint="roof.create form=flat 으로 평지붕을 만드세요")
+    if a.fall is not None:
+        p["fall"] = {"dir": float(a.fall.dir), "pct": float(a.fall.pct)}
+    if a.drains is not None:
+        p["drains"] = [[float(x), float(y)] for x, y in a.drains]
+    if a.drain_diameter is not None:
+        if "drains" not in p:
+            raise DobimError("CONSTRAINT", "배수구가 없는 지붕에 drain_diameter 만 줄 수 없다", path="/drain_diameter")
+        p["drain_diameter"] = float(a.drain_diameter)
+    for k in a.clear or ():
+        p.pop(k, None)
+        if k == "drains":
+            p.pop("drain_diameter", None)
+    if p == r["params"]:
+        return {"id": a.id, "changed": False}
+    _write_roof(ctx, a.id, p, "/id")
+    return {"id": a.id, "changed": True, "fall": p.get("fall"), "drains": len(p.get("drains", ())), "drain_diameter": p.get("drain_diameter", K.ROOF_DRAIN_D_DEFAULT) if "drains" in p else None}

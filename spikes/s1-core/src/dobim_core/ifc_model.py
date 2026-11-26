@@ -156,6 +156,7 @@ RAILTYPE_MARK = "DoBIM railing type"   # 난간 유형 투영(W2 열세 번째 P
 BEAMTYPE_MARK = "DoBIM beam type"   # 보 유형 투영(W2 열다섯 번째 PR)의 표식(벽·지붕·난간 유형과 같은 쓰임)
 ROOFTYPE_MARK = "DoBIM roof type"   # 지붕 유형 투영(W2 여덟 번째 PR)의 표식(벽 유형과 같은 쓰임)
 # 처마 부속(W2 여덟 번째 PR, ARC-20)의 IFC 클래스·PredefinedType·ObjectType. IFC4 IfcCoveringTypeEnum 에 FASCIA·SOFFIT 가 없어 USERDEFINED + ObjectType 로 적는다
+DRAIN_RIM = 20.0   # 평지붕 배수구 몸체가 지붕 윗면 위로 올라오는 높이 mm(드레인 몸체 테두리)
 EAVE_IFC = {"fascia": ("IfcCovering", {"PredefinedType": "USERDEFINED", "ObjectType": "FASCIA"}),
             "soffit": ("IfcCovering", {"PredefinedType": "USERDEFINED", "ObjectType": "SOFFIT"}),
             "gutter": ("IfcPipeSegment", {"PredefinedType": "GUTTER"})}
@@ -2342,6 +2343,16 @@ class IfcModel:
                     label = name[cut + 1:]
                     if label not in have and p.GlobalId == part_guid(eid, label):
                         have[label] = p
+        if kind == "roof":   # 평지붕 파라펫·배수구(W2 스물두 번째 PR): 이름 끝의 parapet:<...>·drain:<...> 를 읽고 GlobalId(part_guid)로 확인한다
+            for r in getattr(e, "IsDecomposedBy", None) or ():
+                for p in r.RelatedObjects:
+                    name = p.Name if isinstance(p.Name, str) else ""
+                    cut = max(name.rfind("-parapet:"), name.rfind("-drain:"))
+                    if cut < 0:
+                        continue
+                    label = name[cut + 1:]
+                    if label not in have and p.GlobalId == part_guid(eid, label):
+                        have[label] = p
         if kind == "roof":   # 지붕 개구(W2 열네 번째 PR): 면 IfcSlab 을 뚫는 개구의 이름 끝 void:<개구 id>:<면 번호> 를 읽고 GlobalId 로 확인한다
             for flb in sorted(lb for lb in have if lb.startswith("face:")):
                 for r in getattr(have[flb], "HasOpenings", None) or ():
@@ -2438,7 +2449,8 @@ class IfcModel:
         if self.kinds.get(eid) == "curtwall":   # 커튼월 부속(W2 ARC-22)은 종류마다 제 재료를 갖는다(_cw_rels)
             return
         f = self.f
-        labeled = [(lb, p) for lb, p in sorted((self.parts.get(eid) or {}).items()) if not p.is_a("IfcFeatureElementSubtraction")]
+        labeled = [(lb, p) for lb, p in sorted((self.parts.get(eid) or {}).items())
+                   if not p.is_a("IfcFeatureElementSubtraction") and not (self.kinds.get(eid) == "roof" and lb.startswith(("parapet:", "drain:")))]   # 평지붕 파라펫·배수구(W2 스물두 번째 PR)는 지붕 층 구성을 따르지 않는다
         host = self.ents.get(eid)
         m = ue.get_material(host, should_inherit=False) if host is not None else None
         want = m if (m is not None and m.is_a("IfcMaterial")) else None
@@ -2743,6 +2755,13 @@ class IfcModel:
         pos = f.createIfcAxis2Placement3D(f.createIfcCartesianPoint([0.0, 0.0, float(z0)]), None, None)
         return f.createIfcExtrudedAreaSolid(prof, pos, f.createIfcDirection([0.0, 0.0, 1.0]), float(depth))
 
+    def _drain_solid(self, x, y, ztop, thickness, d):
+        """평지붕 배수구의 몸체(W2 스물두 번째 PR): 지름 d 의 수직 원기둥. 지붕 판 아랫면(윗면 - 두께)에서 윗면 위 DRAIN_RIM 까지."""
+        f = self.f
+        prof = f.createIfcCircleProfileDef("AREA", None, None, float(d) / 2.0)
+        pos = f.createIfcAxis2Placement3D(f.createIfcCartesianPoint([float(x), float(y), float(ztop - thickness)]), None, None)
+        return f.createIfcExtrudedAreaSolid(prof, pos, f.createIfcDirection([0.0, 0.0, 1.0]), float(thickness + DRAIN_RIM))
+
     def _sloped_solid(self, face, thickness):
         """경사 지붕 면 하나(볼록 다각형, 3D 점)의 솔리드: 면의 평면을 프로필로 두고 수직 아래로 thickness 만큼 압출한다(압출 방향이 평면에 비스듬하다)."""
         f = self.f
@@ -2814,6 +2833,8 @@ class IfcModel:
             p["overhangs"] = list(spec["overhangs"])
         if "bulges" in spec:   # 평지붕 원호 변(W2 열여섯 번째 PR)
             p["bulges"] = list(spec["bulges"])
+        if "fall" in spec:   # 평지붕 배수 물매(W2 스물두 번째 PR): 면이 기울어진다
+            p["fall"] = {"dir": spec["fall"][0], "pct": spec["fall"][1]}
         if "axis" in spec:   # 압출 지붕(W2 여덟 번째 PR)
             p["axis"] = list(spec["axis"])
             p["profile"] = [list(q) for q in spec["profile"]]
@@ -2824,6 +2845,12 @@ class IfcModel:
             cls, attrs = EAVE_IFC[pc[1]]
             wanted[f"eave:{pc[0]}"] = {"cls": cls, "name": f"{spec['name']}-eave:{pc[0]}", "rel": "aggregate", "attrs": attrs, "reptype": "Brep",
                                        "solid": (lambda pc=pc: self._brep(*RE.piece_mesh(pc)))}
+        for pc in spec.get("parapet", ()):   # 평지붕 파라펫(W2 스물두 번째 PR): 조각마다 IfcWall(PARAPET), 닫힌 육면체 IfcFacetedBrep. 이름표 parapet:<외곽 변>:<윤곽 변>
+            wanted[pc[0]] = {"cls": "IfcWall", "name": f"{spec['name']}-{pc[0]}", "rel": "aggregate", "attrs": {"PredefinedType": "PARAPET"}, "reptype": "Brep",
+                             "solid": (lambda pc=pc: self._brep(*RE.piece_mesh(pc)))}
+        for i, (dx, dy, dz) in enumerate(spec.get("drains", ())):   # 평지붕 배수구(W2 스물두 번째 PR): IfcWasteTerminal(ROOFDRAIN) 원기둥(지붕 판 아랫면 ~ 윗면 위 DRAIN_RIM)
+            wanted[f"drain:{i}"] = {"cls": "IfcWasteTerminal", "name": f"{spec['name']}-drain:{i}", "rel": "aggregate", "attrs": {"PredefinedType": "ROOFDRAIN"},
+                                    "solid": (lambda dx=dx, dy=dy, dz=dz: self._drain_solid(dx, dy, dz, spec["thickness"], spec["drain_d"]))}
         if spec.get("voids"):   # 지붕 개구(W2 열네 번째 PR): 뚫는 면 IfcSlab 마다 IfcOpeningElement(이름표 void:<개구 id>:<면 번호>)
             t = spec["thickness"]
             vz0 = gm["zlow"] - t - VOID_MARGIN
