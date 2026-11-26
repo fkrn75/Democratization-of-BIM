@@ -583,6 +583,8 @@ class IfcModel:
         self._lt_scanned = False
         self._bt_sig: dict[str, tuple] = {}   # 보 유형 id -> 마지막으로 맞춘 (이름,) (W2 열다섯 번째 PR)
         self._bt_scanned = False
+        self._mt_sig: dict[str, tuple] = {}   # 가새가 쓰는 보 유형 id -> 마지막으로 맞춘 (이름, 재료) (IfcMemberType, W2 스물네 번째 PR)
+        self._mt_scanned = False
         self._grid_ent = None                 # 투영한 IfcGrid(W2 열 번째 PR, ARC-38) 또는 None
         self._grid_sig: str | None = None     # 그 IfcGrid 의 명세 서명(Description 끝에 적는다: 같으면 다시 쓰지 않는다)
         self._grid_scanned = False            # 가져온 파일의 투영 IfcGrid 를 한 번 훑었는가
@@ -1371,7 +1373,7 @@ class IfcModel:
     def project(self, eid: str, spec: dict) -> None:
         kind = spec["kind"]
         {"level": self._project_level, "wall": self._project_wall, "door": self._project_door, "slab": self._project_slab, "stair": self._project_stair, "space": self._project_space, "railing": self._project_railing, "elevator": self._project_elevator, "roof": self._project_roof,
-         "site": self._project_site, "solid": self._project_solid, "curtwall": self._project_curtwall, "stackwall": self._project_stackwall, "beam": self._project_beam, "ftype": lambda i, sp: fp.project_type(self, i, sp), "finst": lambda i, sp: fp.project_inst(self, i, sp)}[kind](eid, spec)
+         "site": self._project_site, "solid": self._project_solid, "curtwall": self._project_curtwall, "stackwall": self._project_stackwall, "beam": self._project_beam, "beamsys": self._project_beamsys, "ftype": lambda i, sp: fp.project_type(self, i, sp), "finst": lambda i, sp: fp.project_inst(self, i, sp)}[kind](eid, spec)
         # 의도를 IFC 에도 복제한다. 정본은 의도 저장소이고 이 속성셋은 매번 덮어쓴다.
         e = self.ents[eid]
         text = json.dumps(spec["intent"], sort_keys=True, separators=(",", ":"))
@@ -1414,6 +1416,27 @@ class IfcModel:
     def _project_stackwall(self, eid, spec):
         e = self.ents[eid]
         e.Name = spec["name"]
+        self._contain(eid, spec["level"])
+        lp = self.ents[spec["level"]].ObjectPlacement
+        if e.ObjectPlacement is None:
+            self._place(e, lp, (0.0, 0.0, 0.0), (1.0, 0.0, 0.0))
+        elif e.ObjectPlacement.PlacementRelTo != lp:
+            e.ObjectPlacement.PlacementRelTo = lp
+        self._stack_rel(eid, spec["parts"])
+
+    # ------------------------------------------------------------ 보 시스템(W2 스물네 번째 PR, STR-02 후속)
+    # 보 시스템 = 형상 없는 IfcElementAssembly(ObjectType BEAM_SYSTEM, PredefinedType USERDEFINED, 층에 담긴다) + 자식 IfcBeam 들의 IfcRelAggregates(GlobalId =
+    # part_guid(시스템, "agg"), 대상은 보 순서). 근거: IFC 의 요소 조립(IfcElementAssembly)은 요소를 모은 하나의 요소이고 분해 관계 IfcRelAggregates 로 부분을 단다.
+    # IFC4 의 IfcElementAssemblyTypeEnum 에는 보 시스템 값이 없어 USERDEFINED + ObjectType 으로 알린다. 부분 보는 층에 담지 않는다(집합의 부분은 전체만 층에 담긴다)
+    def _project_beamsys(self, eid, spec):
+        e = self.ents[eid]
+        e.Name = spec["name"]
+        if hasattr(e, "ObjectType") and e.ObjectType != "BEAM_SYSTEM":
+            e.ObjectType = "BEAM_SYSTEM"
+        if hasattr(e, "PredefinedType") and e.PredefinedType != "USERDEFINED":
+            e.PredefinedType = "USERDEFINED"
+        if hasattr(e, "AssemblyPlace") and e.AssemblyPlace != "NOTDEFINED":
+            e.AssemblyPlace = "NOTDEFINED"
         self._contain(eid, spec["level"])
         lp = self.ents[spec["level"]].ObjectPlacement
         if e.ObjectPlacement is None:
@@ -1605,41 +1628,47 @@ class IfcModel:
     # ------------------------------------------------------------ 보 유형(W2 열다섯 번째 PR, STR-02): 난간 유형과 같은 투영
     # IfcBeamType(GlobalId = part_guid(유형 id, "beamtype"), PredefinedType BEAM, Tag = 유형 id) + 그 유형의 보(IfcBeam)들을 묶는
     # IfcRelDefinesByType(part_guid(유형, "beamtype:rel")). IFC2X3 에도 IfcBeamType(BEAM)이 있어 그대로 나간다. 단면은 보마다의 몸체 프로필이 담는다
-    def sync_beam_types(self, m: dict) -> None:
-        """m = {유형 id: (이름, 보 id 들)} 에 IFC 를 맞춘다. 유형이 없으면 아무것도 하지 않는다."""
-        if self.base_mode and not self._bt_scanned:
-            self._bt_scanned = True
-            self._wt_scan_base({part_guid(t, "beamtype") for t in m}, "IfcBeamType", "beamtype", BEAMTYPE_MARK)
-        if not m and not self._bt_sig:
+    def sync_beam_types(self, m: dict, braces: dict | None = None) -> None:
+        """m = {유형 id: (이름, 보 id 들, 재료 묶음)} 에 IFC 를 맞춘다. 유형이 없으면 아무것도 하지 않는다.
+        braces(W2 스물네 번째 PR) = 가새가 쓰는 유형의 같은 표: IfcMemberType(PredefinedType BRACE, GlobalId = part_guid(유형, "beamtype:member"))로 묶는다
+        (IFC 는 IfcMember 가 IfcBeamType 을 쓰는 것을 허용하지 않는다). 가새가 없으면 이전과 같다."""
+        self._sync_btypes(m, "IfcBeamType", "beamtype", "BEAM", self._bt_sig, "_bt_scanned")
+        self._sync_btypes(braces or {}, "IfcMemberType", "beamtype:member", "BRACE", self._mt_sig, "_mt_scanned")
+
+    def _sync_btypes(self, m: dict, cls: str, sfx: str, pre: str, sigs: dict, scanned_attr: str) -> None:
+        if self.base_mode and not getattr(self, scanned_attr):
+            setattr(self, scanned_attr, True)
+            self._wt_scan_base({part_guid(t, sfx) for t in m}, cls, sfx, BEAMTYPE_MARK)
+        if not m and not sigs:
             return
-        for tid in sorted(set(self._bt_sig) - set(m)):
-            t = self._by_guid(part_guid(tid, "beamtype"))
+        for tid in sorted(set(sigs) - set(m)):
+            t = self._by_guid(part_guid(tid, sfx))
             if t is not None:
                 self._wt_drop_ent(t, BEAMTYPE_MARK)
-            self._bt_sig.pop(tid, None)
+            sigs.pop(tid, None)
         for tid in sorted(m):
             name, beams, mat = m[tid]
-            t = self._by_guid(part_guid(tid, "beamtype"))
+            t = self._by_guid(part_guid(tid, sfx))
             if t is None:
-                t = self.f.create_entity("IfcBeamType", GlobalId=part_guid(tid, "beamtype"), Name=name, Tag=tid, PredefinedType="BEAM")
-                self._bt_sig.pop(tid, None)
-            if self._bt_sig.get(tid) != (name, mat):
+                t = self.f.create_entity(cls, GlobalId=part_guid(tid, sfx), Name=name, Tag=tid, PredefinedType=pre)
+                sigs.pop(tid, None)
+            if sigs.get(tid) != (name, mat):
                 if t.Tag != tid:
                     t.Tag = tid
                 if t.Name != name:
                     t.Name = name
-                if t.PredefinedType != "BEAM":
-                    t.PredefinedType = "BEAM"
-                self._bt_material(tid, t, mat)
-                self._bt_sig[tid] = (name, mat)
-            self._wt_rel(tid, t, beams, "beamtype", BEAMTYPE_MARK)
+                if t.PredefinedType != pre:
+                    t.PredefinedType = pre
+                self._bt_material(tid, t, mat, sfx)
+                sigs[tid] = (name, mat)
+            self._wt_rel(tid, t, beams, sfx, BEAMTYPE_MARK)
 
-    def _bt_material(self, tid: str, t, mat) -> None:
+    def _bt_material(self, tid: str, t, mat, sfx: str = "beamtype") -> None:
         """보 유형 재료(W2 열여덟 번째 PR): IfcBeamType 에 IfcMaterialProfileSet(재료 + 단면 프로필, Description = BEAMTYPE_MARK)을
         IfcRelAssociatesMaterial(part_guid(유형, "beamtype:mat"))로 붙인다. mat = (재료, 단면 표기, 단면 (키, 값) 들) 또는 None(재료 없음 = 붙이지 않는다).
         보마다의 사용(IfcMaterialProfileSetUsage)은 보 투영이 소유한다(벽 유형 층 집합과 벽의 층 사용처럼 따로 둔다)."""
         f = self.f
-        mr = self._by_guid(part_guid(tid, "beamtype:mat"))
+        mr = self._by_guid(part_guid(tid, f"{sfx}:mat"))
         cur = mr.RelatingMaterial if mr is not None else None
         if mat is not None:
             sc = dict(mat[2])
@@ -1652,7 +1681,7 @@ class IfcModel:
         if mat is None:
             return
         ps = self._profile_set(mat[0], mat[1], dict(mat[2]), BEAMTYPE_MARK)
-        f.create_entity("IfcRelAssociatesMaterial", GlobalId=part_guid(tid, "beamtype:mat"), RelatedObjects=[t], RelatingMaterial=ps)
+        f.create_entity("IfcRelAssociatesMaterial", GlobalId=part_guid(tid, f"{sfx}:mat"), RelatedObjects=[t], RelatingMaterial=ps)
 
     # ------------------------------------------------------------ 지붕 유형(W2 여덟 번째 PR): 벽 유형과 같은 투영
     # IfcRoofType(GlobalId = part_guid(유형 id, "rooftype"), PredefinedType NOTDEFINED, ElementType = 기능, Tag = 유형 id) + 유형 IfcMaterialLayerSet
@@ -2172,9 +2201,13 @@ class IfcModel:
         f = self.f
         e = self.ents[eid]
         e.Name = spec["name"]
-        if hasattr(e, "PredefinedType") and e.PredefinedType != "BEAM":
-            e.PredefinedType = "BEAM"
-        self._contain(eid, spec["level"])
+        pre = "BRACE" if spec.get("brace") else "BEAM"   # 가새(W2 스물네 번째 PR)는 IfcMember(BRACE). IFC2X3 의 IfcMember 에는 PredefinedType 이 없다
+        if hasattr(e, "PredefinedType") and e.PredefinedType != pre:
+            e.PredefinedType = pre
+        if "part_of" in spec:   # 보 시스템 자식(W2 스물네 번째 PR): 층이 아니라 보 시스템(전체)에 집합된다. 층에는 전체만 담긴다
+            self._uncontain(eid)
+        else:
+            self._contain(eid, spec["level"])
         self._place(e, self.ents[spec["level"]].ObjectPlacement, spec["origin"], (spec["xdir"][0], spec["xdir"][1], 0.0))
         sc = dict(spec["section"])
         arc = spec.get("arc")

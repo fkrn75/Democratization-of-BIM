@@ -1312,6 +1312,14 @@ def element_delete(ctx, a: IdArg):
                     gone += element_delete(ctx, IdArg(id=w))["deleted"]
         finally:
             ctx.stack_ok = False
+    elif r["kind"] == "beamsys":   # 보 시스템(W2 스물네 번째 PR): 자식 보를 함께 지운다(스택 벽과 같다)
+        ctx.stack_ok = True
+        try:
+            for b in list(r["params"]["children"]):
+                if b in ctx.st.el:
+                    gone += element_delete(ctx, IdArg(id=b))["deleted"]
+        finally:
+            ctx.stack_ok = False
     elif r["kind"] == "wall":
         xcut = _xcut_refs(ctx, a.id)
         if xcut:   # 함께 자르는 벽(25단계): 다른 벽의 창이 이 벽을 also_cuts 로 가리킨다
