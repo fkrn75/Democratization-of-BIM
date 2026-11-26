@@ -17,6 +17,10 @@ IfcRectangleProfileDef·IfcIShapeProfileDef 돌출, IfcBeamType + IfcRelDefinesB
 
 4부(W2 스물한 번째 PR): 원호 통심선 일괄 배치(beam.grid 가 원호 통심선을 호를 따라 곡선 보로 놓는다: 다른 통심선과의 교점 사이 칸마다 bulge 보 하나,
 직선 통심선도 원호와의 교점에서 나눈다). 보 태그(annot.tag.create·all 의 대상 beam)와 반사 천장 평면의 보는 annot·drawing 에 있다.
+
+5부(W2 스물네 번째 PR): 보 시스템 beamsys.create / set / move / ungroup / list(닫힌 경계 안에 방향·간격(고정 간격 또는 개수)·정렬로 평행한 작은 보를 채운다.
+시스템 행이 자식 보(보통 보 행, params.bsys)를 소유하고, 경계·간격을 바꾸면 자식이 다시 만들어진다: 스택 벽의 부분 벽과 같은 짜임), 가새 brace.create / set
+(두 점(높이 포함) 사이 경사 구조 부재: 보 행에 brace 표식을 둔 것이라 단면·접합·도면·태그·복사·대칭이 보와 같고 IFC 만 IfcMember(BRACE)다).
 """
 from __future__ import annotations
 
@@ -59,6 +63,11 @@ def type_row(ctx, tid: str, path: str = "/id") -> dict:
 
 def beams_of(ctx, tid: str) -> list:
     return sorted(b for b in ctx.rels_in("of_type", tid) if ctx.st.el[b]["kind"] == "beam")
+
+
+def systems_of(ctx, tid: str) -> list:
+    """보 유형 tid 를 쓰는 보 시스템(W2 스물네 번째 PR)."""
+    return sorted(s for s in ctx.st.by_kind.get("beamsys", ()) if ctx.st.el[s]["params"]["btype"] == tid)
 
 
 def _name_taken(ctx, name: str, skip: str | None = None) -> None:
@@ -265,6 +274,10 @@ def beamtype_delete(ctx, a: BeamTypeDelete):
     if beams and not a.detach:
         raise DobimError("CONSTRAINT", f"보 {len(beams)}개가 이 유형을 쓴다", path="/id", hint="detach: true 로 보에서 떼고 지우거나 beam.type.set 으로 바꾸세요",
                          details={"beams": beams[:20]})
+    used = systems_of(ctx, a.id)
+    if used:   # 보 시스템(W2 스물네 번째 PR)은 유형으로 자식을 다시 만든다: 떼어 낼 수 없다
+        raise DobimError("CONSTRAINT", f"보 시스템 {len(used)}개가 이 유형을 쓴다", path="/id", hint="beamsys.set 으로 시스템의 유형을 바꾸거나 보 시스템을 지우세요",
+                         details={"systems": used[:20]})
     for bid in beams:
         detach(ctx, bid)
     ctx.put_el(a.id, None)
@@ -317,7 +330,7 @@ class BeamCreate(A):
 
 
 def _beam_params(name, start, end, offset, anchor, roll, cutback, tid, sc, end_offset=None, material=None, bulge=None, vertical_ends=False, skew_cut=False,
-                 gap=0.0) -> dict:
+                 gap=0.0, brace=False, bsys=None) -> dict:
     p = {"name": name, "start": [float(start[0]), float(start[1])], "end": [float(end[0]), float(end[1])], "offset": float(offset),
          "anchor": anchor, "section": dict(sc)}
     if tid is not None:
@@ -338,6 +351,10 @@ def _beam_params(name, start, end, offset, anchor, roll, cutback, tid, sc, end_o
         p["skew_cut"] = True
     if gap:
         p["gap"] = float(gap)
+    if brace:   # 가새(W2 스물네 번째 PR): IFC 는 IfcMember(BRACE)
+        p["brace"] = True
+    if bsys is not None:   # 보 시스템의 자식(W2 스물네 번째 PR): 시스템이 정하는 파생 행
+        p["bsys"] = bsys
     return p
 
 
@@ -403,7 +420,8 @@ def beam_set(ctx, a: BeamSet):
                      a.roll if a.roll is not None else p.get("roll", 0.0), a.cutback if a.cutback is not None else p.get("cutback", True), p.get("btype"), p["section"],
                      eo, p.get("material"), a.bulge if a.bulge is not None else p.get("bulge"),
                      a.vertical_ends if a.vertical_ends is not None else p.get("vertical_ends", False),
-                     a.skew_cut if a.skew_cut is not None else p.get("skew_cut", False), a.gap if a.gap is not None else p.get("gap", 0.0))
+                     a.skew_cut if a.skew_cut is not None else p.get("skew_cut", False), a.gap if a.gap is not None else p.get("gap", 0.0),
+                     p.get("brace", False), p.get("bsys"))
     _write_beam(ctx, a.id, q, "/id")
     if a.level is not None:
         ctx.authored(a.level, "level", what="레벨에 보를 옮기는 것")
@@ -689,7 +707,7 @@ def beam_list(ctx, a: BeamList):
         if "bulge" in p:   # 곡선 보(W2 열아홉 번째 PR): 볼록도·반지름·중심각(도). length 는 호 길이
             ai = BM.arc_info(p)
             item.update(bulge=p["bulge"], radius=round(ai[2], 3), sweep_deg=round(degrees(ai[5]), 3))
-        for k in ("vertical_ends", "skew_cut", "gap"):
+        for k in ("vertical_ends", "skew_cut", "gap", "brace", "bsys"):   # 가새 표식·보 시스템 자식(W2 스물네 번째 PR)
             if k in p:
                 item[k] = p[k]
         if "material" in p:
@@ -705,3 +723,381 @@ def beam_list(ctx, a: BeamList):
     items, cut = C._fit(rows, cursor_of=lambda k: C._enc_cursor(ids[start + k]))
     more = start + len(items) < len(ids)
     return {"items": items, "page": C._page(C._enc_cursor(ids[start + len(items) - 1]) if more and items else None, len(ids), cut)}
+
+
+# ---------------------------------------------------------------- 보 시스템(W2 스물네 번째 PR)
+Spacing = Annotated[float, Field(ge=BM.SYS_SPACING_MIN, le=BM.SYS_SPACING_MAX, allow_inf_nan=False)]
+Count = Annotated[int, Field(ge=1, le=BM.SYS_COUNT_MAX)]
+Angle = Annotated[float, Field(ge=0.0, lt=180.0, allow_inf_nan=False)]
+SysBoundary = Annotated[list[Pt], Field(min_length=3, max_length=BM.SYS_BOUNDARY_MAX,
+                                        description="경계 다각형 꼭짓점 [[x,y],...] mm(레벨 좌표, 3~256개). 시계 방향으로 주면 반시계로 저장한다. 자기 교차 금지")]
+FromIds = Annotated[list[Id], Field(min_length=3, max_length=200, description="경계를 이루는 보·벽 id 들(축의 끝점끼리 이어져 하나의 닫힌 고리여야 한다)")]
+ChildIds = Annotated[list[Id], Field(max_length=BM.SYS_COUNT_MAX)]
+SysAlign = Literal["center", "start", "end"]
+
+
+def _sys_boundary(ctx, boundary, from_elements) -> list:
+    """직접 준 다각형 또는 보·벽 축이 이루는 닫힌 고리 -> 반시계 꼭짓점 목록(float 쌍). 안 되면 CONSTRAINT."""
+    if (boundary is None) == (from_elements is None):
+        raise DobimError("CONSTRAINT", "boundary 와 from_elements 중 정확히 하나를 준다", path="/boundary")
+    if boundary is not None:
+        pts = [[float(x), float(y)] for x, y in boundary]
+    else:
+        st = ctx.st
+        if len(set(from_elements)) != len(from_elements):
+            raise DobimError("CONSTRAINT", "from_elements 에 같은 id 가 두 번 있다", path="/from_elements")
+        segs = []
+        for i, eid in enumerate(from_elements):
+            r = st.el.get(eid)
+            if r is None or r["kind"] not in ("beam", "wall"):
+                raise DobimError("NOT_FOUND", f"경계로 쓸 보·벽을 찾을 수 없다: {eid}", path=f"/from_elements/{i}")
+            p = r["params"]
+            if r["kind"] == "beam":
+                segs.append(((p["start"][0], p["start"][1]), (p["end"][0], p["end"][1])))
+                if "bulge" in p:
+                    ctx.warn(f"곡선 보 {eid} 는 현(두 끝점)을 경계로 쓴다")
+            else:
+                segs.append(((p["axis"][0], p["axis"][1]), (p["axis"][2], p["axis"][3])))
+                if "arc" in p:
+                    ctx.warn(f"곡선 벽 {eid} 는 현(두 끝점)을 경계로 쓴다")
+        loop = BM.loop_from_segments(segs)
+        if loop is None:
+            raise DobimError("CONSTRAINT", "고른 보·벽의 축이 하나의 닫힌 고리를 이루지 않는다(끝점이 1 mm 안에서 두 개씩 만나야 한다)", path="/from_elements",
+                             hint="boundary 로 다각형을 직접 줄 수도 있다")
+        pts = [[float(x), float(y)] for x, y in loop]
+    why = K.polygon_problem(pts)
+    if why:
+        raise DobimError("CONSTRAINT", f"보 시스템 경계가 올바르지 않다: {why}", path="/boundary")
+    return pts if K.polygon_area2(pts) > 0 else pts[::-1]
+
+
+def _sys_params(name, boundary, angle, spacing, count, align, tid, offset, anchor, children) -> dict:
+    p = {"name": name, "boundary": boundary, "angle": float(angle), "align": align, "btype": tid, "offset": float(offset), "anchor": anchor,
+         "children": list(children)}
+    if spacing is not None:
+        p["spacing"] = float(spacing)
+    else:
+        p["count"] = int(count)
+    why = K.row_params_error("beamsys", p)
+    if why:
+        raise DobimError("CONSTRAINT", f"보 시스템이 올바르지 않다: {why}", path="/boundary")
+    return p
+
+
+def _sys_child(sid: str, sp: dict, tp: dict, i: int, seg) -> dict:
+    """보 시스템 sp 의 i 번째 자식 보 params(시스템이 정하는 파생 행: 기둥·주 보 끝 자르기는 보 규칙 그대로)."""
+    q = _beam_params(f"{sp['name']}-{i + 1}", seg[0], seg[1], sp["offset"], sp["anchor"], 0.0, True, sp["btype"], tp["section"], None, tp.get("material"), bsys=sid)
+    why = K.row_params_error("beam", q)
+    if why:
+        raise DobimError("CONSTRAINT", f"보 시스템의 작은 보 {i + 1} 이 올바르지 않다: {why}", path="/boundary")
+    return q
+
+
+def sys_regenerate(ctx, sid: str, sp: dict, level: str, new_ids: list | None = None) -> list:
+    """보 시스템 sid 의 자식 보를 sp 에 맞춰 만들거나 고치거나 지운다. 자식 id 는 순서대로 이어받는다. 돌려주는 것: 자식 id 목록(보 순서)."""
+    tp = type_row(ctx, sp["btype"], "/type")["params"]
+    segs = BM.system_segments(sp)
+    if len(segs) > BM.SYS_COUNT_MAX:
+        raise DobimError("CONSTRAINT", f"작은 보가 {BM.SYS_COUNT_MAX}개를 넘는다(간격을 넓히거나 경계를 나누세요)", path="/spacing")
+    if not segs:
+        raise DobimError("CONSTRAINT", "경계 안에 놓을 작은 보가 하나도 없다(간격이 경계 폭보다 넓거나 경계가 너무 좁다)", path="/spacing")
+    have = list(sp["children"])
+    want_n = len(segs)
+    kids = have[:want_n]
+    pool = list(new_ids or ())
+    while len(kids) < want_n:
+        nid = pool.pop(0) if pool else ctx.new_id("beam")
+        if nid in ctx.st.el or nid in kids or C._in_split_history(ctx, nid):
+            raise DobimError("CONSTRAINT", f"이미 있는 id 다: {nid}", path="/child_ids")
+        kids.append(nid)
+    for b in have[want_n:]:   # 줄어든 자식: 지운다(자식 보를 대상으로 한 태그는 고아로 남는다: 조용히 지우지 않는 기존 규칙)
+        if b in ctx.st.el:
+            C._delete_one(ctx, b)
+    for i, (b, seg) in enumerate(zip(kids, segs)):
+        q = _sys_child(sid, sp, tp, i, seg)
+        r = ctx.st.el.get(b)
+        if r is None:
+            ctx.put_el(b, row("beam", "IfcBeam", "beam.basic", q))
+            ctx.rel("on_level", b, level, True)
+            ctx.rel("of_type", b, sp["btype"], True)
+            continue
+        old = r["params"]
+        if q != old:
+            ctx.put_el(b, dict(r, params=q))
+        if old.get("btype") != sp["btype"]:
+            if old.get("btype") is not None:
+                ctx.rel("of_type", b, old["btype"], False)
+            ctx.rel("of_type", b, sp["btype"], True)
+        cur = ctx.rels_out("on_level", b)
+        if cur != [level]:
+            for o in cur:
+                ctx.rel("on_level", b, o, False)
+            ctx.rel("on_level", b, level, True)
+    return kids
+
+
+class SysCommon(A):
+    boundary: SysBoundary | None = None
+    from_elements: FromIds | None = Field(None, description="경계를 보·벽 축으로 준다: 축의 끝점끼리 하나의 닫힌 고리를 이루는 보·벽 id(boundary 와 함께 줄 수 없다). "
+                                          "그 순간의 축을 경계 다각형으로 옮겨 적는다(이후 그 보·벽을 옮겨도 따라가지 않는다)")
+    angle: Angle | None = Field(None, description="작은 보가 놓이는 평면 방향(도, +x 에서 반시계, 0 이상 180 미만). 기본 0")
+    spacing: Spacing | None = Field(None, description="고정 간격 mm(count 와 함께 줄 수 없다). 정렬 기준에서 이 간격마다 보를 놓는다")
+    count: Count | None = Field(None, description="작은 보 개수(spacing 과 함께 줄 수 없다). 경계 폭을 개수 + 1 칸으로 같게 나눈 자리에 놓는다(정렬은 쓰지 않는다)")
+    align: SysAlign | None = Field(None, description="고정 간격의 정렬: center 가운데에서 대칭(기본), start 방향에 수직인 왼쪽 가장자리에서, end 오른쪽 가장자리에서. 모서리 자리에는 보를 놓지 않는다")
+    offset: Num | None = Field(None, ge=-BM.OFFSET_MAX, le=BM.OFFSET_MAX, description="기준선 높이 mm(레벨 기준). 기본 0")
+    anchor: Anchor | None = Field(None, description="기준선이 지나는 단면 자리(top 기본)")
+    name: Name | None = None
+
+
+class BeamSysCreate(SysCommon):
+    id: Id | None = None
+    level: Id = Field(description="놓는 레벨(기준선 높이 offset 의 기준)")
+    type: Id = Field(description="작은 보의 보 유형(beamtype.create)")
+    child_ids: ChildIds | None = Field(None, description="자식 보 id(보 순서). 비우면 자동")
+
+    @model_validator(mode="after")
+    def _one(self):
+        if (self.boundary is None) == (self.from_elements is None):
+            raise ValueError("boundary 와 from_elements 중 정확히 하나를 준다")
+        if (self.spacing is None) == (self.count is None):
+            raise ValueError("spacing(고정 간격)과 count(개수) 중 정확히 하나를 준다")
+        return self
+
+
+@command("beamsys.create", kind="mutation", risk="write", group="model.beam",
+         summary="보 시스템: 닫힌 경계(다각형 또는 보·벽 고리) 안에 방향·간격(고정 간격 또는 개수)·정렬로 평행한 작은 보를 채운다. 자식 보는 시스템이 소유하고 "
+                 "(경계·간격을 바꾸면 다시 만들어진다) 끝은 경계 보 옆면에서 보끼리 접합 규칙으로 잘린다. IFC 는 IfcElementAssembly 아래 IfcBeam",
+         args=BeamSysCreate, since="0.24",
+         examples=[{"id": F.BS1, "level": F.LV2, "type": F.BT1, "boundary": [[0, 0], [6000, 0], [6000, 4000], [0, 4000]], "angle": 0, "spacing": 1000, "align": "center"}])
+def beamsys_create(ctx, a: BeamSysCreate):
+    C._fresh_id(ctx, a, "beamsys")
+    ctx.authored(a.level, "level", what="레벨에 보 시스템을 추가하는 것")
+    type_row(ctx, a.type, "/type")
+    if a.child_ids is not None and (len(set(a.child_ids)) != len(a.child_ids) or a.id in a.child_ids):
+        raise DobimError("CONSTRAINT", "child_ids 는 서로 다른 id 로 준다", path="/child_ids")
+    name = a.name or f"BS-{a.id[-6:]}"
+    boundary = _sys_boundary(ctx, a.boundary, a.from_elements)
+    sp = _sys_params(name, boundary, a.angle if a.angle is not None else 0.0, a.spacing, a.count, a.align or "center", a.type,
+                     a.offset if a.offset is not None else 0.0, a.anchor or "top", [])
+    kids = sys_regenerate(ctx, a.id, sp, a.level, a.child_ids)
+    ctx.put_el(a.id, row("beamsys", "IfcElementAssembly", "beamsys.basic", dict(sp, children=kids)))
+    ctx.rel("on_level", a.id, a.level, True)
+    return {"id": a.id, "count": len(kids), "children": kids[:ANS_IDS]}
+
+
+class BeamSysSet(SysCommon):
+    forbid_null = True
+    id: Id
+    level: Id | None = Field(None, description="다른 레벨로(기준선 높이 offset 은 그대로)")
+    type: Id | None = Field(None, description="작은 보의 보 유형")
+    child_ids: ChildIds | None = Field(None, description="작은 보가 늘 때 새 자식 보 id")
+
+    @model_validator(mode="after")
+    def _any(self):
+        if all(getattr(self, k) is None for k in ("level", "type", "boundary", "from_elements", "angle", "spacing", "count", "align", "offset", "anchor", "name")):
+            raise ValueError("바꿀 필드가 하나도 없다")
+        if self.boundary is not None and self.from_elements is not None:
+            raise ValueError("boundary 와 from_elements 를 함께 줄 수 없다")
+        if self.spacing is not None and self.count is not None:
+            raise ValueError("spacing 과 count 를 함께 줄 수 없다")
+        return self
+
+
+@command("beamsys.set", kind="mutation", risk="write", group="model.beam",
+         summary="보 시스템의 경계·방향·간격(고정 간격 또는 개수)·정렬·유형·높이·레벨·이름을 고친다(자식 보를 다시 만든다: id 는 순서대로 이어받고 남는 것은 지운다)",
+         args=BeamSysSet, since="0.24", examples=[{"id": F.BS1, "spacing": 800, "align": "start"}, {"id": F.BS1, "count": 3, "angle": 90}])
+def beamsys_set(ctx, a: BeamSysSet):
+    r = ctx.authored(a.id, "beamsys")
+    old = r["params"]
+    lv = ctx.rels_out("on_level", a.id)[0]
+    if a.level is not None:
+        ctx.authored(a.level, "level", what="레벨에 보 시스템을 옮기는 것")
+        lv = a.level
+    if a.type is not None:
+        type_row(ctx, a.type, "/type")
+    boundary = _sys_boundary(ctx, a.boundary, a.from_elements) if (a.boundary is not None or a.from_elements is not None) else old["boundary"]
+    spacing, count = old.get("spacing"), old.get("count")
+    if a.spacing is not None:
+        spacing, count = a.spacing, None
+    elif a.count is not None:
+        spacing, count = None, a.count
+    if a.child_ids is not None and (len(set(a.child_ids)) != len(a.child_ids) or a.id in a.child_ids):
+        raise DobimError("CONSTRAINT", "child_ids 는 서로 다른 id 로 준다", path="/child_ids")
+    sp = _sys_params(a.name if a.name is not None else old["name"], boundary, a.angle if a.angle is not None else old["angle"], spacing, count,
+                     a.align if a.align is not None else old["align"], a.type if a.type is not None else old["btype"],
+                     a.offset if a.offset is not None else old["offset"], a.anchor if a.anchor is not None else old["anchor"], old["children"])
+    kids = sys_regenerate(ctx, a.id, sp, lv, a.child_ids)
+    new = dict(sp, children=kids)
+    if new == old and lv == ctx.rels_out("on_level", a.id)[0]:
+        return {"id": a.id, "changed": False, "count": len(kids)}
+    ctx.put_el(a.id, dict(r, params=new))
+    cur = ctx.rels_out("on_level", a.id)[0]
+    if cur != lv:
+        ctx.rel("on_level", a.id, cur, False)
+        ctx.rel("on_level", a.id, lv, True)
+    return {"id": a.id, "changed": True, "count": len(kids), "children": kids[:ANS_IDS]}
+
+
+class BeamSysMove(A):
+    id: Id
+    dx: Num = 0.0
+    dy: Num = 0.0
+    dz: Num = Field(0.0, description="기준선 높이(offset)에 더한다")
+
+
+@command("beamsys.move", kind="mutation", risk="write", group="model.beam", summary="보 시스템을 평행 이동한다(경계와 자식 보가 함께 간다)",
+         args=BeamSysMove, since="0.24", examples=[{"id": F.BS1, "dx": 0, "dy": 500}])
+def beamsys_move(ctx, a: BeamSysMove):
+    r = ctx.authored(a.id, "beamsys")
+    old = r["params"]
+    lv = ctx.rels_out("on_level", a.id)[0]
+    sp = dict(old, boundary=[[x + a.dx, y + a.dy] for x, y in old["boundary"]], offset=old["offset"] + a.dz)
+    why = K.row_params_error("beamsys", sp)
+    if why:
+        raise DobimError("CONSTRAINT", f"보 시스템이 올바르지 않게 된다: {why}", path="/dx")
+    kids = sys_regenerate(ctx, a.id, sp, lv)
+    ctx.put_el(a.id, dict(r, params=dict(sp, children=kids)))
+    return {"id": a.id, "count": len(kids)}
+
+
+class BeamSysUngroup(A):
+    id: Id
+
+
+@command("beamsys.ungroup", kind="mutation", risk="write", group="model.beam",
+         summary="보 시스템을 푼다: 자식 보는 보통 보로 남고(이후 보 명령으로 따로 고친다) 시스템 요소만 지운다",
+         args=BeamSysUngroup, since="0.24", examples=[{"id": F.BS1}])
+def beamsys_ungroup(ctx, a: BeamSysUngroup):
+    r = ctx.authored(a.id, "beamsys")
+    kids = [b for b in r["params"]["children"] if b in ctx.st.el]
+    for b in kids:
+        br = ctx.st.el[b]
+        ctx.put_el(b, dict(br, params={k: v for k, v in br["params"].items() if k != "bsys"}))
+    C._delete_one(ctx, a.id)
+    return {"id": a.id, "released": kids[:ANS_IDS], "count": len(kids)}
+
+
+class BeamSysList(A):
+    level: Id | None = Field(None, description="이 레벨의 보 시스템만")
+    limit: int = Field(200, ge=1, le=2000, description="최대 개수")
+    cursor: str | None = Field(None, max_length=2048, description="이전 응답의 page.next_cursor")
+
+
+@command("beamsys.list", kind="query", risk="read", group="model.beam",
+         summary="보 시스템 목록(경계·방향·간격 또는 개수·정렬·유형·자식 보 수·자식 보의 총 길이·체적)", args=BeamSysList, idempotent=True, since="0.24",
+         examples=[{}, {"level": F.LV2, "limit": 5}])
+def beamsys_list(ctx, a: BeamSysList):
+    g = ctx.g
+    st = ctx.st
+    ids = sorted(s for s in st.by_kind.get("beamsys", ()) if a.level is None or ctx.rels_out("on_level", s) == [a.level])
+    after = C._dec_cursor(a.cursor, "name")
+    start = 0 if after is None else next((k for k, b in enumerate(ids) if b > after), len(ids))
+    rows = []
+    for s in ids[start:start + a.limit]:
+        p = st.el[s]["params"]
+        tr = st.el.get(p["btype"])
+        item = {"id": s, "name": p["name"], "level": ctx.rels_out("on_level", s)[0], "type": tr["params"]["name"] if tr else None,
+                "section": BM.section_label(tr["params"]["section"]) if tr else None, "boundary": p["boundary"], "angle": p["angle"], "align": p["align"],
+                "offset": p["offset"], "anchor": p["anchor"], "beams": len(p["children"]), "children": p["children"][:ANS_IDS]}
+        for k in ("spacing", "count"):
+            if k in p:
+                item[k] = p[k]
+        ln = vol = 0.0
+        for b in p["children"]:
+            if b in st.el and st.el[b]["origin"] == "authored":
+                m = g.q(Q.beam_measure, b)
+                ln += m[1]
+                vol += m[3]
+        item.update(total_length=round(ln, 3), volume_m3=round(vol / 1e9, 6))
+        rows.append(item)
+    items, cut = C._fit(rows, cursor_of=lambda k: C._enc_cursor(ids[start + k]))
+    more = start + len(items) < len(ids)
+    return {"items": items, "page": C._page(C._enc_cursor(ids[start + len(items) - 1]) if more and items else None, len(ids), cut)}
+
+
+# ---------------------------------------------------------------- 가새(brace, W2 스물네 번째 PR)
+# 가새 = 두 점(높이 포함) 사이의 경사 구조 부재. 보 행에 brace 표식을 둔 것이다: 단면(보 유형)·기둥·보 면 끝 자르기·연직 끝면·접합 간격·평면(경사 보 규약)·
+# 단면·입면 선과 가림·태그·일람표·복사·대칭이 보와 같은 코드를 쓴다. 다른 점은 IFC 뿐이다(IfcMember PredefinedType BRACE + IfcMemberType). 기울기는 80도 이하(그보다 서면 기둥).
+Pt3 = Annotated[list[Coord], Field(min_length=3, max_length=3, description="[x, y, z] mm: x·y 는 레벨 좌표, z 는 레벨 기준 높이(기준선이 지나는 점)")]
+
+
+class BraceCreate(A):
+    id: Id | None = None
+    level: Id = Field(description="놓는 레벨(두 점의 z 의 기준)")
+    type: Id = Field(description="보 유형(beamtype.create): 가새의 단면을 유형에서 받는다")
+    start: Pt3
+    end: Pt3
+    anchor: Anchor = Field("center", description="기준선이 지나는 단면 자리(가새는 단면 가운데가 기본)")
+    roll: Num = Field(0.0, gt=-180.0, le=180.0, description="단면 회전(도, 기준선 둘레)")
+    cutback: bool = Field(True, description="true 면 끝점이 기둥 단면 안이거나 다른 보의 평면 외곽 안에 있을 때 그 면까지 자른다")
+    vertical_ends: bool = Field(False, description="끝면을 축에 수직이 아니라 연직면으로 자른다(기둥 면과 나란히). 두 점의 높이가 다를 때만")
+    gap: Gap = Field(0.0, description="보끼리 접합 간격 mm")
+    name: Name | None = None
+
+
+def _brace_offsets(start, end):
+    """두 점 [x, y, z] -> (평면 시작, 평면 끝, offset, end_offset 또는 None)."""
+    return [start[0], start[1]], [end[0], end[1]], float(start[2]), (float(end[2]) if float(end[2]) != float(start[2]) else None)
+
+
+@command("brace.create", kind="mutation", risk="write", group="model.beam",
+         summary="가새(경사 구조 부재)를 두 점(높이 포함) 사이에 놓는다. 단면은 보 유형, 기둥·보 면 끝 자르기·연직 끝면·접합 간격은 보와 같다. IFC 는 IfcMember(BRACE) + IfcMemberType",
+         args=BraceCreate, since="0.24",
+         examples=[{"id": F.BR1, "level": F.LV1, "type": F.BT1, "start": [0, 0, 0], "end": [3000, 0, 3000]}])
+def brace_create(ctx, a: BraceCreate):
+    C._fresh_id(ctx, a, "beam")
+    ctx.authored(a.level, "level", what="레벨에 가새를 추가하는 것")
+    tp = type_row(ctx, a.type, "/type")["params"]
+    a.name = a.name or f"BR-{a.id[-6:]}"
+    s2, e2, off, eoff = _brace_offsets(a.start, a.end)
+    p = _check_beam(a.id, _beam_params(a.name, s2, e2, off, a.anchor, a.roll, a.cutback, a.type, tp["section"], eoff, tp.get("material"), None, a.vertical_ends, False, a.gap,
+                                       brace=True), "/start")
+    ctx.put_el(a.id, row("beam", "IfcMember", "beam.basic", p))
+    ctx.rel("on_level", a.id, a.level, True)
+    ctx.rel("of_type", a.id, a.type, True)
+    return {"id": a.id}
+
+
+class BraceSet(A):
+    forbid_null = True
+    id: Id
+    level: Id | None = Field(None, description="다른 레벨로(두 점의 z 는 그대로)")
+    start: Pt3 | None = None
+    end: Pt3 | None = None
+    anchor: Anchor | None = None
+    roll: Num | None = Field(None, gt=-180.0, le=180.0)
+    cutback: bool | None = None
+    vertical_ends: bool | None = None
+    gap: Gap | None = None
+    name: Name | None = None
+
+    @model_validator(mode="after")
+    def _any(self):
+        if all(getattr(self, k) is None for k in ("level", "start", "end", "anchor", "roll", "cutback", "vertical_ends", "gap", "name")):
+            raise ValueError("바꿀 필드가 하나도 없다")
+        return self
+
+
+@command("brace.set", kind="mutation", risk="write", group="model.beam",
+         summary="가새를 고친다(두 점(높이 포함)·레벨·z 맞춤·단면 회전·끝 자르기·연직 끝면·접합 간격·이름). 단면은 유형이 정한다(beam.type.set)",
+         args=BraceSet, since="0.24", examples=[{"id": F.BR1, "end": [3000, 0, 2500]}, {"id": F.BR1, "vertical_ends": True}])
+def brace_set(ctx, a: BraceSet):
+    r = ctx.authored(a.id, "beam")
+    p = r["params"]
+    if not p.get("brace"):
+        raise DobimError("CONSTRAINT", f"가새가 아닌 보다: {a.id}", path="/id", hint="보는 beam.set 으로 고치세요")
+    s3 = list(a.start) if a.start is not None else [p["start"][0], p["start"][1], p["offset"]]
+    e3 = list(a.end) if a.end is not None else [p["end"][0], p["end"][1], p.get("end_offset", p["offset"])]
+    s2, e2, off, eoff = _brace_offsets(s3, e3)
+    q = _beam_params(a.name if a.name is not None else p["name"], s2, e2, off, a.anchor if a.anchor is not None else p["anchor"], a.roll if a.roll is not None else p.get("roll", 0.0),
+                     a.cutback if a.cutback is not None else p.get("cutback", True), p.get("btype"), p["section"], eoff, p.get("material"), None,
+                     a.vertical_ends if a.vertical_ends is not None else p.get("vertical_ends", False), p.get("skew_cut", False),
+                     a.gap if a.gap is not None else p.get("gap", 0.0), brace=True)
+    _write_beam(ctx, a.id, q, "/id")
+    if a.level is not None:
+        ctx.authored(a.level, "level", what="레벨에 가새를 옮기는 것")
+        old = ctx.rels_out("on_level", a.id)[0]
+        if old != a.level:
+            ctx.rel("on_level", a.id, old, False)
+            ctx.rel("on_level", a.id, a.level, True)
+    return {"id": a.id}

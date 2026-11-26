@@ -1088,7 +1088,7 @@ def model_stats(g):
         out["curtain_panel"] = sum(s[1] for s in st)
         # 커튼월 문 패널도 IFC 에서는 IfcDoor 다: counts.door = IFC 의 IfcDoor 수(W2 아홉 번째 PR, 실사용 결함 3). 문 패널이 없으면 그대로다
         out["door"] += sum(s[3].get("door", (0, 0.0))[0] for s in st)
-    for k in ("walltype", "stackwall", "rooftype", "railtype", "beam", "beamtype"):   # 구조 보·보 유형(W2 열다섯 번째 PR)·난간 유형(W2 열세 번째 PR)·벽 유형·스택 벽(W2 일곱 번째 PR)·지붕 유형(W2 여덟 번째 PR): 없으면 응답은 그대로다
+    for k in ("walltype", "stackwall", "rooftype", "railtype", "beam", "beamtype", "beamsys"):   # 구조 보·보 유형(W2 열다섯 번째 PR)·난간 유형(W2 열세 번째 PR)·벽 유형·스택 벽(W2 일곱 번째 PR)·지붕 유형(W2 여덟 번째 PR): 없으면 응답은 그대로다
         n = g.q(count, k)
         if n:
             out[k] = n
@@ -1147,9 +1147,9 @@ def intent_of(g, e):
     elif row["kind"] == "wall":
         out["level"] = g.q(wall_level, e)
         out["joins"] = list(g.q(wall_joins, e))
-    elif row["kind"] in ("slab", "stair", "space", "railing", "elevator", "roof", "solid", "curtwall", "stackwall", "beam"):
+    elif row["kind"] in ("slab", "stair", "space", "railing", "elevator", "roof", "solid", "curtwall", "stackwall", "beam", "beamsys"):
         out["level"] = g.q({"slab": slab_level, "stair": stair_level, "space": space_level, "railing": railing_level, "elevator": elevator_level, "roof": roof_level, "solid": solid_level,
-                            "curtwall": curtain_level, "stackwall": stack_level, "beam": beam_level}[row["kind"]], e)
+                            "curtwall": curtain_level, "stackwall": stack_level, "beam": beam_level, "beamsys": stack_level}[row["kind"]], e)
     elif row["kind"] == "door":
         out["host"] = g.q(door_host, e)
     return out
@@ -1302,6 +1302,10 @@ def ifc_spec(g, e):
         if "material" in p:   # 구조 재료(W2 열여덟 번째 PR): IFC4 IfcMaterialProfileSetUsage(맞춤 = 기준선 자리의 CardinalPoint). 없으면 명세는 이전과 같다
             spec["material"] = p["material"]
             spec["cardinal"] = {"top": 8, "center": 5, "bottom": 2}[p["anchor"]]
+        if "bsys" in p:   # 보 시스템 자식(W2 스물네 번째 PR): 층이 아니라 보 시스템(IfcElementAssembly)에 집합된다. 없으면 명세는 이전과 같다
+            spec["part_of"] = p["bsys"]
+        if p.get("brace"):   # 가새(W2 스물네 번째 PR): IfcMember(BRACE). 없으면 명세는 이전과 같다
+            spec["brace"] = True
         return spec
     if kind == "slab":
         # 배치는 레벨 좌표계(원점·무회전)이고 윗면은 레벨 + top_offset 이므로 레벨 높이는 읽지 않는다(레벨을 옮기면 배치가 따라간다)
@@ -1357,6 +1361,8 @@ def ifc_spec(g, e):
         return spec
     if kind == "stackwall":   # 스택 벽(W2 일곱 번째 PR): 형상 없이 레벨 좌표계에 놓이고 부분 벽(구간 순서)을 집합한다
         return {"kind": kind, "name": p["name"], "level": g.q(stack_level, e), "parts": tuple(p["parts"]), "intent": intent}
+    if kind == "beamsys":   # 보 시스템(W2 스물네 번째 PR): 형상 없이 레벨 좌표계에 놓이고 자식 보(보 순서)를 집합한다(IfcElementAssembly)
+        return {"kind": kind, "name": p["name"], "level": g.q(stack_level, e), "parts": tuple(p["children"]), "intent": intent}
     if kind == "curtwall":
         # 커튼월(W2 네 번째 PR, ARC-22): 자신은 형상 없이 레벨 좌표계에 놓이고, 부속(멀리언 IfcMember·패널 IfcPlate·문 패널 IfcDoor)이 IfcRelAggregates 로 매달린다.
         # 부속 = (이름표, IFC 클래스, 유형 또는 패널 종류, 평면 사각형(레벨 좌표), 바닥 z(레벨 기준), 높이). 이름표 순서라 결정적이다

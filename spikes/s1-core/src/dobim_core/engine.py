@@ -235,6 +235,9 @@ class Ctx:
                     and not (what in STACK_PART_OK or what.startswith(("태그 대상", "치수 대상")))):
                 raise DobimError("CONSTRAINT", f"스택 벽의 부분 벽이라 {what}을 바꿀 수 없다: {eid}", path="/id",
                                  hint="부분 벽은 스택 벽 커맨드(stackwall.set, 스택 벽 element.delete)로 고친다. 조인·문·창·벽 개구는 놓을 수 있다")
+            if r["kind"] == "beam" and "bsys" in r["params"] and not self.stack_ok and not what.startswith(("태그 대상", "치수 대상")):   # 보 시스템의 자식 보(W2 스물네 번째 PR)
+                raise DobimError("CONSTRAINT", f"보 시스템의 자식 보라 {what}을 바꿀 수 없다: {eid}", path="/id",
+                                 hint="자식 보는 보 시스템 커맨드(beamsys.set·move, 시스템 element.delete)로 고친다. 따로 고치려면 beamsys.ungroup 으로 시스템을 풀어 보통 보로 만든다")
         return self.row(eid, kind)
 
     @staticmethod
@@ -776,10 +779,12 @@ class Engine:
                     pass   # 뷰 정의 같은 비 IFC 요소는 신원이 없다
                 elif old is None:
                     self.ifc.create_identity(eid, new["kind"], new["ifc_class"])
+                    self._restamp_parent(new)
                 elif new is None:
                     for d in self.ifc.remove_identity(eid):   # 벽과 함께 개구부를 잃은 문은 다시 투영해야 한다
                         self._proj_stamp.pop(d, None)
                     self._proj_stamp.pop(eid, None)
+                    self._restamp_parent(old)
             except BaseException as ex:
                 self.st.apply_el(eid, new, old)
                 self._taint(f"요소 {eid}", ex)
@@ -994,6 +999,14 @@ class Engine:
                 raise DobimError("LOCKED", f"프로젝트가 잠겨 있다: {ex}") from ex
             raise internal_error(ex) from ex
 
+    def _restamp_parent(self, row: dict) -> None:
+        """보 시스템의 자식 보(W2 스물네 번째 PR)가 생기거나 사라지면 시스템의 투영을 다시 하게 한다: 집합 관계는 시스템 명세(자식 id 목록)가 그대로여도
+        자식 엔티티의 존재에 달려 있다(IFC 에서 자식을 지우면 집합 관계가 줄고, 되돌려 자식이 돌아와도 명세가 같아 건너뛰면 집합에서 빠진 채 남는다)."""
+        if row["kind"] == "beam":
+            par = row["params"].get("bsys")
+            if par is not None:
+                self._proj_stamp.pop(par, None)
+
     def _rollback(self, applied: list) -> None:
         """적용한 효과를 거꾸로 되돌린다. 도중에 실패하면 오염으로 표시하고 예외를 올린다."""
         try:
@@ -1090,10 +1103,25 @@ class Engine:
             return {}
         out = {}
         for t in sorted(tids):
-            beams = tuple(sorted(b for b in self.st.inn.get(("of_type", t), ()) if b in self.ifc.ents and self.st.el[b]["origin"] == "authored"))
+            beams = tuple(sorted(b for b in self.st.inn.get(("of_type", t), ()) if b in self.ifc.ents and self.st.el[b]["origin"] == "authored"
+                                 and not self.st.el[b]["params"].get("brace")))   # 가새(W2 스물네 번째 PR)는 IfcMemberType 로 묶는다(braces_map)
             tp = self.st.el[t]["params"]
             mat = (tp["material"], BM.section_label(tp["section"]), tuple(sorted(tp["section"].items()))) if "material" in tp else None
             out[t] = (tp["name"], beams, mat)
+        return out
+
+    def bracetype_map(self) -> dict:
+        """가새(brace 표식이 있는 보, W2 스물네 번째 PR)가 쓰는 보 유형 -> {유형 id: (이름, 그 유형을 쓰는 IFC 가새 id 들, 재료 묶음 또는 None)}.
+        IfcMemberType(PredefinedType BRACE)로 투영한다. 가새가 없으면 빈 표."""
+        out = {}
+        for t in sorted(self.st.by_kind.get("beamtype", ())):
+            braces = tuple(sorted(b for b in self.st.inn.get(("of_type", t), ()) if b in self.ifc.ents and self.st.el[b]["origin"] == "authored"
+                                  and self.st.el[b]["params"].get("brace")))
+            if not braces:
+                continue
+            tp = self.st.el[t]["params"]
+            mat = (tp["material"], BM.section_label(tp["section"]), tuple(sorted(tp["section"].items()))) if "material" in tp else None
+            out[t] = (tp["name"], braces, mat)
         return out
 
     def grid_map(self) -> dict:
@@ -1138,7 +1166,7 @@ class Engine:
             self.ifc.sync_wall_types(self.walltype_map())   # 벽 유형(W2 일곱 번째 PR): IfcWallType·층 집합·타입 지정 관계. 유형이 없으면 아무것도 하지 않는다
             self.ifc.sync_roof_types(self.rooftype_map())   # 지붕 유형(W2 여덟 번째 PR): IfcRoofType. 유형이 없으면 아무것도 하지 않는다
             self.ifc.sync_rail_types(self.railtype_map())   # 난간 유형(W2 열세 번째 PR): IfcRailingType. 유형이 없으면 아무것도 하지 않는다
-            self.ifc.sync_beam_types(self.beamtype_map())   # 보 유형(W2 열다섯 번째 PR): IfcBeamType. 유형이 없으면 아무것도 하지 않는다
+            self.ifc.sync_beam_types(self.beamtype_map(), self.bracetype_map())   # 보 유형(W2 열다섯 번째 PR): IfcBeamType. 유형이 없으면 아무것도 하지 않는다
             self.ifc.sync_grids(self.grid_map())   # 통심선 IfcGrid(W2 열 번째 PR, ARC-38). 통심선이 없으면 아무것도 하지 않는다
             self.ifc.sync_groups(*self.group_maps())   # 모델 그룹 IfcGroup·조립품 IfcElementAssembly(W2 열한 번째 PR). 없으면 아무것도 하지 않는다
         except BaseException as ex:

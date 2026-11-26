@@ -175,7 +175,7 @@ def _solid_intent(p) -> dict:
 def _parse_intent(kind: str, text: str) -> dict:
     """DoBIM_Intent 텍스트를 현재 코어 스키마로 해석한다. 못 하면 ValueError. 숫자는 float 로 맞춘다(저작 행과 같은 모양)."""
     d = json.loads(text)
-    extra = {"level": (), "wall": ("level", "joins"), "door": ("host",), "slab": ("level",), "stair": ("level",), "space": ("level",), "railing": ("level",), "elevator": ("level",), "roof": ("level",), "site": (), "solid": ("level",), "curtwall": ("level",), "stackwall": ("level",), "beam": ("level",)}[kind]
+    extra = {"level": (), "wall": ("level", "joins"), "door": ("host",), "slab": ("level",), "stair": ("level",), "space": ("level",), "railing": ("level",), "elevator": ("level",), "roof": ("level",), "site": (), "solid": ("level",), "curtwall": ("level",), "stackwall": ("level",), "beam": ("level",), "beamsys": ("level",)}[kind]
     if not isinstance(d, dict) or set(d) != {"kind", "params", "family_id", *extra} or d["kind"] != kind or d["family_id"] != FAMILY[kind]:
         raise ValueError("의도 모양이 현재 스키마와 다르다")
     p = d["params"]
@@ -245,6 +245,13 @@ def _parse_intent(kind: str, text: str) -> dict:
         why = K.row_params_error("beam", out)
         if why:
             raise ValueError(f"보가 올바르지 않다({why})")
+    elif kind == "beamsys":   # 보 시스템(W2 스물네 번째 PR): 숫자를 float 로 맞춘 뒤(개수 count 는 정수로) 코어 행 검사
+        out = _curtwall_intent(p)
+        if "count" in out and isinstance(out["count"], float) and out["count"].is_integer():
+            out["count"] = int(out["count"])
+        why = K.row_params_error("beamsys", out)
+        if why:
+            raise ValueError(f"보 시스템이 올바르지 않다({why})")
     elif kind == "curtwall":   # 커튼월(W2 ARC-22): 숫자를 float 로 맞춘 뒤 코어 행 검사
         out = _curtwall_intent(p)
         why = K.row_params_error("curtwall", out)
@@ -521,7 +528,7 @@ def _parse_intent(kind: str, text: str) -> dict:
         if not isinstance(lv, str) or not _ID.match(lv) or not isinstance(joins, list) or not all(isinstance(j, str) and _ID.match(j) for j in joins):
             raise ValueError("레벨·조인 참조가 올바르지 않다")
         res["level"], res["joins"] = lv, sorted(set(joins))
-    elif kind in ("slab", "stair", "space", "railing", "elevator", "roof", "solid", "curtwall", "stackwall", "beam"):
+    elif kind in ("slab", "stair", "space", "railing", "elevator", "roof", "solid", "curtwall", "stackwall", "beam", "beamsys"):
         if not isinstance(d["level"], str) or not _ID.match(d["level"]):
             raise ValueError("레벨 참조가 올바르지 않다")
         res["level"] = d["level"]
@@ -583,6 +590,15 @@ def _restore_rail_types(rows: dict, rels: set, plan: "ImportPlan") -> None:
 def _restore_beam_types(rows: dict, rels: set, plan: "ImportPlan") -> None:
     """보 유형(W2 열다섯 번째 PR): 저작 보의 params.btype 이 되살린 보 유형 정의를 가리키면 타입 관계(of_type)를 잇고, 아니면 유형만 뗀다
     (단면은 보에 남는다: beam.type.set null 과 같다)."""
+    for g in sorted(rows):   # 보 시스템(W2 스물네 번째 PR)은 보 유형으로 자식을 다시 만든다: 유형 정의가 없으면 시스템과 자식을 분리(동결)한다
+        r = rows[g]
+        if r["kind"] == "beamsys" and r["origin"] == "authored" and rows.get(r["params"]["btype"], {}).get("kind") != "beamtype":
+            for x in [g, *r["params"]["children"]]:
+                if x in rows and rows[x]["origin"] == "authored":
+                    rows[x]["origin"] = "detached"
+                    rows[x].pop("spec_hash", None)
+                    plan.detached.append({"id": x, "reasons": ["보 시스템의 보 유형 정의가 없다"]})
+            plan.warnings.append(f"{g}: 보 시스템의 보 유형 {str(r['params']['btype'])[:22]} 정의를 되살리지 못해 시스템과 자식 보를 분리했다(동결)")
     for g in sorted(rows):
         r = rows[g]
         tid = r["params"].get("btype") if r["kind"] == "beam" and isinstance(r.get("params"), dict) else None
@@ -1002,6 +1018,10 @@ def plan_import(data: bytes) -> ImportPlan:
             kind = "solid"
         if claimed == "stackwall" and p.is_a() == "IfcWall":   # 스택 벽(W2 일곱 번째 PR): 같은 IfcWall 클래스라 의도가 밝힌 종류를 따른다
             kind = "stackwall"
+        if claimed == "beamsys" and p.is_a() == "IfcElementAssembly":   # 보 시스템(W2 스물네 번째 PR): 조립품 클래스라 의도가 밝힌 종류를 따른다
+            kind = "beamsys"
+        if claimed == "beam" and p.is_a() == "IfcMember":   # 가새(W2 스물네 번째 PR): IfcMember 로 나간 보(brace). 클래스·표식은 아래에서 맞춰 본다
+            kind = "beam"
         if is_type and kind != "ftype":
             continue   # 타입 객체는 패밀리 타입 의도만 본다(그 밖의 타입은 요소가 아니라 파일에 그대로 남는다)
         if kind is None:
@@ -1015,7 +1035,7 @@ def plan_import(data: bytes) -> ImportPlan:
                 cls_of[p.GlobalId] = p.is_a()
             else:
                 cand[p.GlobalId] = _parse_intent(kind, text)
-                if kind == "solid":
+                if kind in ("solid", "beam"):
                     cls_of[p.GlobalId] = p.is_a()
         except (ValueError, TypeError, KeyError, ArithmeticError, RecursionError) as ex:   # 넘침(OverflowError)도 해석 실패다
             plan.warnings.append(f"{p.GlobalId}: DoBIM_Intent 를 해석할 수 없어 외래로 둔다({str(ex)[:80]})")
@@ -1040,11 +1060,21 @@ def plan_import(data: bytes) -> ImportPlan:
                     bad = "레벨 참조가 없다"
                 elif any(cand.get(w, {}).get("kind") != "wall" or cand[w]["params"].get("stack") != g or cand[w]["level"] != it["level"] for w in it["params"]["parts"]):
                     bad = "부분 벽이 없거나 이 스택 벽에 속하지 않는다"
+            elif it["kind"] == "beamsys":   # 보 시스템(W2 스물네 번째 PR): 레벨과 자식 보가 모두 후보여야 한다
+                if cand.get(it["level"], {}).get("kind") != "level":
+                    bad = "레벨 참조가 없다"
+                elif any(cand.get(b, {}).get("kind") != "beam" or cand[b]["params"].get("bsys") != g or cand[b]["level"] != it["level"] for b in it["params"]["children"]):
+                    bad = "자식 보가 없거나 이 보 시스템에 속하지 않는다"
             elif it["kind"] in ("slab", "stair", "space", "railing", "elevator", "roof", "solid", "curtwall", "beam"):
                 if cand.get(it["level"], {}).get("kind") != "level":
                     bad = "레벨 참조가 없다"
                 elif it["kind"] == "solid" and cls_of.get(g) != K.SO.SOLID_CATEGORIES[it["params"]["category"]][0]:
                     bad = f"IFC 클래스({cls_of.get(g)})가 범주({it['params']['category']})의 클래스와 다르다"
+                elif it["kind"] == "beam" and cls_of.get(g) != ("IfcMember" if it["params"].get("brace") else "IfcBeam"):   # 가새(W2 스물네 번째 PR)
+                    bad = f"IFC 클래스({cls_of.get(g)})가 보·가새 표식(brace)과 다르다"
+                elif it["kind"] == "beam" and "bsys" in it["params"] and (cand.get(it["params"]["bsys"], {}).get("kind") != "beamsys"
+                                                                         or g not in cand[it["params"]["bsys"]]["params"]["children"]):
+                    bad = "보 시스템(전체)이 없거나 이 보를 자식으로 갖지 않는다"
             elif it["kind"] == "door":
                 if cand.get(it["host"], {}).get("kind") != "wall":
                     bad = "호스트 벽이 없다"
@@ -1065,12 +1095,12 @@ def plan_import(data: bytes) -> ImportPlan:
         if it["kind"] in ("ftype", "finst"):
             rows[g] = {"kind": it["kind"], "ifc_class": cls_of[g], "origin": "authored", "family_id": it["family_id"], "params": it["params"]}
         else:
-            cls = K.SO.SOLID_CATEGORIES[it["params"]["category"]][0] if it["kind"] == "solid" else {"level": "IfcBuildingStorey", "wall": "IfcWall", "door": "IfcDoor", "slab": "IfcSlab", "stair": "IfcStair", "space": "IfcSpace", "railing": "IfcRailing", "elevator": "IfcTransportElement", "roof": "IfcRoof", "site": "IfcSite", "curtwall": "IfcCurtainWall", "stackwall": "IfcWall", "beam": "IfcBeam"}[it["kind"]]
+            cls = K.SO.SOLID_CATEGORIES[it["params"]["category"]][0] if it["kind"] == "solid" else {"level": "IfcBuildingStorey", "wall": "IfcWall", "door": "IfcDoor", "slab": "IfcSlab", "stair": "IfcStair", "space": "IfcSpace", "railing": "IfcRailing", "elevator": "IfcTransportElement", "roof": "IfcRoof", "site": "IfcSite", "curtwall": "IfcCurtainWall", "stackwall": "IfcWall", "beam": "IfcMember" if it["params"].get("brace") else "IfcBeam", "beamsys": "IfcElementAssembly"}[it["kind"]]
             rows[g] = {"kind": it["kind"], "ifc_class": cls, "origin": "authored", "family_id": FAMILY[it["kind"]], "params": it["params"]}
         if it["kind"] == "wall":
             rels.add(("on_level", g, it["level"]))
             rels.update(("joins", min(g, j), max(g, j)) for j in it["joins"])
-        elif it["kind"] in ("slab", "stair", "space", "railing", "elevator", "roof", "solid", "curtwall", "stackwall", "beam"):
+        elif it["kind"] in ("slab", "stair", "space", "railing", "elevator", "roof", "solid", "curtwall", "stackwall", "beam", "beamsys"):
             rels.add(("on_level", g, it["level"]))
         elif it["kind"] == "door":
             rels.add(("hosts", it["host"], g))
