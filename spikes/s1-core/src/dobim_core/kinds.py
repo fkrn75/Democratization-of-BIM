@@ -758,18 +758,43 @@ def stair_rule_warnings(p) -> list:
         where = "보행선(안쪽 끝에서 300mm) 위 " if "spiral" in p else ""
         out.append({"code": "STAIR_TREAD", "message": f"{where}디딤판 깊이 {tread:.1f}mm 가 {STAIR_TREAD_MIN:g}mm 보다 작다", "value": round(tread, 3), "limit": STAIR_TREAD_MIN})
     wt = stair_winder_tread(p)
+    bal = stair_balanced_info(p) if "sketch" in p else []   # 균형 돌음(W2 스물세 번째 PR): 경고에 근거 값(walk_min·inner_min)을 더한다
+    ev = {"walk_min": round(min(b["walk_tread"] for b in bal), 3), "inner_min": round(min(b["winder_tread"] for b in bal), 3)} if bal else {}
     if wt is not None and wt < STAIR_TREAD_MIN - 1e-9:   # 돌음 회전부(꺾인 모서리·turn.winders): 안쪽 끝에서 300mm 보행선 위 디딤 깊이(W2 스무 번째 PR)
         out.append({"code": "STAIR_WINDER_TREAD", "message": f"돌음 회전부의 보행선(회전 안쪽 끝에서 {STAIR_WALK_OFFSET:g}mm) 위 디딤판 깊이 {wt:.1f}mm 가 {STAIR_TREAD_MIN:g}mm 보다 작다",
-                    "value": round(wt, 3), "limit": STAIR_TREAD_MIN})
+                    "value": round(wt, 3), "limit": STAIR_TREAD_MIN, **ev})
+    if bal:   # 균형 돌음 회전부의 보행선(폭 가운데) 위 디딤 깊이: 모서리 밖 직선 디딤판과 같은 기준(STAIR_TREAD_MIN)으로 잰다
+        wk = min(b["walk_tread"] for b in bal)
+        if wk < STAIR_TREAD_MIN - 1e-9:
+            out.append({"code": "STAIR_BALANCED_WALK", "message": f"균형 돌음 회전부의 보행선(폭 가운데) 위 디딤판 깊이 {wk:.1f}mm 가 {STAIR_TREAD_MIN:g}mm 보다 작다",
+                        "value": round(wk, 3), "limit": STAIR_TREAD_MIN, **ev})
+    if "sketch" in p and p["sketch"].get("landings"):   # 층참(W2 스물세 번째 PR): 깊이가 계단 폭보다 작으면 경고(보행 방향 전환·휴식 공간의 일반 설계 기준, 용도별 기준은 사용자가 확인한다)
+        lim = p["width"] * STAIR_LANDING_DEPTH_FACTOR
+        ld = min(x["len"] for x in stair_sketch_layout(p)["landings"])
+        if ld < lim - 1e-9:
+            out.append({"code": "STAIR_LANDING", "message": f"층참 깊이 {ld:.1f}mm 가 계단 폭 {lim:g}mm 보다 작다", "value": round(ld, 3), "limit": lim})
     return out
+
+
+def stair_balanced_info(p) -> list:
+    """균형 돌음 모서리마다 근거 값(없으면 빈 목록): {"seg": 모서리 변 번호, "m": 쐐기 수, "extension": 모서리 보행선 양쪽으로 넓힌 길이 mm,
+    "walk_tread": 보행선(폭 가운데) 위 쐐기 깊이(모두 같다), "winder_tread": 안쪽 끝에서 300mm 보행선 위 가장 좁은 쐐기 깊이(피난·방화규칙 15조 3항 측정 위치),
+    "outer_min": 비스듬한 챌판 선을 가진 이웃 직선 디딤판의 바깥쪽 가장자리 깊이 최솟값}."""
+    if "sketch" not in p or not p["sketch"].get("balanced"):
+        return []
+    w = p["width"]
+    return [{"seg": c["seg"], "m": c["m"], "extension": round(c["ext"], 3), "walk_tread": c["depth"],
+             "winder_tread": min(STAIR_WALK_OFFSET, w / 2.0) * min(c["angles"]) * _PI / 180.0, "outer_min": c["outer_min"]}
+            for c in stair_sketch_layout(p)["corners"] if c.get("bal")]
 
 
 def stair_winder_tread(p) -> float | None:
     """돌음 회전부 디딤판의 보행선 위 깊이 중 가장 작은 값(없으면 None). 보행선은 회전 안쪽 끝(스케치 모서리 점·돌음 계단 회전 중심에서 폭/2 만큼 떨어진 안쪽 가장자리)에서
     STAIR_WALK_OFFSET(폭의 절반 이하) 떨어진 원이다(방사 계단과 같은 피난·방화규칙 15조 3항 기준). 층참(모서리 디딤판 수 1)은 디딤판이 아니라 재지 않는다."""
     w = p["width"]
-    if "sketch" in p:
-        ts = [min(STAIR_WALK_OFFSET, w / 2.0) * abs(c["sw"]) * _PI / 180.0 / c["m"] for c in stair_sketch_layout(p)["corners"] if c["m"] >= 2]
+    if "sketch" in p:   # 균형 돌음 쐐기는 각이 같지 않아 쐐기마다 각의 최솟값으로 잰다(균형이 아니면 이전 식 그대로)
+        ts = [(min(STAIR_WALK_OFFSET, w / 2.0) * min(c["angles"]) * _PI / 180.0 if c.get("bal") else min(STAIR_WALK_OFFSET, w / 2.0) * abs(c["sw"]) * _PI / 180.0 / c["m"])
+              for c in stair_sketch_layout(p)["corners"] if c["m"] >= 2]
         return min(ts) if ts else None
     t = p.get("turn")
     if t is not None and t.get("winders") is not None and "run" in p:
@@ -781,18 +806,25 @@ def stair_winder_tread(p) -> float | None:
 # ---- 스케치 계단(W2 열일곱 번째 PR, ARC-29): 보행선(꺾은선, 변마다 선택 볼록도 = 원호) 하나 + 폭. 보행선 길이를 디딤판 수(챌판 수 - 1)로 같게 나눠
 # 디딤판마다 보행선에 수직인 챌판 선 사이를 채운다(보행선 = 계단 폭 가운데). 이웃 변은 접선이 이어져야 한다(직선 + 원호 보행선). 꺾인 모서리는 corners 로 지정한 꼭짓점만(아래).
 #   sketch = {"path": [[x, y], ...] 2~STAIR_SKETCH_PTS 점, "bulges": [변마다 tan(중심각/4), + 반시계] (선택, 하나라도 0 이 아니면 둔다),
-#             "corners": [안쪽 꼭짓점마다 모서리 디딤판 수 0~STAIR_CORNER_M_MAX] (선택, 하나라도 0 이 아니면 둔다)}
+#             "corners": [안쪽 꼭짓점마다 모서리 디딤판 수 0~STAIR_CORNER_M_MAX] (선택, 하나라도 0 이 아니면 둔다),
+#             "landings": [층참으로 만들 직선 변 번호, 오름차순] (선택), "balanced": [꼭짓점마다 0/1 균형 돌음, corners 와 같은 길이] (선택, 하나라도 1 이면 둔다)}
 # 꺾인 모서리(W2 스무 번째 PR): corners[i] > 0 인 꼭짓점은 접선이 끊겨도 된다. 그 모서리는 보행선이 반지름 폭/2 의 접하는 원호(중심 = 안쪽 모서리 점)로 이어지고
 # 원호 위 같은 길이로 나눈 쐐기 디딤판 corners[i] 개(1 이면 층참 하나)가 안쪽 모서리 점에서 퍼진다(균등 보행선 분할 돌음 계단, 기존 turn.winders 와 같은 방식).
 STAIR_SKETCH_PTS = 64
 STAIR_SKETCH_TANGENT = 0.5   # 이웃 변 접선이 이어졌다고 보는 각 허용(도)
 STAIR_CORNER_MIN, STAIR_CORNER_MAX = 10.0, 135.0   # 모서리 꺾임각 범위(도): 더 작으면 원호로 잇고, 더 크면 두 모서리로 나눈다
 STAIR_CORNER_M_MAX = STAIR_WINDERS_MAX   # 모서리 하나의 디딤판 수 상한(1 = 층참)
+# 구간 층참과 균형 돌음(W2 스물세 번째 PR): sketch.landings = 층참으로 만들 직선 변 번호(0 부터, 변 = 보행선 꼭짓점 사이, 오름차순), sketch.balanced = 꼭짓점마다 0/1
+# (corners 와 같은 길이, 1 = 그 모서리를 균형 돌음으로). 층참 변은 디딤판 대신 평평한 층참 하나(디딤판 하나를 차지하고 윗면은 이전 디딤판보다 챌판 하나 위)이고,
+# 균형 돌음은 모서리 쐐기를 앞뒤 직선 디딤판 쪽으로 넓혀 보행선(폭 가운데) 위 디딤 깊이를 모서리 밖 디딤판과 같게 한다(아래 stair_sketch_layout).
+STAIR_LANDINGS_MAX = 8
+STAIR_BALANCED_OUTER_MIN = 50.0   # 균형 돌음: 이웃 직선 디딤판 바깥쪽 가장자리의 깊이 하한 mm(이보다 얇으면 챌판 선이 거의 겹쳐 거절)
+STAIR_LANDING_DEPTH_FACTOR = 1.0  # 계단 검사: 층참 깊이 하한 = 폭 x 이 값(보행 방향 전환·휴식 공간의 일반 설계 기준, 용도별 기준은 사용자가 확인한다)
 _PI = 3.141592653589793
 
 
 def _sketch_ok(v) -> bool:
-    if not isinstance(v, dict) or not {"path"} <= set(v) <= {"path", "bulges", "corners"}:
+    if not isinstance(v, dict) or not {"path"} <= set(v) <= {"path", "bulges", "corners", "landings", "balanced"}:
         return False
     pts = v["path"]
     if not (isinstance(pts, list) and 2 <= len(pts) <= STAIR_SKETCH_PTS and all(_pt_ok(q) for q in pts)):
@@ -807,6 +839,15 @@ def _sketch_ok(v) -> bool:
         c = v["corners"]
         if not (isinstance(c, list) and len(c) == len(pts) - 2 and all(type(x) is int and 0 <= x <= STAIR_CORNER_M_MAX for x in c) and any(c)):
             return False
+    if "landings" in v:   # 층참 변 번호: 오름차순·중복 없음, 변 수 미만, 1~STAIR_LANDINGS_MAX 개
+        ls = v["landings"]
+        if not (isinstance(ls, list) and 1 <= len(ls) <= STAIR_LANDINGS_MAX and all(type(x) is int and 0 <= x < len(pts) - 1 for x in ls)
+                and all(a < b for a, b in zip(ls, ls[1:]))):
+            return False
+    if "balanced" in v:   # 균형 돌음 꼭짓점: corners 와 같은 길이의 0/1(corners 가 있어야 하고 균형 꼭짓점의 모서리 디딤판이 2 이상인지는 stair_sketch_problem 이 본다)
+        bl = v["balanced"]
+        if not (isinstance(bl, list) and len(bl) == len(pts) - 2 and all(type(x) is int and x in (0, 1) for x in bl) and any(bl)):
+            return False
     return True
 
 
@@ -814,6 +855,7 @@ def sketch_raw_segs(sk) -> list:
     """보행선 변들(모서리 처리 전 그린 그대로): 직선 {"kind": "line", "a", "u": 단위 방향, "len"} 또는 원호 {"kind": "arc", "c": 중심, "r", "a0": 시작 각(도), "sw": 부호 있는 중심각(도), "len"}."""
     pts = [(float(q[0]), float(q[1])) for q in sk["path"]]
     bs = sk.get("bulges") or [0.0] * (len(pts) - 1)
+    land = set(sk.get("landings", ()))   # 층참으로 지정한 변(W2 스물세 번째 PR): 변 사전에 "land" 키를 둔다(없으면 이전과 같은 사전)
     out = []
     for i in range(len(pts) - 1):
         a, b = pts[i], pts[i + 1]
@@ -821,14 +863,14 @@ def sketch_raw_segs(sk) -> list:
         c = sqrt(dx * dx + dy * dy)
         bu = float(bs[i])
         if bu == 0:
-            out.append({"kind": "line", "a": a, "u": (dx / c, dy / c), "len": c})
+            out.append({"kind": "line", "a": a, "u": (dx / c, dy / c), "len": c, **({"land": True} if i in land else {})})
             continue
         d = c * (1.0 - bu * bu) / (4.0 * bu)          # 현 가운데에서 중심까지(왼쪽 법선 방향, 부호 있음): solidops.bulge_arc 와 같은 규약
         cx, cy = (a[0] + b[0]) / 2.0 - dy / c * d, (a[1] + b[1]) / 2.0 + dx / c * d
         r = c * (1.0 + bu * bu) / (4.0 * abs(bu))
         sw = 4.0 * AG.atan2(bu, 1.0) * 180.0 / 3.141592653589793
         a0 = AG.atan2(a[1] - cy, a[0] - cx) * 180.0 / 3.141592653589793
-        out.append({"kind": "arc", "c": (cx, cy), "r": r, "a0": a0, "sw": sw, "len": r * abs(sw) * 3.141592653589793 / 180.0})
+        out.append({"kind": "arc", "c": (cx, cy), "r": r, "a0": a0, "sw": sw, "len": r * abs(sw) * 3.141592653589793 / 180.0, **({"land": True} if i in land else {})})
     return out
 
 
@@ -851,6 +893,7 @@ def sketch_segs(sk, w=None) -> list:
         return raw
     h = w / 2.0
     n = len(raw)
+    bal = sk.get("balanced")
     cut0, cut1 = [0.0] * n, [0.0] * n   # 변의 시작·끝에서 줄이는 길이
     info = {}
     for i in range(n - 1):
@@ -862,7 +905,7 @@ def sketch_segs(sk, w=None) -> list:
     for i, s in enumerate(raw):
         if s["kind"] == "line" and (cut0[i] or cut1[i]):
             u = s["u"]
-            s = {"kind": "line", "a": (s["a"][0] + u[0] * cut0[i], s["a"][1] + u[1] * cut0[i]), "u": u, "len": s["len"] - cut0[i] - cut1[i]}
+            s = dict(s, a=(s["a"][0] + u[0] * cut0[i], s["a"][1] + u[1] * cut0[i]), len=s["len"] - cut0[i] - cut1[i])   # 층참 표식("land")은 그대로 이어받는다
         out.append(s)
         if i in info:
             th = info[i]
@@ -872,7 +915,8 @@ def sketch_segs(sk, w=None) -> list:
             d = cut1[i]
             tx, ty = raw[i + 1]["a"][0] - u0[0] * d, raw[i + 1]["a"][1] - u0[1] * d   # 접점(변 끝에서 d 앞)
             c = (tx - g * h * u0[1], ty + g * h * u0[0])                                  # 안쪽 모서리 점: 접점에서 꺾는 쪽으로 폭/2
-            out.append({"kind": "corner", "c": c, "r": h, "a0": a0, "sw": th, "len": h * abs(th) * _PI / 180.0, "w": w, "m": cors[i]})
+            out.append({"kind": "corner", "c": c, "r": h, "a0": a0, "sw": th, "len": h * abs(th) * _PI / 180.0, "w": w, "m": cors[i],
+                        **({"bal": True} if bal and bal[i] else {})})   # 균형 돌음 표식(W2 스물세 번째 PR)
     return out
 
 
@@ -902,7 +946,7 @@ def seg_tan(s, t):
 
 def stair_sketch_problem(p) -> str | None:
     """스케치 계단의 교차 검사: 이웃 변의 접선이 이어지는가(모서리로 지정한 꼭짓점은 꺾임각 범위·직선 변 둘 사이인가), 원호 반지름이 폭의 절반보다 큰가,
-    모서리가 변을 다 먹지 않는가, 디딤판 수가 모서리와 구간마다 모자라지 않은가."""
+    모서리가 변을 다 먹지 않는가, 층참 변이 직선인가, 균형 돌음의 모서리·이웃 변 조건, 디딤판 수가 모서리·층참·구간마다 모자라지 않은가."""
     sk = p["sketch"]
     segs = sketch_raw_segs(sk)
     h = p["width"] / 2.0
@@ -920,9 +964,27 @@ def stair_sketch_problem(p) -> str | None:
             if segs[i - 1]["kind"] != "line" or s["kind"] != "line":
                 return f"보행선 {i + 1}번 꼭짓점의 모서리(corners)는 직선 변 둘 사이에서만 쓸 수 있다"
             th, d = _corner_turn(segs[i - 1], s, h)
-            if not STAIR_CORNER_MIN <= abs(th) <= STAIR_CORNER_MAX:
-                return (f"보행선 {i + 1}번 꼭짓점의 꺾임각({abs(th):.1f}도)이 {STAIR_CORNER_MIN:g}~{STAIR_CORNER_MAX:g}도 밖이다"
-                        f"(더 완만하면 원호로 잇고, 더 급하면 모서리 둘로 나누세요)")
+            if abs(th) < STAIR_CORNER_MIN:
+                return (f"보행선 {i + 1}번 꼭짓점의 꺾임각({abs(th):.1f}도)이 {STAIR_CORNER_MIN:g}도보다 완만하다(그 정도는 원호로 잇는다: bulges)")
+            if abs(th) > STAIR_CORNER_MAX:   # 거절 사유(W2 스물세 번째 PR): 바깥 둘레 꼭짓점이 안쪽 모서리 점에서 폭/cos(각/2) 만큼 뻗어 135도를 넘으면 쐐기가 너무 길고 180도에서 끝없다
+                far = 1.0 / sincos_deg(abs(th) / 2.0)[1] if abs(th) < 179.0 else float("inf")
+                at135 = 1.0 / sincos_deg(STAIR_CORNER_MAX / 2.0)[1]
+                return (f"보행선 {i + 1}번 꼭짓점의 꺾임각({abs(th):.1f}도)이 {STAIR_CORNER_MAX:g}도를 넘는다: 모서리 바깥 둘레 꼭짓점이 안쪽 모서리 점에서 폭의 1/cos(각/2) 배"
+                        f"({'무한' if far == float('inf') else f'{far:.1f}'}배, {STAIR_CORNER_MAX:g}도에서 {at135:.1f}배)까지 뻗어 쐐기가 바깥으로 너무 길다"
+                        f"(그 이상 꺾으려면 직선 변을 사이에 넣어 {STAIR_CORNER_MAX:g}도 이하 모서리 둘로 나누세요)")
+    land = sk.get("landings", ())
+    for i in land:   # 층참은 직선 변만(W2 스물세 번째 PR)
+        if segs[i]["kind"] != "line":
+            return f"보행선 {i + 1}번 변은 원호라 층참이 될 수 없다(층참은 직선 변만 지정한다: landings)"
+    bal = sk.get("balanced")
+    if bal:
+        for i, b in enumerate(bal):
+            if not b:
+                continue
+            if cors[i] < 2:
+                return f"보행선 {i + 2}번 꼭짓점의 균형 돌음(balanced)은 모서리 디딤판 수(corners)가 2 이상이어야 한다(0 은 모서리가 아니고 1 은 층참이라 나눌 디딤판이 없다)"
+            if segs[i].get("land") or segs[i + 1].get("land"):
+                return f"보행선 {i + 2}번 꼭짓점의 균형 돌음은 이웃 변이 직선 디딤 구간이어야 한다(층참 변과 이웃할 수 없다)"
     if sk.get("corners"):
         left = [s["len"] for s in segs]   # 모서리마다 접하는 원호가 양쪽 직선 변에서 d 만큼 가져간 나머지
         for i, m in enumerate(cors):
@@ -933,9 +995,53 @@ def stair_sketch_problem(p) -> str | None:
         for i, (s, ln) in enumerate(zip(segs, left)):
             if ln < 1.0:
                 return f"보행선 {i + 1}번 변이 모서리 원호에 다 먹혀 1mm 가 남지 않는다(꼭짓점을 더 띄우거나 계단 폭을 줄이세요)"
-        runs = 1 + sum(1 for m in cors if m)
-        if p["risers"] - 1 - sum(cors) < runs:
-            return (f"챌판 수가 모자란다: 디딤판 {p['risers'] - 1}개 중 모서리 디딤판이 {sum(cors)}개라 직선·원호 구간 {runs}개에 하나씩도 돌아가지 않는다")
+    if not sk.get("corners") and not land:
+        return None
+    n = p["risers"]
+    plan = _sketch_plan(sketch_segs(sk, p["width"]), n)
+    runs = len(plan["runs"])
+    if n - 1 - plan["ms"] - plan["nl"] < runs:
+        if plan["nl"]:
+            return (f"챌판 수가 모자란다: 디딤판 {n - 1}개 중 모서리 디딤판이 {plan['ms']}개·층참이 {plan['nl']}개라 직선·원호 구간 {runs}개에 하나씩도 돌아가지 않는다")
+        return (f"챌판 수가 모자란다: 디딤판 {n - 1}개 중 모서리 디딤판이 {sum(cors)}개라 직선·원호 구간 {runs}개에 하나씩도 돌아가지 않는다")
+    if not runs and n - 1 != plan["ms"] + plan["nl"]:
+        return f"디딤판 {n - 1}개 중 모서리·층참이 {plan['ms'] + plan['nl']}개뿐이고 남는 디딤판을 둘 직선·원호 구간이 없다(챌판 수를 {plan['ms'] + plan['nl'] + 1}개로 하거나 직선 구간을 더 두세요)"
+    if bal:
+        return _balanced_problem(p, sketch_segs(sk, p["width"]), plan)
+    return None
+
+
+def _balanced_problem(p, segs, plan) -> str | None:
+    """균형 돌음의 교차 검사: 모서리 디딤판 수가 보행선 위 같은 깊이로 나눈 최소 수 이상인가(아니면 연장이 음수), 이웃 직선 구간이 남는가,
+    이웃 직선 디딤판 바깥쪽 가장자리 깊이가 STAIR_BALANCED_OUTER_MIN 이상인가, 만든 조각이 모두 볼록하고 넓이가 있는가."""
+    n = p["risers"]
+    d_u = plan["d_u"]
+    for ci in sorted(ci for ci, s in enumerate(segs) if s["kind"] == "corner" and s.get("bal")):
+        s = segs[ci]
+        if (s["m"] * d_u - s["len"]) / 2.0 < -1e-9:
+            mmin = int(-(-s["len"] // d_u))
+            return (f"균형 돌음: 모서리 디딤판 수({s['m']})가 모서리 보행선({s['len']:.0f}mm)을 보행선 위 같은 깊이({d_u:.0f}mm)로 나눈 수보다 적다"
+                    f"(최소 {mmin}개. 더 적게 두려면 balanced 를 끄고 같은 각 쐐기를 쓰세요)")
+    rn = plan["runs"]
+    if any(r["b"] - r["a"] <= 1.0 for r in rn):
+        return "균형 돌음이 이웃 직선·원호 구간을 다 먹는다(구간을 더 길게 그리거나 균형 돌음을 끄세요)"
+    counts = _split_counts([r["b"] - r["a"] for r in rn], n - 1 - plan["ms"] - plan["nl"])
+    for r, c in zip(rn, counts):
+        td = (r["b"] - r["a"]) / c
+        outer = td - (r["ea"] + r["eb"] if c == 1 else max(r["ea"], r["eb"])) if (r["ea"] or r["eb"]) else None   # 비스듬한 챌판 선을 가진 디딤판의 바깥쪽 깊이
+        if outer is not None and outer < STAIR_BALANCED_OUTER_MIN:
+            return (f"균형 돌음이 이웃 직선 디딤판을 너무 얇게 한다: 바깥쪽 가장자리 깊이 {outer:.0f}mm 가 {STAIR_BALANCED_OUTER_MIN:g}mm 보다 작다"
+                    f"(이웃 구간을 더 길게 하거나 챌판 수를 줄이세요)")
+        for sid, e in ((r["ids"][0], r["ea"]), (r["ids"][-1], r["eb"])):
+            if e and segs[sid]["len"] <= 2.0 * e + 1.0:
+                return f"균형 돌음의 연장({e:.0f}mm x 2)이 이웃 직선 변({segs[sid]['len']:.0f}mm)보다 길다(그 변을 더 길게 그리세요)"
+    lay = stair_sketch_layout(p)
+    for j, t in enumerate(lay["treads"]):
+        for q in t["pieces"]:
+            n_q = len(q)
+            cr = [(q[(e + 1) % n_q][0] - q[e][0]) * (q[(e + 2) % n_q][1] - q[(e + 1) % n_q][1]) - (q[(e + 1) % n_q][1] - q[e][1]) * (q[(e + 2) % n_q][0] - q[(e + 1) % n_q][0]) for e in range(n_q)]
+            if abs(polygon_area2([list(x) for x in q])) < 2.0 or not (all(c > -1e-6 for c in cr) or all(c < 1e-6 for c in cr)):
+                return f"균형 돌음에서 {j + 1}번 디딤판이 볼록하지 않거나 넓이가 없다(모서리 디딤판 수·이웃 구간 길이를 조정하세요)"
     return None
 
 
@@ -952,57 +1058,125 @@ def _split_counts(ls, r) -> list:
     return cnt
 
 
+def sketch_groups(segs) -> list:
+    """보행선 변 번호를 구간으로 묶는다: [("run", [이어진 직선·원호 변 번호들]), ("corner", [모서리 변]), ("landing", [층참 변]), ...] (보행선을 따라 나오는 순서).
+    디딤판 분배(stair_sketch_layout)와 구간별 난간(commands._sketch_rail_specs)이 같은 묶음을 쓴다."""
+    groups = []
+    for i, s in enumerate(segs):
+        if s["kind"] == "corner":
+            groups.append(("corner", [i]))
+        elif s.get("land"):
+            groups.append(("landing", [i]))
+        elif groups and groups[-1][0] == "run":
+            groups[-1][1].append(i)
+        else:
+            groups.append(("run", [i]))
+    return groups
+
+
+def _sketch_plan(segs, n) -> dict:
+    """스케치 계단 디딤판 분배 계획(순수 함수: 검사와 배치가 같은 값을 쓴다).
+      {"starts": 변마다 보행선 위 시작 길이, "total": 보행선 길이, "groups": sketch_groups, "ms": 모서리 디딤판 합, "nl": 층참 수, "d_u": 층참을 뺀 보행선을 층참 아닌 디딤판 수로 나눈 균일 깊이(없으면 None),
+       "ext": {균형 모서리 변 번호: 연장 길이}, "end_of": 변 끝 길이 함수,
+       "runs": [{"gi": 묶음 번호, "ids": 변 번호들, "a", "b": 균형 모서리 연장만큼 줄인 구간 시작·끝 보행선 길이, "ca", "cb": 앞·뒤에서 챌판 선을 비스듬히 만드는 균형 모서리 변 번호(없으면 None),
+                 "ea", "eb": 그 연장 길이}, ...]}
+    균형 모서리(변의 "bal")는 쐐기 m 개의 보행선 위 깊이를 d_u 로 맞추기 위해 모서리 보행선 양쪽으로 연장 ext = (m x d_u - 모서리 보행선 길이) / 2 만큼 넓힌다(0 이상일 때만 뜻이 있다).
+    이웃 직선·원호 구간은 그만큼 짧아져(a 는 늘고 b 는 준다) 디딤판 수를 길이에 비례해 나눌 때 그 길이를 쓴다."""
+    total = sum(s["len"] for s in segs)   # 이전 코드와 같은 합(비트 단위로 같은 배치를 지키려고 sum 을 그대로 쓴다)
+    starts, acc = [], 0.0
+    for s in segs:
+        starts.append(acc)
+        acc += s["len"]
+    groups = sketch_groups(segs)
+    land = [g[1][0] for g in groups if g[0] == "landing"]
+    ms = sum(segs[g[1][0]]["m"] for g in groups if g[0] == "corner")
+    net = n - 1 - len(land)
+    d_u = (total - sum(segs[i]["len"] for i in land)) / net if net > 0 else None
+    ext = {}
+    for kind, ids in groups:
+        if kind == "corner" and segs[ids[0]].get("bal") and d_u is not None:
+            s = segs[ids[0]]
+            ext[ids[0]] = max((s["m"] * d_u - s["len"]) / 2.0, 0.0)
+
+    def end_of(i):
+        return starts[i + 1] if i + 1 < len(segs) else total
+    runs = []
+    for gi, (kind, ids) in enumerate(groups):
+        if kind != "run":
+            continue
+        pv = groups[gi - 1] if gi else None
+        nx = groups[gi + 1] if gi + 1 < len(groups) else None
+        ca = pv[1][0] if pv is not None and pv[0] == "corner" and ext.get(pv[1][0], 0.0) > 0 else None
+        cb = nx[1][0] if nx is not None and nx[0] == "corner" and ext.get(nx[1][0], 0.0) > 0 else None
+        ea = ext[ca] if ca is not None else 0.0
+        eb = ext[cb] if cb is not None else 0.0
+        runs.append({"gi": gi, "ids": ids, "a": starts[ids[0]] + ea, "b": end_of(ids[-1]) - eb, "ca": ca, "cb": cb, "ea": ea, "eb": eb})
+    return {"starts": starts, "total": total, "groups": groups, "ms": ms, "nl": len(land), "d_u": d_u, "ext": ext, "end_of": end_of, "runs": runs}
+
+
+def _bal_t(s, x) -> float:
+    """균형 모서리 변 s 위의 모서리 시작에서 잰 보행선 위치 x(음수·변 길이 초과도 된다)를 seg_pt 의 매개변수 t 로. 모서리 원호 안은 x 그대로(t = 호 길이),
+    밖은 안쪽 모서리 점에서 같은 각으로 나간 반직선이 이웃 직선 변의 보행선(접선)과 만나는 곳이라 t = 변 길이(또는 0) + 반지름 x atan(밖으로 나간 거리 / 반지름)이다."""
+    h = s["r"]
+    if x < 0.0:
+        return h * AG.atan2(x, h)
+    if x > s["len"]:
+        return s["len"] + h * AG.atan2(x - s["len"], h)
+    return x
+
+
 def stair_sketch_layout(p) -> dict:
     """스케치 계단의 형상 배치(순수 함수: 그리기·IFC·수량·난간이 같은 값을 쓴다). z 는 계단 아래 끝 기준 상대 높이.
       {"segs": 보행선 변들(모서리가 있으면 직선·원호 변 사이에 kind "corner" 원호 변), "starts": 변마다 보행선 위 시작 길이, "length": 보행선 길이(모서리는 접하는 원호로 돈다),
        "td": 디딤판 깊이(보행선 위, 직선·원호 구간 디딤판 중 가장 짧은 값. 모서리가 없으면 모두 같다), "rise", "corners": [{"seg": 변 번호, "m": 디딤판 수, "sw": 꺾임각(도)}, ...],
-       "treads": [{"s0", "s1": 보행선 위 시작·끝 길이, "z": 윗면, "zb": 밑면(0 = 직선 계단처럼 아래 끝까지 속이 찬 덩어리), "pieces": [볼록 사각형(모서리 디딤판은 쐐기 다각형), ...],
+       "landings": [{"seg": 변 번호, "tread": 디딤판 번호, "len": 층참 깊이}, ...],
+       "treads": [{"s0", "s1": 보행선 위 시작·끝 길이, "z": 윗면, "zb": 밑면(0 = 직선 계단처럼 아래 끝까지 속이 찬 덩어리, 층참 뒤 디딤판은 층참 윗면 - STAIR_LANDING_T),
+                   "pieces": [볼록 사각형(모서리 디딤판은 쐐기 다각형), ...],
                    "sides": [((x,y),(x,y)), ...] 옆선 조각(왼쪽·오른쪽, 쐐기는 바깥 둘레), "risers": (챌판 선 시작, 끝) 두 개(시작·끝 챌판, 각 (왼쪽 점, 오른쪽 점)),
-                   "winder": 모서리 디딤판이면 {"seg", "q": 모서리 안 번호, "m"} 아니면 없다}, ...]}
-    모서리가 없으면 보행선 길이를 디딤판 수(챌판 수 - 1)로 같게 나눈다. 모서리가 있으면 모서리 디딤판(원호를 같은 길이로 m 개)을 뺀 나머지 디딤판을 직선·원호 구간(run)
-    길이에 비례해 정수로 나누고 구간 안에서 같게 나눈다. 디딤판의 보행선 구간을 변마다 자르고, 원호 조각은 STAIR_SPIRAL_ARC 이하로 더 나눠 볼록 사각형(안쪽·바깥 현)을 만든다."""
+                   "winder": 모서리 디딤판이면 {"seg", "q": 모서리 안 번호, "m"} 아니면 없다, "landing": 층참이면 {"seg"} 아니면 없다}, ...]}
+    모서리가 없으면 보행선 길이를 디딤판 수(챌판 수 - 1)로 같게 나눈다. 모서리·층참이 있으면 모서리 디딤판(원호를 같은 길이로 m 개)과 층참(변 하나가 디딤판 하나)을 뺀 나머지 디딤판을
+    직선·원호 구간(run) 길이에 비례해 정수로 나누고 구간 안에서 같게 나눈다. 디딤판의 보행선 구간을 변마다 자르고, 원호 조각은 STAIR_SPIRAL_ARC 이하로 더 나눠 볼록 사각형(안쪽·바깥 현)을 만든다.
+    균형 돌음(모서리 변의 "bal"): 모서리 쐐기를 안쪽 모서리 점에서 같은 보행선 위 깊이(d_u)로 나누되 부채를 모서리 양쪽으로 ext 만큼 넓히고, 넓힌 선이 이웃 직선 디딤판 하나씩의
+    앞·뒤 챌판 선이 되어 그 디딤판은 안쪽이 깊고 바깥이 얕은 사다리꼴(바깥 깊이 = 중심 깊이 - ext, 안쪽 = + ext)이 된다. 모든 챌판 선은 안쪽 모서리 점을 지나 서로 겹치지 않는다."""
     segs = sketch_segs(p["sketch"], p["width"])
     n, h = p["risers"], p["width"] / 2.0
     rise = p["height"] / n
-    total = sum(s["len"] for s in segs)
-    starts = []
-    acc = 0.0
-    for s in segs:
-        starts.append(acc)
-        acc += s["len"]
-    spans = []   # (시작, 끝, 모서리 정보 또는 None)
-    if not any(s["kind"] == "corner" for s in segs):
+    plan = _sketch_plan(segs, n)
+    starts, total, end_of = plan["starts"], plan["total"], plan["end_of"]
+    spans = []   # (시작, 끝, 정보(None = 직선·원호 구간 디딤판, ("wedge", 변, 번호, 개수, t0, t1), ("landing", 변)), 뒤쪽 비스듬한 모서리 변 번호 또는 None, 앞쪽 ...)
+    if not any(s["kind"] == "corner" or s.get("land") for s in segs):
         td = total / (n - 1)
         for j in range(n - 1):
-            spans.append((j * td, (j + 1) * td if j < n - 2 else total, None))
+            spans.append((j * td, (j + 1) * td if j < n - 2 else total, None, None, None))
     else:
-        groups = []   # 구간(run) = 이어진 직선·원호 변 번호들, 모서리 = 변 하나
-        for i, s in enumerate(segs):
-            if s["kind"] == "corner":
-                groups.append(("corner", [i]))
-            elif groups and groups[-1][0] == "run":
-                groups[-1][1].append(i)
-            else:
-                groups.append(("run", [i]))
-
-        def end_of(i):
-            return starts[i + 1] if i + 1 < len(segs) else total
-        runs = [g for g in groups if g[0] == "run"]
-        cnt = _split_counts([end_of(g[1][-1]) - starts[g[1][0]] for g in runs], n - 1 - sum(s["m"] for s in segs if s["kind"] == "corner"))
+        run_of = {r["gi"]: r for r in plan["runs"]}
+        counts = _split_counts([r["b"] - r["a"] for r in plan["runs"]], n - 1 - plan["ms"] - plan["nl"]) if plan["runs"] else []
         k = 0
-        for kind, ids in groups:
+        for gi, (kind, ids) in enumerate(plan["groups"]):
             if kind == "run":
-                a, b, c = starts[ids[0]], end_of(ids[-1]), cnt[k]
+                r = run_of[gi]
+                a, b, c = r["a"], r["b"], counts[k]
                 td_k = (b - a) / c
                 k += 1
                 for i in range(c):
-                    spans.append((a + i * td_k, a + (i + 1) * td_k if i < c - 1 else b, None))
+                    spans.append((a + i * td_k, a + (i + 1) * td_k if i < c - 1 else b, None, r["ca"] if i == 0 else None, r["cb"] if i == c - 1 else None))
+            elif kind == "landing":
+                spans.append((starts[ids[0]], end_of(ids[0]), ("landing", ids[0]), None, None))
             else:
                 ci = ids[0]
                 s, m = segs[ci], segs[ci]["m"]
+                if ci in plan["ext"] and plan["ext"][ci] > 0:   # 균형 돌음: 보행선 위 깊이 d_u 씩, 모서리 시작 - ext 에서 모서리 끝 + ext 까지
+                    e = plan["ext"][ci]
+                    dd = (s["len"] + 2.0 * e) / m
+                    for q in range(m):
+                        x0, x1 = -e + dd * q, (-e + dd * (q + 1) if q < m - 1 else s["len"] + e)
+                        spans.append((starts[ci] + x0, starts[ci] + x1, ("wedge", ci, q, m, _bal_t(s, x0), _bal_t(s, x1)), None, None))
+                    continue
                 for q in range(m):
-                    spans.append((starts[ci] + s["len"] * q / m, starts[ci] + s["len"] * (q + 1) / m if q < m - 1 else end_of(ci), (ci, q, m)))
-        td = min(s1 - s0 for s0, s1, w in spans if w is None)
+                    spans.append((starts[ci] + s["len"] * q / m, starts[ci] + s["len"] * (q + 1) / m if q < m - 1 else end_of(ci),
+                                  ("wedge", ci, q, m, s["len"] * q / m, s["len"] * (q + 1) / m), None, None))
+        runs_d = [s1 - s0 for s0, s1, w, _, _ in spans if w is None]
+        td = min(runs_d) if runs_d else min(s1 - s0 for s0, s1, _, _, _ in spans)
 
     def at(sv):
         """보행선 길이 sv 의 (변, 변 안 길이)."""
@@ -1014,14 +1188,20 @@ def stair_sketch_layout(p) -> dict:
     def cut(sv):
         s, t = at(sv)
         return (seg_pt(s, t, h), seg_pt(s, t, -h))
+
+    def slant(ci, front):
+        """균형 모서리 변 ci 의 부채가 이웃 직선 디딤판에 내미는 비스듬한 챌판 선(안쪽 모서리 점 -> 이웃 직선 변의 바깥 가장자리)의 (왼쪽 점, 오른쪽 점).
+        front 면 모서리 앞(들어오는 변, 연장만큼 되돌아간 선), 아니면 모서리 뒤(나가는 변)."""
+        s, e = segs[ci], plan["ext"][ci]
+        t = _bal_t(s, -e) if front else _bal_t(s, s["len"] + e)
+        return (seg_pt(s, t, h), seg_pt(s, t, -h))
     treads = []
-    for j, (s0, s1, wd) in enumerate(spans):
+    for j, (s0, s1, wd, rear, front) in enumerate(spans):
         pieces, sides = [], []
-        if wd is not None:   # 모서리 디딤판: 안쪽 모서리 점에서 퍼지는 쐐기(같은 각), 바깥은 폭만큼 떨어진 두 변 둘레
-            ci, q, m = wd
+        if wd is not None and wd[0] == "wedge":   # 모서리 디딤판: 안쪽 모서리 점에서 퍼지는 쐐기(같은 각, 균형이면 같은 보행선 깊이), 바깥은 폭만큼 떨어진 두 변 둘레
+            _, ci, q, m, t0, t1 = wd
             s = segs[ci]
             out = -(1.0 if s["sw"] > 0 else -1.0) * h   # 바깥 가장자리 쪽 옆 거리(왼쪽 +)
-            t0, t1 = s["len"] * q / m, s["len"] * (q + 1) / m
             half = s["len"] / 2.0
             pts = [seg_pt(s, t0, out)] + ([seg_pt(s, half, out)] if t0 < half - 1e-9 and t1 > half + 1e-9 else []) + [seg_pt(s, t1, out)]
             wedge = [s["c"]] + pts
@@ -1029,9 +1209,16 @@ def stair_sketch_layout(p) -> dict:
                 wedge.reverse()
             pieces.append(tuple(wedge))
             sides += [(pts[e], pts[e + 1]) for e in range(len(pts) - 1)]
-            treads.append({"s0": s0, "s1": s1, "z": (j + 1) * rise, "zb": 0.0, "pieces": pieces, "sides": sides,
-                           "risers": (cut(s0), cut(s1)), "winder": {"seg": ci, "q": q, "m": m}})
+            if plan["ext"].get(ci, 0.0) > 0:   # 균형 돌음: 챌판 선은 안쪽 모서리 점에서 t0·t1 각으로 나간 선(모서리 밖으로 넓힌 것)
+                treads.append({"s0": s0, "s1": s1, "z": (j + 1) * rise, "zb": 0.0, "pieces": pieces, "sides": sides,
+                               "risers": ((seg_pt(s, t0, h), seg_pt(s, t0, -h)), (seg_pt(s, t1, h), seg_pt(s, t1, -h))),
+                               "winder": {"seg": ci, "q": q, "m": m}, "wt": (t0, t1)})
+            else:
+                treads.append({"s0": s0, "s1": s1, "z": (j + 1) * rise, "zb": 0.0, "pieces": pieces, "sides": sides, "risers": (cut(s0), cut(s1)),
+                               "winder": {"seg": ci, "q": q, "m": m}})
             continue
+        rear_l = slant(rear, False) if rear is not None else None    # 앞 균형 모서리가 내민 비스듬한 뒤쪽 챌판 선
+        front_l = slant(front, True) if front is not None else None  # 뒤 균형 모서리가 내민 비스듬한 앞쪽 챌판 선
         for i, s in enumerate(segs):
             if s["kind"] == "corner":
                 continue
@@ -1042,15 +1229,46 @@ def stair_sketch_layout(p) -> dict:
             k = 1 if s["kind"] == "line" else max(1, int(-(-(abs(s["sw"]) * (t1 - t0) / s["len"]) // STAIR_SPIRAL_ARC)))
             for q in range(k):
                 ta, tb = t0 + (t1 - t0) * q / k, t0 + (t1 - t0) * (q + 1) / k
-                quad = [seg_pt(s, ta, -h), seg_pt(s, tb, -h), seg_pt(s, tb, h), seg_pt(s, ta, h)]
+                la, ra = seg_pt(s, ta, h), seg_pt(s, ta, -h)
+                lb, rb = seg_pt(s, tb, h), seg_pt(s, tb, -h)
+                if rear_l is not None and q == 0 and abs(lo - s0) <= 1e-9:
+                    la, ra = rear_l
+                if front_l is not None and q == k - 1 and abs(hi - s1) <= 1e-9:
+                    lb, rb = front_l
+                quad = [ra, rb, lb, la]
                 a2 = sum(quad[e][0] * quad[(e + 1) % 4][1] - quad[(e + 1) % 4][0] * quad[e][1] for e in range(4))
                 if a2 < 0:
                     quad.reverse()
                 pieces.append(tuple(quad))
-                sides += [(seg_pt(s, ta, h), seg_pt(s, tb, h)), (seg_pt(s, ta, -h), seg_pt(s, tb, -h))]
-        treads.append({"s0": s0, "s1": s1, "z": (j + 1) * rise, "zb": 0.0, "pieces": pieces, "sides": sides, "risers": (cut(s0), cut(s1))})
-    return {"segs": segs, "starts": starts, "length": total, "td": td, "rise": rise, "treads": treads,
-            "corners": [{"seg": i, "m": s["m"], "sw": s["sw"]} for i, s in enumerate(segs) if s["kind"] == "corner"]}
+                sides += [(la, lb), (ra, rb)]
+        t = {"s0": s0, "s1": s1, "z": (j + 1) * rise, "zb": 0.0, "pieces": pieces, "sides": sides,
+             "risers": (rear_l if rear_l is not None else cut(s0), front_l if front_l is not None else cut(s1))}
+        if wd is not None:   # 층참(변 하나 = 디딤판 하나, 평평한 윗면)
+            t["landing"] = {"seg": wd[1]}
+        if rear is not None or front is not None:   # 비스듬한 챌판 선을 가진 직선 디딤판: 바깥쪽 가장자리 깊이 = 중심 깊이 - 양쪽 연장(안쪽은 +)
+            t["bal_by"] = tuple(x for x in (rear, front) if x is not None)
+            t["bal_outer"] = (s1 - s0) - sum(plan["ext"][x] for x in t["bal_by"])
+        treads.append(t)
+    base = 0.0   # 층참 뒤 디딤판은 아래 끝까지 채우지 않고 층참 윗면 - 층참 두께까지만 채운다(꺾인 계단의 위 단 묶음과 같은 규약)
+    for t in treads:
+        if "landing" in t:
+            t["zb"] = max(0.0, t["z"] - STAIR_LANDING_T)
+            base = t["zb"]
+        else:
+            t["zb"] = base
+    cinfo = []
+    for i, s in enumerate(segs):
+        if s["kind"] != "corner":
+            continue
+        c = {"seg": i, "m": s["m"], "sw": s["sw"]}
+        if s.get("bal") and plan["ext"].get(i, 0.0) > 0:   # 균형 돌음의 근거 값: 연장, 보행선(중심) 위 깊이, 쐐기마다 각(도), 이웃 직선 디딤판 바깥쪽 깊이 최솟값
+            wed = [t for t in treads if t.get("winder", {}).get("seg") == i]
+            c.update({"bal": True, "ext": plan["ext"][i], "depth": wed[0]["s1"] - wed[0]["s0"],
+                      "angles": [(t["wt"][1] - t["wt"][0]) / s["r"] * 180.0 / _PI for t in wed],
+                      "outer_min": min([t["bal_outer"] for t in treads if i in t.get("bal_by", ())], default=None)})
+        cinfo.append(c)
+    return {"segs": segs, "starts": starts, "length": total, "td": td, "rise": rise, "treads": treads, "corners": cinfo,
+            "landings": [{"seg": t["landing"]["seg"], "tread": j, "len": segs[t["landing"]["seg"]]["len"]} for j, t in enumerate(treads) if "landing" in t]}
 
 
 def sketch_walk_z(lay, sv) -> float:
