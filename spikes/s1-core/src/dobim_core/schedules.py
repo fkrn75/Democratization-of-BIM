@@ -55,16 +55,17 @@ COMMON_FIELDS = ("id", "kind", "category", "ifc_class", "name", "type", "level",
 # 필드 -> 단위 종류(None 은 단위 없음). units="m" 일 때 바꾼다
 FIELD_UNIT = {"elevation": "len", "length": "len", "width": "len", "height": "len", "thickness": "len", "perimeter": "len",
               "sill": "len", "offset": "len", "top_offset": "len", "riser_height": "len", "tread": "len", "ceiling_height": "len",
-              "rise": "len", "depth": "len", "area": "area", "gross_area": "area", "volume": "vol"}
+              "rise": "len", "depth": "len", "area": "area", "gross_area": "area", "volume": "vol",
+              "parapet_length": "len", "parapet_volume": "vol"}
 # 합계를 내는 필드(가산량). 폭·높이 같은 치수는 더하지 않는다
-ADDITIVE = ("count", "length", "perimeter", "area", "gross_area", "volume")
+ADDITIVE = ("count", "length", "perimeter", "area", "gross_area", "volume", "parapet_length", "parapet_volume")
 # 범주마다 쓸 수 있는 고유 필드(공통 필드 뒤에 붙는다)
 CATEGORY_FIELDS = {
     "walls": ("length", "height", "thickness", "area", "volume", "doors", "status"),
     "doors": ("host", "width", "height", "sill", "offset", "area"),
     "windows": ("host", "width", "height", "sill", "offset", "area"),
     "floors": ("thickness", "top_offset", "area", "perimeter", "volume", "openings"),
-    "roofs": ("form", "pitch", "thickness", "area", "volume"),
+    "roofs": ("form", "pitch", "thickness", "area", "volume", "parapet_length", "parapet_volume"),   # 파라펫 길이·부피: 평지붕 파라펫(W2 스물두 번째 PR)이 있을 때만 값이 있다
     "ceilings": ("thickness", "area", "volume", "width", "length", "height"),
     "finishes": ("thickness", "area", "volume", "width", "length", "height"),
     "stairs": ("width", "height", "risers", "riser_height", "tread", "length", "volume"),   # volume: W2 열일곱 번째 PR(방사 계단 수량과 함께)
@@ -242,6 +243,10 @@ def element_row(g, e) -> dict:
                 area -= HV.face_area(gm, i, [lp for _o, _n, m, lp in vs if m != "face" or HV.face_of(gm, lp) == i])
             out["openings"] = len(vs)
         out.update(form=p["form"], pitch=p["pitch"], thickness=p["thickness"], area=area, volume=area * p["thickness"])
+        if "parapet" in p:   # 평지붕 파라펫(W2 스물두 번째 PR): 바깥 면 길이 합·부피 합. 없으면 행은 이전과 같다
+            from dobim_core import roofparapet as RPR
+            sm = RPR.summary(K.roof_parapet_pieces(p))
+            out.update(parapet_length=sm["length"], parapet_volume=sm["volume"])
     elif kind == "stair":
         lay = K.stair_layout(p)
         fl = lay["flights"]

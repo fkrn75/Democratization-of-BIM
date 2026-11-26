@@ -23,7 +23,7 @@ import ifcopenshell.util.schema as US
 # IFC4 클래스 -> IFC2x3 클래스(이전기의 표에 없는 것만). 설비 단말·기기는 IFC2x3 의 일반 분배 요소 클래스로 내린다
 CLASS_MAP = {
     "IfcSanitaryTerminal": "IfcFlowTerminal", "IfcAirTerminal": "IfcFlowTerminal", "IfcLightFixture": "IfcFlowTerminal",
-    "IfcFireSuppressionTerminal": "IfcFlowTerminal", "IfcElectricAppliance": "IfcFlowTerminal",
+    "IfcFireSuppressionTerminal": "IfcFlowTerminal", "IfcWasteTerminal": "IfcFlowTerminal","IfcElectricAppliance": "IfcFlowTerminal",
     "IfcFan": "IfcFlowMovingDevice", "IfcBoiler": "IfcEnergyConversionDevice", "IfcUnitaryEquipment": "IfcEnergyConversionDevice",
     "IfcTank": "IfcFlowStorageDevice", "IfcValve": "IfcFlowController", "IfcFlowMeter": "IfcFlowController",
     "IfcElectricDistributionBoard": "IfcFlowController",

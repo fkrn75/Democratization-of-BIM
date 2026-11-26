@@ -51,6 +51,8 @@ _WT1 = ("walltype.create", {"id": F.WT1, "name": "외벽 RC", "layers": [{"mater
 _WT2 = ("walltype.create", {"id": F.WT2, "name": "칸막이 100", "thickness": 100})
 _SW1 = ("stackwall.create", {"id": F.SW1, "level": F.LV1, "axis": [0, -3000, 6000, -3000], "height": 3000, "line": "finish_ext",
                              "segments": [{"type": F.WT1, "height": 1000}, {"type": F.WT2}]})   # 스택 벽 예시의 준비(W2 일곱 번째 PR, ARC-09)
+_RFF = ("roof.create", {"id": F.RF1, "level": F.LV2, "boundary": [[0, 0], [6000, 0], [6000, 4000], [0, 4000]], "form": "flat", "thickness": 200})   # 평지붕 파라펫·배수 예시의 준비(W2 스물두 번째 PR)
+_RFP = ("roof.parapet.set", {"id": F.RF1, "height": 900, "thickness": 200})
 _RT1 = ("rooftype.create", {"id": F.RT1, "name": "처마 복합", "layers": [{"material": "방수", "thickness": 10}, {"material": "단열재", "thickness": 190}]})   # 지붕 유형 예시의 준비(W2 여덟 번째 PR)
 _RLT1 = ("railtype.create", {"id": F.RLT1, "name": "발루스터 기본", "rails": [{"z": 150}], "baluster": {"spacing": 110, "w": 20, "bottom": 150}})   # 난간 유형 예시의 준비(W2 열세 번째 PR)
 _BT1 = ("beamtype.create", {"id": F.BT1, "name": "G1 기본", "shape": "rect", "width": 400, "depth": 700})   # 보 유형·보 예시의 준비(W2 열다섯 번째 PR)
@@ -121,6 +123,7 @@ PRE = {**_DRAFT_PRE, "history.redo": [("history.undo", {})], "ifc.restore": [_EX
        "brace.create": [_BT1], "brace.set": [_BT1, _BR1],   # W2 스물네 번째 PR
        "truss.create": [_BT1], "truss.set": [_BT1, _TR1], "truss.move": [_BT1, _TR1], "truss.list": [_BT1, _TR1], "truss.ungroup": [_BT1, _TR1],   # W2 스물다섯 번째 PR
        "rooftype.list": [_RT1], "roof.type.set": [_RF1, _RT1], "roof.layers": [_RF1], "roof.eaves.set": [_RF1], "roof.eaves": [_RF1],   # W2 여덟 번째 PR
+       "roof.parapet.set": [_RFF], "roof.parapet": [_RFF, _RFP], "roof.drainage.set": [_RFF],   # W2 스물두 번째 PR: 평지붕 파라펫·배수
        "area.delete": [_LA1], "area.list": [_LA1], "area.legal": [_W4, _SI1, _LA1], "area.export": [_W4, _SI1, _LA1],
        "opening.vertical": [_S1, _RF1], "opening.delete": [_OP1], "opening.face": [_RF1], "opening.set": [_OP1],   # W2 열네 번째 PR: 지붕 원 개구·면 개구·고치기
        "opening.move": [_S1, ("opening.vertical", {"id": F.OP1, "host": F.S1, "boundary": [[1000, 1000], [2000, 1000], [2000, 2000], [1000, 2000]]})],
