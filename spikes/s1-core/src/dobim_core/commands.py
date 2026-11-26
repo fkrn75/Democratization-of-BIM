@@ -3153,6 +3153,8 @@ def roof_set(ctx, a: RoofSet):
             p["bulges"] = bl
     if len(p["boundary"]) != old_n and "eaves" in p:   # 처마 부속(W2 여덟 번째 PR)은 변 번호로 붙는다
         raise DobimError("CONSTRAINT", "외곽 꼭짓점 수가 바뀌면 처마 부속의 변 번호가 어긋난다", path="/boundary", hint="roof.eaves.set 으로 처마 부속을 먼저 떼세요")
+    if len(p["boundary"]) != old_n and "parapet" in p:   # 평지붕 파라펫(W2 스물두 번째 PR)도 변 번호로 선다
+        raise DobimError("CONSTRAINT", "외곽 꼭짓점 수가 바뀌면 파라펫의 변 번호가 어긋난다", path="/boundary", hint="roof.parapet.set clear 로 파라펫을 먼저 떼세요")
     if p["form"] in K.ROOF_OUTLINE_FORMS:   # 외곽선 지붕(W2 여덟 번째 PR)·평지붕(W2 열여섯 번째 PR): 변마다 내밀기
         if oh is not None:
             p["overhangs"] = oh
@@ -3279,6 +3281,8 @@ def roof_move(ctx, a: SlabMove):
     if "axis" in q:   # 압출 지붕(W2 여덟 번째 PR)은 축도 함께 옮긴다
         x1, y1, x2, y2 = q["axis"]
         q["axis"] = [x1 + a.dx, y1 + a.dy, x2 + a.dx, y2 + a.dy]
+    if "drains" in q:   # 평지붕 배수구(W2 스물두 번째 PR)도 함께 옮긴다
+        q["drains"] = [[x + a.dx, y + a.dy] for x, y in q["drains"]]
     ctx.put_el(a.id, dict(r, params=q))
     return {"id": a.id, "boundary": b}
 
@@ -4159,6 +4163,13 @@ def element_get(ctx, a: ElementGet):
         if "eaves" in r["params"]:   # 처마 부속(W2 여덟 번째 PR): 없으면 응답은 그대로다
             from dobim_core import roofeaves as RE
             out["derived"]["eaves"] = RE.summary(K.roof_eave_pieces(r["params"]))
+        if "parapet" in r["params"]:   # 평지붕 파라펫(W2 스물두 번째 PR): 없으면 응답은 그대로다
+            from dobim_core import roofparapet as RPR
+            out["derived"]["parapet"] = RPR.summary(K.roof_parapet_pieces(r["params"]))
+        if "fall" in r["params"]:   # 평지붕 배수 물매·배수구(W2 스물두 번째 PR)
+            out["derived"]["fall_pct"] = r["params"]["fall"]["pct"]
+        if "drains" in r["params"]:
+            out["derived"]["drains"] = len(r["params"]["drains"])
     elif r["kind"] == "railing":
         gm = K.railing_geom(r["params"])
         lv = ctx.g.q(Q.level_info, ctx.g.q(Q.railing_level, a.id))[1]

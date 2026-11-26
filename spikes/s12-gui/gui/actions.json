@@ -103,6 +103,8 @@
     {"id": "rooftype.panel", "label": "지붕 유형(층 구성 유형: 목록·만들기·고치기·복제·지우기·지붕에 입히기)", "commands": ["rooftype.list", "rooftype.create", "rooftype.set", "rooftype.duplicate", "rooftype.delete", "roof.type.set"]},
     {"id": "roof.layers", "label": "지붕 층 구성(재료·두께, 윗면부터)", "command": "roof.layers"},
     {"id": "roof.eaves", "label": "처마 부속(처마 널·홈통·처마 반자, 변 번호는 그린 외곽 순서)","commands": ["roof.eaves", "roof.eaves.set"]},
+    {"id": "roof.parapet", "label": "평지붕 파라펫(높이·두께·변 선택, 변 번호는 그린 외곽 순서)", "commands": ["roof.parapet", "roof.parapet.set"]},
+    {"id": "roof.drainage", "label": "평지붕 배수(배수 물매·배수구)", "command": "roof.drainage.set"},
     {"id": "material.panel", "label": "재료 외관(색·투명도·광택: 목록·정의·라이브러리·지우기)", "commands": ["material.list", "material.define", "material.library", "material.delete"]},
     {"id": "material.scene", "label": "3D 장면 재료 외관(요소별 색·투명도)", "command": "material.appearance"},
     {"id": "area.legal_panel", "label": "법정 면적표(건축면적·연면적·건폐율·용적률)·면적 객체", "commands": ["area.legal", "area.list", "area.define", "area.delete"]},

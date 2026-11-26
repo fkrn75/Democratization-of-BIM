@@ -23,6 +23,7 @@ from dobim_core import roofpoly as RP
 from dobim_core import roofeaves as RE
 from dobim_core import roofext as RX
 from dobim_core import roofflat as RFL
+from dobim_core import roofparapet as RPR
 from dobim_core import roofskel as RS
 from dobim_core import solids as SO
 from dobim_core import wallcut as WC
@@ -1597,6 +1598,59 @@ def eaves_ok(v, n: int) -> bool:
     return True
 
 
+ROOF_FLAT_FALL_MAX = 10.0   # 평지붕 배수 물매 상한(%): FLAT_ROOF 는 빗물을 흘릴 만큼만 약간 기운 지붕(IFC IfcRoofTypeEnum)
+ROOF_DRAINS_MAX = 32        # 평지붕 배수구 수 상한(지붕 슬래브와 같다)
+ROOF_DRAIN_D_DEFAULT = 100.0   # 배수구 지름 기본값 mm(지붕 배수구 4 인치 관행)
+ROOF_DRAIN_D_MAX = 600.0
+
+
+def roof_parapet_ok(v, n: int) -> bool:
+    """평지붕 파라펫 {"height", "thickness", "edges": [외곽 변 번호 오름차순·겹침 없음]}."""
+    if not (isinstance(v, dict) and set(v) == {"height", "thickness", "edges"}):
+        return False
+    es = v["edges"]
+    return (_pos(v["height"]) and v["height"] <= RPR.PARAPET_H_MAX and _pos(v["thickness"]) and v["thickness"] <= RPR.PARAPET_T_MAX
+            and isinstance(es, list) and bool(es) and all(type(x) is int and 0 <= x < n for x in es) and es == sorted(set(es)))
+
+
+def roof_fall_ok(v) -> bool:
+    """평지붕 배수 물매 {"dir": 물이 흐르는 방향 도(+x 가 0, 반시계), "pct": 물매 %(0 초과 ROOF_FLAT_FALL_MAX 이하)}."""
+    return isinstance(v, dict) and set(v) == {"dir", "pct"} and num_ok(v["dir"]) and num_ok(v["pct"]) and 0 < v["pct"] <= ROOF_FLAT_FALL_MAX
+
+
+def roof_fall_tuple(p):
+    """평지붕 params 의 배수 물매 -> (cos, sin, 기울기) 또는 None(물매 0)."""
+    f = p.get("fall")
+    if f is None:
+        return None
+    sn, cs = sincos_deg(float(f["dir"]))
+    return (cs, sn, float(f["pct"]) / 100.0)
+
+
+def roof_drains_ok(v) -> bool:
+    return isinstance(v, list) and 1 <= len(v) <= ROOF_DRAINS_MAX and all(_pt_ok(q) for q in v)
+
+
+def roof_flat_extras_problem(p) -> str | None:
+    """평지붕의 파라펫·배수구가 쓸 수 있는가(안 되면 이유 문장). 외곽·내밀기는 이미 검사했다."""
+    if not any(k in p for k in ("parapet", "drains", "drain_diameter")):
+        return None
+    if "drain_diameter" in p and "drains" not in p:
+        return "roof.drain_diameter 는 배수구(drains)가 있을 때만 둘 수 있다"
+    gm = roof_geom(p)
+    ol = [tuple(q) for q in gm["outline"]]
+    drains = [tuple(float(x) for x in q) for q in p.get("drains", ())]
+    for i, q in enumerate(drains):
+        if point_in_polygon(q, ol) != 1:
+            return f"roof.drains: {i + 1}번 배수구가 지붕(처마 윤곽) 안쪽에 있지 않다"
+        if any(abs(q[0] - r[0]) < 1e-6 and abs(q[1] - r[1]) < 1e-6 for r in drains[:i]):
+            return f"roof.drains: {i + 1}번 배수구가 앞의 배수구와 같은 자리다"
+    if "parapet" in p:
+        if why := RPR.problem(ol, gm["eave_src"], p["parapet"]["edges"], float(p["parapet"]["thickness"]), drains):
+            return f"roof.parapet: {why}"
+    return None
+
+
 def roof_overhangs(p) -> list:
     """외곽선 지붕의 변마다 처마 내밀기(없으면 모두 overhang)."""
     return [float(x) for x in p["overhangs"]] if "overhangs" in p else [float(p["overhang"])] * len(p["boundary"])
@@ -1618,11 +1672,16 @@ def _roof_params(p):
                       "axis": lambda v: isinstance(v, list) and len(v) == 4 and all(num_ok(x) for x in v),
                       "profile": lambda v: isinstance(v, list) and all(_pt_ok(q) for q in v),
                       # 평지붕의 변마다 볼록도(W2 열여섯 번째 PR, 원호 외곽): 없으면 행은 이전과 같다
-                      "bulges": lambda v: isinstance(v, list) and len(v) == len(p.get("boundary", ())) and all(num_ok(x) and abs(x) <= 1.0 for x in v) and any(v)})
+                      "bulges": lambda v: isinstance(v, list) and len(v) == len(p.get("boundary", ())) and all(num_ok(x) and abs(x) <= 1.0 for x in v) and any(v),
+                      # 평지붕 파라펫·배수 물매·배수구(W2 스물두 번째 PR): 없으면 행은 이전과 같다
+                      "parapet": lambda v: roof_parapet_ok(v, len(p.get("boundary", ()))), "fall": roof_fall_ok, "drains": roof_drains_ok,
+                      "drain_diameter": lambda v: _pos(v) and v <= ROOF_DRAIN_D_MAX})
     if err is not None:
         return err
     if "bulges" in p and p["form"] != "flat":
         return "roof.bulges(변마다 볼록도)는 평지붕(flat)에만 둘 수 있다"
+    if any(k in p for k in ("parapet", "fall", "drains", "drain_diameter")) and p["form"] != "flat":
+        return "roof.parapet·roof.fall·roof.drains 는 평지붕(flat)에만 둘 수 있다"
     if p["form"] == "extrusion" or "axis" in p or "profile" in p:   # 압출 지붕(W2 여덟 번째 PR): 입면 프로파일을 axis 방향으로 돌출, 외곽은 그 직사각형
         if p["form"] != "extrusion":
             return "roof.axis·roof.profile 은 압출 지붕(extrusion)에만 둘 수 있다"
@@ -1645,7 +1704,7 @@ def _roof_params(p):
             return "roof: 평지붕(flat)은 slopes·ridge·dir 를 쓰지 않는다(물매 0)"
         if why := RFL.problem(p["boundary"], p.get("bulges"), roof_overhangs(p)):
             return f"roof.boundary: {why}"
-        return None
+        return roof_flat_extras_problem(p)
     if p["form"] == "footprint":
         if "slopes" not in p:
             return "roof: 외곽선 지붕(footprint)은 변마다 물매 slopes 가 필요하다"
@@ -1732,7 +1791,7 @@ def roof_geom(p) -> dict:
     if p["form"] == "extrusion":   # 압출 지붕(W2 여덟 번째 PR): 프로파일 선분마다 평면 사각형
         return RX.geom(p["axis"], p["profile"], p["base_offset"], sincos_deg)
     if p["form"] == "flat":   # 평지붕(W2 열여섯 번째 PR): 수평 면 하나(처마를 내민 윤곽), 볼록 조각 pieces, eave_loop·eave_src·smooth
-        return RFL.geom(p["boundary"], p.get("bulges"), roof_overhangs(p), p["base_offset"])
+        return RFL.geom(p["boundary"], p.get("bulges"), roof_overhangs(p), p["base_offset"], roof_fall_tuple(p))
     if p["form"] == "footprint":   # 외곽선 지붕(W2 여덟 번째 PR): 가중 직선 골격(roofskel). eave_src = 처마 윤곽 변마다 원래 외곽 변 번호
         return RS.geom(p["boundary"], p["slopes"], roof_tans(p["slopes"]), roof_overhangs(p), p["base_offset"])
     b = p["boundary"]
@@ -1807,6 +1866,13 @@ def roof_eave_pieces(p) -> list:
         q, oh = flat_eave_params(p, gm, oh)
         return RE.pieces(q, gm, oh)
     return RE.pieces(p, gm, oh)
+
+
+def roof_parapet_pieces(p) -> list:
+    """평지붕 params 의 파라펫 조각들(roofparapet.pieces, 레벨 기준 z). 파라펫이 없으면 빈 목록."""
+    if "parapet" not in p:
+        return []
+    return RPR.pieces(roof_geom(p), p["parapet"])
 
 
 def flat_eave_params(p, gm, oh):

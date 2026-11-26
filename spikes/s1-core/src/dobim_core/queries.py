@@ -1341,6 +1341,16 @@ def ifc_spec(g, e):
             em = tuple(sorted((k, d["material"]) for k, d in p["eaves"].items() if "material" in d))
             if em:   # 처마 부속 종류별 재료(W2 아홉 번째 PR): 없으면 명세는 이전과 같다(부속은 지붕 재료를 따른다)
                 spec["eave_materials"] = em
+        if "parapet" in p:   # 평지붕 파라펫 조각(W2 스물두 번째 PR): (이름표, 종류, 평면 사각형, 바닥 z, 윗면 z). 없으면 명세는 이전과 같다
+            from dobim_core.kinds import roof_parapet_pieces
+            spec["parapet"] = tuple(roof_parapet_pieces(p))
+        if "fall" in p:   # 평지붕 배수 물매(W2 스물두 번째 PR): 윗면이 기울어진 평면 하나. 없으면 명세는 이전과 같다
+            spec["fall"] = (p["fall"]["dir"], p["fall"]["pct"])
+        if "drains" in p:   # 평지붕 배수구(W2 스물두 번째 PR): ((x, y, 윗면 z), ...)와 지름. 없으면 명세는 이전과 같다
+            from dobim_core.kinds import ROOF_DRAIN_D_DEFAULT, roof_geom
+            a_, b_, c_ = roof_geom(p)["planes"][0]
+            spec["drains"] = tuple((float(x), float(y), a_ * x + b_ * y + c_) for x, y in p["drains"])
+            spec["drain_d"] = float(p.get("drain_diameter", ROOF_DRAIN_D_DEFAULT))
         vs = g.q(roof_voids, e) if g.q(opening_objs) else ()
         if vs:   # 지붕 개구(W2 열네 번째 PR): (개구 id, 이름, 수직/면, 경계 고리, 뚫는 면 번호들). 없으면 명세는 이전과 같다
             from dobim_core import hostvoid as HV

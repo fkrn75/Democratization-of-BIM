@@ -2558,6 +2558,10 @@ def roof_info(g, r):
             # 처마 부속 조각(W2 여덟 번째 PR): (이름표, 종류, 평면 사각형, 바닥 z, 윗면 z) 절대 높이. 없으면 빈 튜플이라 도면은 이전과 같다
             "eaves": tuple((lb, kd, quad, tuple(z + lv for z in zb), tuple(z + lv for z in zt)) for lb, kd, quad, zb, zt in K.roof_eave_pieces(p)),
             "layers": tuple((x["material"], x["thickness"]) for x in p.get("layers", ())),
+            # 평지붕 파라펫 조각(W2 스물두 번째 PR): (이름표, 종류, 평면 사각형, 바닥 z, 윗면 z) 절대 높이, 배수 물매 %(없으면 None), 배수구 ((x, y, 윗면 z), ...). 없으면 빈 튜플·None
+            "parapet": tuple((lb, kd, quad, tuple(z + lv for z in zb), tuple(z + lv for z in zt)) for lb, kd, quad, zb, zt in K.roof_parapet_pieces(p)) if "parapet" in p else (),
+            "fall_pct": gm.get("fall_pct"),
+            "drains": tuple((float(x), float(y), gm["planes"][0][0] * x + gm["planes"][0][1] * y + gm["planes"][0][2] + lv) for x, y in p["drains"]) if "drains" in p else (),
             # 지붕 개구(W2 열네 번째 PR): (모드, 윗면 구멍 고리, 아랫면 구멍 고리, 면 개구의 면 평면(절대 z) 또는 None). 없으면 빈 튜플이라 도면은 이전과 같다
             "voids": g.q(_roof_void_geom, r),
             # 평지붕(W2 열여섯 번째 PR): 같은 호의 두 현이 만나는 둘레 꼭짓점(수직 모서리를 긋지 않는다). 다른 지붕은 빈 튜플
@@ -2621,7 +2625,7 @@ def rcp_flat_roofs(g, cut, depth):
     out = []
     for e in g.q(all_roofs):
         info = g.q(roof_info, e)
-        if info["form"] == "flat" and cut + EPS < info["ztop"] - info["t"] <= cut + depth:
+        if info["form"] == "flat" and cut + EPS < info["zlow"] - info["t"] <= cut + depth:   # 배수 물매가 없으면 zlow == ztop(W2 스물두 번째 PR)
             out.append(e)
     return tuple(out)
 
@@ -2647,13 +2651,14 @@ def roof_slices(g, r):
     if info is None:
         return ()
     zl, zt = info["zlow"], info["ztop"]
-    if info["form"] == "flat":   # 평지붕(W2 열여섯 번째 PR): 쐐기 높이가 0 이다. 판(윗면 - 두께 ~ 윗면)이 가리는 볼록 기둥을 조각마다 하나씩(높이 이음매가 없게 위아래로 조금 겹친다)
+    if info["form"] == "flat" and zt - zl < EPS:   # 평지붕(W2 열여섯 번째 PR): 쐐기 높이가 0 이다. 판(윗면 - 두께 ~ 윗면)이 가리는 볼록 기둥을 조각마다 하나씩(높이 이음매가 없게 위아래로 조금 겹친다)
         zb = zt - info["t"]
-        return tuple((zb - 2 * EPS, zt + 2 * EPS, tuple((q[0], q[1]) for q in fc)) for fc, _pl in info["pieces"] if abs(_area2([(q[0], q[1]) for q in fc])) > 2 * EPS)
+        return (tuple((zb - 2 * EPS, zt + 2 * EPS, tuple((q[0], q[1]) for q in fc)) for fc, _pl in info["pieces"] if abs(_area2([(q[0], q[1]) for q in fc])) > 2 * EPS)
+                + _parapet_slices(info))
     out = []
     for i in range(ROOF_SLICES):
         z0, z1 = zl + (zt - zl) * i / ROOF_SLICES, zl + (zt - zl) * (i + 1) / ROOF_SLICES
-        if info["form"] in ("poly", "footprint", "extrusion"):   # 다각형 외곽(외곽선·압출 지붕 포함)은 볼록 조각마다 자른다(조각 수만큼 기둥 조각)
+        if info["form"] in ("poly", "footprint", "extrusion", "flat"):   # 배수 물매가 있는 평지붕(W2 스물두 번째 PR)도 볼록 조각마다   # 다각형 외곽(외곽선·압출 지붕 포함)은 볼록 조각마다 자른다(조각 수만큼 기둥 조각)
             for fc, (a, b, c) in info["pieces"]:
                 poly = _clip_half([(q[0], q[1]) for q in fc], a, b, c - z1)
                 if len(poly) >= 3 and abs(_area2(poly)) > 2 * EPS:
@@ -2666,7 +2671,13 @@ def roof_slices(g, r):
                 break
         if len(poly) >= 3 and abs(_area2(poly)) > 2 * EPS:
             out.append((z0, z1, tuple(poly)))
-    return tuple(out)
+    return tuple(out) + _parapet_slices(info)
+
+
+def _parapet_slices(info):
+    """평지붕 파라펫 조각(볼록 사각형 기둥)이 가리는 높이 조각 ((z0, z1, 평면 사각형), ...)(W2 스물두 번째 PR). 파라펫이 없으면 빈 튜플.
+    바닥 경사(배수 물매)가 있어도 조각 하나를 바닥 최저 ~ 윗면 최고의 기둥으로 쓴다(지붕 판 안쪽으로 넘치는 만큼은 이미 판이 가린 자리다)."""
+    return tuple((min(zb) - 2 * EPS, max(zt) + 2 * EPS, tuple((q[0], q[1]) for q in quad)) for _lb, _kd, quad, zb, zt in info["parapet"])
 
 
 def _roof_vpieces(g, v, r):
@@ -2714,7 +2725,7 @@ def roof_solid_slices(g, r):
                 poly = _clip_half(poly, -a, -b, z1 + t - c)                    # 조각 윗면 + 두께 이하인 쪽
             if len(poly) >= 3 and abs(_area2(poly)) > 2 * EPS:
                 out.append((z0 - 2 * EPS, z1 + 2 * EPS, tuple(poly)))          # z 를 조금 겹쳐 이음매 높이의 선이 두 조각 사이로 새지 않게 한다
-    return tuple(out)
+    return tuple(out) + _parapet_slices(info)
 
 
 def _roof_solid_vpieces(g, v, r):
@@ -2755,7 +2766,7 @@ def roof_edges3(g, r):
         add((a[0], a[1], a[2] - t), (b[0], b[1], b[2] - t))
         if i not in sm:   # 평지붕 원호 변의 현 사이 꼭짓점은 수직 모서리를 긋지 않는다(W2 열여섯 번째 PR, 원호는 매끈하게)
             add((a[0], a[1], a[2] - t), a)
-    for pc in info["eaves"]:   # 처마 부속(W2 여덟 번째 PR): 조각 육면체의 모서리
+    for pc in info["eaves"] + info["parapet"]:   # 처마 부속(W2 여덟 번째 PR)·평지붕 파라펫(W2 스물두 번째 PR): 조각 육면체의 모서리
         for a, b in RE.piece_edges(pc):
             add(a, b)
     if info["voids"]:   # 지붕 개구(W2 열네 번째 PR): 구멍 안쪽(평면에서 윗면 고리 안)에 드는 모서리를 빼고 구멍 둘레·구멍 벽 모서리를 더한다
@@ -2778,7 +2789,7 @@ def roof_cut_rects(g, v, r):
     if info is None or cfg is None or cfg[0] == "plan" or not cfg[9]:
         return ()
     out = list(_roof_face_cuts(cfg, info))
-    for pc in info["eaves"]:   # 처마 부속(W2 여덟 번째 PR): 절단면이 자른 조각 단면(볼록 다각형)
+    for pc in info["eaves"] + info["parapet"]:   # 처마 부속(W2 여덟 번째 PR)·평지붕 파라펫(W2 스물두 번째 PR): 절단면이 자른 조각 단면(볼록 다각형)
         poly = _eave_cut(cfg, pc)
         if poly is not None:
             out.append(poly)
@@ -2889,7 +2900,7 @@ def roof_plan_parts(g, v, r):
     cfg = g.q(view_cfg, v)
     info = g.q(roof_info, r)
     if cfg is not None and is_rcp(cfg):   # 반사 천장 평면(W2 열여섯 번째 PR): 평지붕 밑면 윤곽(처마를 내민 윤곽)·처마 부속·구멍(X)
-        if info is None or info["form"] != "flat" or not cfg[2] + EPS < info["ztop"] - info["t"] <= cfg[2] + cfg[3]:
+        if info is None or info["form"] != "flat" or not cfg[2] + EPS < info["zlow"] - info["t"] <= cfg[2] + cfg[3]:
             return ((), ())
         ol = info["outline"]
         n = len(ol)
@@ -2907,6 +2918,9 @@ def roof_plan_parts(g, v, r):
         return ((), ())
     sc = cfg[4]
     segs, labels = [], []
+    if info["parapet"]:   # 평지붕 파라펫(W2 스물두 번째 PR): 절단 높이가 파라펫 안이면 절단선, 위면 위(파라펫 윗면보다 높음)면 투영선. 이웃 조각이 공유하는 모서리(마이터·맞댐)는 긋지 않는다
+        cls = "cut" if cfg[2] <= max(max(pc[4]) for pc in info["parapet"]) + EPS else "proj"
+        segs += [(cls,) + s for s in _parapet_outline(info["parapet"])]
     for ring in (info["outline"], info["boundary"]):   # 처마를 내민 윤곽과 외곽(처마 선)
         n = len(ring)
         segs += [("proj", ring[i][0], ring[i][1], ring[(i + 1) % n][0], ring[(i + 1) % n][1]) for i in range(n)]
@@ -2938,11 +2952,32 @@ def roof_plan_parts(g, v, r):
         for sg in (1.0, -1.0):   # 화살촉: 진행 방향 뒤로 +-20도 벌어진 두 선
             ux, uy = -dx, -dy
             segs.append(("symbol", head[0], head[1], head[0] + (ux * bc - sg * uy * bs) * hl, head[1] + (sg * ux * bs + uy * bc) * hl))
-        pn, pc = K.sincos_deg(pitch)   # 물매 표기: 각도와 가로 10 에 대한 세로(관행 "물매 5/10"). 면마다(다각형 외곽은 변마다 다를 수 있다)
-        txt = f"물매 {pitch:g}°({pn / pc * 10:.1f}/10)"
+        if info["fall_pct"] is not None:   # 평지붕 배수 물매(W2 스물두 번째 PR)는 %로 표기한다
+            txt = f"배수 물매 {round(info['fall_pct'], 6):g}%"
+        else:
+            pn, pc = K.sincos_deg(pitch)   # 물매 표기: 각도와 가로 10 에 대한 세로(관행 "물매 5/10"). 면마다(다각형 외곽은 변마다 다를 수 있다)
+            txt = f"물매 {pitch:g}°({pn / pc * 10:.1f}/10)"
         lx, ly = _arrow_label_pos(cx, cy, dx, dy, txt, sc)
         labels.append((lx, ly, txt, LABEL_SUB_H, "middle"))
+    for d in info["drains"]:   # 평지붕 배수구(W2 스물두 번째 PR): 원과 십자(지붕 슬래브 배수구와 같은 기호)
+        rr = ROOF_DRAIN_R * sc
+        ring = _circle_pts(d, rr, 12)
+        segs += [("symbol", ring[i][0], ring[i][1], ring[(i + 1) % 12][0], ring[(i + 1) % 12][1]) for i in range(12)]
+        segs.append(("symbol", d[0] - rr, d[1], d[0] + rr, d[1]))
+        segs.append(("symbol", d[0], d[1] - rr, d[0], d[1] + rr))
     return (tuple(segs), tuple(labels))
+
+
+def _parapet_outline(pcs):
+    """파라펫 조각들의 평면 윤곽 선분 (x0, y0, x1, y1)들: 두 조각이 같은 선분(반대 방향)을 공유하면 둘 다 뺀다(이웃 조각의 맞물린 모서리)."""
+    seen = {}
+    for pc in pcs:
+        q = pc[2]
+        for i in range(4):
+            a, b = q[i], q[(i + 1) % 4]
+            key = tuple(sorted(((round(a[0], 3), round(a[1], 3)), (round(b[0], 3), round(b[1], 3)))))
+            seen.setdefault(key, []).append((a[0], a[1], b[0], b[1]))
+    return [s[0] for k, s in seen.items() if len(s) == 1]
 
 
 def roof_lines(g, v, r):
