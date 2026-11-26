@@ -39,7 +39,7 @@ from dobim_core import appearance as AP
 from dobim_core import arcgeom as AG
 from dobim_core import wallcut as WC
 from dobim_core.errors import DobimError
-from dobim_core.kinds import FIXED_IFC_CLASS, SLAB_OPENINGS_MAX, parapet_ring, roof_geom, stair_layout
+from dobim_core.kinds import FIXED_IFC_CLASS, SLAB_OPENINGS_MAX, STAIR_LANDINGS_MAX, parapet_ring, roof_geom, stair_layout
 from dobim_core import roofeaves as RE
 from dobim_core.solids import OPENINGS_MAX
 from dobim_core.roofpoly import FACES_MAX as _POLY_FACES_MAX   # 다각형 외곽 지붕(W1 1-F 4차)의 경사면 수 상한(직사각형은 4)
@@ -2273,7 +2273,10 @@ class IfcModel:
             return []
         if kind == "railing":   # 유형 난간의 부재(W2 열세 번째 PR)
             return list(RAIL_PART_LABELS)
-        return [f"face:{i}" for i in range(ROOF_FACES_MAX)] if kind == "roof" else ["flight:0", "flight:1", "landing", "winder", "spiral", "sketch"]   # spiral·sketch: 방사·스케치 계단(W2 열일곱 번째 PR)
+        if kind == "roof":
+            return [f"face:{i}" for i in range(ROOF_FACES_MAX)]
+        # spiral·sketch: 방사·스케치 계단(W2 열일곱 번째 PR). 스케치 계단 층참(W2 스물세 번째 PR)은 단 묶음 sketch:1.. 과 층참 slanding:0.. 으로 나뉜다
+        return ["flight:0", "flight:1", "landing", "winder", "spiral", "sketch"] + [f"sketch:{i}" for i in range(1, STAIR_LANDINGS_MAX + 1)] + [f"slanding:{i}" for i in range(STAIR_LANDINGS_MAX)]
 
     def _adopt_parts(self, eid: str, kind: str, e) -> None:
         """가져온 파일에서 요소에 이미 달린 부속(GlobalId 가 part_guid 와 같고 요소와 관계가 이어진 것)을 이어받는다."""
@@ -2605,13 +2608,46 @@ class IfcModel:
             skp["bulges"] = list(sk["bulges"])
         if cors:
             skp["corners"] = list(cors)
+        if sk.get("landings"):
+            skp["landings"] = list(sk["landings"])
+        if sk.get("balanced"):
+            skp["balanced"] = list(sk["balanced"])
         lay = stair_sketch_layout({"width": spec["width"], "height": spec["height"], "risers": spec["risers"], "sketch": skp})
         z0 = spec["base_offset"]
         n = spec["risers"]
-        wanted = {"sketch": {"cls": "IfcStairFlight", "name": f"{spec['name']}-flight1", "rel": "aggregate",
-                             "attrs": {"NumberOfRisers": n, "NumberOfTreads": n - 1, "RiserHeight": float(lay["rise"]), "TreadLength": float(lay["td"]),
-                                       "PredefinedType": "WINDER" if any(c["m"] >= 2 for c in lay["corners"]) else "CURVED" if curved else "STRAIGHT"},
-                             "solid": (lambda: [self._solid(q, t["z"] - t["zb"], z0=z0 + t["zb"]) for t in lay["treads"] for q in t["pieces"]])}}
+        if lay["landings"] and not cors and not curved:   # 층참 변(W2 스물세 번째 PR): 직선뿐이면 단 묶음 수로 STRAIGHT_RUN_STAIR(1)·TWO_STRAIGHT_RUN_STAIR(2)·NOTDEFINED(3 이상)
+            nfl = sum(1 for a_, b_ in zip([None] + lay["treads"], lay["treads"]) if "landing" not in b_ and (a_ is None or "landing" in a_))
+            e.PredefinedType = {1: "STRAIGHT_RUN_STAIR", 2: "TWO_STRAIGHT_RUN_STAIR"}.get(nfl, "NOTDEFINED")
+        if not lay["landings"]:   # 층참이 없으면 단 묶음 하나(이전과 같다)
+            wanted = {"sketch": {"cls": "IfcStairFlight", "name": f"{spec['name']}-flight1", "rel": "aggregate",
+                                 "attrs": {"NumberOfRisers": n, "NumberOfTreads": n - 1, "RiserHeight": float(lay["rise"]), "TreadLength": float(lay["td"]),
+                                           "PredefinedType": "WINDER" if any(c["m"] >= 2 for c in lay["corners"]) else "CURVED" if curved else "STRAIGHT"},
+                                 "solid": (lambda: [self._solid(q, t["z"] - t["zb"], z0=z0 + t["zb"]) for t in lay["treads"] for q in t["pieces"]])}}
+            self._sync_parts(eid, wanted)
+            return
+        # 층참 변(W2 스물세 번째 PR): 층참마다 IfcSlab(LANDING)을 계단에 집합하고, 층참 사이 디딤판 묶음마다 IfcStairFlight 를 둔다(꺾인 계단 turn 과 같은 규약:
+        # 단 묶음 하나의 챌판 수 = 디딤판 수 + 1 이고 층참으로 오르는 챌판은 앞 단 묶음에 센다). 층참이 맨 앞이면 앞 단 묶음은 없다.
+        flights, cur = [], []
+        for t in lay["treads"]:
+            if "landing" in t:
+                if cur:
+                    flights.append(cur)
+                cur = []
+            else:
+                cur.append(t)
+        if cur:
+            flights.append(cur)
+        wanted = {}
+        for fi, fl in enumerate(flights):
+            wound = any("winder" in t and t["winder"]["m"] >= 2 for t in fl)
+            wanted["sketch" if fi == 0 else f"sketch:{fi}"] = {
+                "cls": "IfcStairFlight", "name": f"{spec['name']}-flight{fi + 1}", "rel": "aggregate",
+                "attrs": {"NumberOfRisers": len(fl) + 1, "NumberOfTreads": len(fl), "RiserHeight": float(lay["rise"]),
+                          "TreadLength": float(min(t["s1"] - t["s0"] for t in fl)), "PredefinedType": "WINDER" if wound else "CURVED" if curved else "STRAIGHT"},
+                "solid": (lambda fl=fl: [self._solid(q, t["z"] - t["zb"], z0=z0 + t["zb"]) for t in fl for q in t["pieces"]])}
+        for li, t in enumerate(t for t in lay["treads"] if "landing" in t):
+            wanted[f"slanding:{li}"] = {"cls": "IfcSlab", "name": f"{spec['name']}-landing{li + 1}", "rel": "aggregate", "attrs": {"PredefinedType": "LANDING"},
+                                        "solid": (lambda t=t: [self._solid(q, t["z"] - t["zb"], z0=z0 + t["zb"]) for q in t["pieces"]])}
         self._sync_parts(eid, wanted)
 
     def _project_railing(self, eid, spec):
