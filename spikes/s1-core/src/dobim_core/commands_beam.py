@@ -21,6 +21,10 @@ IfcRectangleProfileDef·IfcIShapeProfileDef 돌출, IfcBeamType + IfcRelDefinesB
 5부(W2 스물네 번째 PR): 보 시스템 beamsys.create / set / move / ungroup / list(닫힌 경계 안에 방향·간격(고정 간격 또는 개수)·정렬로 평행한 작은 보를 채운다.
 시스템 행이 자식 보(보통 보 행, params.bsys)를 소유하고, 경계·간격을 바꾸면 자식이 다시 만들어진다: 스택 벽의 부분 벽과 같은 짜임), 가새 brace.create / set
 (두 점(높이 포함) 사이 경사 구조 부재: 보 행에 brace 표식을 둔 것이라 단면·접합·도면·태그·복사·대칭이 보와 같고 IFC 만 IfcMember(BRACE)다).
+
+6부(W2 스물다섯 번째 PR): 트러스 truss.create / set / move / ungroup / list(두 점(높이 포함) 사이 연직면의 평행현 Pratt·Howe·Warren: 높이·칸 수·형식·현/웹 보 유형.
+트러스 요소가 자식 부재(현 둘 = 보 행, 사재 = 가새 표식 보 행, 수직재 = 평면 길이 0 의 가새 표식 보 행 post_dir)를 소유하고 형식·높이·칸 수를 바꾸면 자식이 다시 만들어진다:
+보 시스템과 같은 짜임), 보 시스템·트러스의 복사·회전·대칭(element.copy 계열이 요소를 옮기고 자식을 owner_regenerate 로 다시 만든다), 시스템·트러스 태그(annot).
 """
 from __future__ import annotations
 
@@ -68,6 +72,11 @@ def beams_of(ctx, tid: str) -> list:
 def systems_of(ctx, tid: str) -> list:
     """보 유형 tid 를 쓰는 보 시스템(W2 스물네 번째 PR)."""
     return sorted(s for s in ctx.st.by_kind.get("beamsys", ()) if ctx.st.el[s]["params"]["btype"] == tid)
+
+
+def trusses_of(ctx, tid: str) -> list:
+    """보 유형 tid 를 현 또는 웹에 쓰는 트러스(W2 스물다섯 번째 PR)."""
+    return sorted(s for s in ctx.st.by_kind.get("truss", ()) if tid in (ctx.st.el[s]["params"]["btype"], ctx.st.el[s]["params"].get("wtype")))
 
 
 def _name_taken(ctx, name: str, skip: str | None = None) -> None:
@@ -278,6 +287,10 @@ def beamtype_delete(ctx, a: BeamTypeDelete):
     if used:   # 보 시스템(W2 스물네 번째 PR)은 유형으로 자식을 다시 만든다: 떼어 낼 수 없다
         raise DobimError("CONSTRAINT", f"보 시스템 {len(used)}개가 이 유형을 쓴다", path="/id", hint="beamsys.set 으로 시스템의 유형을 바꾸거나 보 시스템을 지우세요",
                          details={"systems": used[:20]})
+    used = trusses_of(ctx, a.id)
+    if used:   # 트러스(W2 스물다섯 번째 PR)도 유형으로 자식을 다시 만든다
+        raise DobimError("CONSTRAINT", f"트러스 {len(used)}개가 이 유형을 쓴다", path="/id", hint="truss.set 으로 트러스의 유형을 바꾸거나 트러스를 지우세요",
+                         details={"trusses": used[:20]})
     for bid in beams:
         detach(ctx, bid)
     ctx.put_el(a.id, None)
@@ -330,7 +343,7 @@ class BeamCreate(A):
 
 
 def _beam_params(name, start, end, offset, anchor, roll, cutback, tid, sc, end_offset=None, material=None, bulge=None, vertical_ends=False, skew_cut=False,
-                 gap=0.0, brace=False, bsys=None) -> dict:
+                 gap=0.0, brace=False, bsys=None, truss=None, post_dir=None) -> dict:
     p = {"name": name, "start": [float(start[0]), float(start[1])], "end": [float(end[0]), float(end[1])], "offset": float(offset),
          "anchor": anchor, "section": dict(sc)}
     if tid is not None:
@@ -355,6 +368,10 @@ def _beam_params(name, start, end, offset, anchor, roll, cutback, tid, sc, end_o
         p["brace"] = True
     if bsys is not None:   # 보 시스템의 자식(W2 스물네 번째 PR): 시스템이 정하는 파생 행
         p["bsys"] = bsys
+    if truss is not None:   # 트러스의 자식 부재(W2 스물다섯 번째 PR): 트러스가 정하는 파생 행(수직 웹 부재는 post_dir 도 있다)
+        p["truss"] = truss
+    if post_dir is not None:
+        p["post_dir"] = float(post_dir)
     return p
 
 
@@ -421,7 +438,7 @@ def beam_set(ctx, a: BeamSet):
                      eo, p.get("material"), a.bulge if a.bulge is not None else p.get("bulge"),
                      a.vertical_ends if a.vertical_ends is not None else p.get("vertical_ends", False),
                      a.skew_cut if a.skew_cut is not None else p.get("skew_cut", False), a.gap if a.gap is not None else p.get("gap", 0.0),
-                     p.get("brace", False), p.get("bsys"))
+                     p.get("brace", False), p.get("bsys"), p.get("truss"), p.get("post_dir"))   # 트러스를 푼 뒤 독립 부재가 된 수직 웹 부재도 이 값을 지킨다(W2 스물다섯 번째 PR)
     _write_beam(ctx, a.id, q, "/id")
     if a.level is not None:
         ctx.authored(a.level, "level", what="레벨에 보를 옮기는 것")
@@ -707,7 +724,7 @@ def beam_list(ctx, a: BeamList):
         if "bulge" in p:   # 곡선 보(W2 열아홉 번째 PR): 볼록도·반지름·중심각(도). length 는 호 길이
             ai = BM.arc_info(p)
             item.update(bulge=p["bulge"], radius=round(ai[2], 3), sweep_deg=round(degrees(ai[5]), 3))
-        for k in ("vertical_ends", "skew_cut", "gap", "brace", "bsys"):   # 가새 표식·보 시스템 자식(W2 스물네 번째 PR)
+        for k in ("vertical_ends", "skew_cut", "gap", "brace", "bsys", "truss", "post_dir"):   # 가새 표식·보 시스템 자식(W2 스물네 번째 PR)·트러스 자식(W2 스물다섯 번째 PR)
             if k in p:
                 item[k] = p[k]
         if "material" in p:
@@ -1092,7 +1109,7 @@ def brace_set(ctx, a: BraceSet):
     q = _beam_params(a.name if a.name is not None else p["name"], s2, e2, off, a.anchor if a.anchor is not None else p["anchor"], a.roll if a.roll is not None else p.get("roll", 0.0),
                      a.cutback if a.cutback is not None else p.get("cutback", True), p.get("btype"), p["section"], eoff, p.get("material"), None,
                      a.vertical_ends if a.vertical_ends is not None else p.get("vertical_ends", False), p.get("skew_cut", False),
-                     a.gap if a.gap is not None else p.get("gap", 0.0), brace=True)
+                     a.gap if a.gap is not None else p.get("gap", 0.0), brace=True, post_dir=p.get("post_dir"))
     _write_beam(ctx, a.id, q, "/id")
     if a.level is not None:
         ctx.authored(a.level, "level", what="레벨에 가새를 옮기는 것")
@@ -1101,3 +1118,276 @@ def brace_set(ctx, a: BraceSet):
             ctx.rel("on_level", a.id, old, False)
             ctx.rel("on_level", a.id, a.level, True)
     return {"id": a.id}
+
+
+# ---------------------------------------------------------------- 트러스(W2 스물다섯 번째 PR, STR-08)
+# 트러스 = 두 점(높이 포함) 사이 연직면의 평행현 트러스. 트러스 요소가 자식 부재(현 2개 = IfcBeam 보 행, 웹 = 가새 표식 보 행)를 소유하고(params.truss), 형식·높이·칸 수·
+# 점·유형을 바꾸면 자식이 다시 만들어진다(보 시스템·스택 벽과 같은 짜임: 자식 id 는 부재 순서대로 이어받는다). 수직재는 평면 길이가 0인 보 행(post_dir)이다.
+TrussPattern = Literal["pratt", "howe", "warren"]
+TrussPanels = Annotated[int, Field(ge=BM.TRUSS_PANELS_MIN, le=BM.TRUSS_PANELS_MAX)]
+TrussHeight = Annotated[float, Field(ge=BM.TRUSS_HEIGHT_MIN, le=BM.TRUSS_HEIGHT_MAX, allow_inf_nan=False)]
+
+
+def _truss_params(name, start3, end3, height, pattern, panels, tid, wtid, children) -> dict:
+    s2, e2, off, eoff = _brace_offsets(start3, end3)
+    p = {"name": name, "start": s2, "end": e2, "offset": off, "height": float(height), "pattern": pattern, "panels": int(panels), "btype": tid, "children": list(children)}
+    if eoff is not None:   # 경사 트러스: 끝 높이가 같으면 수평(키 없음)
+        p["end_offset"] = eoff
+    if wtid is not None and wtid != tid:   # 웹 단면이 현과 같으면 따로 적지 않는다
+        p["wtype"] = wtid
+    why = K.row_params_error("truss", p)
+    if why:
+        raise DobimError("CONSTRAINT", f"트러스가 올바르지 않다: {why}", path="/start")
+    return p
+
+
+def _truss_types(ctx, tp: dict) -> dict:
+    """트러스 tp 의 부재 종류별 (보 유형 id, 단면, 재료): chord = 현, web = 웹(수직재·사재). 웹 유형이 없으면 현과 같다."""
+    ct = type_row(ctx, tp["btype"], "/type")["params"]
+    wid = tp.get("wtype", tp["btype"])
+    wt = type_row(ctx, wid, "/web_type")["params"]
+    return {"chord": (tp["btype"], ct["section"], ct.get("material")), "web": (wid, wt["section"], wt.get("material"))}
+
+
+def _truss_child(tid: str, tp: dict, types: dict, m) -> dict:
+    """트러스 tid 의 부재 m = (역할, 이름 꼬리, 시작 (x, y, z), 끝)의 보 행 params(트러스가 정하는 파생 행). 기준선은 단면 가운데이고 접합 자르기는 끈다
+    (부재 축이 마디에서 만나게 놓는다). 웹은 가새 표식(IFC IfcMember BRACE), 수직재는 post_dir(평면 길이 0)."""
+    role, tail, a, b = m
+    bt, sc, mat = types["chord" if role == "chord" else "web"]
+    post = BM.truss_dir_deg(tp) if role == "post" else None
+    q = _beam_params(f"{tp['name']}-{tail}", [a[0], a[1]], [b[0], b[1]], a[2], "center", 0.0, False, bt, sc, b[2], mat, None, False, False, 0.0,
+                     brace=role != "chord", truss=tid, post_dir=post)
+    why = K.row_params_error("beam", q)
+    if why:
+        raise DobimError("CONSTRAINT", f"트러스 부재 {tail} 가 올바르지 않다: {why}", path="/height")
+    return q
+
+
+def truss_regenerate(ctx, tid: str, tp: dict, level: str, new_ids: list | None = None) -> list:
+    """트러스 tid 의 자식 부재를 tp 에 맞춰 만들거나 고치거나 지운다. 자식 id 는 부재 순서(현 둘, 수직재, 사재)대로 이어받고 늘면 새로 만들고 줄면 지운다.
+    돌려주는 것: 자식 id 목록."""
+    types = _truss_types(ctx, tp)
+    mem = BM.truss_members(tp)
+    have = list(tp["children"])
+    kids = have[:len(mem)]
+    pool = list(new_ids or ())
+    while len(kids) < len(mem):
+        nid = pool.pop(0) if pool else ctx.new_id("beam")
+        if nid in ctx.st.el or nid in kids or C._in_split_history(ctx, nid):
+            raise DobimError("CONSTRAINT", f"이미 있는 id 다: {nid}", path="/child_ids")
+        kids.append(nid)
+    for b in have[len(mem):]:   # 줄어든 자식: 지운다(자식을 대상으로 한 태그는 고아로 남는다: 조용히 지우지 않는 기존 규칙)
+        if b in ctx.st.el:
+            C._delete_one(ctx, b)
+    for b, m in zip(kids, mem):
+        q = _truss_child(tid, tp, types, m)
+        bt = types["chord" if m[0] == "chord" else "web"][0]
+        cls = "IfcBeam" if m[0] == "chord" else "IfcMember"
+        r = ctx.st.el.get(b)
+        if r is None:
+            ctx.put_el(b, row("beam", cls, "beam.basic", q))
+            ctx.rel("on_level", b, level, True)
+            ctx.rel("of_type", b, bt, True)
+            continue
+        old = r["params"]
+        if r["ifc_class"] != cls:   # 부재 순서가 역할을 정해 보통은 일어나지 않는다(현 둘이 앞, 웹이 뒤)
+            raise DobimError("CONSTRAINT", f"트러스 자식 {b} 의 역할이 바뀌어 IFC 클래스가 달라진다", path="/child_ids")
+        if q != old:
+            ctx.put_el(b, dict(r, params=q))
+        if old.get("btype") != bt:
+            if old.get("btype") is not None:
+                ctx.rel("of_type", b, old["btype"], False)
+            ctx.rel("of_type", b, bt, True)
+        cur = ctx.rels_out("on_level", b)
+        if cur != [level]:
+            for o in cur:
+                ctx.rel("on_level", b, o, False)
+            ctx.rel("on_level", b, level, True)
+    return kids
+
+
+class TrussCreate(A):
+    id: Id | None = None
+    level: Id = Field(description="놓는 레벨(두 점의 z 의 기준)")
+    type: Id = Field(description="현(상현·하현)의 보 유형(beamtype.create): 단면을 유형에서 받는다")
+    web_type: Id | None = Field(None, description="웹(수직재·사재)의 보 유형. 없으면 현과 같다")
+    start: Pt3 = Field(description="[x, y, z] mm: 하현 기준선(단면 가운데)의 시작점. x·y 는 레벨 좌표, z 는 레벨 기준 높이")
+    end: Pt3 = Field(description="[x, y, z] mm: 하현 기준선의 끝점(z 가 다르면 경사 트러스)")
+    height: TrussHeight = Field(description="상현과 하현 기준선 사이의 수직 거리 mm")
+    pattern: TrussPattern = Field("pratt", description="pratt = 수직재 + 사재가 가운데를 향해 내려감, howe = 수직재 + 사재가 가운데를 향해 올라감(둘 다 칸 수 짝수), "
+                                                       "warren = 수직재 없이 사재만 지그재그")
+    panels: TrussPanels = Field(4, description="칸 수(평면에서 같게 나눈다). Pratt·Howe 는 짝수")
+    child_ids: ChildIds | None = Field(None, description="자식 부재 id(부재 순서: 하현, 상현, 수직재 V0..Vn, 사재 D1..Dn). 비우면 자동")
+    name: Name | None = None
+
+
+@command("truss.create", kind="mutation", risk="write", group="model.beam",
+         summary="트러스(평행현 Pratt·Howe·Warren): 두 점(높이 포함) 사이 연직면에 상현·하현·수직재·사재를 만든다. 부재는 트러스가 소유하고(형식·높이·칸 수를 바꾸면 다시 만들어진다) "
+                 "단면은 보 유형. IFC 는 IfcElementAssembly(TRUSS) 아래 현 IfcBeam·웹 IfcMember(BRACE)",
+         args=TrussCreate, since="0.25",
+         examples=[{"id": F.TR1, "level": F.LV2, "type": F.BT1, "start": [0, 0, 0], "end": [12000, 0, 0], "height": 2000, "pattern": "pratt", "panels": 4}])
+def truss_create(ctx, a: TrussCreate):
+    C._fresh_id(ctx, a, "truss")
+    ctx.authored(a.level, "level", what="레벨에 트러스를 추가하는 것")
+    type_row(ctx, a.type, "/type")
+    if a.web_type is not None:
+        type_row(ctx, a.web_type, "/web_type")
+    if a.child_ids is not None and (len(set(a.child_ids)) != len(a.child_ids) or a.id in a.child_ids):
+        raise DobimError("CONSTRAINT", "child_ids 는 서로 다른 id 로 준다", path="/child_ids")
+    tp = _truss_params(a.name or f"TR-{a.id[-6:]}", a.start, a.end, a.height, a.pattern, a.panels, a.type, a.web_type, [])
+    kids = truss_regenerate(ctx, a.id, tp, a.level, a.child_ids)
+    ctx.put_el(a.id, row("truss", "IfcElementAssembly", "truss.basic", dict(tp, children=kids)))
+    ctx.rel("on_level", a.id, a.level, True)
+    return {"id": a.id, "count": len(kids), "children": kids[:ANS_IDS]}
+
+
+class TrussSet(A):
+    forbid_null = True
+    id: Id
+    level: Id | None = Field(None, description="다른 레벨로(두 점의 z 는 그대로)")
+    type: Id | None = Field(None, description="현의 보 유형")
+    web_type: Id | None = Field(None, description="웹의 보 유형(현과 같은 유형을 주면 따로 적지 않고 웹이 현 유형을 따른다)")
+    start: Pt3 | None = None
+    end: Pt3 | None = None
+    height: TrussHeight | None = None
+    pattern: TrussPattern | None = None
+    panels: TrussPanels | None = None
+    child_ids: ChildIds | None = Field(None, description="부재가 늘 때 새 자식 부재 id")
+    name: Name | None = None
+
+    @model_validator(mode="after")
+    def _any(self):
+        if all(getattr(self, k) is None for k in ("level", "type", "web_type", "start", "end", "height", "pattern", "panels", "name")):
+            raise ValueError("바꿀 필드가 하나도 없다")
+        return self
+
+
+def _truss_pts(p: dict) -> tuple:
+    return [p["start"][0], p["start"][1], p["offset"]], [p["end"][0], p["end"][1], p.get("end_offset", p["offset"])]
+
+
+@command("truss.set", kind="mutation", risk="write", group="model.beam",
+         summary="트러스의 두 점·높이·형식(pratt·howe·warren)·칸 수·현/웹 유형·레벨·이름을 고친다(자식 부재를 다시 만든다: id 는 부재 순서대로 이어받고 남는 것은 지운다)",
+         args=TrussSet, since="0.25", examples=[{"id": F.TR1, "pattern": "warren", "panels": 5}, {"id": F.TR1, "height": 2400, "end": [12000, 0, 600]}])
+def truss_set(ctx, a: TrussSet):
+    r = ctx.authored(a.id, "truss")
+    old = r["params"]
+    lv = ctx.rels_out("on_level", a.id)[0]
+    if a.level is not None:
+        ctx.authored(a.level, "level", what="레벨에 트러스를 옮기는 것")
+        lv = a.level
+    for k, path in ((a.type, "/type"), (a.web_type, "/web_type")):
+        if k is not None:
+            type_row(ctx, k, path)
+    if a.child_ids is not None and (len(set(a.child_ids)) != len(a.child_ids) or a.id in a.child_ids):
+        raise DobimError("CONSTRAINT", "child_ids 는 서로 다른 id 로 준다", path="/child_ids")
+    s3, e3 = _truss_pts(old)
+    tid = a.type if a.type is not None else old["btype"]
+    wtid = a.web_type if a.web_type is not None else old.get("wtype")
+    tp = _truss_params(a.name if a.name is not None else old["name"], a.start if a.start is not None else s3, a.end if a.end is not None else e3,
+                       a.height if a.height is not None else old["height"], a.pattern if a.pattern is not None else old["pattern"],
+                       a.panels if a.panels is not None else old["panels"], tid, wtid, old["children"])
+    kids = truss_regenerate(ctx, a.id, tp, lv, a.child_ids)
+    new = dict(tp, children=kids)
+    if new == old and lv == ctx.rels_out("on_level", a.id)[0]:
+        return {"id": a.id, "changed": False, "count": len(kids)}
+    ctx.put_el(a.id, dict(r, params=new))
+    cur = ctx.rels_out("on_level", a.id)[0]
+    if cur != lv:
+        ctx.rel("on_level", a.id, cur, False)
+        ctx.rel("on_level", a.id, lv, True)
+    return {"id": a.id, "changed": True, "count": len(kids), "children": kids[:ANS_IDS]}
+
+
+class TrussMove(A):
+    id: Id
+    dx: Num = 0.0
+    dy: Num = 0.0
+    dz: Num = Field(0.0, description="두 점의 높이(offset·end_offset)에 더한다")
+
+
+@command("truss.move", kind="mutation", risk="write", group="model.beam", summary="트러스를 평행 이동한다(두 점과 자식 부재가 함께 간다)",
+         args=TrussMove, since="0.25", examples=[{"id": F.TR1, "dx": 0, "dy": 500}])
+def truss_move(ctx, a: TrussMove):
+    r = ctx.authored(a.id, "truss")
+    old = r["params"]
+    lv = ctx.rels_out("on_level", a.id)[0]
+    tp = dict(old, start=[old["start"][0] + a.dx, old["start"][1] + a.dy], end=[old["end"][0] + a.dx, old["end"][1] + a.dy], offset=old["offset"] + a.dz)
+    if "end_offset" in old:
+        tp["end_offset"] = old["end_offset"] + a.dz
+    why = K.row_params_error("truss", tp)
+    if why:
+        raise DobimError("CONSTRAINT", f"트러스가 올바르지 않게 된다: {why}", path="/dx")
+    kids = truss_regenerate(ctx, a.id, tp, lv)
+    ctx.put_el(a.id, dict(r, params=dict(tp, children=kids)))
+    return {"id": a.id, "count": len(kids)}
+
+
+class TrussUngroup(A):
+    id: Id
+
+
+@command("truss.ungroup", kind="mutation", risk="write", group="model.beam",
+         summary="트러스를 푼다: 자식 부재는 독립 부재로 남고(현 = 보, 사재 = 가새, 수직재 = 평면 길이 0 의 가새 표식 부재, 이후 보·가새 명령으로 따로 고친다) 트러스 요소만 지운다",
+         args=TrussUngroup, since="0.25", examples=[{"id": F.TR1}])
+def truss_ungroup(ctx, a: TrussUngroup):
+    r = ctx.authored(a.id, "truss")
+    kids = [b for b in r["params"]["children"] if b in ctx.st.el]
+    for b in kids:
+        br = ctx.st.el[b]
+        ctx.put_el(b, dict(br, params={k: v for k, v in br["params"].items() if k != "truss"}))
+    C._delete_one(ctx, a.id)
+    return {"id": a.id, "released": kids[:ANS_IDS], "count": len(kids)}
+
+
+class TrussList(A):
+    level: Id | None = Field(None, description="이 레벨의 트러스만")
+    limit: int = Field(200, ge=1, le=2000, description="최대 개수")
+    cursor: str | None = Field(None, max_length=2048, description="이전 응답의 page.next_cursor")
+
+
+@command("truss.list", kind="query", risk="read", group="model.beam",
+         summary="트러스 목록(두 점·높이·형식·칸 수·현/웹 유형·부재 수(현·수직재·사재)·자식 부재의 총 길이·체적)", args=TrussList, idempotent=True, since="0.25",
+         examples=[{}, {"level": F.LV2, "limit": 5}])
+def truss_list(ctx, a: TrussList):
+    g = ctx.g
+    st = ctx.st
+    ids = sorted(s for s in st.by_kind.get("truss", ()) if a.level is None or ctx.rels_out("on_level", s) == [a.level])
+    after = C._dec_cursor(a.cursor, "name")
+    start = 0 if after is None else next((k for k, b in enumerate(ids) if b > after), len(ids))
+    rows = []
+    for s in ids[start:start + a.limit]:
+        p = st.el[s]["params"]
+        s3, e3 = _truss_pts(p)
+        tr, wr = st.el.get(p["btype"]), st.el.get(p.get("wtype", p["btype"]))
+        mem = BM.truss_members(p)
+        item = {"id": s, "name": p["name"], "level": ctx.rels_out("on_level", s)[0], "start": s3, "end": e3, "height": p["height"], "pattern": p["pattern"], "panels": p["panels"],
+                "type": tr["params"]["name"] if tr else None, "web_type": wr["params"]["name"] if wr else None,
+                "section": BM.section_label(tr["params"]["section"]) if tr else None, "web_section": BM.section_label(wr["params"]["section"]) if wr else None,
+                "members": {"chords": sum(1 for m in mem if m[0] == "chord"), "posts": sum(1 for m in mem if m[0] == "post"), "diagonals": sum(1 for m in mem if m[0] == "diag")},
+                "beams": len(p["children"]), "children": p["children"][:ANS_IDS]}
+        ln = vol = 0.0
+        for b in p["children"]:
+            if b in st.el and st.el[b]["origin"] == "authored":
+                m = g.q(Q.beam_measure, b)
+                ln += m[1]
+                vol += m[3]
+        item.update(total_length=round(ln, 3), volume_m3=round(vol / 1e9, 6))
+        rows.append(item)
+    items, cut = C._fit(rows, cursor_of=lambda k: C._enc_cursor(ids[start + k]))
+    more = start + len(items) < len(ids)
+    return {"items": items, "page": C._page(C._enc_cursor(ids[start + len(items) - 1]) if more and items else None, len(ids), cut)}
+
+
+# ---------------------------------------------------------------- 자식 소유 요소(보 시스템·트러스)의 복사·회전·대칭(W2 스물다섯 번째 PR)
+OWNER_KINDS = ("beamsys", "truss")
+
+
+def owner_regenerate(ctx, oid: str, level: str) -> list:
+    """보 시스템·트러스 oid 의 params(경계·점·방향 등)를 그대로 두고 자식을 그에 맞춰 다시 만들어 children 에 적는다(복사·회전·대칭이 쓴다)."""
+    r = ctx.st.el[oid]
+    p = r["params"]
+    kids = sys_regenerate(ctx, oid, p, level) if r["kind"] == "beamsys" else truss_regenerate(ctx, oid, p, level)
+    if kids != p["children"]:
+        ctx.put_el(oid, dict(r, params=dict(p, children=kids)))
+    return kids

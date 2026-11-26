@@ -86,6 +86,11 @@ TAG_FIELDS = {
     # W2 스물한 번째 PR(구조 보 4부): 보 태그. type = 보 유형 이름, section = 단면 전체 표기(H-400x200x8x13), size = 약식(H-400x200),
     # length = 기둥·보 면으로 자른 뒤 축 길이, offset = 기준선 높이(레벨 기준). 보 유형 이름 + 약식 단면 "B1 H-400x200" 은 fields ["type", "size"]
     "beam": ("name", "type", "section", "size", "width", "depth", "length", "offset"),
+    # W2 스물다섯 번째 PR(구조 보 6부): 보 시스템·트러스 태그(시스템 한 번 표기). 보 시스템: type·section·size = 작은 보의 보 유형·단면, spacing = 고정 간격(개수로 정했으면 '-'),
+    # count = 자식 보 수, angle = 작은 보 방향(도), offset = 기준선 높이. 트러스: type·section·size = 현, web_type = 웹 보 유형, pattern(Pratt·Howe·Warren)·panels = 칸 수·
+    # height = 상·하현 기준선 사이 높이·length = 하현 기준선 길이(경사 트러스는 실길이). 보 태그처럼 시스템 방향으로 눕혀 가운데에 얹는 태그가 기본이다
+    "beamsys": ("name", "type", "section", "size", "spacing", "count", "angle", "offset"),
+    "truss": ("name", "type", "web_type", "section", "size", "pattern", "panels", "height", "length"),
 }
 # 다중 범주 태그(ANN-08): 이 필드들만 쓰는 태그는 태그 가능한 모든 종류에 달 수 있다(대상을 다른 범주로 다시 묶어도 그대로 쓴다).
 # ifc_class = 요소의 IFC 클래스(범주를 묻는 공통 필드: 공간의 category 는 공간 용도라 이름을 달리 둔다)
@@ -515,6 +520,8 @@ def _field(g, kind, eid, row, name):
         return _field_finst(g, kind, eid, row, name)
     if kind == "beam":
         return _field_beam(g, eid, row, name)
+    if kind in ("beamsys", "truss"):
+        return _field_owner(g, kind, eid, row, name)
     if name in ("width", "height", "sill", "thickness", "elevation", "top_offset"):
         return fmt_num(p[name])
     if kind in ("slab", "space", "stair"):
@@ -574,6 +581,57 @@ def _field_beam(g, eid, row, name):
             raise _NonFinite()
         return fmt_num(n)
     return fmt_num(p["offset"])   # offset
+
+
+def _field_owner(g, kind, eid, row, name):
+    """보 시스템·트러스 태그 필드(W2 스물다섯 번째 PR). 보 유형 행이 없으면(가져온 뒤 정의를 못 되살림) 유형·단면은 '-'."""
+    p = row["params"]
+    if name == "material":
+        m = Q.material(g, eid)
+        return "-" if m is None else str(m)
+    if name == "level":
+        return g.q(Q.level_info, Q.rel_out(g, "on_level", eid)[0])[0]
+    tt = Q.el(g, p.get("btype"))
+    if name == "type":
+        return "-" if tt is None else tt["params"]["name"]
+    if name == "web_type":
+        wt = Q.el(g, p.get("wtype", p.get("btype")))
+        return "-" if wt is None else wt["params"]["name"]
+    if name == "section":
+        return "-" if tt is None else BM.section_label(tt["params"]["section"])
+    if name == "size":
+        return "-" if tt is None else BM.size_label(tt["params"]["section"])
+    if name == "spacing":
+        return fmt_num(p["spacing"]) if "spacing" in p else "-"
+    if name == "count":
+        return str(len(p["children"]))
+    if name == "angle":
+        return fmt_num(p["angle"])
+    if name == "pattern":
+        return {"pratt": "Pratt", "howe": "Howe", "warren": "Warren"}[p["pattern"]]
+    if name == "panels":
+        return str(p["panels"])
+    if name == "height":
+        return fmt_num(p["height"])
+    if name == "length":   # 트러스: 하현 기준선 길이(경사 트러스는 실길이)
+        n = sqrt((p["end"][0] - p["start"][0]) ** 2 + (p["end"][1] - p["start"][1]) ** 2 + (p.get("end_offset", p["offset"]) - p["offset"]) ** 2)
+        if not isfinite(n):
+            raise _NonFinite()
+        return fmt_num(n)
+    return fmt_num(p["offset"])   # offset
+
+
+def owner_tagframe(g, target):
+    """보 시스템·트러스 태그가 놓일 자리 (x, y, 방향 x, 방향 y)(W2 스물다섯 번째 PR): 보 시스템은 경계 무게중심과 작은 보 방향, 트러스는 두 점의 가운데와 진행 방향(평면)."""
+    row = Q.el(g, target)
+    p = row["params"]
+    if row["kind"] == "beamsys":
+        x, y = D.polygon_centroid(p["boundary"])
+        sn, cs = K.sincos_deg(float(p["angle"]))
+        return (x, y, cs, sn)
+    dx, dy = p["end"][0] - p["start"][0], p["end"][1] - p["start"][1]
+    ln = sqrt(dx * dx + dy * dy)
+    return ((p["start"][0] + p["end"][0]) / 2.0, (p["start"][1] + p["end"][1]) / 2.0, dx / ln, dy / ln)
 
 
 def _field_finst(g, kind, eid, row, name):
@@ -809,7 +867,7 @@ def annot_draw(g, a):
     if not (isfinite(ax) and isfinite(ay)):
         return ("invalid", a, kind, "non_finite", *_r(*p["home"]))
     if p.get("align") == "axis":   # 보 축 방향 태그(W2 스물한 번째 PR): 여섯째 값 = 보 진행 방향(단위 벡터). 글은 이 방향으로 눕고 거꾸로 서지 않게 내보낸다
-        tx, ty = g.q(Q.beam_tagpos, p["target"])[2:]
+        tx, ty = (g.q(Q.beam_tagpos, p["target"]) if Q.el(g, p["target"])["kind"] == "beam" else owner_tagframe(g, p["target"]))[2:]   # 보 시스템·트러스(W2 스물다섯 번째 PR)
         return ("tag", a, _r(ax, ay), _r(ax + p["off"][0], ay + p["off"][1]), st[1], (round(tx, 6) + 0.0, round(ty, 6) + 0.0))
     return ("tag", a, _r(ax, ay), _r(ax + p["off"][0], ay + p["off"][1]), st[1])
 
@@ -820,6 +878,8 @@ def tag_anchor(g, target):
     row = Q.el(g, target)
     if row["kind"] == "beam":
         return g.q(Q.beam_tagpos, target)[:2]
+    if row["kind"] in ("beamsys", "truss"):   # 보 시스템(경계 무게중심)·트러스(두 점의 가운데, W2 스물다섯 번째 PR)
+        return owner_tagframe(g, target)[:2]
     if row["kind"] in ("slab", "space", "roof"):
         return D.polygon_centroid(row["params"]["boundary"])
     if row["kind"] == "finst":   # 창·기둥: 삽입점(호스팅은 호스트 축선 위)

@@ -102,6 +102,7 @@
     {"id": "beam.panel", "label": "구조 보(두 점 사이·경사 보·곡선 보(원호)·통심선(원호 통심선은 곡선 보) 따라 일괄·고치기·옮기기·목록, 기둥·보 면 자르기·접합 간격·경사 자르기)", "commands": ["beam.create", "beam.grid", "beam.set", "beam.move", "beam.list"]},
     {"id": "beamsys.panel", "label": "보 시스템(닫힌 경계 안에 방향·간격(고정 간격·개수)·정렬로 평행한 작은 보 채우기: 만들기·고치기·옮기기·풀기·목록)", "commands": ["beamsys.create", "beamsys.set", "beamsys.move", "beamsys.ungroup", "beamsys.list"]},
     {"id": "brace.panel", "label": "가새(두 점(높이 포함) 사이 경사 구조 부재: 만들기·고치기, IFC 는 IfcMember BRACE)", "commands": ["brace.create", "brace.set"]},
+    {"id": "truss.panel", "label": "트러스(두 점(높이 포함) 사이 평행현 Pratt·Howe·Warren: 높이·칸 수·형식·현/웹 유형, 만들기·고치기·옮기기·풀기·목록. 부재는 트러스가 소유하고 IFC 는 IfcElementAssembly TRUSS)", "commands": ["truss.create", "truss.set", "truss.move", "truss.ungroup", "truss.list"]},
     {"id": "rooftype.panel", "label": "지붕 유형(층 구성 유형: 목록·만들기·고치기·복제·지우기·지붕에 입히기)", "commands": ["rooftype.list", "rooftype.create", "rooftype.set", "rooftype.duplicate", "rooftype.delete", "roof.type.set"]},
     {"id": "roof.layers", "label": "지붕 층 구성(재료·두께, 윗면부터)", "command": "roof.layers"},
     {"id": "roof.eaves", "label": "처마 부속(처마 널·홈통·처마 반자, 변 번호는 그린 외곽 순서)","commands": ["roof.eaves", "roof.eaves.set"]},

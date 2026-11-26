@@ -28,8 +28,9 @@ from dobim_core.errors import DobimError
 
 # 편집할 수 있는 종류. 대지·레벨·뷰·주석은 뺀다. 통심선은 기호가 유일해야 해서 복사는 안 된다.
 # 승강기(W2 열일곱 번째 PR)는 회전·대칭(제자리)만 된다: 소유한 슬래브 구멍이 따라간다. 복사·배열은 구멍 소유가 겹쳐 뺀다
-EDIT_KINDS = ("wall", "slab", "space", "stair", "railing", "roof", "solid", "finst", "grid", "door", "beam", "elevator")   # 구조 보(W2 열다섯 번째 PR)
+EDIT_KINDS = ("wall", "slab", "space", "stair", "railing", "roof", "solid", "finst", "grid", "door", "beam", "elevator", "beamsys", "truss")   # 구조 보(W2 열다섯 번째 PR)·보 시스템·트러스(W2 스물다섯 번째 PR: 자식은 다시 만든다)
 NO_COPY_KINDS = ("grid", "elevator")
+OWNER_KINDS = ("beamsys", "truss")   # 자식 보를 소유한 요소: 복사·회전·대칭은 요소만 옮기고 자식 보는 commands_beam.owner_regenerate 가 다시 만든다
 COPY_MAX = 500          # 한 번에 만드는 요소 수 상한
 IDS_MAX = 200           # 고르는 요소 수 상한
 ANS_IDS = 100           # 응답에 싣는 새 id 수 상한(응답 크기 상한)
@@ -192,6 +193,9 @@ def _transform(ctx, sel: list, xf: X.Xf) -> dict:
         if kind == "elevator":   # 승강기(W2 열일곱 번째 PR): 소유한 슬래브 구멍이 회전·대칭을 따라간다(elevator.move 와 같은 규칙)
             C._follow_holes(ctx, e, p, new)
         ctx.put_el(e, dict(r, params=new))
+        if kind in OWNER_KINDS:   # 보 시스템·트러스: 자식 보를 옮긴 경계·점에 맞춰 다시 만든다(id 는 이어받는다)
+            from dobim_core import commands_beam as CB
+            CB.owner_regenerate(ctx, e, ctx.rels_out("on_level", e)[0])
     return {"count": len(sel), **({"railings_not_followed": lost[:ANS_IDS]} if lost else {})}
 
 
@@ -251,6 +255,8 @@ def _copy_set(ctx, sel: list, xf: X.Xf, level, ids: list, warn_top: list) -> lis
             warn_top.append(nid)
         if "name" in p and kind != "grid":
             p["name"] = _renamed(p["name"], e, nid)
+        if kind in OWNER_KINDS:   # 복사본은 자식을 새로 만든다(원본 자식 id 를 가리키지 않는다)
+            p["children"] = []
         ctx.put_el(nid, dict(r, origin="authored", params=_check(kind, nid, p)))
     for e in sel:   # 관계: 층·호스트·타입·조인(둘 다 복사한 벽끼리)
         nid = mp[e]
@@ -267,6 +273,10 @@ def _copy_set(ctx, sel: list, xf: X.Xf, level, ids: list, warn_top: list) -> lis
             for prop in sorted(props):
                 ctx.set_prop(nid, pset, prop, props[prop])
         ctx.set_material(nid, ctx.material(e))
+    for e in sel:   # 보 시스템·트러스 복사본의 자식 보(레벨 관계가 선 뒤에 만든다)
+        if st.el[e]["kind"] in OWNER_KINDS:
+            from dobim_core import commands_beam as CB
+            CB.owner_regenerate(ctx, mp[e], ctx.rels_out("on_level", mp[e])[0])
     return [mp[e] for e in sel]
 
 

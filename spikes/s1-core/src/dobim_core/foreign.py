@@ -175,7 +175,7 @@ def _solid_intent(p) -> dict:
 def _parse_intent(kind: str, text: str) -> dict:
     """DoBIM_Intent 텍스트를 현재 코어 스키마로 해석한다. 못 하면 ValueError. 숫자는 float 로 맞춘다(저작 행과 같은 모양)."""
     d = json.loads(text)
-    extra = {"level": (), "wall": ("level", "joins"), "door": ("host",), "slab": ("level",), "stair": ("level",), "space": ("level",), "railing": ("level",), "elevator": ("level",), "roof": ("level",), "site": (), "solid": ("level",), "curtwall": ("level",), "stackwall": ("level",), "beam": ("level",), "beamsys": ("level",)}[kind]
+    extra = {"level": (), "wall": ("level", "joins"), "door": ("host",), "slab": ("level",), "stair": ("level",), "space": ("level",), "railing": ("level",), "elevator": ("level",), "roof": ("level",), "site": (), "solid": ("level",), "curtwall": ("level",), "stackwall": ("level",), "beam": ("level",), "beamsys": ("level",), "truss": ("level",)}[kind]
     if not isinstance(d, dict) or set(d) != {"kind", "params", "family_id", *extra} or d["kind"] != kind or d["family_id"] != FAMILY[kind]:
         raise ValueError("의도 모양이 현재 스키마와 다르다")
     p = d["params"]
@@ -252,6 +252,13 @@ def _parse_intent(kind: str, text: str) -> dict:
         why = K.row_params_error("beamsys", out)
         if why:
             raise ValueError(f"보 시스템이 올바르지 않다({why})")
+    elif kind == "truss":   # 트러스(W2 스물다섯 번째 PR): 숫자를 float 로 맞춘 뒤(칸 수 panels 는 정수로) 코어 행 검사
+        out = _curtwall_intent(p)
+        if "panels" in out and isinstance(out["panels"], float) and out["panels"].is_integer():
+            out["panels"] = int(out["panels"])
+        why = K.row_params_error("truss", out)
+        if why:
+            raise ValueError(f"트러스가 올바르지 않다({why})")
     elif kind == "curtwall":   # 커튼월(W2 ARC-22): 숫자를 float 로 맞춘 뒤 코어 행 검사
         out = _curtwall_intent(p)
         why = K.row_params_error("curtwall", out)
@@ -528,7 +535,7 @@ def _parse_intent(kind: str, text: str) -> dict:
         if not isinstance(lv, str) or not _ID.match(lv) or not isinstance(joins, list) or not all(isinstance(j, str) and _ID.match(j) for j in joins):
             raise ValueError("레벨·조인 참조가 올바르지 않다")
         res["level"], res["joins"] = lv, sorted(set(joins))
-    elif kind in ("slab", "stair", "space", "railing", "elevator", "roof", "solid", "curtwall", "stackwall", "beam", "beamsys"):
+    elif kind in ("slab", "stair", "space", "railing", "elevator", "roof", "solid", "curtwall", "stackwall", "beam", "beamsys", "truss"):
         if not isinstance(d["level"], str) or not _ID.match(d["level"]):
             raise ValueError("레벨 참조가 올바르지 않다")
         res["level"] = d["level"]
@@ -599,6 +606,13 @@ def _restore_beam_types(rows: dict, rels: set, plan: "ImportPlan") -> None:
                     rows[x].pop("spec_hash", None)
                     plan.detached.append({"id": x, "reasons": ["보 시스템의 보 유형 정의가 없다"]})
             plan.warnings.append(f"{g}: 보 시스템의 보 유형 {str(r['params']['btype'])[:22]} 정의를 되살리지 못해 시스템과 자식 보를 분리했다(동결)")
+        if r["kind"] == "truss" and r["origin"] == "authored" and any(rows.get(t, {}).get("kind") != "beamtype" for t in (r["params"]["btype"], r["params"].get("wtype", r["params"]["btype"]))):
+            for x in [g, *r["params"]["children"]]:   # 트러스(W2 스물다섯 번째 PR)도 현·웹 보 유형으로 자식을 다시 만든다
+                if x in rows and rows[x]["origin"] == "authored":
+                    rows[x]["origin"] = "detached"
+                    rows[x].pop("spec_hash", None)
+                    plan.detached.append({"id": x, "reasons": ["트러스의 보 유형 정의가 없다"]})
+            plan.warnings.append(f"{g}: 트러스의 보 유형 정의를 되살리지 못해 트러스와 자식 부재를 분리했다(동결)")
     for g in sorted(rows):
         r = rows[g]
         tid = r["params"].get("btype") if r["kind"] == "beam" and isinstance(r.get("params"), dict) else None
@@ -1020,6 +1034,8 @@ def plan_import(data: bytes) -> ImportPlan:
             kind = "stackwall"
         if claimed == "beamsys" and p.is_a() == "IfcElementAssembly":   # 보 시스템(W2 스물네 번째 PR): 조립품 클래스라 의도가 밝힌 종류를 따른다
             kind = "beamsys"
+        if claimed == "truss" and p.is_a() == "IfcElementAssembly":   # 트러스(W2 스물다섯 번째 PR): 보 시스템과 같다
+            kind = "truss"
         if claimed == "beam" and p.is_a() == "IfcMember":   # 가새(W2 스물네 번째 PR): IfcMember 로 나간 보(brace). 클래스·표식은 아래에서 맞춰 본다
             kind = "beam"
         if is_type and kind != "ftype":
@@ -1065,6 +1081,11 @@ def plan_import(data: bytes) -> ImportPlan:
                     bad = "레벨 참조가 없다"
                 elif any(cand.get(b, {}).get("kind") != "beam" or cand[b]["params"].get("bsys") != g or cand[b]["level"] != it["level"] for b in it["params"]["children"]):
                     bad = "자식 보가 없거나 이 보 시스템에 속하지 않는다"
+            elif it["kind"] == "truss":   # 트러스(W2 스물다섯 번째 PR): 레벨과 자식 부재가 모두 후보여야 한다
+                if cand.get(it["level"], {}).get("kind") != "level":
+                    bad = "레벨 참조가 없다"
+                elif any(cand.get(b, {}).get("kind") != "beam" or cand[b]["params"].get("truss") != g or cand[b]["level"] != it["level"] for b in it["params"]["children"]):
+                    bad = "자식 부재가 없거나 이 트러스에 속하지 않는다"
             elif it["kind"] in ("slab", "stair", "space", "railing", "elevator", "roof", "solid", "curtwall", "beam"):
                 if cand.get(it["level"], {}).get("kind") != "level":
                     bad = "레벨 참조가 없다"
@@ -1075,6 +1096,9 @@ def plan_import(data: bytes) -> ImportPlan:
                 elif it["kind"] == "beam" and "bsys" in it["params"] and (cand.get(it["params"]["bsys"], {}).get("kind") != "beamsys"
                                                                          or g not in cand[it["params"]["bsys"]]["params"]["children"]):
                     bad = "보 시스템(전체)이 없거나 이 보를 자식으로 갖지 않는다"
+                elif it["kind"] == "beam" and "truss" in it["params"] and (cand.get(it["params"]["truss"], {}).get("kind") != "truss"
+                                                                          or g not in cand[it["params"]["truss"]]["params"]["children"]):
+                    bad = "트러스(전체)가 없거나 이 부재를 자식으로 갖지 않는다"
             elif it["kind"] == "door":
                 if cand.get(it["host"], {}).get("kind") != "wall":
                     bad = "호스트 벽이 없다"
@@ -1095,12 +1119,12 @@ def plan_import(data: bytes) -> ImportPlan:
         if it["kind"] in ("ftype", "finst"):
             rows[g] = {"kind": it["kind"], "ifc_class": cls_of[g], "origin": "authored", "family_id": it["family_id"], "params": it["params"]}
         else:
-            cls = K.SO.SOLID_CATEGORIES[it["params"]["category"]][0] if it["kind"] == "solid" else {"level": "IfcBuildingStorey", "wall": "IfcWall", "door": "IfcDoor", "slab": "IfcSlab", "stair": "IfcStair", "space": "IfcSpace", "railing": "IfcRailing", "elevator": "IfcTransportElement", "roof": "IfcRoof", "site": "IfcSite", "curtwall": "IfcCurtainWall", "stackwall": "IfcWall", "beam": "IfcMember" if it["params"].get("brace") else "IfcBeam", "beamsys": "IfcElementAssembly"}[it["kind"]]
+            cls = K.SO.SOLID_CATEGORIES[it["params"]["category"]][0] if it["kind"] == "solid" else {"level": "IfcBuildingStorey", "wall": "IfcWall", "door": "IfcDoor", "slab": "IfcSlab", "stair": "IfcStair", "space": "IfcSpace", "railing": "IfcRailing", "elevator": "IfcTransportElement", "roof": "IfcRoof", "site": "IfcSite", "curtwall": "IfcCurtainWall", "stackwall": "IfcWall", "beam": "IfcMember" if it["params"].get("brace") else "IfcBeam", "beamsys": "IfcElementAssembly", "truss": "IfcElementAssembly"}[it["kind"]]
             rows[g] = {"kind": it["kind"], "ifc_class": cls, "origin": "authored", "family_id": FAMILY[it["kind"]], "params": it["params"]}
         if it["kind"] == "wall":
             rels.add(("on_level", g, it["level"]))
             rels.update(("joins", min(g, j), max(g, j)) for j in it["joins"])
-        elif it["kind"] in ("slab", "stair", "space", "railing", "elevator", "roof", "solid", "curtwall", "stackwall", "beam", "beamsys"):
+        elif it["kind"] in ("slab", "stair", "space", "railing", "elevator", "roof", "solid", "curtwall", "stackwall", "beam", "beamsys", "truss"):
             rels.add(("on_level", g, it["level"]))
         elif it["kind"] == "door":
             rels.add(("hosts", it["host"], g))

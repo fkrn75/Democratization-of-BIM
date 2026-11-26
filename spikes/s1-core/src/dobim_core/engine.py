@@ -238,6 +238,9 @@ class Ctx:
             if r["kind"] == "beam" and "bsys" in r["params"] and not self.stack_ok and not what.startswith(("태그 대상", "치수 대상")):   # 보 시스템의 자식 보(W2 스물네 번째 PR)
                 raise DobimError("CONSTRAINT", f"보 시스템의 자식 보라 {what}을 바꿀 수 없다: {eid}", path="/id",
                                  hint="자식 보는 보 시스템 커맨드(beamsys.set·move, 시스템 element.delete)로 고친다. 따로 고치려면 beamsys.ungroup 으로 시스템을 풀어 보통 보로 만든다")
+            if r["kind"] == "beam" and "truss" in r["params"] and not self.stack_ok and not what.startswith(("태그 대상", "치수 대상")):   # 트러스의 자식 부재(W2 스물다섯 번째 PR)
+                raise DobimError("CONSTRAINT", f"트러스의 자식 부재라 {what}을 바꿀 수 없다: {eid}", path="/id",
+                                 hint="자식 부재는 트러스 커맨드(truss.set·move, 트러스 element.delete)로 고친다")
         return self.row(eid, kind)
 
     @staticmethod
@@ -1003,9 +1006,10 @@ class Engine:
         """보 시스템의 자식 보(W2 스물네 번째 PR)가 생기거나 사라지면 시스템의 투영을 다시 하게 한다: 집합 관계는 시스템 명세(자식 id 목록)가 그대로여도
         자식 엔티티의 존재에 달려 있다(IFC 에서 자식을 지우면 집합 관계가 줄고, 되돌려 자식이 돌아와도 명세가 같아 건너뛰면 집합에서 빠진 채 남는다)."""
         if row["kind"] == "beam":
-            par = row["params"].get("bsys")
-            if par is not None:
-                self._proj_stamp.pop(par, None)
+            for key in ("bsys", "truss"):   # 보 시스템·트러스(W2 스물다섯 번째 PR)의 자식
+                par = row["params"].get(key)
+                if par is not None:
+                    self._proj_stamp.pop(par, None)
 
     def _rollback(self, applied: list) -> None:
         """적용한 효과를 거꾸로 되돌린다. 도중에 실패하면 오염으로 표시하고 예외를 올린다."""
