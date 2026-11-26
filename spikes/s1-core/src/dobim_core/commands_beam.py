@@ -14,6 +14,9 @@ IfcRectangleProfileDef·IfcIShapeProfileDef 돌출, IfcBeamType + IfcRelDefinesB
 
 3부(W2 열아홉 번째 PR): 곡선 보(beam.create·set bulge: 원호 기준선, 호를 따라 단면 스윕), 경사 보 끝면 연직 자르기(vertical_ends), 보끼리 접합 간격(gap)과
 비스듬한 주 보 옆면에 맞춘 경사 자르기(skew_cut).
+
+4부(W2 스물한 번째 PR): 원호 통심선 일괄 배치(beam.grid 가 원호 통심선을 호를 따라 곡선 보로 놓는다: 다른 통심선과의 교점 사이 칸마다 bulge 보 하나,
+직선 통심선도 원호와의 교점에서 나눈다). 보 태그(annot.tag.create·all 의 대상 beam)와 반사 천장 평면의 보는 annot·drawing 에 있다.
 """
 from __future__ import annotations
 
@@ -22,6 +25,7 @@ from typing import Annotated, Literal
 
 from pydantic import Field, model_validator
 
+from dobim_core import arcgeom as AG
 from dobim_core import beams as BM
 from dobim_core import commands as C
 from dobim_core import fixture as F
@@ -465,6 +469,8 @@ class BeamGrid(A):
     between: Literal["columns", "intersections"] = Field("columns", description="columns = 두 끝 교점 모두에 기둥이 있는 칸만(상용 도구의 '그리드에' 배치), intersections = 교점 사이 모든 칸")
     offset: Num = Field(0.0, ge=-BM.OFFSET_MAX, le=BM.OFFSET_MAX, description="기준선 높이 mm(레벨 기준)")
     anchor: Anchor = "top"
+    include_arcs: bool = Field(True, description="원호 통심선도 놓는다: 호를 따라 교점 사이 칸마다 곡선 보(bulge) 하나, 직선 통심선은 원호와의 교점에서도 나눈다. "
+                                                 "false 면 이전처럼 원호 통심선을 건너뛰고 직선 통심선끼리만 나눈다")
 
 
 def _isect(l1, l2):
@@ -484,6 +490,78 @@ def _isect(l1, l2):
     return (t * ln1, (round(x1 + t * dx1, 6) + 0.0, round(y1 + t * dy1, 6) + 0.0))
 
 
+GRID_TOL = 1.0   # 통심선 교점·칸 판정 허용(mm)
+
+
+def _grid_geo(row):
+    """통심선 행 -> ("line", (x1, y1, x2, y2)) 또는 ("arc", (x1, y1, x2, y2), arc_info)."""
+    p = row["params"]
+    if "arc" in p:
+        return ("arc", tuple(p["line"]), AG.info(p["line"], p["arc"]))
+    return ("line", tuple(p["line"]))
+
+
+def _on_arc(ai, pt) -> float | None:
+    """점 pt 가 원 위에 있다고 보고, 호(0 ~ 호 길이) 안(허용 GRID_TOL)이면 호를 따라 잰 거리 u, 아니면 None."""
+    u = AG.u_of(ai, pt)
+    return u if -GRID_TOL <= u <= AG.length(ai) + GRID_TOL else None
+
+
+def _seg_t(ln, pt) -> float | None:
+    """점 pt 가 (직선을 늘인 위의 점일 때) 선분 ln 안(허용 GRID_TOL)이면 시작에서 잰 거리 t, 아니면 None."""
+    x1, y1, x2, y2 = ln
+    dx, dy = x2 - x1, y2 - y1
+    ln_ = (dx * dx + dy * dy) ** 0.5
+    t = ((pt[0] - x1) * dx + (pt[1] - y1) * dy) / ln_
+    return t if -GRID_TOL <= t <= ln_ + GRID_TOL else None
+
+
+def _grid_hits(a, b) -> list:
+    """통심선 a 위에서 통심선 b 와 만나는 점들 [(a 위 위치(직선은 시작에서 mm, 호는 호를 따라 mm), 점)]. 선분·호 밖의 교점은 뺀다(허용 1mm)."""
+    out = []
+    if a[0] == "line" and b[0] == "line":
+        x = _isect(a[1], b[1])
+        return [] if x is None else [x]
+    if a[0] == "line":   # 직선과 호
+        x1, y1, x2, y2 = a[1]
+        dx, dy = x2 - x1, y2 - y1
+        ln_ = (dx * dx + dy * dy) ** 0.5
+        for hit in AG.line_hits(b[2], x1, y1, dx / ln_, dy / ln_):
+            t = _seg_t(a[1], hit)
+            if t is not None and _on_arc(b[2], hit) is not None:
+                out.append((t, hit))
+    elif b[0] == "line":   # 호와 직선
+        x1, y1, x2, y2 = b[1]
+        dx, dy = x2 - x1, y2 - y1
+        ln_ = (dx * dx + dy * dy) ** 0.5
+        for hit in AG.line_hits(a[2], x1, y1, dx / ln_, dy / ln_):
+            u = _on_arc(a[2], hit)
+            if u is not None and _seg_t(b[1], hit) is not None:
+                out.append((u, hit))
+    else:   # 호와 호
+        for hit in AG.circle_hits(a[2], b[2]):
+            u = _on_arc(a[2], hit)
+            if u is not None and _on_arc(b[2], hit) is not None:
+                out.append((u, hit))
+    return [(round(t, 6) + 0.0, (round(pt[0], 6) + 0.0, round(pt[1], 6) + 0.0)) for t, pt in out]
+
+
+def _arc_bulge(ai, ua, ub) -> float | None:
+    """호의 두 위치(ua < ub, 호를 따라 mm)를 잇는 부분 호의 볼록도 sg x tan(중심각/4). 반원(중심각 > 180도)을 넘으면 None."""
+    sw = (ub - ua) / ai[2]
+    if sw > AG.PI + 1e-6:
+        return None
+    sn, cs = AG.sincos(sw / 4.0)
+    return round(min(1.0, sn / cs) * ai[4], 9) + 0.0
+
+
+def _span_key(s, e, bulge) -> tuple:
+    """칸의 정규 키: 두 끝(순서 무관)과 볼록도(끝 순서를 바꾸면 부호가 바뀐다). 직선은 볼록도 0."""
+    if s <= e:
+        return (s, e, round(bulge, 6) + 0.0)
+    return (e, s, round(-bulge, 6) + 0.0)
+
+
 def _has_column(cols, pt, z0, z1) -> bool:
     for _cid, c0, c1, bb, poly in cols:
         if min(z1, c1) - max(z0, c0) > 1.0 and bb[0] - 0.01 <= pt[0] <= bb[2] + 0.01 and bb[1] - 0.01 <= pt[1] <= bb[3] + 0.01 and K.SO.point_in(pt, list(poly)) >= 0:
@@ -492,14 +570,14 @@ def _has_column(cols, pt, z0, z1) -> bool:
 
 
 @command("beam.grid", kind="mutation", risk="write", group="model.beam",
-         summary="통심선을 따라 보를 한꺼번에 놓는다: 직선 통심선마다 다른 통심선과의 교점 사이 칸에 보 하나(기본은 두 교점에 기둥이 있는 칸만). 같은 자리의 보는 건너뛴다",
+         summary="통심선을 따라 보를 한꺼번에 놓는다: 통심선마다 다른 통심선과의 교점 사이 칸에 보 하나(원호 통심선은 호를 따라 곡선 보, 기본은 두 교점에 기둥이 있는 칸만). 같은 자리의 보는 건너뛴다",
          args=BeamGrid, since="0.22", examples=[{"level": F.LV2, "type": F.BT1, "between": "intersections"}])
 def beam_grid(ctx, a: BeamGrid):
     ctx.authored(a.level, "level", what="레벨에 보를 추가하는 것")
     tp = type_row(ctx, a.type, "/type")["params"]
     st = ctx.st
     allg = sorted(st.by_kind.get("grid", ()))
-    lines = {gid: st.el[gid]["params"]["line"] for gid in allg if "arc" not in st.el[gid]["params"]}
+    geo = {gid: _grid_geo(st.el[gid]) for gid in allg if a.include_arcs or "arc" not in st.el[gid]["params"]}   # 호를 놓지 않으면 원호 통심선은 교점 후보에서도 뺀다(이전과 같다)
     if a.grids is not None:
         if len(set(a.grids)) != len(a.grids):
             raise DobimError("CONSTRAINT", "grids 에 같은 id 가 두 번 있다", path="/grids")
@@ -509,27 +587,31 @@ def beam_grid(ctx, a: BeamGrid):
         sel = sorted(a.grids)
     else:
         sel = allg
-    skipped_arc = [gid for gid in sel if gid not in lines]
+    skipped_arc = [gid for gid in sel if gid not in geo]
     if skipped_arc:
-        ctx.warn(f"원호 통심선 {len(skipped_arc)}개는 건너뛴다(곡선 보는 beam.create bulge 로 놓는다: 원호 통심선 일괄 배치는 다음 PR)")
+        ctx.warn(f"원호 통심선 {len(skipped_arc)}개는 건너뛴다(include_arcs 를 켜면 호를 따라 곡선 보로 놓는다)")
     g = ctx.fresh()
     elev = g.q(Q.level_info, a.level)[1]
     probe = {"section": tp["section"], "anchor": a.anchor}
     b0, b1 = BM.b_range(probe)
     z0, z1 = elev + a.offset + b0, elev + a.offset + b1
     cols = g.q(Q.beam_columns) if a.between == "columns" else ()
-    have = set()   # 이 레벨에 이미 있는 보의 두 끝(순서 무관)
+    have = set()   # 이 레벨에 이미 있는 보의 두 끝(순서 무관). 직선 칸은 곡선 보가 있어도 같은 두 끝이면 건너뛴다(이전과 같다)
+    have_arc = set()   # 곡선 보: 두 끝과 볼록도(정규 키)
     for b in sorted(ctx.rels_in("on_level", a.level)):
         r = st.el[b]
         if r["kind"] == "beam":
             s_, e_ = tuple(r["params"]["start"]), tuple(r["params"]["end"])
             have.add((min(s_, e_), max(s_, e_)))
-    spans = []
+            if "bulge" in r["params"]:
+                have_arc.add(_span_key(s_, e_, r["params"]["bulge"]))
+    spans = []   # (시작, 끝, 볼록도 또는 None)
+    bad_arc = []   # 곡선 보로 놓을 수 없는 칸의 이유
     for gid in sel:
-        if gid not in lines:
+        if gid not in geo:
             continue
-        ln = lines[gid]
-        pts = sorted({x for o in allg if o != gid and o in lines and (x := _isect(ln, lines[o])) is not None})
+        me = geo[gid]
+        pts = sorted({x for o in allg if o != gid and o in geo for x in _grid_hits(me, geo[o])})
         uniq = []
         for t, pt in pts:
             if not uniq or t - uniq[-1][0] > 1.0:
@@ -537,23 +619,43 @@ def beam_grid(ctx, a: BeamGrid):
         for (ta, pa), (tb, pb) in zip(uniq, uniq[1:]):
             if a.between == "columns" and not (_has_column(cols, pa, z0, z1) and _has_column(cols, pb, z0, z1)):
                 continue
+            if me[0] == "arc":
+                bu = _arc_bulge(me[2], ta, tb)
+                if bu is None:
+                    bad_arc.append("중심각이 180도를 넘는 호")
+                    continue
+                if bu == 0.0:
+                    bad_arc.append("너무 짧은 호")
+                    continue
+                key = _span_key(pa, pb, bu)
+                if key in have_arc:
+                    continue
+                why = K.row_params_error("beam", _beam_params("x", pa, pb, a.offset, a.anchor, 0.0, True, a.type, tp["section"], None, tp.get("material"), bu))
+                if why:
+                    bad_arc.append(why)
+                    continue
+                have_arc.add(key)
+                spans.append((pa, pb, bu))
+                continue
             key = (min(pa, pb), max(pa, pb))
             if key in have:
                 continue
             have.add(key)
-            spans.append((pa, pb))
+            spans.append((pa, pb, None))
+    if bad_arc:
+        ctx.warn(f"곡선 보로 놓을 수 없는 호 칸 {len(bad_arc)}개를 건너뛴다(첫 이유: {bad_arc[0]})")
     if len(spans) > GRID_BEAMS_MAX:
         raise DobimError("CONSTRAINT", f"보가 {len(spans)}개 생긴다(한 번에 {GRID_BEAMS_MAX}개까지)", path="/grids", hint="grids 로 통심선을 나눠 여러 번 실행하세요")
     made = []
-    for pa, pb in spans:
+    for pa, pb, bu in spans:
         bid = ctx.new_id("beam")
-        p = _check_beam(bid, _beam_params(f"BM-{bid[-6:]}", pa, pb, a.offset, a.anchor, 0.0, True, a.type, tp["section"], None, tp.get("material")), "/grids")
+        p = _check_beam(bid, _beam_params(f"BM-{bid[-6:]}", pa, pb, a.offset, a.anchor, 0.0, True, a.type, tp["section"], None, tp.get("material"), bu), "/grids")
         ctx.put_el(bid, row("beam", "IfcBeam", "beam.basic", p))
         ctx.rel("on_level", bid, a.level, True)
         ctx.rel("of_type", bid, a.type, True)
         made.append(bid)
-    if not made:
-        ctx.warn("놓을 칸이 없다(교점이 둘 이상인 직선 통심선이 없거나" + (", 두 교점 모두에 기둥이 있는 칸이 없거나" if a.between == "columns" else "") + " 같은 자리에 보가 이미 있다)")
+    if not made and not bad_arc:
+        ctx.warn("놓을 칸이 없다(교점이 둘 이상인 통심선이 없거나" + (", 두 교점 모두에 기둥이 있는 칸이 없거나" if a.between == "columns" else "") + " 같은 자리에 보가 이미 있다)")
     return {"count": len(made), "ids": made[:ANS_IDS]}
 
 

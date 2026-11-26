@@ -135,6 +135,19 @@ def section_label(sc) -> str:
     return f"R-{f(sc['width'])}x{f(sc['depth'])}"
 
 
+def size_label(sc) -> str:
+    """단면 약식 표기(보 태그·도면 글: 웨브·플랜지·두께를 뺀 대표 치수): 사각 'R-폭x춤', H형강 'H-춤x폭', ㄷ형강 'C-춤x폭', ㄱ형강 'L-춤x폭',
+    각형 강관 'B-춤x폭', 원형 강관 'P-지름'. 전체 표기는 section_label."""
+    def f(v):
+        return f"{float(v):g}"
+    sh = sc["shape"]
+    if sh in ("h", "c", "l", "box"):
+        return f"{sh.upper()}-{f(sc['depth'])}x{f(sc['width'])}"
+    if sh == "pipe":
+        return f"P-{f(sc['width'])}"
+    return f"R-{f(sc['width'])}x{f(sc['depth'])}"
+
+
 def section_area(sc) -> float:
     """단면적 mm2(원형 강관은 참 원: 도면의 32각형이 아니다)."""
     w, d = float(sc["width"]), float(sc["depth"])
@@ -339,6 +352,21 @@ def arc_stations(p, cut) -> tuple:
 def arc_xy(ai, u, cb, a) -> tuple:
     """경계 u 에서 단면의 왼쪽 거리 a 인 점의 평면 좌표(마이터 늘림 포함)."""
     return AG.point(ai, u, a / cb)
+
+
+def mid_frame(p, cut) -> tuple:
+    """보 태그가 놓일 자리 (x, y, 접선 x, 접선 y): 기둥·보 면으로 자른 뒤 남은 축(cut = 시작·끝에서 줄인 축 방향 길이)의 가운데 점과 그 점의 진행 방향
+    (평면, 단위 벡터). 곡선 보는 호의 가운데 점과 그 점의 접선, 경사 보는 평면에 투영한 축이다(자른 길이는 실길이라 평면으로 환산)."""
+    if curved(p):
+        ai = arc_info(p)
+        um = (float(cut[0]) + ai[2] * ai[5] - float(cut[1])) / 2.0
+        x, y = AG.point(ai, um)
+        tx, ty = AG.tangent(ai, um)
+        return (x, y, tx, ty)
+    x0, y0, ux, uy, ln = axis(p)
+    kc = slope(p)[0]
+    um = (float(cut[0]) * kc + ln - float(cut[1]) * kc) / 2.0
+    return (x0 + ux * um, y0 + uy * um, ux, uy)
 
 
 def beam_problem(p) -> str | None:

@@ -164,6 +164,11 @@ def view_prims(sh: Sheet, data, tx, ty, datums, dx0, dx1, style=None, prof=None)
             ang = DX.adim_text_angle(u)
             a = radians(ang)
             sh.text(tx(tpos[0]) + 0.8 * sin(a), ty(tpos[1]) - 0.8 * cos(a), h_dim, text, "middle", DX.ANNOT_COLOR, ang)
+        elif t == "tag" and len(it) > 5:   # 보 축 방향 태그(W2 스물한 번째 PR): 지시선 없이 보 방향으로 눕힌 글
+            _, _, _anc, lab, text, u = it
+            ang = DX.adim_text_angle(u)
+            a = radians(ang)
+            sh.text(tx(lab[0]) + 0.8 * sin(a), ty(lab[1]) - 0.8 * cos(a), h_tag, text, "middle", "#8a3b00", ang)
         elif t == "tag":
             _, _, anc, lab, text = it
             sh.line(tx(anc[0]), ty(anc[1]), tx(lab[0]), ty(lab[1]), 0.13, "#8a3b00")
