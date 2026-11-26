@@ -627,5 +627,8 @@ def test_3_되돌리기와_증분_전체_계산(ws):
 def test_3_배치는_평면_뷰만이고_태그가_없으면_아무것도_안_한다(ws):
     r = ok(ws.run("annot.tag.arrange", {"view": V}))
     assert r == {"view": V, "moved": [], "kept": 0, "pinned": 0, "unresolved": [], "skipped": []}
+    # 의도한 변화(W2 스물일곱 번째 PR): 단면·입면 뷰의 태그가 생겨 입면도 배치 대상이다(태그가 없으면 평면과 같이 아무것도 안 한다). 대지 뷰 같은 모델 뷰가 아닌 것은 거절
     ok(ws.run("view.create", {"id": F.V2, "name": "입면", "type": "elevation", "dir": "S"}))
-    assert err(ws.run("annot.tag.arrange", {"view": F.V2}))["code"] == "CONSTRAINT"
+    assert ok(ws.run("annot.tag.arrange", {"view": F.V2})) == {"view": F.V2, "moved": [], "kept": 0, "pinned": 0, "unresolved": [], "skipped": []}
+    ok(ws.run("view.create", {"id": F.VL1, "name": "배치", "type": "site"}))
+    assert err(ws.run("annot.tag.arrange", {"view": F.VL1}))["code"] == "CONSTRAINT"

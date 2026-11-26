@@ -89,7 +89,7 @@ PRE = {**_DRAFT_PRE, "history.redo": [("history.undo", {})], "ifc.restore": [_EX
        "view.set": [_V1], "view.delete": [_V1], "view.list": [_V1], "view.linework": [_V1], "view.export": [_V1], "view.affected": [_V1],
        "view.scene": [_V1], "view.pick": [_V1], "geom.snap": [_V1],   # GUI 조회(B1): 뷰가 있어야 한다
        "annot.dim.create": [_V1], "annot.dim.chain": [_V1], "annot.tag.create": [_V1], "annot.tag.all": [_V1], "annot.rebind": [_V1, _A1], "annot.delete": [_V1, _A1],
-       "annot.list": [_V1, _A1], "annot.check": [_V1, _A1], "annot.tag.set": [_V1, _TG1], "annot.tag.arrange": [_V1, _TG1],
+       "annot.list": [_V1, _A1], "annot.check": [_V1, _A1], "annot.tag.set": [_V1, _TG1], "annot.tag.arrange": [_V1, _TG1], "annot.tag.sheet_check": [_V1, _TG1, _SH1],
        "family.set": [_FAMILY_PRE], "family.set_type": [_FAMILY_PRE], "join.tee": [_W5], "ceiling.set": [_CL1], "annot.dim.heights": [_V2], "slab.set": [_S1], "slab.move": [_S1], "slab.delete": [_S1], "slab.layers": [_S1],
        "stair.set": [_ST1], "stair.move": [_ST1], "stair.delete": [_ST1],
        "railing.set": [_RL1], "railing.move": [_RL1], "railing.delete": [_RL1], "railing.from_stair": [_ST1], "railing.from_slab": [_S1],
