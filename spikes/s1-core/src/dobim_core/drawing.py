@@ -5582,7 +5582,9 @@ def _solid_wall_occ(g, v, w):
 # 형상은 beams.mesh 의 다면체다(IFC 투영과 같은 단면·기둥 면 자르기). 보가 없으면 도면은 이전과 같다.
 #   평면: 절단 높이에 걸치거나 그 아래(보이는 깊이 안)인 보는 솔리드와 같은 절단선·위를 향한 면 모서리와 절단 채움,
 #         절단 높이 위에서 다음 레벨(없으면 위 끝 없음) 아래에 걸친 보는 외곽 사각형을 숨은선(파선)으로 그린다(구조 평면의 보 숨은선 관행).
-#         반사 천장 평면은 솔리드처럼 아직 그리지 않는다
+#         반사 천장 평면(W2 스물한 번째 PR): 위를 본다. 밑면(z 아래 끝)이 절단면 위 보이는 깊이 안(절단면, 절단면 + 깊이]인 보는 평면 외곽(아래에서 본 윤곽)을
+#         투영선 실선으로(평지붕·위층 슬래브 밑면과 같은 규약), 절단면에 걸친 보는 평면과 같은 절단선·절단 채움, 절단면 아래 보와 보이는 깊이 밖 보는 그리지 않는다
+#         (밑이 가려지는 숨은선 파선은 일반 평면의 절단면 위 보에만 쓴다). 모든 레벨의 보를 찾는다(위층 바닥을 받치는 보가 이 층 천장 밑에 보인다)
 #   단면·입면: 보는 쪽을 향한 면의 모서리(다른 요소·보 자신의 가림 반영) + 단면의 절단선과 절단 채움(볼록 조각마다의 절단 다각형).
 #   가림: 단면 회전(roll)이 없는 보는 볼록 조각(사각형 단면 각기둥)이 수직 각기둥이라 다른 요소의 선을 가린다(회전한 보는 가리지 않는다: 알려진 한계)
 HIDDEN_DASH, HIDDEN_GAP = 2.0, 1.0   # 숨은선 파선의 마디·간격(용지 mm)
@@ -5624,8 +5626,10 @@ def scope_beams(g, v):
     if cfg is None or cfg[0] == "site":
         return ()
     if cfg[0] == "plan":
-        if cfg[1] is None or is_rcp(cfg) or Q.el(g, cfg[1])["kind"] != "level" or not g.q(all_beams):
+        if cfg[1] is None or Q.el(g, cfg[1])["kind"] != "level" or not g.q(all_beams):
             return ()   # 보가 없으면 다른 레벨을 읽지 않는다(레벨을 더해도 평면 뷰가 영향받지 않는 이전 의존 그대로)
+        if is_rcp(cfg):   # 반사 천장 평면(W2 스물한 번째 PR): 윗면이 절단면 위이고 밑면이 절단면 위 보이는 깊이 안인 보(절단면에 걸친 보 포함). 레벨은 따지지 않는다
+            return tuple(e for e in g.q(all_beams) if (bb := g.q(beam_info, e)[4])[5] > cfg[2] + EPS and bb[2] <= cfg[2] + cfg[3] + EPS)
         lo = cfg[2] - cfg[3]
         top = g.q(_level_above, cfg[1])
         return tuple(e for e in g.q(all_beams) if (bb := g.q(beam_info, e)[4])[5] > lo + EPS and (top is None or bb[2] <= top - EPS))
@@ -5656,6 +5660,12 @@ def beam_lines(g, v, b):
         return ()
     verts, faces, edges, nrm, bb, _pcs, rect = info
     if cfg[0] == "plan":
+        if is_rcp(cfg):   # 반사 천장 평면(W2 스물한 번째 PR): 절단면에 걸친 보는 절단선, 아니면(밑면이 절단면 위) 아래에서 본 평면 외곽을 투영선 실선으로
+            if bb[2] < cfg[2] - EPS:
+                return tuple(("cut", a[0], a[1], b_[0], b_[1]) for a, b_ in SO.plane_section(verts, faces, nrm, (0.0, 0.0, 1.0), cfg[2])
+                             if sqrt((b_[0] - a[0]) ** 2 + (b_[1] - a[1]) ** 2) > SEG_MIN)
+            return tuple(("proj", rect[i][0], rect[i][1], rect[(i + 1) % len(rect)][0], rect[(i + 1) % len(rect)][1]) for i in range(len(rect))
+                         if sqrt((rect[(i + 1) % len(rect)][0] - rect[i][0]) ** 2 + (rect[(i + 1) % len(rect)][1] - rect[i][1]) ** 2) > SEG_MIN)
         if bb[2] >= cfg[2] - EPS:   # 절단 높이 위의 보: 외곽 사각형 숨은선(파선)
             out = []
             for i in range(len(rect)):   # 직선 보는 사각형 4변, 곡선 보는 호를 나눈 다각형(W2 열아홉 번째 PR)

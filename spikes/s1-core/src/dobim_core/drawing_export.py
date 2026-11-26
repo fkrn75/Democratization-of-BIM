@@ -9,7 +9,7 @@
 """
 from __future__ import annotations
 
-from math import atan2, degrees
+from math import atan2, cos, degrees, radians, sin
 import re
 from xml.sax.saxutils import escape
 
@@ -78,6 +78,8 @@ def _annot_pts(it):
     if t == "dim":
         return [(it[2][0], it[2][1]), (it[2][2], it[2][3]), (it[3][2], it[3][3]), (it[4][0], it[4][1]), (it[4][2], it[4][3])]
     if t == "tag":
+        if len(it) > 5:   # 보 축 방향 태그(W2 스물한 번째 PR): 글이 보 가운데를 둘러싼다
+            return [(it[3][0] - 1500.0, it[3][1] - 1500.0), (it[3][0] + 1500.0, it[3][1] + 1500.0)]
         return [tuple(it[2]), (it[3][0] + 1500.0, it[3][1])]
     if t == "adim":   # 각도·반지름·지름 치수(W1 1-B 2차)
         return [(s[0], s[1]) for s in it[2]] + [(s[2], s[3]) for s in it[2]] + [tuple(it[5])]
@@ -175,6 +177,12 @@ def annot_svg(data, tx, ty) -> list[str]:
             ang = adim_text_angle(u)
             out.append(f'<text transform="translate({tx(tpos[0]):.3f},{ty(tpos[1]):.3f}) rotate({ang:.2f})" text-anchor="middle" '
                        f'dy="-0.8" stroke="none">{_esc(text)}</text>')
+            out.append("</g>")
+        elif t == "tag" and len(it) > 5:   # 보 축 방향 태그(W2 스물한 번째 PR): 지시선 없이 보 방향으로 눕힌 글(가운데 맞춤, 거꾸로 서지 않게)
+            _, _, _anc, lab, text, u = it
+            ang = adim_text_angle(u) + 0.0   # + 0.0: 가로 글의 -0.00 을 0.00 으로
+            out.append(f'<g class="tag" data-id="{aid}" fill="#8a3b00" stroke="#8a3b00">')
+            out.append(f'<text transform="translate({tx(lab[0]):.3f},{ty(lab[1]):.3f}) rotate({ang:.2f})" text-anchor="middle" dy="-0.8" stroke="none">{_esc(text)}</text>')
             out.append("</g>")
         elif t == "tag":
             _, _, anc, lab, text = it
@@ -312,6 +320,11 @@ def render_pdf(data, font=None) -> tuple[bytes, bool]:
             for e in it[2]:
                 c.append(f"{px(e[0])} {py(e[1])} m {px(e[2])} {py(e[3])} l S")
             c.append(f"BT /F1 {2.5 * k:.2f} Tf {tx(it[5][0]) * k:.2f} {(h - ty(it[5][1]) + 0.8) * k:.2f} Td {txt(it[4])} Tj ET")
+        elif it[0] == "tag" and len(it) > 5:   # 보 축 방향 태그(W2 스물한 번째 PR): 텍스트 행렬로 눕히고 가운데 맞춤(글 폭은 label_width 근사)
+            a = radians(adim_text_angle(it[5]))   # 용지(y 아래) 시계 방향 각. PDF(y 위)에서는 반시계 -a 라 행렬이 [cos -sin sin cos] 다
+            wd, ca, sa = label_width(it[4], 2.5) / 2.0, cos(a), sin(a)
+            x0, y0 = tx(it[3][0]) - wd * ca + 0.8 * sa, (h - ty(it[3][1])) + wd * sa + 0.8 * ca
+            c.append(f"BT /F1 {2.5 * k:.2f} Tf {ca:.5f} {-sa:.5f} {sa:.5f} {ca:.5f} {x0 * k:.2f} {y0 * k:.2f} Tm {txt(it[4])} Tj ET")
         elif it[0] == "tag":
             c.append(f"{0.13 * k:.3f} w {px(it[2][0])} {py(it[2][1])} m {px(it[3][0])} {py(it[3][1])} l S")
             c.append(f"BT /F1 {2.5 * k:.2f} Tf {tx(it[3][0]) * k + 2:.2f} {(h - ty(it[3][1])) * k:.2f} Td {txt(it[4])} Tj ET")

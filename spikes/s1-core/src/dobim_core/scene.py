@@ -322,7 +322,7 @@ def _annot_segs(it):
     if it[0] == "dim":
         return [tuple(it[2]), tuple(it[3]), tuple(it[4])]
     if it[0] == "tag":
-        return [tuple(it[2]) + tuple(it[3])]
+        return [] if len(it) > 5 else [tuple(it[2]) + tuple(it[3])]   # 보 축 방향 태그(W2 스물한 번째 PR)는 지시선이 없다
     if it[0] == "adim":   # 각도·반지름·지름 치수(W1 1-B 2차)
         return [tuple(s) for s in it[2]]
     return []
@@ -333,7 +333,7 @@ def _annot_points(it):
     if it[0] == "dim":
         return [p for s in _annot_segs(it) for p in ((s[0], s[1]), (s[2], s[3]))] + [tuple(it[6])]
     if it[0] == "tag":
-        return [tuple(it[2]), tuple(it[3])]
+        return [tuple(it[3])] if len(it) > 5 else [tuple(it[2]), tuple(it[3])]
     if it[0] == "adim":
         return [p for s in _annot_segs(it) for p in ((s[0], s[1]), (s[2], s[3]))] + [tuple(it[5])]
     return [(it[4], it[5])]

@@ -796,7 +796,7 @@ def _restore_defs(f, rows: dict, rels: set, taken: set, plan: "ImportPlan") -> N
                 why = "태그는 평면 뷰에 둔다"
             elif st is not None and (K.ref_kind_error("tag", "target", st[0]) or st[1] != "authored" or not VD.tag_fields_ok(st[0], p["fields"])):
                 why = "태그 대상이 태그할 수 있는 저작 요소가 아니거나 표시 필드가 맞지 않는다"
-            elif st is not None and level_of(st[0], p["target"]) != v["params"]["level"]:
+            elif st is not None and level_of(st[0], p["target"]) != v["params"]["level"] and not (st[0] == "beam" and v["params"].get("rcp")):   # 반사 천장 평면의 보 태그(W2 스물한 번째 PR)는 다른 레벨의 보도 단다
                 why = "태그 대상이 이 평면 뷰의 레벨에 있지 않다"
         if why:
             skip(eid, why)

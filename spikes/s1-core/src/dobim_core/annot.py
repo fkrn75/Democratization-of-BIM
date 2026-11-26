@@ -43,6 +43,7 @@ from __future__ import annotations
 
 from math import isfinite, sqrt
 
+from dobim_core import beams as BM
 from dobim_core import drawing as D
 from dobim_core import kinds as K
 from dobim_core import queries as Q
@@ -82,6 +83,9 @@ TAG_FIELDS = {
     "finst": ("name", "category", "family", "width", "height", "elevation", "material", "level", "host"),
     # 다중 범주 태그(ANN-08)만 다는 종류: 지붕·난간
     "roof": (), "railing": (),
+    # W2 스물한 번째 PR(구조 보 4부): 보 태그. type = 보 유형 이름, section = 단면 전체 표기(H-400x200x8x13), size = 약식(H-400x200),
+    # length = 기둥·보 면으로 자른 뒤 축 길이, offset = 기준선 높이(레벨 기준). 보 유형 이름 + 약식 단면 "B1 H-400x200" 은 fields ["type", "size"]
+    "beam": ("name", "type", "section", "size", "width", "depth", "length", "offset"),
 }
 # 다중 범주 태그(ANN-08): 이 필드들만 쓰는 태그는 태그 가능한 모든 종류에 달 수 있다(대상을 다른 범주로 다시 묶어도 그대로 쓴다).
 # ifc_class = 요소의 IFC 클래스(범주를 묻는 공통 필드: 공간의 category 는 공간 용도라 이름을 달리 둔다)
@@ -509,6 +513,8 @@ def _field(g, kind, eid, row, name):
         return K.FIXED_IFC_CLASS.get(kind) or row.get("ifc_class") or "-"
     if kind in ("finst", "roof", "railing"):
         return _field_finst(g, kind, eid, row, name)
+    if kind == "beam":
+        return _field_beam(g, eid, row, name)
     if name in ("width", "height", "sill", "thickness", "elevation", "top_offset"):
         return fmt_num(p[name])
     if kind in ("slab", "space", "stair"):
@@ -543,6 +549,31 @@ def keynote_of(g, kind, eid):
         t = Q.rel_out(g, "of_type", eid)
         v = Q.psets(g, t[0]).get(KEYNOTE_PSET, {}).get(KEYNOTE_PROP) if t else None
     return v if isinstance(v, str) and v else None
+
+
+def _field_beam(g, eid, row, name):
+    """보 태그 필드(W2 스물한 번째 PR). 유형이 없는 보의 type 은 '-'. 길이는 기둥·보 면으로 자른 뒤 축 길이(경사 보는 실길이, 곡선 보는 호 길이)."""
+    p = row["params"]
+    if name == "material":
+        m = Q.material(g, eid)
+        return "-" if m is None else str(m)
+    if name == "level":
+        return g.q(Q.level_info, g.q(Q.beam_level, eid))[0]
+    if name == "type":
+        t = Q.el(g, p.get("btype"))
+        return "-" if t is None else t["params"]["name"]
+    if name == "section":
+        return BM.section_label(p["section"])
+    if name == "size":
+        return BM.size_label(p["section"])
+    if name in ("width", "depth"):
+        return fmt_num(p["section"][name])
+    if name == "length":
+        n = g.q(Q.beam_measure, eid)[1]
+        if not isfinite(n):
+            raise _NonFinite()
+        return fmt_num(n)
+    return fmt_num(p["offset"])   # offset
 
 
 def _field_finst(g, kind, eid, row, name):
@@ -777,13 +808,18 @@ def annot_draw(g, a):
     ax, ay = tag_anchor(g, p["target"])
     if not (isfinite(ax) and isfinite(ay)):
         return ("invalid", a, kind, "non_finite", *_r(*p["home"]))
+    if p.get("align") == "axis":   # 보 축 방향 태그(W2 스물한 번째 PR): 여섯째 값 = 보 진행 방향(단위 벡터). 글은 이 방향으로 눕고 거꾸로 서지 않게 내보낸다
+        tx, ty = g.q(Q.beam_tagpos, p["target"])[2:]
+        return ("tag", a, _r(ax, ay), _r(ax + p["off"][0], ay + p["off"][1]), st[1], (round(tx, 6) + 0.0, round(ty, 6) + 0.0))
     return ("tag", a, _r(ax, ay), _r(ax + p["off"][0], ay + p["off"][1]), st[1])
 
 
 def tag_anchor(g, target):
     """태그가 가리키는 대상의 평면 대표점: 벽은 축선 중점, 문은 중심, 슬래브·공간·지붕은 경계 무게중심, 계단은 걸음선 중점,
-    패밀리 인스턴스는 삽입점, 난간은 경로 가운데 선분의 중점."""
+    패밀리 인스턴스는 삽입점, 난간은 경로 가운데 선분의 중점, 보는 자른 뒤 축의 가운데(곡선 보는 호 가운데, W2 스물한 번째 PR)."""
     row = Q.el(g, target)
+    if row["kind"] == "beam":
+        return g.q(Q.beam_tagpos, target)[:2]
     if row["kind"] in ("slab", "space", "roof"):
         return D.polygon_centroid(row["params"]["boundary"])
     if row["kind"] == "finst":   # 창·기둥: 삽입점(호스팅은 호스트 축선 위)
