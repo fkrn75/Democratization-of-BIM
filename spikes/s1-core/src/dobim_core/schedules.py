@@ -212,7 +212,7 @@ def element_row(g, e) -> dict:
     kind, p = row["kind"], row["params"]
     lv = g.q(_level_of, e, kind)
     lname, lelev = g.q(Q.level_info, lv) if lv is not None and Q.el(g, lv) is not None else (None, None)
-    out = {"id": e, "kind": kind, "category": cat, "ifc_class": K.FIXED_IFC_CLASS.get(kind), "name": p.get("name"), "type": None,
+    out = {"id": e, "kind": kind, "category": cat, "ifc_class": K.FIXED_IFC_CLASS.get(kind) or (row["ifc_class"] if kind == "beam" else None), "name": p.get("name"), "type": None,
            "level": lname, "elevation": lelev, "material": Q.material(g, e), "fire_rating": _pset_any(g, e, "FireRating"),
            "is_external": _pset_any(g, e, "IsExternal"), "count": 1}
     if kind == "wall":

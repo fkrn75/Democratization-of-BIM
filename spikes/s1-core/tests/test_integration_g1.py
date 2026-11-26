@@ -392,7 +392,7 @@ def test_9_종류_레지스트리가_모든_모듈과_맞는다(tmp_path):
     assert queries.NON_IFC_KINDS == NON_IFC_KINDS and ifc_model.IFC_CLASS == FIXED_IFC_CLASS
     assert merge.GENESIS_OP == E.GENESIS_OP
     assert set(commands.DELETE_REL_NAMES) == {k for k, r in REL_KINDS.items() if not r.dangling_ok}
-    assert PROJECTED_KINDS == ("level", "site", "beam", "curtwall", "elevator", "railing", "roof", "slab", "solid", "space", "stair", "wall", "door", "stackwall", "ftype", "finst")   # 호스트·타입이 의존하는 것보다 먼저(슬래브는 레벨에만 의존, 스택 벽은 부분 벽 뒤: W2 일곱 번째 PR)
+    assert PROJECTED_KINDS == ("level", "site", "beam", "curtwall", "elevator", "railing", "roof", "slab", "solid", "space", "stair", "wall", "beamsys", "door", "stackwall", "ftype", "finst")   # 호스트·타입이 의존하는 것보다 먼저(슬래브는 레벨에만 의존, 스택 벽은 부분 벽 뒤: W2 일곱 번째 PR)
     # 모든 효과 태그는 뒤집으면 원래대로 돌아오고, 키 계산이 정의돼 있다
     for t in EFFECT_TAGS:
         assert EFFECTS[t].keys is not None
@@ -459,6 +459,9 @@ def test_9_종류_레지스트리가_모든_모듈과_맞는다(tmp_path):
         _ok(b.run("railing.type.set", {"ids": [F.RL1], "type": F.RLT1}, project=p))
         _ok(b.run("beamtype.create", {"id": F.BT1, "name": "G1", "width": 400, "depth": 700}, project=p))   # 구조 보·보 유형(W2 열다섯 번째 PR, STR-02)
         _ok(b.run("beam.create", {"id": F.BM1, "level": F.LV2, "type": F.BT1, "start": [0, 4000], "end": [6000, 4000], "roll": 5, "cutback": False}, project=p))
+        _ok(b.run("beamsys.create", {"id": F.BS1, "level": F.LV2, "type": F.BT1, "boundary": [[0, 8000], [6000, 8000], [6000, 12000], [0, 12000]],
+                                     "spacing": 1000, "offset": 2400}, project=p))   # 보 시스템·가새(W2 스물네 번째 PR)
+        _ok(b.run("brace.create", {"id": F.BR1, "level": F.LV2, "type": F.BT1, "start": [0, 16000, 0], "end": [3000, 16000, 3000]}, project=p))
     finally:
         b.close()
     eng = Engine(tmp_path / p, "t", create=False)

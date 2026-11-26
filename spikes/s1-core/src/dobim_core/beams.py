@@ -390,6 +390,8 @@ def beam_problem(p) -> str | None:
             return f"보 실길이는 {LEN_MAX:g} mm 이하여야 한다"
     if p.get("vertical_ends") is True and not sloped(p):
         return "vertical_ends 는 경사 보(end_offset)에만 줄 수 있다"
+    if p.get("brace") is True and ("bulge" in p or "bsys" in p):   # 가새(W2 스물네 번째 PR): 곧은 부재이고 보 시스템의 자식이 될 수 없다
+        return "가새(brace)는 곡선 보(bulge)나 보 시스템(bsys)의 자식과 함께 둘 수 없다"
     if curved(p):
         for k in ("end_offset", "vertical_ends", "skew_cut"):
             if k in p:
@@ -854,3 +856,119 @@ def slab_slices(pcs) -> list:
             if len(poly) >= 3 and abs(sum(poly[j][0] * poly[(j + 1) % len(poly)][1] - poly[(j + 1) % len(poly)][0] * poly[j][1] for j in range(len(poly)))) > 1e-6:
                 out.append((zlo + h * i, zlo + h * (i + 1), tuple(poly)))
     return out
+
+
+# ---------------------------------------------------------------- 보 시스템(W2 스물네 번째 PR, STR-02 후속: 닫힌 경계 안의 평행한 작은 보)
+# 보 시스템 행(kinds._beamsys_params): 경계 다각형(반시계, 평면 레벨 좌표 mm)·방향 angle(도, 작은 보가 놓이는 평면 방향, 0 이상 180 미만)·
+# 간격(spacing 고정 간격 mm 또는 count 개수, 정확히 하나)·정렬 align·보 유형 btype·기준선 높이 offset·맞춤 anchor·자식 보 children.
+# 방향에 수직인 좌표 v = -x sin(a) + y cos(a)(진행 방향 왼쪽 +)로 본 경계의 범위 [vmin, vmax] 안에 보를 놓는다. start 는 vmin 쪽, end 는 vmax 쪽이다.
+SYS_ALIGNS = ("center", "start", "end")
+SYS_SPACING_MIN = 50.0               # 고정 간격 하한 mm
+SYS_SPACING_MAX = 50000.0            # 고정 간격 상한 mm
+SYS_COUNT_MAX = 500                  # 한 보 시스템의 작은 보 수 상한(개수 지정·간격 지정 모두)
+SYS_EDGE_TOL = 1.0                   # 경계 모서리와 이 거리 안인 자리에는 보를 놓지 않는다(모서리 보와 겹친다)
+SYS_BOUNDARY_MAX = 256               # 경계 꼭짓점 상한(슬래브 경계와 같다)
+
+
+def system_positions(vmin: float, vmax: float, spacing, count, align: str) -> list:
+    """방향에 수직인 좌표 v 의 작은 보 자리들(오름차순). count = 경계 폭을 count + 1 등분한 자리, spacing = 정렬 기준에서 간격마다
+    (start: vmin 에서 spacing·k, end: vmax 에서 spacing·k, center: 가운데 대칭). 경계 모서리(SYS_EDGE_TOL 안)에는 놓지 않는다.
+    상한(SYS_COUNT_MAX)을 넘으면 상한 + 1 개를 돌려준다(부르는 쪽이 거절한다)."""
+    w = vmax - vmin
+    if w <= 2.0 * SYS_EDGE_TOL:
+        return []
+    if count is not None:
+        n = int(count)
+        return [vmin + (k + 1) * w / (n + 1) for k in range(n)]
+    s = float(spacing)
+    out = []
+    if align == "start":
+        k = 1
+        while vmin + k * s < vmax - SYS_EDGE_TOL and len(out) <= SYS_COUNT_MAX:
+            out.append(vmin + k * s)
+            k += 1
+    elif align == "end":
+        k = 1
+        while vmax - k * s > vmin + SYS_EDGE_TOL and len(out) <= SYS_COUNT_MAX:
+            out.append(vmax - k * s)
+            k += 1
+        out.reverse()
+    else:
+        m = (vmin + vmax) / 2.0
+        n = _ceil_div(w - 2.0 * SYS_EDGE_TOL, s)   # 바깥 보가 모서리에 닿지 않는 가장 큰 개수
+        if n > SYS_COUNT_MAX:
+            return [0.0] * (SYS_COUNT_MAX + 1)
+        out = [m + (k - (n - 1) / 2.0) * s for k in range(n)]
+    return out
+
+
+def _ceil_div(a: float, b: float) -> int:
+    """올림 a / b(a, b > 0)."""
+    q = int(a // b)
+    return q if q * b >= a else q + 1
+
+
+def system_segments(p) -> list:
+    """보 시스템 p 가 만드는 작은 보들의 평면 두 점 [(시작, 끝), ...](v 오름차순, 같은 v 는 u 오름차순). 경계가 오목하면 한 자리에서 여러 보가 나온다.
+    경계 안 구간만(홀짝 규칙, 반열린 구간으로 꼭짓점 위 자리도 한 번만 센다), 길이 LEN_MIN 미만 구간은 뺀다. 좌표는 소수 6자리로 맞춘다.
+    자리 수가 상한을 넘으면 상한 + 1 개 이상을 돌려준다(부르는 쪽이 거절한다)."""
+    s, c = SO.sincos_deg(float(p["angle"]))
+    bd = p["boundary"]
+    uv = [(x * c + y * s, -x * s + y * c) for x, y in bd]
+    vmin, vmax = min(q[1] for q in uv), max(q[1] for q in uv)
+    out = []
+    n = len(uv)
+    for v0 in system_positions(vmin, vmax, p.get("spacing"), p.get("count"), p["align"]):
+        us = []
+        for i in range(n):
+            (ua, va), (ub, vb) = uv[i], uv[(i + 1) % n]
+            if (va <= v0 < vb) or (vb <= v0 < va):
+                us.append(ua + (v0 - va) / (vb - va) * (ub - ua))
+        us.sort()
+        for j in range(0, len(us) - 1, 2):
+            u0, u1 = us[j], us[j + 1]
+            if u1 - u0 < LEN_MIN:
+                continue
+            a = (round(u0 * c - v0 * s, 6) + 0.0, round(u0 * s + v0 * c, 6) + 0.0)
+            b = (round(u1 * c - v0 * s, 6) + 0.0, round(u1 * s + v0 * c, 6) + 0.0)
+            out.append((a, b))
+    return out
+
+
+def loop_from_segments(segs, tol: float = 1.0) -> list | None:
+    """선분들 [((x1, y1), (x2, y2)), ...] 이 하나의 닫힌 고리를 이루면 꼭짓점 순서 목록(첫 선분의 시작에서 출발)을, 아니면 None.
+    모든 끝점은 정확히 두 선분이 공유해야 하고(허용 tol), 선분 전부가 한 고리에 든다."""
+    n = len(segs)
+    if n < 3:
+        return None
+    nodes = []   # 끝점 군집 대표
+
+    def nid(pt):
+        for i, q in enumerate(nodes):
+            if abs(q[0] - pt[0]) <= tol and abs(q[1] - pt[1]) <= tol:
+                return i
+        nodes.append((pt[0], pt[1]))
+        return len(nodes) - 1
+    ends = [(nid(a), nid(b)) for a, b in segs]
+    if any(a == b for a, b in ends):
+        return None
+    deg = {}
+    for a, b in ends:
+        deg[a] = deg.get(a, 0) + 1
+        deg[b] = deg.get(b, 0) + 1
+    if len(nodes) != n or any(d != 2 for d in deg.values()):
+        return None
+    used = [False] * n
+    order = [ends[0][0]]
+    used[0] = True
+    cur = ends[0][1]
+    while cur != ends[0][0]:
+        order.append(cur)
+        hit = next((i for i in range(n) if not used[i] and cur in ends[i]), None)
+        if hit is None:
+            return None
+        used[hit] = True
+        cur = ends[hit][1] if ends[hit][0] == cur else ends[hit][0]
+    if not all(used):
+        return None
+    return [nodes[i] for i in order]
