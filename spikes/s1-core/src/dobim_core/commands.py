@@ -5306,6 +5306,7 @@ class TagCreate(A):
     align: Literal["leader", "axis"] | None = Field(
         None, description="leader = 대표점에서 지시선을 빼 가로로 쓴 글(기본), axis = 보 축 방향으로 눕혀 보 가운데에 얹는 글(지시선 없음, 거꾸로 서지 않게). "
                           "없으면 보는 axis, 나머지는 leader. axis 는 보에만")
+    avoid: bool = Field(False, description="true = 만든 태그를 다른 태그·치수·문자와 겹치지 않는 자리에 놓는다(annot.tag.arrange 와 같은 배치, offset 은 첫 후보). 고정(손으로 옮긴) 태그는 그대로")
     name: Name | None = None
 
 
@@ -5359,7 +5360,12 @@ def annot_tag_create(ctx, a: TagCreate):
               "off": off, "home": [round(ax + off[0], 3), round(ay + off[1], 3)]}
     if a.align == "axis":   # 쓸 때만 키가 생긴다: 다른 태그의 저장 형식은 이전과 같다
         params["align"] = "axis"
-    return _new_annot(ctx, a, "tag", params)
+    res = _new_annot(ctx, a, "tag", params)
+    if a.avoid:   # 겹침 회피 배치(W2 스물여섯 번째 PR): 새 태그만 옮기고 나머지는 장애물이다
+        from dobim_core import commands_annot_tag as CT
+        out = CT.arrange_tags(ctx, a.view, [a.id])
+        res["placed"] = {"off": ctx.st.el[a.id]["params"]["off"], "moved": bool(out["moved"]), "unresolved": bool(out["unresolved"])}
+    return res
 
 
 TagKind = Literal["wall", "door", "slab", "space", "stair", "finst", "roof", "railing", "beam", "beamsys", "truss"]
@@ -5373,6 +5379,7 @@ class TagAll(A):
         ["name"], description="표시 필드. 여러 범주에 쓰려면 모든 범주에 있는 필드(name·level·material·ifc_class)")
     offset: Annotated[list[Off], Field(min_length=2, max_length=2)] | None = Field(None, description="글 자리 간격 mm. 없으면 지시선 태그 [400, 400], 보 축 방향 태그 [0, 0]")
     align: Literal["leader", "axis"] | None = Field(None, description="보·보 시스템·트러스 태그의 모양: axis(기본) = 축 방향 글, leader = 지시선 가로 글. 이 범주가 아니면 쓰지 않는다")
+    avoid: bool = Field(False, description="true = 새로 단 태그들을 서로, 그리고 치수·문자와 겹치지 않게 배치한다(annot.tag.arrange 와 같은 배치). 기존 태그는 그대로")
 
 
 @command("annot.tag.all", kind="mutation", risk="write", group="annot",
@@ -5412,7 +5419,14 @@ def annot_tag_all(ctx, a: TagAll):
             out.append({"id": tid, "target": e, "kind": k})
     if not out:
         ctx.warn("새로 단 태그가 없다(대상이 없거나 이미 태그가 있다)")
-    return {"view": a.view, "created": [t["id"] for t in out], "tags": out}
+    res = {"view": a.view, "created": [t["id"] for t in out], "tags": out}
+    if a.avoid and out:   # 겹침 회피 배치(W2 스물여섯 번째 PR): 새 태그끼리·기존 태그와 겹치지 않게
+        from dobim_core import commands_annot_tag as CT
+        arr = CT.arrange_tags(ctx, a.view, res["created"])
+        res["arranged"] = {"moved": len(arr["moved"]), "unresolved": arr["unresolved"]}
+        if arr["unresolved"]:
+            ctx.warn(f"겹침 없는 자리를 못 찾은 태그 {len(arr['unresolved'])}개(가장 덜 겹치는 자리에 놓았다)")
+    return res
 
 
 class AnnotRebind(A):
@@ -5486,6 +5500,8 @@ def _annot_item(ctx, aid):
             out.update(group=p["group"], chain=p["gk"])
     else:
         out.update(target=p["target"], fields=p["fields"])
+        if any(k in p for k in ("leader", "side", "pin")):   # 지시선·글 맞춤·고정(W2 스물여섯 번째 PR): 쓴 태그에만 나온다
+            out["layout"] = {"off": p["off"], **{k: p[k] for k in ("leader", "side", "pin") if k in p}}
     flags = ctx.g.q(AN.annot_flags, aid)
     if flags:
         out["warnings"] = list(flags)
@@ -6262,3 +6278,4 @@ from dobim_core import commands_railtype  # noqa: E402,F401   난간 유형(W2 �
 from dobim_core import commands_beam  # noqa: E402,F401   구조 보·보 유형(W2 열다섯 번째 PR, STR-02·STR-03)
 from dobim_core import commands_roof  # noqa: E402,F401   외곽선 지붕·지붕 유형·층 구성·처마 부속(W2 여덟 번째 PR, ARC-19·ARC-20)
 from dobim_core import commands_group  # noqa: E402,F401   모델 그룹·조립품(W2 열한 번째 PR, ARC-46·COL-11)
+from dobim_core import commands_annot_tag  # noqa: E402,F401   태그 지시선·겹침 회피 배치(W2 스물여섯 번째 PR, ANN-06 후속)

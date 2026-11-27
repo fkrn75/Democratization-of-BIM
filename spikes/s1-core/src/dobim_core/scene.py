@@ -322,6 +322,8 @@ def _annot_segs(it):
     if it[0] == "dim":
         return [tuple(it[2]), tuple(it[3]), tuple(it[4])]
     if it[0] == "tag":
+        if len(it) > 7:   # 지시선·글 자리 옵션이 있는 태그(W2 스물여섯 번째 PR): 꺾은선 지시선의 선분들(지시선이 꺼졌으면 없다)
+            return [tuple(a) + tuple(b) for a, b in zip(it[6], it[6][1:])]
         return [] if len(it) > 5 else [tuple(it[2]) + tuple(it[3])]   # 보 축 방향 태그(W2 스물한 번째 PR)는 지시선이 없다
     if it[0] == "adim":   # 각도·반지름·지름 치수(W1 1-B 2차)
         return [tuple(s) for s in it[2]]
@@ -333,6 +335,8 @@ def _annot_points(it):
     if it[0] == "dim":
         return [p for s in _annot_segs(it) for p in ((s[0], s[1]), (s[2], s[3]))] + [tuple(it[6])]
     if it[0] == "tag":
+        if len(it) > 7:   # 지시선 점들(꺾임점 포함)과 글 자리
+            return [tuple(p) for p in it[6]] + [tuple(it[3])]
         return [tuple(it[3])] if len(it) > 5 else [tuple(it[2]), tuple(it[3])]
     if it[0] == "adim":
         return [p for s in _annot_segs(it) for p in ((s[0], s[1]), (s[2], s[3]))] + [tuple(it[5])]

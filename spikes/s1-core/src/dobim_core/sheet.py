@@ -16,6 +16,7 @@ import zlib
 
 from dobim_core import drawing_export as DX
 from dobim_core import sheet_tables as ST
+from dobim_core.annot_layout import tag_parts
 from dobim_core.pdf_font import PdfFont
 
 # 용지(W1 1-E, IO-17: A0~A4). 이름 그대로면 가로, 끝에 P 를 붙이면 세로(예: A4P). 값은 (폭, 높이) mm
@@ -164,8 +165,15 @@ def view_prims(sh: Sheet, data, tx, ty, datums, dx0, dx1, style=None, prof=None)
             ang = DX.adim_text_angle(u)
             a = radians(ang)
             sh.text(tx(tpos[0]) + 0.8 * sin(a), ty(tpos[1]) - 0.8 * cos(a), h_dim, text, "middle", DX.ANNOT_COLOR, ang)
-        elif t == "tag" and len(it) > 5:   # 보 축 방향 태그(W2 스물한 번째 PR): 지시선 없이 보 방향으로 눕힌 글
-            _, _, _anc, lab, text, u = it
+        elif t == "tag" and len(it) > 5:   # 보 축 방향 태그(W2 스물한 번째 PR): 지시선 없이 보 방향으로 눕힌 글. 8칸(W2 스물여섯 번째 PR)은 지시선 점들과 글 맞춤이 더해진다
+            _, lab, text, u, pts, side = tag_parts(it)
+            for p0, p1 in zip(pts, pts[1:]):
+                sh.line(tx(p0[0]), ty(p0[1]), tx(p1[0]), ty(p1[1]), 0.13, "#8a3b00")
+            if pts:
+                sh.circle(tx(pts[0][0]), ty(pts[0][1]), 0.5, 0.0, "#8a3b00", "#8a3b00")
+            if u is None:   # 가로 글(지시선 태그)
+                sh.text(tx(lab[0]) + {"start": 0.6, "middle": 0.0, "end": -0.6}[side], ty(lab[1]), h_tag, text, side, "#8a3b00")
+                continue
             ang = DX.adim_text_angle(u)
             a = radians(ang)
             sh.text(tx(lab[0]) + 0.8 * sin(a), ty(lab[1]) - 0.8 * cos(a), h_tag, text, "middle", "#8a3b00", ang)
