@@ -30,6 +30,7 @@ _EXP = ("ifc.export", {"path": "export-example.ifc"}, True)   # True = 파괴적
 _V1 = ("view.create", {"id": F.V1, "name": "1F 평면", "type": "plan", "level": F.LV1, "cut_height": 1200})   # S3: 뷰가 있어야 하는 예시의 준비
 _A1 = ("annot.dim.create", {"id": F.A1, "view": F.V1, "a": f"wall:{F.W1}#trim.start", "b": f"wall:{F.W1}#trim.end"})   # S5: 주석이 있어야 하는 예시의 준비
 _TG1 = ("annot.tag.create", {"id": F.TG1, "view": F.V1, "target": F.W1, "fields": ["name"]})   # 태그가 있어야 하는 예시의 준비(W2 스물여섯 번째 PR)
+_CLB = ("clash.export", {"path": "clash-before.json", "a": {"categories": ["walls"]}, "overwrite": True}, True)   # 간섭 비교 예시의 준비: 기준 JSON 을 먼저 내보낸다(W2 스물여덟 번째 PR)
 # family.set 예시는 이미 놓인 인스턴스를 고친다: 같은 id 로 family.place 예시(첫 번째)를 먼저 실행한다
 _FAMILY_PRE = ("family.place", {"id": "0" * 21 + "1", "family": "door.single", "values": {"swing": "R"}, "host": F.W3, "offset": 1500})
 _V2 = ("view.create", {"id": F.V2, "name": "B-B 단면", "type": "section", "p1": [-1000, 2000], "p2": [7000, 2000]})   # 높이 치수 자동 배치 예시의 준비(단면 뷰)
@@ -89,7 +90,7 @@ PRE = {**_DRAFT_PRE, "history.redo": [("history.undo", {})], "ifc.restore": [_EX
        "view.set": [_V1], "view.delete": [_V1], "view.list": [_V1], "view.linework": [_V1], "view.export": [_V1], "view.affected": [_V1],
        "view.scene": [_V1], "view.pick": [_V1], "geom.snap": [_V1],   # GUI 조회(B1): 뷰가 있어야 한다
        "annot.dim.create": [_V1], "annot.dim.chain": [_V1], "annot.tag.create": [_V1], "annot.tag.all": [_V1], "annot.rebind": [_V1, _A1], "annot.delete": [_V1, _A1],
-       "annot.list": [_V1, _A1], "annot.check": [_V1, _A1], "annot.tag.set": [_V1, _TG1], "annot.tag.arrange": [_V1, _TG1], "annot.tag.sheet_check": [_V1, _TG1, _SH1],
+       "annot.list": [_V1, _A1], "annot.check": [_V1, _A1], "annot.tag.set": [_V1, _TG1], "annot.tag.arrange": [_V1, _TG1], "annot.tag.sheet_check": [_V1, _TG1, _SH1], "clash.compare": [_CLB],
        "family.set": [_FAMILY_PRE], "family.set_type": [_FAMILY_PRE], "join.tee": [_W5], "ceiling.set": [_CL1], "annot.dim.heights": [_V2], "slab.set": [_S1], "slab.move": [_S1], "slab.delete": [_S1], "slab.layers": [_S1],
        "stair.set": [_ST1], "stair.move": [_ST1], "stair.delete": [_ST1],
        "railing.set": [_RL1], "railing.move": [_RL1], "railing.delete": [_RL1], "railing.from_stair": [_ST1], "railing.from_slab": [_S1],

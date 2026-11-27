@@ -6298,3 +6298,4 @@ from dobim_core import commands_beam  # noqa: E402,F401   구조 보·보 유형
 from dobim_core import commands_roof  # noqa: E402,F401   외곽선 지붕·지붕 유형·층 구성·처마 부속(W2 여덟 번째 PR, ARC-19·ARC-20)
 from dobim_core import commands_group  # noqa: E402,F401   모델 그룹·조립품(W2 열한 번째 PR, ARC-46·COL-11)
 from dobim_core import commands_annot_tag  # noqa: E402,F401   태그 지시선·겹침 회피 배치(W2 스물여섯 번째 PR, ANN-06 후속)
+from dobim_core import commands_clash  # noqa: E402,F401   간섭 검토(W2 스물여덟 번째 PR, COL-08)
