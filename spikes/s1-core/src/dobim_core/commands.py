@@ -5296,7 +5296,7 @@ def annot_dim_heights(ctx, a: DimHeights):
 
 class TagCreate(A):
     id: Id | None = None
-    view: Id = Field(description="태그를 둘 평면 뷰")
+    view: Id = Field(description="태그를 둘 평면·단면·입면 뷰(단면·입면은 뷰에 보이는 요소에만, 글 자리는 뷰의 [가로, 높이] mm)")
     target: Id = Field(description="벽·문·슬래브·공간·계단·패밀리 인스턴스(창·기둥 등)·지붕·난간·구조 보·보 시스템·트러스. 지붕·난간은 다중 범주 필드(name·level·material·ifc_class)만. "
                                     "보 필드: name·type(유형 이름)·section(전체 단면 표기)·size(약식 'H-400x200')·width·depth·length·offset·level·material. "
                                     "보 시스템 필드: name·type·section·size·spacing·count(자식 보 수)·angle·offset. 트러스 필드: name·type(현)·web_type·section·size·pattern·panels·height·length")
@@ -5323,8 +5323,9 @@ def _tag_offset(a):
 def _tag_checked(ctx, view, target, fields, align=None):
     vr = ctx.row(view, "view")
     tr = ctx.authored(target, what="태그 대상(낡은 값을 보이게 된다)")
-    if vr["params"]["type"] != "plan":
-        raise DobimError("CONSTRAINT", "태그는 평면 뷰에 둔다", path="/view")
+    sec = vr["params"]["type"] in AN.SECTION_VIEW_TYPES   # 단면·입면 뷰의 태그(W2 스물일곱 번째 PR)
+    if vr["params"]["type"] != "plan" and not sec:
+        raise DobimError("CONSTRAINT", "태그는 평면·단면·입면 뷰에 둔다", path="/view")
     if tr["kind"] not in AN.TAG_FIELDS:
         raise DobimError("CONSTRAINT", f"태그는 {'·'.join(AN.TAG_FIELDS)} 에만 단다: {tr['kind']}", path="/target")
     bad = [f for f in fields if f not in AN.TAG_ALLOWED[tr["kind"]]]
@@ -5333,6 +5334,15 @@ def _tag_checked(ctx, view, target, fields, align=None):
                          hint="가능: " + ", ".join(AN.TAG_ALLOWED[tr["kind"]]))
     if align == "axis" and tr["kind"] not in AXIS_TAG_KINDS:
         raise DobimError("CONSTRAINT", f"축 방향 태그(align axis)는 보·보 시스템·트러스에만 단다: {tr['kind']}", path="/align")
+    if sec:
+        if align == "axis":
+            raise DobimError("CONSTRAINT", "보 축 방향 글(align axis)은 평면 뷰에만 쓴다(단면·입면에는 지시선 가로 글)", path="/align")
+        if tr["kind"] == "space":
+            raise DobimError("CONSTRAINT", "공간(space)은 단면·입면 뷰에 그려지지 않아 태그를 달 수 없다", path="/target")
+        if AN.tag_anchor_in(ctx.fresh(), view, target) is None:   # 그려진 선이 없다: 뷰 범위 밖이거나 다른 요소에 가려졌다
+            raise DobimError("CONSTRAINT", "태그 대상이 이 뷰에 보이지 않는다(보이는 깊이 밖이거나 다른 요소에 가려졌다)", path="/target",
+                             hint="단면·입면 뷰의 태그는 뷰에 그려진 요소에만 단다")
+        return
     if not _tag_in_view(ctx, vr, view, tr["kind"], target):
         raise DobimError("CONSTRAINT", "태그 대상이 이 평면 뷰의 레벨에 있지 않다" + ("(반사 천장 평면은 뷰가 그리는 보만)" if vr["params"].get("rcp") and tr["kind"] == "beam" else ""),
                          path="/target")
@@ -5347,15 +5357,15 @@ def _tag_in_view(ctx, vr, view, kind, eid) -> bool:
 
 
 @command("annot.tag.create", kind="mutation", risk="write", group="annot",
-         summary="태그 생성(구조 보는 보 축 방향으로 눕혀 가운데에 얹는 태그가 기본: 유형 이름·단면 표기 등). 평면·반사 천장 평면 뷰에 둔다",
+         summary="태그 생성(구조 보는 보 축 방향으로 눕혀 가운데에 얹는 태그가 기본: 유형 이름·단면 표기 등). 평면·반사 천장 평면·단면·입면 뷰에 둔다",
          args=TagCreate, since="0.1", examples=[{"view": F.V1, "target": F.D1, "fields": ["name", "width"]}])
 def annot_tag_create(ctx, a: TagCreate):
     _fresh_id(ctx, a, "tag")
-    if a.align is None and ctx.st.el.get(a.target, {}).get("kind") in AXIS_TAG_KINDS:   # 보·보 시스템·트러스는 축 방향 태그가 기본(상용 도구의 보 태그처럼 따라 눕는다)
+    if a.align is None and ctx.st.el.get(a.target, {}).get("kind") in AXIS_TAG_KINDS and ctx.row(a.view, "view")["params"]["type"] == "plan":   # 보·보 시스템·트러스는 축 방향 태그가 기본(상용 도구의 보 태그처럼 따라 눕는다). 단면·입면은 지시선 가로 글
         a.align = "axis"
     _tag_checked(ctx, a.view, a.target, a.fields, a.align)
     off = _tag_offset(a)
-    ax, ay = AN.tag_anchor(ctx.fresh(), a.target)
+    ax, ay = AN.tag_anchor_in(ctx.fresh(), a.view, a.target)   # 평면 뷰는 평면 좌표, 단면·입면 뷰는 뷰의 (가로, 높이)
     params = {"name": a.name or f"TAG-{a.id[-6:]}", "view": a.view, "target": a.target, "fields": list(a.fields),
               "off": off, "home": [round(ax + off[0], 3), round(ay + off[1], 3)]}
     if a.align == "axis":   # 쓸 때만 키가 생긴다: 다른 태그의 저장 형식은 이전과 같다
@@ -5372,7 +5382,7 @@ TagKind = Literal["wall", "door", "slab", "space", "stair", "finst", "roof", "ra
 
 
 class TagAll(A):
-    view: Id = Field(description="태그를 둘 평면 뷰")
+    view: Id = Field(description="태그를 둘 평면·단면·입면 뷰(단면·입면은 뷰에 보이는 요소만, 공간 제외)")
     kinds: Annotated[list[TagKind], Field(min_length=1, max_length=11)] = Field(
         description="태그할 범주(여러 개면 다중 범주 태그). finst = 패밀리 인스턴스(창·기둥 등)")
     fields: Annotated[list[Annotated[str, Field(max_length=16)]], Field(min_length=1, max_length=4)] = Field(
@@ -5383,15 +5393,23 @@ class TagAll(A):
 
 
 @command("annot.tag.all", kind="mutation", risk="write", group="annot",
-         summary="평면 뷰 레벨의 아직 태그가 없는 요소에 범주별로 태그를 한꺼번에 단다(다중 범주 태그)",
+         summary="평면 뷰 레벨(단면·입면은 뷰에 보이는)의 아직 태그가 없는 요소에 범주별로 태그를 한꺼번에 단다(다중 범주 태그)",
          args=TagAll, since="0.7", examples=[{"view": F.V1, "kinds": ["wall", "door"], "fields": ["name", "ifc_class"]}])
 def annot_tag_all(ctx, a: TagAll):
     vr = ctx.row(a.view, "view")
-    if vr["params"]["type"] != "plan":
-        raise DobimError("CONSTRAINT", "태그는 평면 뷰에 둔다", path="/view")
+    sec = vr["params"]["type"] in AN.SECTION_VIEW_TYPES   # 단면·입면 뷰(W2 스물일곱 번째 PR): 레벨 대신 뷰에 보이는 요소(그려진 선이 있는 것)에 단다
+    if vr["params"]["type"] != "plan" and not sec:
+        raise DobimError("CONSTRAINT", "태그는 평면·단면·입면 뷰에 둔다", path="/view")
     kinds = sorted(set(a.kinds))
     if a.align is not None and not any(k in AXIS_TAG_KINDS for k in kinds):
         raise DobimError("CONSTRAINT", "align 은 보(beam)·보 시스템(beamsys)·트러스(truss) 태그에만 쓴다", path="/align")
+    if sec and a.align == "axis":
+        raise DobimError("CONSTRAINT", "보 축 방향 글(align axis)은 평면 뷰에만 쓴다(단면·입면에는 지시선 가로 글)", path="/align")
+    if sec and "space" in kinds:
+        kinds.remove("space")   # 공간은 단면·입면에 그려지지 않는다
+        ctx.warn("공간(space)은 단면·입면 뷰에 그려지지 않아 건너뛴다")
+        if not kinds:
+            raise DobimError("CONSTRAINT", "단면·입면 뷰에는 공간 태그만 일괄로 달 수 없다(공간이 그려지지 않는다)", path="/kinds")
     for k in kinds:
         bad = [f for f in a.fields if f not in AN.TAG_ALLOWED[k]]
         if bad:
@@ -5405,7 +5423,10 @@ def annot_tag_all(ctx, a: TagAll):
         for e in sorted(st.by_kind.get(k, ())):
             if e in tagged or st.el[e]["origin"] != "authored":
                 continue
-            if not ((e in rcp_beams) if k == "beam" and rcp_beams is not None else _level_of(ctx, k, e) == vr["params"]["level"]):
+            if sec:
+                if AN.tag_anchor_in(ctx.fresh(), a.view, e) is None:   # 이 뷰에 그려지지 않은(범위 밖이거나 가려진) 요소는 건너뛴다
+                    continue
+            elif not ((e in rcp_beams) if k == "beam" and rcp_beams is not None else _level_of(ctx, k, e) == vr["params"]["level"]):
                 continue
             tid = _det_id("annot.tag.all", a.view, e)
             if tid in st.el:   # 같은 id 의 다른 요소가 있다(정상 흐름에서는 없다): 건너뛴다
@@ -5470,7 +5491,7 @@ def annot_rebind(ctx, a: AnnotRebind):
             raise DobimError("CONSTRAINT", "태그에는 target, fields 만 쓴다", path="/a")
         p["target"], p["fields"] = a.target or p["target"], list(a.fields or p["fields"])
         _tag_checked(ctx, p["view"], p["target"], p["fields"], p.get("align"))
-        ax, ay = AN.tag_anchor(ctx.fresh(), p["target"])
+        ax, ay = AN.tag_anchor_in(ctx.fresh(), p["view"], p["target"])
         p["home"] = [round(ax + p["off"][0], 3), round(ay + p["off"][1], 3)]
     ctx.put_el(a.id, dict(r, params=p))
     return {"id": a.id}
@@ -5502,6 +5523,8 @@ def _annot_item(ctx, aid):
         out.update(target=p["target"], fields=p["fields"])
         if any(k in p for k in ("leader", "side", "pin")):   # 지시선·글 맞춤·고정(W2 스물여섯 번째 PR): 쓴 태그에만 나온다
             out["layout"] = {"off": p["off"], **{k: p[k] for k in ("leader", "side", "pin") if k in p}}
+        if st[1] == "ok" and ctx.g.q(AN.view_type, p["view"]) in AN.SECTION_VIEW_TYPES and ctx.g.q(AN.tag_view_anchor, p["view"], p["target"]) is None:
+            out["visible"] = False   # 단면·입면 뷰에 대상이 보이지 않아 그리지 않는 태그(W2 스물일곱 번째 PR). 평면 뷰·보이는 태그는 이 키가 없다
     flags = ctx.g.q(AN.annot_flags, aid)
     if flags:
         out["warnings"] = list(flags)

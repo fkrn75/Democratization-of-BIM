@@ -863,10 +863,17 @@ def annot_draw(g, a):
         if not all(isfinite(v) for part in (e0, e1, line, tpos, u) for v in part):   # 값은 유한해도 보조선 계산이 넘칠 수 있다
             return ("invalid", a, kind, "non_finite", *_r(*p["home"]))
         return ("dim", a, e0, e1, line, fmt_num(st[1]), tpos, u)
-    ax, ay = tag_anchor(g, p["target"])
+    sec = g.q(view_type, p["view"]) in SECTION_VIEW_TYPES   # 단면·입면 뷰의 태그(W2 스물일곱 번째 PR): 대표점은 뷰의 (가로, 높이)이고 보이지 않으면 그리지 않는다
+    if sec:
+        anc = g.q(tag_view_anchor, p["view"], p["target"])
+        if anc is None:
+            return None
+        ax, ay = anc
+    else:
+        ax, ay = tag_anchor(g, p["target"])
     if not (isfinite(ax) and isfinite(ay)):
         return ("invalid", a, kind, "non_finite", *_r(*p["home"]))
-    axis = p.get("align") == "axis"
+    axis = p.get("align") == "axis" and not sec   # 보 축 방향 글은 평면 전용(단면·입면에는 방향을 정할 평면 축이 없다)
     d = None
     if axis:   # 보 축 방향 태그(W2 스물한 번째 PR): 여섯째 값 = 보 진행 방향(단위 벡터). 글은 이 방향으로 눕고 거꾸로 서지 않게 내보낸다
         tx, ty = (g.q(Q.beam_tagpos, p["target"]) if Q.el(g, p["target"])["kind"] == "beam" else owner_tagframe(g, p["target"]))[2:]   # 보 시스템·트러스(W2 스물다섯 번째 PR)
@@ -884,12 +891,15 @@ def annot_draw(g, a):
 def tag_leader_pts(p, anc, lab, axis):
     """태그 지시선의 꺾은선 점들(뷰 좌표). 시작점 = 부착 끝점(대상 대표점) 또는 자유 끝점(대표점 + tip), 꺾임점(대표점 + bend)이 있으면 그다음, 끝 = 글 자리.
     지시선이 없으면 빈 튜플. params.leader 가 없으면 지시선 태그(가로 글)는 켜짐·부착, 보 축 방향 태그는 꺼짐이다(이전 모양).
-    모든 점은 대표점 기준 간격이라 대상을 옮기면 글·끝점·꺾임점이 함께 따라간다."""
+    모든 점은 대표점 기준 간격이라 대상을 옮기면 글·끝점·꺾임점이 함께 따라간다. 예외: 끝점이 fixed(W2 스물일곱 번째 PR)면 tip 이 뷰 좌표 절대 값이라 그 끝점은 대상을 옮겨도 그 자리에 남는다."""
     ld = p.get("leader")
     if not (ld.get("on", True) if ld is not None else not axis):
         return ()
     ld = ld or {}
-    tip = (anc[0] + ld["tip"][0], anc[1] + ld["tip"][1]) if ld.get("end") == "free" else anc
+    if ld.get("end") == "fixed":   # 절대 끝점(W2 스물일곱 번째 PR): 뷰 좌표 그대로, 대상을 옮겨도 그 자리에 남는다
+        tip = (ld["tip"][0], ld["tip"][1])
+    else:
+        tip = (anc[0] + ld["tip"][0], anc[1] + ld["tip"][1]) if ld.get("end") == "free" else anc
     pts = [_r(*tip)]
     if "bend" in ld:
         pts.append(_r(anc[0] + ld["bend"][0], anc[1] + ld["bend"][1]))
@@ -936,6 +946,98 @@ def tag_anchor(g, target):
     return (r[1], r[2])
 
 
+# ================================================================ 단면·입면 뷰의 태그 (W2 스물일곱 번째 PR)
+SECTION_VIEW_TYPES = ("section", "elevation")
+# 대상 종류 -> (뷰가 그리는지 묻는 범위 질의, 요소 하나의 선분 질의들, 채움 질의들): 단면·입면에서 그 요소가 실제로 그려진 모양(가림 판정이 끝난 선·절단 채움)이다
+_VIEW_PARTS = {
+    "wall": (D.scope_walls, (D.vwall_lines,), (D.vcut_rects,)),
+    "finst": (D.scope_fams, (D.fam_lines,), (D.vfam_cut_rects,)),   # 호스트 없이 서는 패밀리 인스턴스(기둥 등). 호스팅 창은 아래 _hosted_anchor
+    "slab": (D.scope_slabs, (D.slab_lines,), (D.slab_cut_rects,)),
+    "stair": (D.scope_stairs, (D.stair_lines,), (D.stair_cut_rects,)),
+    "railing": (D.scope_railings, (D.railing_lines,), ()),
+    "roof": (D.scope_roofs, (D.roof_lines,), (D.roof_cut_rects,)),
+    "beam": (D.scope_beams, (D.beam_lines,), (D.beam_fills,)),
+}
+
+
+def view_type(g, v):
+    """뷰의 종류(plan·section·elevation ...). 뷰가 아니면 None."""
+    row = Q.el(g, v)
+    return None if row is None or row["kind"] != "view" else row["params"]["type"]
+
+
+def tag_anchor_in(g, view, target):
+    """태그 대표점(뷰 좌표). 평면 뷰는 평면 좌표(tag_anchor), 단면·입면 뷰는 뷰의 (가로, 높이)다.
+    단면·입면 뷰에서 대상이 보이지 않으면(범위 밖이거나 다른 요소에 가려져 그려진 선이 없다) None."""
+    if g.q(view_type, view) in SECTION_VIEW_TYPES:
+        return g.q(tag_view_anchor, view, target)
+    return tag_anchor(g, target)
+
+
+def tag_view_anchor(g, v, target):
+    """단면·입면 뷰의 태그 대표점 (s, z)(뷰 가로 좌표, 높이 mm) 또는 None(이 뷰에 보이지 않음).
+    - 호스팅 문·창: 호스트 축선 위 중심의 가로 위치, 개구부 높이의 가운데. 보이는 깊이 안이고 호스트 벽의 그려진 선 중 개구부 둘레(문설주·인방·문턱) 끝점이 남아 있어야 보인다(가려졌으면 선이 지워진다).
+    - 그 밖(벽·슬래브·계단·난간·지붕·보·자립 인스턴스): 그 요소가 이 뷰에 실제로 그려진 선·절단 채움의 경계 상자 가운데. 그려진 것이 없으면 보이지 않는다.
+    대표점은 이 파생값이라 대상을 옮기면 따라간다. 뷰의 잘라내기(crop) 밖이면 보이지 않는다."""
+    cfg = g.q(D.view_cfg, v)
+    row = Q.el(g, target)
+    if cfg is None or cfg[0] not in ("sec", "elev") or row is None:
+        return None
+    kind = row["kind"]
+    if kind == "door" or (kind == "finst" and g.q(Q.finst_host, target)):
+        pt = _hosted_anchor(g, v, cfg, kind, target)
+    else:
+        pt = _drawn_anchor(g, v, kind, target)
+    if pt is None or not (isfinite(pt[0]) and isfinite(pt[1])):
+        return None
+    crop = g.q(D.view_opts, v).get("crop")
+    if crop is not None and not (crop[0] - D.EPS <= pt[0] <= crop[2] + D.EPS and crop[1] - D.EPS <= pt[1] <= crop[3] + D.EPS):
+        return None
+    return pt
+
+
+def _drawn_anchor(g, v, kind, e):
+    spec = _VIEW_PARTS.get(kind)
+    if spec is None or e not in g.q(spec[0], v):
+        return None
+    xs, ys = [], []
+    for fn in spec[1]:
+        for ln in g.q(fn, v, e):
+            xs += [ln[1], ln[3]]
+            ys += [ln[2], ln[4]]
+    for fn in spec[2]:
+        for poly in g.q(fn, v, e):
+            xs += [p[0] for p in poly]
+            ys += [p[1] for p in poly]
+    if not xs:
+        return None
+    return (round((min(xs) + max(xs)) / 2.0, 3) + 0.0, round((min(ys) + max(ys)) / 2.0, 3) + 0.0)
+
+
+def _hosted_anchor(g, v, cfg, kind, d):
+    hosts = Q.rel_in(g, "hosts", d)
+    w = hosts[0] if hosts else None
+    wr = Q.el(g, w) if w is not None else None
+    if wr is None or wr["kind"] != "wall" or w not in g.q(D.scope_walls, v):
+        return None
+    _, elev = g.q(Q.level_info, g.q(Q.wall_level, w))
+    box = g.q(D.hosted_opening, d, elev)   # (u0, u1, z0, z1): 벽 지역 길이 방향·절대 높이
+    if box is None:
+        return None
+    r = g.q(ref_resolve, make_ref(kind, d, "center"))
+    if r[0] != "pt":
+        return None
+    s, depth = D._sw(cfg, (r[1], r[2]))
+    if not cfg[7] - 1.0 <= depth <= cfg[8] + 1.0:   # 보이는 깊이(절단면 앞 near ~ far) 밖: 호스트 벽이 깊이 방향으로 길어 벽 선은 남아 있어도 이 문·창은 범위 밖이다
+        return None
+    half = (box[1] - box[0]) / 2.0 + 1.0
+    zone = (s - half, box[2] - 1.0, s + half, box[3] + 1.0)
+    # 개구부 둘레(문설주·인방·문턱)의 선 끝점이 하나도 안 남았으면 가려진 것이다. 벽 밑·윗선이 개구부 자리를 가로지르는 것은 개구부가 보이는 것과 무관해서 끝점만 본다
+    if not any(zone[0] <= x <= zone[2] and zone[1] <= z <= zone[3] for ln in g.q(D.vwall_lines, v, w) for x, z in ((ln[1], ln[2]), (ln[3], ln[4]))):
+        return None
+    return (round(s, 3) + 0.0, round((box[2] + box[3]) / 2.0, 3) + 0.0)
+
+
 def view_annots(g, v):
     """뷰에 속한 주석들의 그림 항목(id 순). 주석이 바뀌면 이 뷰만 다시 계산된다."""
     return tuple(it for it in (g.q(annot_draw, a) for a in sorted(Q.rel_in(g, "annot_of", v)) if Q.el(g, a) is None or Q.el(g, a)["kind"] in ("dim", "tag"))
@@ -971,4 +1073,4 @@ def classify(st) -> str:
 
 
 # 질의 노드가 주석 전용인지 알아보기 위한 함수 집합(계측용: 편집 하나가 다시 계산시킨 주석 노드 수)
-ANNOT_FNS = frozenset({ref_resolve, dim_value, dim_flags, annot_flags, tag_text, annot_state, annot_draw, view_annots})
+ANNOT_FNS = frozenset({ref_resolve, dim_value, dim_flags, annot_flags, tag_text, annot_state, annot_draw, view_annots, view_type, tag_view_anchor})

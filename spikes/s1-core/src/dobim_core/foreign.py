@@ -841,11 +841,13 @@ def _restore_defs(f, rows: dict, rels: set, taken: set, plan: "ImportPlan") -> N
                     why = f"치수 참조 {k} 의 대상이 이 평면 뷰의 레벨에 있지 않다"
         else:
             st = state(p["target"])
-            if vt != "plan":
-                why = "태그는 평면 뷰에 둔다"
+            if vt not in ("plan", *AN.SECTION_VIEW_TYPES):   # 단면·입면 뷰의 태그(W2 스물일곱 번째 PR)도 되살린다
+                why = "태그는 평면·단면·입면 뷰에 둔다"
             elif st is not None and (K.ref_kind_error("tag", "target", st[0]) or st[1] != "authored" or not VD.tag_fields_ok(st[0], p["fields"])):
                 why = "태그 대상이 태그할 수 있는 저작 요소가 아니거나 표시 필드가 맞지 않는다"
-            elif st is not None and level_of(st[0], p["target"]) != v["params"]["level"] and not (st[0] == "beam" and v["params"].get("rcp")):   # 반사 천장 평면의 보 태그(W2 스물한 번째 PR)는 다른 레벨의 보도 단다
+            elif vt != "plan" and (p.get("align") == "axis" or (st is not None and st[0] == "space")):   # 보 축 방향 글은 평면 전용, 공간은 단면·입면에 그려지지 않는다
+                why = "단면·입면 뷰에는 보 축 방향 글과 공간 대상의 태그를 두지 않는다"
+            elif st is not None and vt == "plan" and level_of(st[0], p["target"]) != v["params"]["level"] and not (st[0] == "beam" and v["params"].get("rcp")):   # 반사 천장 평면의 보 태그(W2 스물한 번째 PR)는 다른 레벨의 보도 단다
                 why = "태그 대상이 이 평면 뷰의 레벨에 있지 않다"
         if why:
             skip(eid, why)
