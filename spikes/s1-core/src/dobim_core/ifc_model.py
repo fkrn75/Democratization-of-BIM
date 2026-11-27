@@ -1373,7 +1373,7 @@ class IfcModel:
     def project(self, eid: str, spec: dict) -> None:
         kind = spec["kind"]
         {"level": self._project_level, "wall": self._project_wall, "door": self._project_door, "slab": self._project_slab, "stair": self._project_stair, "space": self._project_space, "railing": self._project_railing, "elevator": self._project_elevator, "roof": self._project_roof,
-         "site": self._project_site, "solid": self._project_solid, "curtwall": self._project_curtwall, "stackwall": self._project_stackwall, "beam": self._project_beam, "beamsys": self._project_beamsys, "ftype": lambda i, sp: fp.project_type(self, i, sp), "finst": lambda i, sp: fp.project_inst(self, i, sp)}[kind](eid, spec)
+         "site": self._project_site, "solid": self._project_solid, "curtwall": self._project_curtwall, "stackwall": self._project_stackwall, "beam": self._project_beam, "beamsys": self._project_beamsys, "truss": self._project_truss, "ftype": lambda i, sp: fp.project_type(self, i, sp), "finst": lambda i, sp: fp.project_inst(self, i, sp)}[kind](eid, spec)
         # 의도를 IFC 에도 복제한다. 정본은 의도 저장소이고 이 속성셋은 매번 덮어쓴다.
         e = self.ents[eid]
         text = json.dumps(spec["intent"], sort_keys=True, separators=(",", ":"))
@@ -1435,6 +1435,25 @@ class IfcModel:
             e.ObjectType = "BEAM_SYSTEM"
         if hasattr(e, "PredefinedType") and e.PredefinedType != "USERDEFINED":
             e.PredefinedType = "USERDEFINED"
+        if hasattr(e, "AssemblyPlace") and e.AssemblyPlace != "NOTDEFINED":
+            e.AssemblyPlace = "NOTDEFINED"
+        self._contain(eid, spec["level"])
+        lp = self.ents[spec["level"]].ObjectPlacement
+        if e.ObjectPlacement is None:
+            self._place(e, lp, (0.0, 0.0, 0.0), (1.0, 0.0, 0.0))
+        elif e.ObjectPlacement.PlacementRelTo != lp:
+            e.ObjectPlacement.PlacementRelTo = lp
+        self._stack_rel(eid, spec["parts"])
+
+    # ------------------------------------------------------------ 트러스(W2 스물다섯 번째 PR, STR-08)
+    # 트러스 = 형상 없는 IfcElementAssembly(PredefinedType TRUSS, AssemblyPlace NOTDEFINED, 층에 담긴다) + 자식 부재(현 IfcBeam, 웹 IfcMember BRACE)의 IfcRelAggregates
+    # (GlobalId = part_guid(트러스, "agg"), 대상은 자식 순서). 근거: IFC4·IFC2X3 의 IfcElementAssemblyTypeEnum 에 TRUSS 가 있고(스키마로 확인), 요소 조립의 분해는
+    # IfcRelAggregates 로 단다. 보 시스템과 달리 ObjectType 은 쓰지 않는다(열거값이 있다). 부분 부재는 층에 담지 않는다(집합의 부분은 전체만 층에 담긴다)
+    def _project_truss(self, eid, spec):
+        e = self.ents[eid]
+        e.Name = spec["name"]
+        if hasattr(e, "PredefinedType") and e.PredefinedType != "TRUSS":
+            e.PredefinedType = "TRUSS"
         if hasattr(e, "AssemblyPlace") and e.AssemblyPlace != "NOTDEFINED":
             e.AssemblyPlace = "NOTDEFINED"
         self._contain(eid, spec["level"])

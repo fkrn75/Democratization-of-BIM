@@ -2769,7 +2769,8 @@ def _beam_params(p):
                       "end_offset": lambda v: num_ok(v) and abs(v) <= BM.OFFSET_MAX, "material": _name,   # 경사 보·구조 재료(W2 열여덟 번째 PR)
                       "bulge": lambda v: num_ok(v) and v != 0 and abs(v) <= BM.BULGE_MAX, "vertical_ends": lambda v: v is True,   # 곡선 보·경사 보 끝면·
                       "skew_cut": lambda v: v is True, "gap": lambda v: num_ok(v) and 0 < v <= BM.GAP_MAX,                         # 보끼리 접합 옵션(W2 열아홉 번째 PR)
-                      "bsys": id_ok, "brace": lambda v: v is True})   # 보 시스템 자식·가새(W2 스물네 번째 PR)
+                      "bsys": id_ok, "brace": lambda v: v is True,   # 보 시스템 자식·가새(W2 스물네 번째 PR)
+                      "truss": id_ok, "post_dir": lambda v: num_ok(v) and -180.0 < v <= 180.0})   # 트러스 자식 부재·수직 웹 부재(W2 스물다섯 번째 PR)
     if err is not None:
         return err
     why = BM.beam_problem(p)
@@ -2795,8 +2796,24 @@ def _beamsys_params(p):
     return None
 
 
+# 트러스(W2 스물다섯 번째 PR, STR-08): 두 점 사이의 연직면에 평행한 두 현과 웹 부재(수직재·사재)를 소유하는 형상 없는 IfcElementAssembly(PredefinedType TRUSS).
+# 형식·높이·칸 수를 바꾸면 자식 보(보 행, params.truss)가 다시 만들어진다(보 시스템·스택 벽과 같은 짜임). 형상은 beams.truss_members 가 정한다
+def _truss_params(p):
+    def pt(v):
+        return _beam_coord(v)
+    err = _check_opt("truss", p, {"name": _name, "start": pt, "end": pt, "offset": lambda v: num_ok(v) and abs(v) <= BM.OFFSET_MAX,
+                                  "height": lambda v: num_ok(v) and BM.TRUSS_HEIGHT_MIN <= v <= BM.TRUSS_HEIGHT_MAX, "pattern": lambda v: v in BM.TRUSS_PATTERNS,
+                                  "panels": lambda v: isinstance(v, int) and not isinstance(v, bool) and BM.TRUSS_PANELS_MIN <= v <= BM.TRUSS_PANELS_MAX, "btype": id_ok,
+                                  "children": lambda v: isinstance(v, list) and all(id_ok(x) for x in v) and len(set(v)) == len(v) and len(v) <= BM.TRUSS_MEMBERS_MAX},
+                     {"end_offset": lambda v: num_ok(v) and abs(v) <= BM.OFFSET_MAX, "wtype": id_ok})
+    if err is not None:
+        return err
+    why = BM.truss_problem(p)
+    return f"truss: {why}" if why else None
+
+
 # 태그 대상 종류(annot.TAG_FIELDS 와 같다: 가져오기가 복원한 태그 대상을 이 종류로 검사한다)
-TAG_TARGET_KINDS = ("wall", "door", "slab", "space", "stair", "finst", "roof", "railing", "beam")
+TAG_TARGET_KINDS = ("wall", "door", "slab", "space", "stair", "finst", "roof", "railing", "beam", "beamsys", "truss")
 
 
 # ---------------------------------------------------------------- 모델 그룹·조립품(W2 열한 번째 PR, ARC-46·COL-11)
@@ -2917,11 +2934,14 @@ ELEMENT_KINDS: dict[str, ElementKind] = {k.name: k for k in (
     # 구조 보·보 유형(W2 열다섯 번째 PR, STR-02): 보는 IfcBeam, 유형은 비 IFC 의도(투영이 IfcBeamType + IfcRelDefinesByType 를 만든다)
     ElementKind("beamtype", False, None, False, 0, _beamtype_params),
     # 보 행의 IFC 클래스는 행마다 다르다(IfcBeam, 가새 brace 는 IfcMember: 일반 솔리드처럼 행의 ifc_class 를 쓴다, W2 스물네 번째 PR)
-    ElementKind("beam", True, None, True, 1, _beam_params, geometric=True, refs=(("btype", "id", "of_type"), ("bsys", "id", None)),
-                ref_kinds=(("btype", ("beamtype",)), ("bsys", ("beamsys",)))),
+    ElementKind("beam", True, None, True, 1, _beam_params, geometric=True, refs=(("btype", "id", "of_type"), ("bsys", "id", None), ("truss", "id", None)),
+                ref_kinds=(("btype", ("beamtype",)), ("bsys", ("beamsys",)), ("truss", ("truss",)))),
     # 보 시스템(W2 스물네 번째 PR): 자식 보를 모으는 형상 없는 IfcElementAssembly. 자식 보보다 뒤에 투영한다(집합 관계가 자식 엔티티를 가리킨다)
     ElementKind("beamsys", True, "IfcElementAssembly", True, 2, _beamsys_params, refs=(("children", "ids", None), ("btype", "id", None)),
                 ref_kinds=(("btype", ("beamtype",)),)),
+    # 트러스(W2 스물다섯 번째 PR): 보 시스템과 같은 짜임(자식 부재를 모으는 형상 없는 IfcElementAssembly, PredefinedType TRUSS)
+    ElementKind("truss", True, "IfcElementAssembly", True, 2, _truss_params, refs=(("children", "ids", None), ("btype", "id", None), ("wtype", "id", None)),
+                ref_kinds=(("btype", ("beamtype",)), ("wtype", ("beamtype",)))),
     # 모델 그룹 정의·배치·조립품(W2 열한 번째 PR, ARC-46·COL-11): 비 IFC 의도 요소(정의는 DoBIM_Defs). 부속을 가리키므로 모델 요소 뒤에 만든다
     ElementKind("mgtype", False, None, False, 6, _mgtype_params),
     ElementKind("mgroup", False, None, False, 7, _mgroup_params, refs=(("type", "id", None), ("members", "ids", None), ("level", "id", None)),
@@ -2937,7 +2957,7 @@ KIND_NAMES = tuple(ELEMENT_KINDS)
 # 종류를 따른다(family.restore, ADR-0014). 뷰·주석은 IFC 신원이 없어 IFC 에서 복원할 수 없다(알려진 한계)
 IMPORTABLE_BY_CLASS = {"IfcBuildingStorey": "level", "IfcWall": "wall", "IfcDoor": "door", "IfcSlab": "slab", "IfcStair": "stair", "IfcSpace": "space", "IfcRailing": "railing", "IfcTransportElement": "elevator", "IfcRoof": "roof", "IfcSite": "site", "IfcCurtainWall": "curtwall", "IfcBeam": "beam"}
 FAMILY_OF_KIND = {"stackwall": "wall.stacked", "level": "level.basic", "wall": "wall.basic", "door": "door.single", "slab": "slab.basic", "stair": "stair.straight", "space": "space.basic", "railing": "railing.basic", "elevator": "elevator.basic", "roof": "roof.basic", "site": "site.basic", "solid": "solid.generic",
-                  "curtwall": "curtwall.basic", "beam": "beam.basic", "beamsys": "beamsys.basic"}
+                  "curtwall": "curtwall.basic", "beam": "beam.basic", "beamsys": "beamsys.basic", "truss": "truss.basic"}
 
 
 def _remap_ref(form: str, v, m: dict):
@@ -3030,7 +3050,7 @@ def _fs(*a):
 
 REL_KINDS: dict[str, RelKind] = {r.name: r for r in (
     # 레벨은 분리돼 있어도 그 위의 저작 벽이 레벨을 따른다(S2): 레벨 쪽은 막지 않고, 놓이는 요소만 저작이어야 한다
-    RelKind("on_level", _fs("wall", "slab", "stair", "space", "railing", "elevator", "roof", "solid", "finst", "foreign", "curtwall", "stackwall", "beam", "beamsys"), _fs("level"), guard=("src",), violation="LEVEL_DELETED", message="벽이 놓인 레벨이 지워졌다"),
+    RelKind("on_level", _fs("wall", "slab", "stair", "space", "railing", "elevator", "roof", "solid", "finst", "foreign", "curtwall", "stackwall", "beam", "beamsys", "truss"), _fs("level"), guard=("src",), violation="LEVEL_DELETED", message="벽이 놓인 레벨이 지워졌다"),
     RelKind("joins", _fs("wall"), _fs("wall"), guard=("src", "dst"), violation="JOIN_TARGET_DELETED", message="조인 대상 벽이 지워졌다"),
     RelKind("hosts", _fs("wall"), _fs("door", "finst"), guard=("src", "dst"), violation="HOST_DELETED",
             message="호스트 벽이 지워졌는데 문이 그 벽에 놓여 있다"),

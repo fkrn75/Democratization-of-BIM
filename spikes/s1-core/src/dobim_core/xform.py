@@ -295,10 +295,35 @@ def beam(p: dict, xf: Xf) -> dict:
         q["roll"] = -p["roll"]
     if xf.mirror and "bulge" in p:   # 곡선 보(W2 열아홉 번째 PR): 대칭은 호의 반시계·시계를 뒤집는다(부풀어 오른 쪽이 거울 쪽으로)
         q["bulge"] = -p["bulge"] + 0.0
+    if "post_dir" in p and xf.kind != "move":   # 수직 웹 부재(W2 스물다섯 번째 PR): 단면이 놓이는 평면 방향도 돌린다((-180, 180] 로)
+        v = xf.ang(p["post_dir"])
+        q["post_dir"] = _r6(v - 360.0 if v > 180.0 else v)
     return q
 
 
-BY_KIND = {"wall": wall, "slab": slab, "space": space, "stair": stair, "railing": railing, "roof": roof, "grid": grid, "solid": solid, "beam": beam, "elevator": elevator}
+def beamsys(p: dict, xf: Xf) -> dict:
+    """보 시스템(W2 스물다섯 번째 PR): 경계를 옮기고(대칭은 반시계를 지키려 꼭짓점 순서를 뒤집는다) 방향 angle(0 이상 180 미만)을 돌린다. 자식 보는 시스템이 다시 만든다(children 은
+    그대로 두어 id 를 이어받는다. 복사는 비운다). 방향이 180도 뒤집히면(회전이 180 을 넘기거나 대칭) 진행 방향의 왼쪽이 오른쪽이 되므로 정렬 start·end 를 맞바꿔 같은 자리를 지킨다."""
+    q = dict(p, boundary=_pts(xf, p["boundary"]))
+    if xf.kind != "move":
+        a = xf.ang(p["angle"])
+        flip = xf.mirror   # 대칭은 왼쪽이 오른쪽이 된다
+        if a >= 180.0:   # 방향 벡터가 반대로 놓인다(직선의 방향은 같다)
+            a -= 180.0
+            flip = not flip
+        q["angle"] = _r6(a)
+        if flip:
+            q["align"] = {"start": "end", "end": "start"}.get(p["align"], p["align"])
+    return q
+
+
+def truss(p: dict, xf: Xf) -> dict:
+    """트러스(W2 스물다섯 번째 PR): 평면 두 점을 옮긴다(순서 그대로: 대칭의 상도 같은 방향 start -> end 의 트러스다). 높이는 그대로, 자식 부재는 트러스가 다시 만든다."""
+    return dict(p, start=xf.pt(p["start"][0], p["start"][1]), end=xf.pt(p["end"][0], p["end"][1]))
+
+
+BY_KIND = {"wall": wall, "slab": slab, "space": space, "stair": stair, "railing": railing, "roof": roof, "grid": grid, "solid": solid, "beam": beam, "elevator": elevator,
+           "beamsys": beamsys, "truss": truss}
 
 
 def params(kind: str, p: dict, xf: Xf) -> dict:

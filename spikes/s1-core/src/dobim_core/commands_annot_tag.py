@@ -12,6 +12,7 @@
 저장 형식: 태그 행의 선택 키 leader·side·pin 은 쓸 때만 생긴다. 이 키가 없는 태그의 행·그림 항목·도면은 이전과 같다."""
 from __future__ import annotations
 
+from math import hypot
 from typing import Annotated, Literal
 
 from pydantic import Field
@@ -22,6 +23,7 @@ from dobim_core import beams as BM
 from dobim_core import drafting as DRF
 from dobim_core import drawing as D
 from dobim_core import fixture as F
+from dobim_core import kinds as K
 from dobim_core import queries as Q
 from dobim_core.commands import A, Id, Off, command
 from dobim_core.errors import DobimError
@@ -207,7 +209,14 @@ def arrange_tags(ctx, view, ids=None, new=()):
 
 def _beam_span(ctx, target):
     """보 축 방향 태그가 보를 따라 미끄러질 수 있는 한쪽 길이(보 가운데에서 한쪽 끝까지): 기둥·보 면으로 자른 뒤 남은 축 길이의 절반."""
-    p = ctx.st.el[target]["params"]
+    row = ctx.st.el[target]
+    p = row["params"]
+    if row["kind"] == "truss":   # 트러스 태그(W2 스물다섯 번째 PR): 두 점의 가운데에서 한쪽 끝까지(평면 길이의 절반)
+        return hypot(p["end"][0] - p["start"][0], p["end"][1] - p["start"][1]) / 2.0
+    if row["kind"] == "beamsys":   # 보 시스템 태그: 경계 무게중심에서 작은 보 방향의 한쪽 끝까지(경계를 그 방향에 투영한 길이의 절반)
+        sn, cs = K.sincos_deg(float(p["angle"]))
+        us = [x * cs + y * sn for x, y in p["boundary"]]
+        return (max(us) - min(us)) / 2.0
     cut = ctx.fresh().q(Q.beam_cut, target)
     return max(0.0, (BM.length3(p) - float(cut[0]) - float(cut[1])) / 2.0)
 
