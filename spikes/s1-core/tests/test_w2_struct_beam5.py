@@ -331,8 +331,8 @@ def test_3_자식_보는_따로_고치지_못한다(bs):
     assert err(bs.run("beam.set", {"id": F.BS1, "offset": 0}))["code"] in ("NOT_FOUND", "CONSTRAINT")
     # 시스템 종류가 아닌 요소에 beamsys 명령
     assert err(bs.run("beamsys.set", {"id": c0, "spacing": 500}))["code"] in ("NOT_FOUND", "CONSTRAINT")
-    # element.copy 가 시스템 자체를 대상으로 하는 것은 이번 범위 밖이다(대상 종류가 아니다)
-    assert err(bs.run("element.copy", {"ids": [F.BS1], "dx": 100, "dy": 0}))["code"] == "CONSTRAINT"
+    # element.copy 계열이 시스템 자체를 대상으로 하는 것은 W2 스물다섯 번째 PR 이 더했다(자식 보를 다시 만든다: test_w2_struct_truss.py 5). 이 시험은 자식 보 자체의 복사 거절만 본다
+    assert ok(bs.run("element.copy", {"ids": [F.BS1], "dx": 100, "dy": 0}))["count"] == 1
     assert ok(bs.run("model.validate", {}))["errors"] == 0
 
 

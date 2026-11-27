@@ -17,6 +17,9 @@
   선택 vertical_ends: true 면 경사 보의 끝면을 축에 수직이 아니라 연직면으로 자른다(3부, 경사 보만)
   선택 skew_cut: true 면 보끼리 접합에서 끝면을 주 보 옆면과 나란한 연직면으로 자른다(3부, 비스듬히 만나는 T 결합의 경사 자르기)
   선택 gap   : 보끼리 접합 간격 mm(3부). 주 보 옆면에서 이만큼 떨어져 끝낸다(기둥 면 자르기에는 적용하지 않는다)
+  선택 truss : 트러스 id(W2 스물다섯 번째 PR). 트러스가 소유한 자식 부재(현·웹)다. 파생 행이라 cutback 은 false 다(접합은 트러스가 정한다)
+  선택 post_dir : 수직 웹 부재(트러스가 만든다. 트러스를 풀면 독립 부재로 남는다): 시작·끝의 평면 점이 같고(평면 길이 0) 끝 높이만 높다. 단면이 놓이는 평면 방향
+               (도, +x 에서 반시계 = 트러스 진행 방향)
 
 단면 좌표 (a, b): a = 진행 방향 왼쪽 +, b = 단면의 위 +. 기준선이 (0, 0) 이다. 경사 보의 단면은 축에 수직이고(웨브는 연직면 안), 끝면도 축에 수직이다.
 기둥 접합(STR-03, 단순화): 보 끝점이 평면에서 기둥(IfcColumn 패밀리 인스턴스)의 각기둥 단면 안에 있고 높이가 겹치면, 보 축을 그 기둥 면까지
@@ -268,8 +271,11 @@ def a_range(p) -> tuple:
 
 
 def axis(p) -> tuple:
-    """(시작 x, y, 방향 x, y(단위), 평면 길이). 검사를 통과한 행이라 길이는 LEN_MIN 이상이다."""
+    """(시작 x, y, 방향 x, y(단위), 평면 길이). 검사를 통과한 행이라 길이는 LEN_MIN 이상이다(수직 웹 부재 post_dir 은 길이 0, 방향은 post_dir 이 정한다)."""
     x0, y0 = float(p["start"][0]), float(p["start"][1])
+    if "post_dir" in p:   # 수직 웹 부재(W2 스물다섯 번째 PR): 경사 보의 기울기가 90도인 극한이다(c = 0, s = 1). 방향만 post_dir 에서 온다
+        sn, cs = SO.sincos_deg(float(p["post_dir"]))
+        return (x0, y0, cs, sn, 0.0)
     dx, dy = float(p["end"][0]) - x0, float(p["end"][1]) - y0
     ln = sqrt(dx * dx + dy * dy)
     return (x0, y0, dx / ln, dy / ln, ln)
@@ -376,6 +382,10 @@ def beam_problem(p) -> str | None:
         return why
     if p["anchor"] not in ANCHORS:
         return f"beam.anchor 는 {'/'.join(ANCHORS)} 중 하나다"
+    if "truss" in p and (p.get("cutback") is not False or "bsys" in p or "bulge" in p):   # 트러스 자식(W2 스물다섯 번째 PR): 접합은 트러스가 정한다
+        return "트러스 자식 부재는 cutback false 이고 보 시스템 자식·곡선 보와 함께 둘 수 없다"
+    if "post_dir" in p:
+        return _post_problem(p)
     dx, dy = p["end"][0] - p["start"][0], p["end"][1] - p["start"][1]
     ln = sqrt(dx * dx + dy * dy)
     if not LEN_MIN <= ln <= LEN_MAX:
@@ -407,6 +417,24 @@ def beam_problem(p) -> str | None:
             return "곡선 보 반지름이 단면 폭의 반보다 커야 한다(안쪽 면 반지름이 1 mm 이상)"
         if ai[2] * ai[5] > LEN_MAX:
             return f"곡선 보 호 길이는 {LEN_MAX:g} mm 이하여야 한다"
+    return None
+
+
+def _post_problem(p) -> str | None:
+    """수직 웹 부재(post_dir) 검사: 두 점의 평면 위치가 같고 끝이 위로 LEN_MIN~LEN_MAX 만큼 높다. 가새 표식이 있어야 하고(IFC 는 가새와 같은 IfcMember)
+    곡선·보 시스템 소속·끝면 자르기·접합 간격·단면 회전이 없다. 트러스가 만들고, 트러스를 풀면(truss.ungroup) 독립 부재로 남는다(직접 만드는 명령은 없다)."""
+    if p.get("brace") is not True or "bsys" in p:
+        return "수직 웹 부재(post_dir)는 가새 표식 부재여야 하고 보 시스템의 자식이 될 수 없다"
+    if p["start"] != p["end"]:
+        return "수직 웹 부재는 시작·끝의 평면 점이 같아야 한다"
+    for k in ("roll", "vertical_ends", "skew_cut", "gap", "bulge"):
+        if k in p:
+            return f"수직 웹 부재에는 {k} 를 줄 수 없다"
+    if "end_offset" not in p:
+        return "수직 웹 부재는 end_offset(끝 높이)이 있어야 한다"
+    h = p["end_offset"] - p["offset"]
+    if not LEN_MIN <= h <= LEN_MAX:
+        return f"수직 웹 부재의 길이(end_offset - offset)는 {LEN_MIN:g}~{LEN_MAX:g} mm 여야 한다(현재 {h:.1f})"
     return None
 
 
@@ -972,3 +1000,99 @@ def loop_from_segments(segs, tol: float = 1.0) -> list | None:
     if not all(used):
         return None
     return [nodes[i] for i in order]
+
+
+# ---------------------------------------------------------------- 트러스(W2 스물다섯 번째 PR, STR-08: 평행현 트러스)
+# 트러스 행(kinds._truss_params): 평면 두 점 start·end 사이의 연직면에 평행한 두 현(상현·하현)과 웹 부재(수직재·사재)를 놓는다.
+# offset = 시작점에서 하현 기준선(단면 가운데)의 높이(레벨 기준 mm), 선택 end_offset = 끝점의 하현 높이(경사 트러스), height = 하현과 상현 기준선의 수직 거리,
+# pattern(pratt·howe·warren)·panels(칸 수)·btype(현 단면의 보 유형)·선택 wtype(웹 단면의 보 유형, 없으면 btype)·children(자식 보 id).
+# 모든 부재의 기준선은 단면 가운데(anchor center)라 부재 축이 마디에서 만난다. 하현 마디 B_i·상현 마디 T_i(i = 0..panels)는 평면에서 칸을 같게 나눈 자리 위에 있다.
+TRUSS_PATTERNS = ("pratt", "howe", "warren")
+TRUSS_PANELS_MIN = 2
+TRUSS_PANELS_MAX = 100               # 칸 수 상한(부재 수 상한 = 2 x 칸 + 3 = 203)
+TRUSS_HEIGHT_MIN = 100.0             # 현 사이 높이 하한 mm
+TRUSS_HEIGHT_MAX = 50000.0           # 현 사이 높이 상한 mm
+TRUSS_PANEL_MIN = 100.0              # 칸 하나의 평면 길이 하한 mm
+TRUSS_MEMBERS_MAX = 2 * TRUSS_PANELS_MAX + 3
+
+
+def _r6(v: float) -> float:
+    return round(v, 6) + 0.0   # -0.0 을 0.0 으로
+
+
+def truss_nodes(p) -> tuple:
+    """(하현 마디 [(x, y, z)] * (칸 + 1), 상현 마디): 평면은 칸을 같게 나눈 자리, z 는 하현 기준선 높이(경사 트러스는 선형)와 상현 = 하현 + height. 소수 6자리."""
+    n = int(p["panels"])
+    x0, y0 = float(p["start"][0]), float(p["start"][1])
+    x1, y1 = float(p["end"][0]), float(p["end"][1])
+    z0 = float(p["offset"])
+    z1 = float(p.get("end_offset", p["offset"]))
+    h = float(p["height"])
+    bottom, top = [], []
+    for i in range(n + 1):
+        f = i / n
+        x, y, z = _r6(x0 + (x1 - x0) * f), _r6(y0 + (y1 - y0) * f), _r6(z0 + (z1 - z0) * f)
+        bottom.append((x, y, z))
+        top.append((x, y, _r6(z + h)))
+    return bottom, top
+
+
+def truss_dir_deg(p) -> float:
+    """트러스 진행 방향(start -> end)의 평면 각(도, (-180, 180], +x 에서 반시계). 수직 웹 부재 단면의 방향이다."""
+    v = _r6(AG.atan2(float(p["end"][1]) - float(p["start"][1]), float(p["end"][0]) - float(p["start"][0])) * 180.0 / pi)
+    return 180.0 if v == -180.0 else v
+
+
+def truss_members(p) -> list:
+    """트러스가 만드는 부재 [(역할, 이름 꼬리, 시작 (x, y, z), 끝 (x, y, z)), ...](자식 id 를 이어받는 순서).
+    역할 chord(현) · post(수직 웹) · diag(사재). 순서: 하현 BC, 상현 TC, 수직재 V0..Vn(Pratt·Howe 만, 아래 -> 위), 사재 D1..Dn(칸 순서, 왼쪽 마디 -> 오른쪽 마디).
+    - Pratt: 수직재는 모든 마디, 사재는 가운데를 향해 내려간다(바깥 위 마디 -> 안쪽 아래 마디). Howe: 사재는 가운데를 향해 올라간다(Pratt 의 반대).
+    - Warren: 수직재 없이 사재만 지그재그(짝수 칸은 아래 왼쪽 -> 위 오른쪽, 홀수 칸은 위 왼쪽 -> 아래 오른쪽).
+    Pratt·Howe 는 칸 수가 짝수여야 한다(truss_problem)."""
+    n = int(p["panels"])
+    pat = p["pattern"]
+    bot, top = truss_nodes(p)
+    out = [("chord", "BC", bot[0], bot[n]), ("chord", "TC", top[0], top[n])]
+    if pat in ("pratt", "howe"):
+        out += [("post", f"V{i}", bot[i], top[i]) for i in range(n + 1)]
+    for k in range(n):
+        if pat == "warren":
+            up = k % 2 == 0
+        else:
+            left = 2 * k < n
+            up = left if pat == "howe" else not left
+        a, b = (bot[k], top[k + 1]) if up else (top[k], bot[k + 1])
+        out.append(("diag", f"D{k + 1}", a, b))
+    return out
+
+
+def truss_problem(p) -> str | None:
+    """트러스 형상 검사(필드 모양은 kinds 가 본다): 형식·칸 수·높이·평면 길이, 모든 부재의 길이·기울기(보·가새와 같은 80도 한계)."""
+    n = p["panels"]
+    if p["pattern"] not in TRUSS_PATTERNS:
+        return f"truss.pattern 은 {'/'.join(TRUSS_PATTERNS)} 중 하나다"
+    if not TRUSS_PANELS_MIN <= n <= TRUSS_PANELS_MAX:
+        return f"트러스 칸 수는 {TRUSS_PANELS_MIN}~{TRUSS_PANELS_MAX} 여야 한다"
+    if p["pattern"] in ("pratt", "howe") and n % 2:
+        return "Pratt·Howe 트러스는 칸 수가 짝수여야 한다(가운데 칸의 사재 방향이 정해지지 않는다)"
+    if not TRUSS_HEIGHT_MIN <= p["height"] <= TRUSS_HEIGHT_MAX:
+        return f"트러스 높이(상·하현 기준선 사이)는 {TRUSS_HEIGHT_MIN:g}~{TRUSS_HEIGHT_MAX:g} mm 여야 한다"
+    dx, dy = p["end"][0] - p["start"][0], p["end"][1] - p["start"][1]
+    ln = sqrt(dx * dx + dy * dy)
+    if ln / n < TRUSS_PANEL_MIN:
+        return f"칸 하나의 평면 길이는 {TRUSS_PANEL_MIN:g} mm 이상이어야 한다(현재 {ln / n:.1f})"
+    if "end_offset" in p and p["end_offset"] == p["offset"]:
+        return "end_offset 이 offset 과 같으면 적지 않는다(수평 트러스)"
+    for role, tail, a, b in truss_members(p):
+        hz = sqrt((b[0] - a[0]) ** 2 + (b[1] - a[1]) ** 2)
+        dz = b[2] - a[2]
+        what = {"chord": "현", "post": "수직재", "diag": "사재"}[role] + f" {tail}"
+        if role == "post":
+            if not LEN_MIN <= dz <= LEN_MAX:
+                return f"{what} 의 길이가 범위({LEN_MIN:g}~{LEN_MAX:g} mm)를 벗어난다"
+            continue
+        if abs(dz) > hz * SLOPE_TAN_MAX:
+            return f"{what} 의 기울기가 {SLOPE_MAX_DEG:g}도를 넘는다(칸 수를 줄이거나 높이를 낮추세요)"
+        if sqrt(hz * hz + dz * dz) > LEN_MAX:
+            return f"{what} 의 길이가 {LEN_MAX:g} mm 를 넘는다"
+    return None
