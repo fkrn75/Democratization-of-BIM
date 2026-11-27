@@ -37,7 +37,7 @@ def test_검색과_설명(tmp_path):
     r = dispatch.run(env, "commands.search", {"query": "wall"})
     assert {i["name"] for i in r["result"]["items"]} >= {"wall.create", "wall.move", "wall.set"}
     r = dispatch.run(env, "commands.search", {"risk": "destructive"})
-    assert [i["name"] for i in r["result"]["items"]] == ["area.export", "ifc.export", "ifc.restore", "schedule.export", "sheet.export", "sheet.index", "sheet.render", "sheet.render_set", "view.export"]   # view.export·sheet.export: 덮어쓸 수 있는 파생 파일(S3 검수 4), schedule.export: 일람표 CSV·시트(W1), area.export: 법정 면적표 CSV(W1 연장)
+    assert [i["name"] for i in r["result"]["items"]] == ["area.export", "clash.export", "ifc.export", "ifc.restore", "schedule.export", "sheet.export", "sheet.index", "sheet.render", "sheet.render_set", "view.export"]   # view.export·sheet.export: 덮어쓸 수 있는 파생 파일(S3 검수 4), schedule.export: 일람표 CSV·시트(W1), area.export: 법정 면적표 CSV(W1 연장), clash.export: 간섭 목록 CSV·JSON(W2 스물여덟 번째 PR)
     r = dispatch.run(env, "commands.describe", {"name": "wall.move"})
     assert r["result"]["input_schema"]["properties"]["dx"] and r["result"]["examples"]
     r = dispatch.run(env, "commands.describe", {"name": "wall.mov"})
