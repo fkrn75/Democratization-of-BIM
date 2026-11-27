@@ -392,16 +392,17 @@ def _dim_params(p):
 
 
 def tag_leader_ok(v) -> bool:
-    """태그 지시선 설정(W2 스물여섯 번째 PR): {on: bool, end: attached | free, tip: [dx, dy](end 가 free 일 때만, 필수), bend: [dx, dy]}. 간격은 모두 대표점 기준."""
+    """태그 지시선 설정(W2 스물여섯 번째 PR): {on: bool, end: attached | free | fixed, tip: [x, y](end 가 free·fixed 일 때만, 필수), bend: [dx, dy]}.
+    간격은 대표점 기준이고, 예외로 fixed 끝점의 tip 은 뷰 좌표 절대 값이다(W2 스물일곱 번째 PR: 대상을 옮겨도 끝점이 그 자리에 남는다)."""
     if not (isinstance(v, dict) and set(v) <= {"on", "end", "tip", "bend"} and v):
         return False
     if "on" in v and type(v["on"]) is not bool:
         return False
-    if v.get("end", "attached") not in ("attached", "free") or ("end" in v and not isinstance(v["end"], str)):
+    if v.get("end", "attached") not in ("attached", "free", "fixed") or ("end" in v and not isinstance(v["end"], str)):
         return False
-    if ("tip" in v) != (v.get("end") == "free"):
+    if ("tip" in v) != (v.get("end") in ("free", "fixed")):
         return False
-    return all(_pt_ok(v[k]) and all(abs(x) <= 1e5 for x in v[k]) for k in ("tip", "bend") if k in v)
+    return all(_pt_ok(v[k]) and (k == "tip" and v.get("end") == "fixed" or all(abs(x) <= 1e5 for x in v[k])) for k in ("tip", "bend") if k in v)
 
 
 def _tag_params(p):

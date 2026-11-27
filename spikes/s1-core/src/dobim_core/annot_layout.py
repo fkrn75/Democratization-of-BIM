@@ -56,10 +56,10 @@ def text_frame(u):
     return (cos(a), -sin(a)), (sin(a), cos(a))
 
 
-def tag_box(lab, text, u, side, scale):
-    """태그 글의 경계 상자 (x0, y0, x1, y1)(뷰 좌표 mm). u = 보 진행 방향(눕힌 글) 또는 None(가로 글).
+def tag_box(lab, text, u, side, scale, size=TAG_H):
+    """태그 글의 경계 상자 (x0, y0, x1, y1)(뷰 좌표 mm). u = 보 진행 방향(눕힌 글) 또는 None(가로 글). size = 글 높이(용지 mm, 작성기준 프로파일이 정한 시트 글 높이면 그 값).
     가로 글: 기준선이 글 자리 높이, 글자는 기준선 위 0.8 em·아래 0.2 em. 눕힌 글: 가운데 맞춤, 기준선이 글 자리에서 글 위쪽으로 0.8 mm(용지) 올라선다."""
-    h, w = TAG_H * scale, label_width(text, TAG_H) * scale
+    h, w = size * scale, label_width(text, size) * scale
     if u is None:
         gap = GAP * scale
         if side == "end":
