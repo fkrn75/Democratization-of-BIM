@@ -857,6 +857,18 @@ def test_5_시스템_태그도_겹침_회피_배치를_따른다(ts):
     assert ok(ts.run("model.validate", {}))["errors"] == 0
 
 
+def test_5_단면_입면_뷰에서는_자식_부재에만_태그를_단다(ts):
+    """W2 스물일곱 번째 PR(단면·입면 태그)과 함께: 보 시스템·트러스 요소는 자체로 그려진 선이 없어 단면·입면에 태그를 달 수 없고(거절), 자식 부재(보 행)는 보 태그로 단다."""
+    r = mk(ts, start=[0, -9000, 3000], end=[12000, -9000, 3000])
+    ok(ts.run("view.create", {"id": V3, "name": "S", "type": "elevation", "dir": "S"}))
+    e = err(ts.run("annot.tag.create", {"view": V3, "target": F.TR1, "fields": ["name"]}))
+    assert e["code"] == "CONSTRAINT" and "보이지 않는다" in e["message"]
+    t = ok(ts.run("annot.tag.create", {"view": V3, "target": r["children"][0], "fields": ["name"]}))["id"]
+    assert text_of(ts, t) == "TR-000057-BC"
+    out = ok(ts.run("annot.tag.all", {"view": V3, "kinds": ["beamsys", "truss"], "fields": ["name"]}))
+    assert out["created"] == []
+
+
 def test_5_태그_출력_SVG와_DXF(ts):
     bsys(ts)
     mk(ts, start=[0, -9000, 3000], end=[6000, -9000, 3000], pattern="howe", panels=2)
