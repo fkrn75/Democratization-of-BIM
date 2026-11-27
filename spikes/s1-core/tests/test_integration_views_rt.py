@@ -458,7 +458,9 @@ CASES = [
     ("높이치수에_at_없음", lambda f: _edit(f, A2, lambda d: d["params"].pop("at")), {A2}),
     ("평면치수에_at", lambda f: _edit(f, A1, lambda d: d["params"].update(at=[0.0, 0.0])), {A1}),
     ("치수가_단면뷰에", lambda f: _edit(f, A1, lambda d: d["params"].update(view=VS)), {A1}),
-    ("태그가_단면뷰에", lambda f: _edit(f, T1, lambda d: d["params"].update(view=VS)), {T1}),
+    # 의도한 변화(W2 스물일곱 번째 PR): 단면·입면 뷰의 태그도 정의로 왕복한다. 이전에는 이 변조(태그의 뷰를 단면 뷰로)가 "태그는 평면 뷰에 둔다"로 건너뛰어졌다
+    ("태그가_단면뷰에", lambda f: _edit(f, T1, lambda d: d["params"].update(view=VS)), set()),
+    ("보축_글_태그가_단면뷰에", lambda f: _edit(f, T1, lambda d: d["params"].update(view=VS, align="axis")), {T1}),   # 보 축 방향 글은 평면 전용
     ("지문_모양_틀림", lambda f: _edit(f, A1, lambda d: d["params"].update(dirs={"a": [5.0, 5.0], "b": None})), {A1}),
     # --- 참조 무결성
     ("참조_종류_틀림", _bad_ref_kind, {A1}),
