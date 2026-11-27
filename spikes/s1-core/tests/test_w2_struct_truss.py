@@ -838,6 +838,25 @@ def test_5_자식_부재에도_보_태그를_단다(ts):
     assert ok(ts.run("model.validate", {}))["errors"] == 0
 
 
+def test_5_시스템_태그도_겹침_회피_배치를_따른다(ts):
+    """W2 스물여섯 번째 PR(태그 겹침 회피)과 함께: 같은 자리에 겹친 보 시스템·트러스 태그를 annot.tag.arrange 가 떼어 놓고(축 방향 태그는 시스템 방향을 따라 미끄러진다),
+    annot.tag.create avoid 로 새 태그만 비켜 단다."""
+    bsys(ts)
+    mk(ts, start=[0, -9000, 3000], end=[6000, -9000, 3000], pattern="warren", panels=3)
+    a1 = ok(ts.run("annot.tag.create", {"view": V, "target": BS1, "fields": ["type", "size"]}))["id"]
+    a2 = ok(ts.run("annot.tag.create", {"view": V, "target": F.TR1, "fields": ["type", "pattern"]}))["id"]
+    r = ok(ts.run("annot.tag.create", {"view": V, "target": F.TR1, "fields": ["height", "length"], "avoid": True}))
+    assert r["placed"]["unresolved"] is False
+    out = ok(ts.run("annot.tag.arrange", {"view": V}))
+    assert out["unresolved"] == [] and out["skipped"] == []
+    for t in (a1, a2, r["id"]):
+        assert g_of(ts).q(AN.annot_state, t)[:2] == ("tag", "ok")
+    tg = tags(ts)
+    assert len({tg[t][3] for t in (a1, a2, r["id"])}) == 3                                                  # 글 자리가 서로 다르다
+    assert all(len(tg[t]) in (6, 8) for t in (a1, a2, r["id"]))
+    assert ok(ts.run("model.validate", {}))["errors"] == 0
+
+
 def test_5_태그_출력_SVG와_DXF(ts):
     bsys(ts)
     mk(ts, start=[0, -9000, 3000], end=[6000, -9000, 3000], pattern="howe", panels=2)
